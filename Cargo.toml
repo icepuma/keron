@@ -10,7 +10,7 @@ readme = "README.md"
 license-file = "LICENSE"
 
 [dependencies]
-anyhow = "1.0.91"
+anyhow = "1.0.96"
 
 [dev-dependencies]
 
