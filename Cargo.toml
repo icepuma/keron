@@ -1,21 +1,21 @@
 [package]
 name = "keron"
-version = "0.1.0"
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+version = "0.0.1"
+edition = "2024"
+authors = ["Stefan Ruzitschka <stefan@icepuma.dev>"]
+description = "dotfile manager (symlinks, packages)"
+keywords = ["dotfile", "dotfiles", "dotfile-manager"]
+repository = "https://github.com/icepuma/keron"
+readme = "README.md"
+license-file = "LICENSE"
 
 [dependencies]
-anyhow = "1.0.80"
-clap = { version = "4.5.2", features = ["derive"] }
-dirs = "5.0.1"
-hcl-rs = "0.16.7"
-indexmap = { version = "2.2.5", features = ["std"] }
-os_info = "3.7.0"
-serde = { version = "1.0.197", features = ["derive"] }
-walkdir = "2.5.0"
+anyhow = "1.0.98"
 
 [dev-dependencies]
-indoc = "2.0.4"
-pretty_assertions = "1.4.0"
-tempfile = "3.10.1"
+
+[profile.release]
+lto = true
+strip = true
+opt-level = "z"
+codegen-units = 1
