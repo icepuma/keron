@@ -7,7 +7,7 @@ description = "dotfile manager (symlinks, packages)"
 keywords = ["dotfile", "dotfiles", "dotfile-manager"]
 repository = "https://github.com/icepuma/keron"
 readme = "README.md"
-license-file = "LICENSE"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 anyhow = "1.0.98"
