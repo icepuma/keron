@@ -12,8 +12,8 @@ jobs:
         os:
           - ubuntu-22.04
           - windows-2022
-          - macos-12
-          - macos-14
+          - macos-13
+          - macos-15
     env:
       CARGO_TERM_COLOR: always
     runs-on: ${{ matrix.os }}
