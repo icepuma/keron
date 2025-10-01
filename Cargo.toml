@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-anyhow = "1.0.98"
+anyhow = "1.0.100"
 
 [dev-dependencies]
 
