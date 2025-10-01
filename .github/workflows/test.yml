@@ -18,7 +18,7 @@ jobs:
       CARGO_TERM_COLOR: always
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt -- --check && cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test
