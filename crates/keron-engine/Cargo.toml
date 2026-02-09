@@ -1,0 +1,21 @@
+[package]
+name = "keron-engine"
+version = "0.0.1"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+mlua = { workspace = true }
+sha2 = { workspace = true }
+tera = { workspace = true }
+which = { workspace = true }
+walkdir = { workspace = true }
+keron-domain = { path = "../keron-domain" }
+
+[dev-dependencies]
+tempfile = { workspace = true }
