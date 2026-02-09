@@ -1,0 +1,6 @@
+[user]
+	name = Keron Example
+	email = keron@example.invalid
+
+[core]
+	editor = vim

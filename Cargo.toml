@@ -1,21 +1,55 @@
-[package]
-name = "keron"
-version = "0.0.1"
-edition = "2024"
-authors = ["Stefan Ruzitschka <stefan@icepuma.dev>"]
-description = "dotfile manager (symlinks, packages)"
-keywords = ["dotfile", "dotfiles", "dotfile-manager"]
-repository = "https://github.com/icepuma/keron"
-readme = "README.md"
-license = "MIT OR Apache-2.0"
-
-[dependencies]
-anyhow = "1.0.98"
-
-[dev-dependencies]
-
 [profile.release]
 lto = true
 strip = true
 opt-level = "z"
 codegen-units = 1
+
+[workspace]
+members = [
+  "crates/keron",
+  "crates/keron-cli",
+  "crates/keron-e2e",
+  "crates/keron-domain",
+  "crates/keron-engine",
+  "crates/keron-report",
+]
+resolver = "3"
+default-members = ["crates/keron"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.87"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+anyhow = "=1.0.101"
+clap = { version = "=4.5.57", features = ["derive"] }
+mlua = { version = "=0.11.6", default-features = false, features = ["lua54", "vendored"] }
+console = "=0.16.2"
+minus = { version = "=5.6.1", default-features = false, features = ["static_output"] }
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.149"
+tera = "=1.20.1"
+thiserror = "=2.0.18"
+which = "=8.0.0"
+walkdir = "=2.5.0"
+sha2 = "=0.10.9"
+tempfile = "=3.25.0"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+unused_extern_crates = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+# Target-specific transitive duplication is currently unavoidable across terminal stacks.
+multiple_crate_versions = "allow"
+
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"

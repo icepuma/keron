@@ -1,0 +1,189 @@
+// Target-specific transitive dependency split (mio/crossterm stack) is accepted for now.
+#![allow(clippy::multiple_crate_versions)]
+
+use std::collections::BTreeSet;
+use std::ffi::OsString;
+use std::io::IsTerminal;
+use std::path::{Path, PathBuf};
+
+use anyhow::Result;
+use clap::error::ErrorKind;
+use clap::{Args, Parser, Subcommand, ValueEnum};
+use keron_engine::{
+    ApplyOptions, ProviderRegistry, apply_plan, build_plan_for_folder,
+    has_potentially_destructive_forced_changes,
+};
+use keron_report::{
+    ColorChoice, OutputFormat, RenderOptions, redact_sensitive, render_apply, render_plan,
+};
+use minus::{ExitStrategy, Pager, page_all};
+
+#[derive(Debug, Parser)]
+#[command(name = "keron", about = "Lua-based dotfile manager")]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Debug, Subcommand)]
+enum Commands {
+    Apply {
+        folder: PathBuf,
+        #[command(flatten)]
+        render: RenderFlags,
+        #[arg(long, value_enum, default_value_t = FormatArg::Text)]
+        format: FormatArg,
+        #[arg(long)]
+        execute: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum FormatArg {
+    Text,
+    Json,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum ColorArg {
+    Auto,
+    Always,
+    Never,
+}
+
+#[derive(Debug, Clone, Args)]
+struct RenderFlags {
+    #[arg(long, value_enum, default_value_t = ColorArg::Auto)]
+    color: ColorArg,
+    #[arg(long)]
+    verbose: bool,
+    #[arg(long)]
+    no_hints: bool,
+}
+
+impl RenderFlags {
+    fn render_options(&self, folder: &Path) -> RenderOptions {
+        RenderOptions {
+            color: self.color.into(),
+            verbose: self.verbose,
+            hints: !self.no_hints,
+            target: Some(folder.display().to_string()),
+        }
+    }
+}
+
+impl From<FormatArg> for OutputFormat {
+    fn from(value: FormatArg) -> Self {
+        match value {
+            FormatArg::Text => Self::Text,
+            FormatArg::Json => Self::Json,
+        }
+    }
+}
+
+impl From<ColorArg> for ColorChoice {
+    fn from(value: ColorArg) -> Self {
+        match value {
+            ColorArg::Auto => Self::Auto,
+            ColorArg::Always => Self::Always,
+            ColorArg::Never => Self::Never,
+        }
+    }
+}
+
+/// Run the CLI using process arguments.
+///
+/// # Errors
+///
+/// Returns an error when argument parsing fails (excluding help/version) or command
+/// execution fails.
+pub fn run() -> Result<i32> {
+    run_from(std::env::args_os())
+}
+
+fn run_from<I, T>(args: I) -> Result<i32>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString> + Clone,
+{
+    let cli = match Cli::try_parse_from(args) {
+        Ok(parsed) => parsed,
+        Err(error) => match error.kind() {
+            ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => {
+                print!("{error}");
+                return Ok(0);
+            }
+            _ => return Err(error.into()),
+        },
+    };
+    let providers = ProviderRegistry::builtin();
+
+    match cli.command {
+        Commands::Apply {
+            folder,
+            render,
+            format,
+            execute,
+        } => {
+            let (report, sensitive_values) = build_plan_for_folder(&folder, &providers)?;
+            let render_options = render.render_options(&folder);
+            let output_format: OutputFormat = format.into();
+            if report.has_errors() {
+                let rendered = render_plan(&report, output_format, &render_options)?;
+                emit_output(&rendered, output_format, &sensitive_values);
+                return Ok(1);
+            }
+
+            if !execute {
+                let rendered = render_plan(&report, output_format, &render_options)?;
+                emit_output(&rendered, output_format, &sensitive_values);
+                if report.has_drift() && output_format == OutputFormat::Text {
+                    eprintln!("hint: re-run with --execute to apply changes");
+                }
+                return Ok(i32::from(report.has_drift()));
+            }
+
+            if output_format == OutputFormat::Text
+                && render_options.verbose
+                && has_potentially_destructive_forced_changes(&report)
+            {
+                eprintln!(
+                    "warning: plan includes force=true replacements that may overwrite/remove existing paths"
+                );
+            }
+
+            let (apply_report, apply_sensitive) =
+                apply_plan(&report, &providers, ApplyOptions::default());
+            let mut all_sensitive = sensitive_values;
+            all_sensitive.extend(apply_sensitive);
+            let rendered = render_apply(&apply_report, output_format, &render_options)?;
+            emit_output(&rendered, output_format, &all_sensitive);
+            Ok(i32::from(apply_report.has_failures()))
+        }
+    }
+}
+
+fn emit_output(rendered: &str, format: OutputFormat, sensitive_values: &BTreeSet<String>) {
+    let redacted = redact_sensitive(rendered, sensitive_values);
+
+    if format == OutputFormat::Text && should_use_pager() && page_output(&redacted).is_ok() {
+        return;
+    }
+
+    if redacted.ends_with('\n') {
+        print!("{redacted}");
+    } else {
+        println!("{redacted}");
+    }
+}
+
+fn should_use_pager() -> bool {
+    std::io::stdout().is_terminal() && std::env::var_os("NO_PAGER").is_none()
+}
+
+fn page_output(rendered: &str) -> std::result::Result<(), minus::MinusError> {
+    let pager = Pager::new();
+    pager.set_exit_strategy(ExitStrategy::PagerQuit)?;
+    pager.set_text(rendered)?;
+    page_all(pager)
+}
