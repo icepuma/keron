@@ -2,6 +2,15 @@
 
 Keron is a dotfile manager powered by Lua manifests (`*.lua`).
 
+## Install
+
+From the repository root:
+
+```bash
+cargo install --path crates/keron
+keron --help
+```
+
 ## Quick Start
 
 From the repo root:
@@ -24,15 +33,17 @@ Examples:
 
 ```bash
 cargo run -- apply /path/to/manifests
-cargo run -- apply https://github.com/org/repo.git//manifests
-cargo run -- apply https://github.com/org/repo.git//manifests?ref=main
+cargo run -- apply https://github.com/org/repo.git/manifests
 ```
 
 Notes:
 
-- canonical remote format: `<repo-url>//<manifest-subdir>?ref=<branch-or-tag>`
+- remote format: `<repo-url>/<manifest-subdir>`
+- Keron always checks out the `main` ref for remote sources
 - remote repos are cloned into a temporary directory and cleaned up after the run
-- only public network repos are supported (`https://`, `http://`, `git://`)
+- only public network repos are supported (`https://`, `git://`)
+- scp-style Git URLs are supported (for example `git@github.com:icepuma/dotfiles.git`)
+- for `git://` sources with a manifest subdirectory, prefer a `.git` repo path before the subdir (for example `git://host/org/repo.git/manifests`)
 - `file://` sources are rejected
 
 ## Manifest Basics

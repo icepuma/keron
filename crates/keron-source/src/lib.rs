@@ -6,13 +6,13 @@ use std::sync::atomic::AtomicBool;
 
 use anyhow::{Context, Result, bail};
 use tempfile::{Builder, TempDir};
-use url::{Url, form_urlencoded};
+use url::Url;
 
 #[derive(Debug)]
 struct GitSource {
     repo_url: Url,
     subdir: PathBuf,
-    reference: Option<String>,
+    reference: String,
 }
 
 /// Resolved manifest source for `keron apply`.
@@ -72,7 +72,26 @@ pub fn resolve_apply_source(input: &str) -> Result<ResolvedSource> {
 }
 
 fn looks_like_remote_source(input: &str) -> bool {
-    input.contains("://") && Url::parse(input).is_ok()
+    (input.contains("://") && Url::parse(input).is_ok()) || looks_like_scp_style_remote(input)
+}
+
+fn looks_like_scp_style_remote(input: &str) -> bool {
+    if input.contains("://") {
+        return false;
+    }
+
+    let Some((left, right)) = input.split_once(':') else {
+        return false;
+    };
+    if right.is_empty() || right.starts_with('/') {
+        return false;
+    }
+
+    let Some((user, host)) = left.rsplit_once('@') else {
+        return false;
+    };
+
+    !user.is_empty() && !host.is_empty()
 }
 
 fn clone_into_tempdir(display_target: &str, source: &GitSource) -> Result<ResolvedSource> {
@@ -85,11 +104,9 @@ fn clone_into_tempdir(display_target: &str, source: &GitSource) -> Result<Resolv
     let mut prepared = gix::prepare_clone(source.repo_url.as_str(), &checkout_root)
         .with_context(|| format!("failed to prepare clone from {}", source.repo_url))?;
 
-    if let Some(reference) = source.reference.as_deref() {
-        prepared = prepared
-            .with_ref_name(Some(reference))
-            .map_err(|_| anyhow::anyhow!("invalid git ref name: {reference}"))?;
-    }
+    prepared = prepared
+        .with_ref_name(Some(source.reference.as_str()))
+        .map_err(|_| anyhow::anyhow!("invalid git ref name: {}", source.reference))?;
 
     let should_interrupt = AtomicBool::new(false);
     let (mut checkout, _) = prepared
@@ -109,58 +126,81 @@ fn clone_into_tempdir(display_target: &str, source: &GitSource) -> Result<Resolv
 }
 
 fn parse_git_source(input: &str) -> Result<GitSource> {
-    let (raw_base, raw_query) = split_source_and_query(input);
-    let (repo_url_raw, subdir_raw) = split_repo_and_subdir(raw_base)?;
+    let (mut repo_url, subdir_raw) = if looks_like_scp_style_remote(input) {
+        parse_scp_style_source(input)?
+    } else {
+        let source_url =
+            Url::parse(input).with_context(|| format!("invalid source URL: {input}"))?;
+        validate_public_repo_url(&source_url)?;
 
-    let mut repo_url = Url::parse(&repo_url_raw)
-        .with_context(|| format!("invalid repository URL: {repo_url_raw}"))?;
+        if source_url.query().is_some() {
+            bail!("query parameters are not supported; keron always checks out ref \"main\"");
+        }
+
+        if uses_legacy_subdir_delimiter(input)? {
+            bail!(
+                "\"//\" subdirectory delimiter is not supported; use a standard path (e.g. https://host/org/repo/manifests)"
+            );
+        }
+
+        split_repo_and_subdir(&source_url)?
+    };
     validate_public_repo_url(&repo_url)?;
     repo_url.set_query(None);
     repo_url.set_fragment(None);
 
-    let reference = parse_reference(raw_query)?;
     let subdir = normalize_relative_subdir(&subdir_raw)?;
 
     Ok(GitSource {
         repo_url,
         subdir,
-        reference,
+        reference: "main".to_string(),
     })
 }
 
-fn split_source_and_query(input: &str) -> (&str, Option<&str>) {
-    match input.split_once('?') {
-        Some((base, query)) => (base, Some(query)),
-        None => (input, None),
-    }
-}
-
-fn split_repo_and_subdir(raw_base: &str) -> Result<(String, String)> {
-    let Some(scheme_offset) = raw_base.find("://") else {
+fn uses_legacy_subdir_delimiter(input: &str) -> Result<bool> {
+    let Some(scheme_offset) = input.find("://") else {
         bail!("remote source must include a URL scheme")
     };
 
     let offset_after_scheme = scheme_offset + 3;
-    if let Some(marker_rel) = raw_base[offset_after_scheme..].find("//") {
-        let marker = offset_after_scheme + marker_rel;
-        let repo = raw_base[..marker].to_string();
-        let subdir = raw_base[marker + 2..].to_string();
-        return Ok((repo, subdir));
+    let after_scheme = &input[offset_after_scheme..];
+    Ok(after_scheme.contains("//"))
+}
+
+fn parse_scp_style_source(input: &str) -> Result<(Url, String)> {
+    let Some((left, right)) = input.split_once(':') else {
+        bail!("invalid scp-style source; expected user@host:path")
+    };
+    let Some((user, host)) = left.rsplit_once('@') else {
+        bail!("invalid scp-style source; expected user@host:path")
+    };
+    if user.is_empty() || host.is_empty() || right.is_empty() {
+        bail!("invalid scp-style source; expected user@host:path")
     }
 
-    let parsed = Url::parse(raw_base).with_context(|| format!("invalid source URL: {raw_base}"))?;
-    if parsed.scheme() != "git" {
-        return Ok((raw_base.to_string(), String::new()));
+    if right.contains("//") {
+        bail!(
+            "\"//\" subdirectory delimiter is not supported; use a standard path (e.g. git@host:org/repo.git/manifests)"
+        );
     }
 
+    let normalized = format!("ssh://{user}@{host}/{}", right.trim_start_matches('/'));
+    let source_url =
+        Url::parse(&normalized).with_context(|| format!("invalid scp-style source: {input}"))?;
+
+    split_repo_and_subdir(&source_url)
+}
+
+fn split_repo_and_subdir(parsed: &Url) -> Result<(Url, String)> {
     let segments: Vec<String> = parsed
         .path_segments()
-        .ok_or_else(|| anyhow::anyhow!("git source path cannot be empty"))?
+        .ok_or_else(|| anyhow::anyhow!("source path cannot be empty"))?
         .filter(|segment| !segment.is_empty())
         .map(ToOwned::to_owned)
         .collect();
     if segments.is_empty() {
-        bail!("git source must include a repository path")
+        bail!("source must include a repository path")
     }
 
     let repo_segment_count = segments
@@ -170,25 +210,30 @@ fn split_repo_and_subdir(raw_base: &str) -> Result<(String, String)> {
                 .extension()
                 .is_some_and(|extension| extension.eq_ignore_ascii_case("git"))
         })
-        .map_or(if segments.len() > 2 { 2 } else { 1 }, |index| index + 1);
+        .map_or(if segments.len() >= 2 { 2 } else { 1 }, |index| index + 1);
 
-    let mut repo_url = parsed;
+    let mut repo_url = parsed.clone();
     repo_url.set_path(&format!("/{}", segments[..repo_segment_count].join("/")));
     let subdir = segments[repo_segment_count..].join("/");
-    Ok((repo_url.to_string(), subdir))
+    Ok((repo_url, subdir))
 }
 
 fn validate_public_repo_url(url: &Url) -> Result<()> {
     let scheme = url.scheme();
     match scheme {
-        "https" | "http" | "git" => {}
+        "https" | "git" | "ssh" => {}
+        "http" => {
+            bail!(
+                "http:// repositories are not supported; use https:// or git:// for public repositories"
+            )
+        }
         "file" => {
             bail!(
                 "file:// repositories are not supported; only public network repositories are allowed"
             )
         }
         _ => bail!(
-            "unsupported repository scheme \"{scheme}\"; expected https://, http://, or git://"
+            "unsupported repository scheme \"{scheme}\"; expected https://, git://, or git@host:path"
         ),
     }
 
@@ -196,37 +241,17 @@ fn validate_public_repo_url(url: &Url) -> Result<()> {
         bail!("repository URL must include a host")
     }
 
-    if !url.username().is_empty() || url.password().is_some() {
+    if url.password().is_some() {
+        bail!("repository URLs with passwords are not supported");
+    }
+
+    if scheme != "ssh" && !url.username().is_empty() {
         bail!(
             "authenticated repository URLs are not supported; only public repositories are allowed"
         )
     }
 
     Ok(())
-}
-
-fn parse_reference(raw_query: Option<&str>) -> Result<Option<String>> {
-    let Some(query) = raw_query else {
-        return Ok(None);
-    };
-
-    let mut reference = None;
-    for (key, value) in form_urlencoded::parse(query.as_bytes()) {
-        match key.as_ref() {
-            "ref" => {
-                if value.is_empty() {
-                    bail!("ref query parameter cannot be empty")
-                }
-                if reference.is_some() {
-                    bail!("source query may only include one ref parameter")
-                }
-                reference = Some(value.into_owned());
-            }
-            _ => bail!("unsupported source query parameter: {key}"),
-        }
-    }
-
-    Ok(reference)
 }
 
 fn normalize_relative_subdir(raw_subdir: &str) -> Result<PathBuf> {
@@ -292,7 +317,7 @@ fn resolve_manifest_root(checkout_root: &Path, subdir: &Path) -> Result<PathBuf>
 mod tests {
     #![allow(clippy::expect_used)]
 
-    use super::{parse_git_source, resolve_apply_source};
+    use super::{normalize_relative_subdir, parse_git_source, resolve_apply_source};
 
     #[test]
     fn local_paths_remain_local_sources() {
@@ -307,7 +332,7 @@ mod tests {
     #[test]
     fn rejects_file_scheme_sources() {
         let error =
-            parse_git_source("file:///tmp/repo//manifests").expect_err("must reject file URLs");
+            parse_git_source("file:///tmp/repo/manifests").expect_err("must reject file URLs");
         assert!(
             error
                 .to_string()
@@ -317,36 +342,104 @@ mod tests {
 
     #[test]
     fn rejects_authenticated_sources() {
-        let error = parse_git_source("https://user:pass@example.com/repo.git//manifests")
+        let error = parse_git_source("https://user:pass@example.com/repo.git/manifests")
             .expect_err("must reject authenticated URLs");
-        assert!(
-            error
-                .to_string()
-                .contains("authenticated repository URLs are not supported")
-        );
+        assert!(error.to_string().contains("passwords are not supported"));
     }
 
     #[test]
-    fn parses_canonical_source_subdir_and_ref() {
-        let parsed = parse_git_source("https://example.com/repo.git//manifests/dev?ref=main")
-            .expect("parse canonical source");
+    fn parses_remote_source_subdir_with_main_ref() {
+        let parsed =
+            parse_git_source("https://example.com/repo.git/manifests/dev").expect("parse source");
         assert_eq!(parsed.repo_url.as_str(), "https://example.com/repo.git");
         assert_eq!(parsed.subdir, std::path::PathBuf::from("manifests/dev"));
-        assert_eq!(parsed.reference.as_deref(), Some("main"));
+        assert_eq!(parsed.reference, "main");
+    }
+
+    #[test]
+    fn parses_https_owner_repo_without_subdir() {
+        let parsed = parse_git_source("https://github.com/icepuma/dotfiles")
+            .expect("parse owner/repo source");
+        assert_eq!(
+            parsed.repo_url.as_str(),
+            "https://github.com/icepuma/dotfiles"
+        );
+        assert_eq!(parsed.subdir, std::path::PathBuf::new());
+        assert_eq!(parsed.reference, "main");
     }
 
     #[test]
     fn parses_git_scheme_compatibility_source() {
         let parsed =
-            parse_git_source("git://example.com/repo/manifests").expect("parse git source");
-        assert_eq!(parsed.repo_url.as_str(), "git://example.com/repo");
+            parse_git_source("git://example.com/repo.git/manifests").expect("parse git source");
+        assert_eq!(parsed.repo_url.as_str(), "git://example.com/repo.git");
         assert_eq!(parsed.subdir, std::path::PathBuf::from("manifests"));
     }
 
     #[test]
-    fn rejects_subdir_traversal() {
-        let error = parse_git_source("https://example.com/repo.git//../manifests")
-            .expect_err("must reject traversal");
+    fn parses_git_owner_repo_without_subdir() {
+        let parsed =
+            parse_git_source("git://github.com/icepuma/dotfiles").expect("parse owner/repo source");
+        assert_eq!(
+            parsed.repo_url.as_str(),
+            "git://github.com/icepuma/dotfiles"
+        );
+        assert_eq!(parsed.subdir, std::path::PathBuf::new());
+        assert_eq!(parsed.reference, "main");
+    }
+
+    #[test]
+    fn parses_scp_style_owner_repo_without_subdir() {
+        let parsed =
+            parse_git_source("git@github.com:icepuma/dotfiles.git").expect("parse scp source");
+        assert_eq!(
+            parsed.repo_url.as_str(),
+            "ssh://git@github.com/icepuma/dotfiles.git"
+        );
+        assert_eq!(parsed.subdir, std::path::PathBuf::new());
+        assert_eq!(parsed.reference, "main");
+    }
+
+    #[test]
+    fn parses_scp_style_with_subdir() {
+        let parsed = parse_git_source("git@github.com:icepuma/dotfiles.git/manifests")
+            .expect("parse scp source with subdir");
+        assert_eq!(
+            parsed.repo_url.as_str(),
+            "ssh://git@github.com/icepuma/dotfiles.git"
+        );
+        assert_eq!(parsed.subdir, std::path::PathBuf::from("manifests"));
+        assert_eq!(parsed.reference, "main");
+    }
+
+    #[test]
+    fn rejects_legacy_double_slash_delimiter() {
+        let error = parse_git_source("https://example.com/repo.git//manifests")
+            .expect_err("must reject legacy delimiter");
+        assert!(error.to_string().contains("\"//\" subdirectory delimiter"));
+    }
+
+    #[test]
+    fn rejects_query_parameters() {
+        let error = parse_git_source("https://example.com/repo.git/manifests?ref=dev")
+            .expect_err("must reject query params");
+        assert!(error.to_string().contains("always checks out ref \"main\""));
+    }
+
+    #[test]
+    fn rejects_http_scheme_sources() {
+        let error = parse_git_source("http://example.com/repo.git/manifests")
+            .expect_err("must reject http URLs");
+        assert!(
+            error
+                .to_string()
+                .contains("http:// repositories are not supported")
+        );
+    }
+
+    #[test]
+    fn normalize_relative_subdir_rejects_traversal() {
+        let error = normalize_relative_subdir("../manifests").expect_err("must reject traversal");
         assert!(
             error
                 .to_string()
