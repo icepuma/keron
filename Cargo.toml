@@ -12,6 +12,7 @@ members = [
   "crates/keron-domain",
   "crates/keron-engine",
   "crates/keron-report",
+  "crates/keron-source",
 ]
 resolver = "3"
 default-members = ["crates/keron"]
@@ -35,6 +36,8 @@ which = "=8.0.0"
 walkdir = "=2.5.0"
 sha2 = "=0.10.9"
 tempfile = "=3.25.0"
+gix = { version = "=0.78.0", default-features = false }
+url = "=2.5.8"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

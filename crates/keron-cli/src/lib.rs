@@ -4,7 +4,6 @@
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::io::IsTerminal;
-use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use clap::error::ErrorKind;
@@ -16,6 +15,7 @@ use keron_engine::{
 use keron_report::{
     ColorChoice, OutputFormat, RenderOptions, redact_sensitive, render_apply, render_plan,
 };
+use keron_source::resolve_apply_source;
 use minus::{ExitStrategy, Pager, page_all};
 
 #[derive(Debug, Parser)]
@@ -28,7 +28,7 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Commands {
     Apply {
-        folder: PathBuf,
+        source: String,
         #[command(flatten)]
         render: RenderFlags,
         #[arg(long, value_enum, default_value_t = FormatArg::Text)]
@@ -62,12 +62,12 @@ struct RenderFlags {
 }
 
 impl RenderFlags {
-    fn render_options(&self, folder: &Path) -> RenderOptions {
+    fn render_options(&self, target: &str) -> RenderOptions {
         RenderOptions {
             color: self.color.into(),
             verbose: self.verbose,
             hints: !self.no_hints,
-            target: Some(folder.display().to_string()),
+            target: Some(target.to_string()),
         }
     }
 }
@@ -120,13 +120,15 @@ where
 
     match cli.command {
         Commands::Apply {
-            folder,
+            source,
             render,
             format,
             execute,
         } => {
-            let (report, sensitive_values) = build_plan_for_folder(&folder, &providers)?;
-            let render_options = render.render_options(&folder);
+            let resolved = resolve_apply_source(&source)?;
+            let (report, sensitive_values) =
+                build_plan_for_folder(&resolved.manifest_root, &providers)?;
+            let render_options = render.render_options(&resolved.display_target);
             let output_format: OutputFormat = format.into();
             if report.has_errors() {
                 let rendered = render_plan(&report, output_format, &render_options)?;

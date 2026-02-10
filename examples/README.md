@@ -31,7 +31,7 @@ cargo run -- apply examples/template
 cargo run -- apply examples/packages
 ```
 
-`packages({...}, opts)` expands into multiple package operations. `apply` depends on
+`packages("manager", {...}, opts)` expands into multiple package operations. `apply` depends on
 the matching package manager being available on your host.
 
 ## Complex Multi-Manifest

@@ -31,8 +31,7 @@ fn collects_declarative_state_from_lua() {
     let script = r#"
 depends_on("./base.lua")
 link("files/zshrc", "__DEST__", { mkdirs = true })
-package("git", { provider = "brew", state = "present" })
-packages({ "fd", "ripgrep" }, { provider = "brew" })
+packages("brew", { "git", "fd", "ripgrep" }, { state = "present" })
 cmd("echo", { "hello" })
 "#
     .replace("__DEST__", &lua_escape(&dest));
@@ -70,6 +69,51 @@ fn pkg_alias_is_not_supported() {
     let error = evaluate_manifest(&manifest).expect_err("pkg should fail");
     assert!(
         error.to_string().contains("pkg"),
+        "unexpected error: {error:#}"
+    );
+}
+
+#[test]
+fn package_function_is_removed() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let manifest = temp.path().join("main.lua");
+    fs::write(&manifest, r#"package("git", { state = "present" })"#).expect("write manifest");
+
+    let error = evaluate_manifest(&manifest).expect_err("package should fail");
+    assert!(
+        error.to_string().contains("package(...) is removed"),
+        "unexpected error: {error:#}"
+    );
+}
+
+#[test]
+fn packages_requires_explicit_manager_first_arg() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let manifest = temp.path().join("main.lua");
+    fs::write(&manifest, r#"packages({ "git" }, { state = "present" })"#).expect("write manifest");
+
+    let error = evaluate_manifest(&manifest).expect_err("packages should fail");
+    assert!(
+        error
+            .to_string()
+            .contains("requires an explicit manager as first argument"),
+        "unexpected error: {error:#}"
+    );
+}
+
+#[test]
+fn packages_rejects_legacy_provider_option() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let manifest = temp.path().join("main.lua");
+    fs::write(
+        &manifest,
+        r#"packages("brew", { "git" }, { provider = "brew", state = "present" })"#,
+    )
+    .expect("write manifest");
+
+    let error = evaluate_manifest(&manifest).expect_err("packages should fail");
+    assert!(
+        error.to_string().contains("provider option is removed"),
         "unexpected error: {error:#}"
     );
 }

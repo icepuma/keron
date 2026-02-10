@@ -1,4 +1,4 @@
 -- Expand list-based package declarations.
-packages({ "git", "ripgrep", "fd" }, {
+packages("brew", { "git", "ripgrep", "fd" }, {
   state = "present"
 })

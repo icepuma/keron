@@ -83,6 +83,17 @@ fn parse_string_map(opts: Option<&Table>, key: &str) -> LuaResult<BTreeMap<Strin
     }
 }
 
+fn parse_package_state(opts: Option<&Table>) -> LuaResult<PackageState> {
+    match parse_string(opts, "state")? {
+        Some(value) if value == "present" => Ok(PackageState::Present),
+        Some(value) if value == "absent" => Ok(PackageState::Absent),
+        Some(value) => Err(LuaError::RuntimeError(format!(
+            "package state must be 'present' or 'absent', got: {value}"
+        ))),
+        None => Ok(PackageState::Present),
+    }
+}
+
 fn add_link(
     collector: &Rc<RefCell<ManifestSpec>>,
     manifest_dir: &Path,
@@ -108,40 +119,26 @@ fn add_link(
     Ok(())
 }
 
-fn add_package(
-    collector: &Rc<RefCell<ManifestSpec>>,
-    name: &str,
-    opts: Option<&Table>,
-) -> LuaResult<()> {
-    let state = match parse_string(opts, "state")? {
-        Some(value) if value == "present" => PackageState::Present,
-        Some(value) if value == "absent" => PackageState::Absent,
-        Some(value) => {
-            return Err(LuaError::RuntimeError(format!(
-                "package state must be 'present' or 'absent', got: {value}"
-            )));
-        }
-        None => PackageState::Present,
-    };
-
-    let package = PackageResource {
-        name: name.to_string(),
-        provider_hint: parse_string(opts, "provider")?,
-        state,
-    };
-
-    collector
-        .borrow_mut()
-        .resources
-        .push(Resource::Package(package));
-    Ok(())
-}
-
 fn add_packages(
     collector: &Rc<RefCell<ManifestSpec>>,
+    manager: &str,
     names: &Table,
     opts: Option<&Table>,
 ) -> LuaResult<()> {
+    if manager.trim().is_empty() {
+        return Err(LuaError::RuntimeError(
+            "packages(manager, names, opts?) requires a non-empty manager string".to_string(),
+        ));
+    }
+
+    if parse_string(opts, "provider")?.is_some() {
+        return Err(LuaError::RuntimeError(
+            "provider option is removed; use packages(\"<manager>\", {\"name\"}, { state = \"present\" })".to_string(),
+        ));
+    }
+
+    let state = parse_package_state(opts)?;
+    let mut package_count = 0usize;
     for value in names.sequence_values::<Value>() {
         let value = value?;
         let Value::String(text) = value else {
@@ -149,9 +146,24 @@ fn add_packages(
                 "packages list must contain only strings".to_string(),
             ));
         };
-        let package_name = text.to_str()?;
-        add_package(collector, package_name.as_ref(), opts)?;
+        package_count += 1;
+        let package_name = text.to_str()?.to_owned();
+        collector
+            .borrow_mut()
+            .resources
+            .push(Resource::Package(PackageResource {
+                name: package_name,
+                provider_hint: Some(manager.to_string()),
+                state,
+            }));
     }
+
+    if package_count == 0 {
+        return Err(LuaError::RuntimeError(
+            "packages(manager, names, opts?) requires at least one package name".to_string(),
+        ));
+    }
+
     Ok(())
 }
 
@@ -350,17 +362,77 @@ fn evaluate_manifest_with_lua(
     }
 
     {
-        let collector = Rc::clone(&collector);
-        let function = lua.create_function(move |_, (name, opts): (String, Option<Table>)| {
-            add_package(&collector, &name, opts.as_ref())
+        let function = lua.create_function(move |_, _: MultiValue| {
+            Err::<(), _>(LuaError::RuntimeError(
+                "package(...) is removed; use packages(\"<manager>\", {\"name\"}, { state = \"present\" })".to_string(),
+            ))
         })?;
         globals.set("package", function)?;
     }
 
     {
         let collector = Rc::clone(&collector);
-        let function = lua.create_function(move |_, (names, opts): (Table, Option<Table>)| {
-            add_packages(&collector, &names, opts.as_ref())
+        let function = lua.create_function(move |_, args: MultiValue| {
+            match args.len() {
+                2 | 3 => {}
+                _ => {
+                    return Err(LuaError::RuntimeError(
+                        "packages(manager, names, opts?) expects 2 or 3 arguments".to_string(),
+                    ));
+                }
+            }
+
+            let Some(first) = args.front() else {
+                return Err(LuaError::RuntimeError(
+                    "packages(manager, names, opts?) expects manager string as first argument"
+                        .to_string(),
+                ));
+            };
+            let Some(second) = args.get(1) else {
+                return Err(LuaError::RuntimeError(
+                    "packages(manager, names, opts?) expects package name list as second argument"
+                        .to_string(),
+                ));
+            };
+
+            let manager = match first {
+                Value::String(value) => value.to_str()?.to_owned(),
+                Value::Table(_) => {
+                    return Err(LuaError::RuntimeError(
+                        "packages(...) now requires an explicit manager as first argument; use packages(\"<manager>\", {\"name\"}, opts)".to_string(),
+                    ));
+                }
+                _ => {
+                    return Err(LuaError::RuntimeError(
+                        "packages(manager, names, opts?) expects manager string as first argument"
+                            .to_string(),
+                    ));
+                }
+            };
+
+            let Value::Table(names) = second else {
+                return Err(LuaError::RuntimeError(
+                    "packages(manager, names, opts?) expects package name list as second argument"
+                        .to_string(),
+                ));
+            };
+
+            let opts = if let Some(third) = args.get(2) {
+                match third {
+                    Value::Nil => None,
+                    Value::Table(table) => Some(table),
+                    _ => {
+                        return Err(LuaError::RuntimeError(
+                            "packages(manager, names, opts?) expects options table as third argument"
+                                .to_string(),
+                        ));
+                    }
+                }
+            } else {
+                None
+            };
+
+            add_packages(&collector, &manager, names, opts)
         })?;
         globals.set("packages", function)?;
     }

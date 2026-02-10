@@ -2,10 +2,7 @@
 depends_on("./base.lua")
 depends_on("./dev.lua")
 
-packages({ "git", "ripgrep", "fd" }, {
-  state = "present"
-})
-package("jq", {
+packages("brew", { "git", "ripgrep", "fd", "jq" }, {
   state = "present"
 })
 

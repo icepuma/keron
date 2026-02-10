@@ -1,87 +1,118 @@
 # keron
 
-A [keron](https://stargate.fandom.com/wiki/Keron) an energy particle and part of the individual building blocks of [Replicators](https://stargate.fandom.com/wiki/Replicator) in the Stargate universe.
+Keron is a dotfile manager powered by Lua manifests (`*.lua`).
 
-Keron is an opinionated dotfile manager powered by Lua manifests (`*.lua`).
+## Quick Start
 
-## Status
+From the repo root:
 
-This repository is now a Rust workspace with multiple crates:
+```bash
+cargo run -- apply examples/simple
+cargo run -- apply examples/simple --execute
+```
 
-- `keron` binary (`crates/keron`)
-- `keron-cli`
-- `keron-domain`
-- `keron-engine`
-- `keron-report`
-- `keron-e2e`
+Use `apply` without `--execute` for a dry run.
 
-Dependency direction is intentionally one-way:
+## Apply Sources
 
-- `keron` -> `keron-cli`
-- `keron-cli` -> `keron-engine` + `keron-report`
-- `keron-engine` / `keron-report` -> `keron-domain`
+`keron apply <source>` accepts either:
 
-See `ARCHITECTURE.md` for crate-boundary rules.
+- a local manifest directory
+- a public Git repository source
 
-## Commands
+Examples:
 
 ```bash
 cargo run -- apply /path/to/manifests
-```
-
-The command accepts `--format text|json`.
-
-Text output controls:
-
-- `--color auto|always|never` (default: `auto`)
-- `--verbose` (show execution order and per-op manifest details)
-- `--no-hints` (suppress hint lines in text output)
-
-## Security Model
-
-- Treat manifests as trusted code.
-- `cmd(...)` runs host commands.
-- `env(name)` and `secret(uri)` can read sensitive host data.
-- `--execute` applies filesystem mutations.
-- `force=true` may replace and remove existing paths at destinations.
-- Do not run untrusted manifests.
-
-## Manifest DSL (Lua)
-
-Manifests are discovered recursively by file extension: `*.lua`.
-
-```lua
-depends_on("../base.lua")
-link("files/zshrc", "/home/me/.zshrc", { mkdirs = true, force = false })
-package("git", { provider = "brew", state = "present" })
-packages({ "fd", "ripgrep" }, { provider = "brew", state = "present" })
-template("files/starship.toml.tmpl", "/home/me/.config/starship.toml", {
-  mkdirs = true,
-  force = true,
-  vars = { username = "me", shell = "/bin/zsh" }
-})
-cmd("echo", { "configured" })
-cmd("echo", { "user=" .. env("USER") })
+cargo run -- apply https://github.com/org/repo.git//manifests
+cargo run -- apply https://github.com/org/repo.git//manifests?ref=main
 ```
 
 Notes:
 
-- `depends_on` paths are relative to the manifest file.
-- `link` source paths are relative to the manifest file.
-- `link` destination must be absolute.
-- `template` uses Tera templating with `vars` as context.
-- `package` manages package state (`present` by default).
-- `packages` is a list form of `package` with shared options.
-- `env(name)` reads from process environment.
-- Missing `env(...)` variables fail manifest evaluation.
+- canonical remote format: `<repo-url>//<manifest-subdir>?ref=<branch-or-tag>`
+- remote repos are cloned into a temporary directory and cleaned up after the run
+- only public network repos are supported (`https://`, `http://`, `git://`)
+- `file://` sources are rejected
+
+## Manifest Basics
+
+Keron discovers manifests recursively by `*.lua`.
+
+```lua
+depends_on("../base.lua")
+
+link("files/zshrc", "/home/me/.zshrc", {
+  mkdirs = true,
+  force = false,
+})
+
+packages("brew", { "git", "fd", "ripgrep" }, {
+  state = "present",
+})
+
+template("files/starship.toml.tmpl", "/home/me/.config/starship.toml", {
+  mkdirs = true,
+  force = true,
+  vars = {
+    username = "me",
+    shell = "/bin/zsh",
+  },
+})
+
+cmd("echo", { "configured for " .. env("USER") })
+```
+
+## DSL Reference
+
+- `depends_on(path)`
+  - declares manifest ordering
+  - `path` is relative to the current manifest
+- `link(src, dest, opts)`
+  - links `src` to `dest`
+  - `src` is relative to the manifest
+  - `dest` must be absolute
+  - common opts: `mkdirs`, `force`
+- `template(src, dest, opts)`
+  - renders a Tera template file to `dest`
+  - use `opts.vars` for template variables
+  - common opts: `mkdirs`, `force`
+- `packages(manager, names, opts)`
+  - installs/removes packages through an explicit package manager (for example `"brew"`)
+  - `opts.state` is `"present"` by default
+  - singular `package(...)` is not supported
+- `cmd(program, args)`
+  - runs a command in apply order
+- `env(name)`
+  - reads an environment variable
+  - missing variables fail manifest evaluation
+- `secret(uri)`
+  - reads secret values through configured secret providers
+- `is_macos()`, `is_linux()`, `is_windows()`
+  - OS guards for conditional resources
+
+## Output Flags
+
+- `--execute`
+- `--format text|json`
+- `--color auto|always|never`
+- `--verbose`
+- `--no-hints`
+
+## Safety
+
+- Treat manifests as trusted code.
+- `cmd(...)` executes host commands.
+- `env(...)` and `secret(...)` may expose sensitive values.
+- `force=true` may overwrite existing paths.
 
 ## Examples
 
-See `examples/README.md` for runnable manifest sets, including:
+See `examples/README.md` for runnable manifest sets:
 
-- a minimal manifest (`examples/simple`)
-- dependency-ordered manifests (`examples/dependency`)
-- template rendering (`examples/template`)
-- package lists (`examples/packages`)
-- a complex multi-manifest setup (`examples/complex`)
-- an intentionally invalid cycle (`examples/invalid-cycle`)
+- `examples/simple`
+- `examples/dependency`
+- `examples/template`
+- `examples/packages`
+- `examples/complex`
+- `examples/invalid-cycle`
