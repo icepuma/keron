@@ -37,7 +37,6 @@ fn base_options() -> RenderOptions {
     RenderOptions {
         color: ColorChoice::Never,
         verbose: false,
-        hints: true,
         target: Some("examples/complex".to_string()),
     }
 }
@@ -46,7 +45,6 @@ fn verbose_options() -> RenderOptions {
     RenderOptions {
         color: ColorChoice::Never,
         verbose: true,
-        hints: true,
         target: Some("examples/complex".to_string()),
     }
 }
@@ -279,47 +277,6 @@ fn plan_conflict_shows_hint() {
     assert!(text.contains("! conflict /tmp/src"));
     assert!(!text.contains("! conflict      /tmp/src"));
     assert!(text.contains("set force=true or remove destination manually"));
-}
-
-#[test]
-fn plan_no_hints_flag() {
-    let mut report = make_report();
-    let mut op = link_op(1, PlanAction::LinkConflict, "/tmp/src", "/tmp/dest");
-    op.error = None;
-    op.hint = Some("set force=true".to_string());
-    report.operations = vec![op];
-
-    let options = RenderOptions {
-        color: ColorChoice::Never,
-        verbose: true,
-        hints: false,
-        target: None,
-    };
-
-    let text = render_plan(&report, OutputFormat::Text, &options).expect("render should succeed");
-
-    assert!(text.contains("base.lua"));
-    assert!(!text.contains("set force=true"));
-}
-
-#[test]
-fn plan_no_hints_flag_non_verbose_conflict() {
-    let mut report = make_report();
-    let mut op = link_op(1, PlanAction::LinkConflict, "/tmp/src", "/tmp/dest");
-    op.error = None;
-    op.hint = Some("set force=true".to_string());
-    report.operations = vec![op];
-
-    let options = RenderOptions {
-        color: ColorChoice::Never,
-        verbose: false,
-        hints: false,
-        target: None,
-    };
-
-    let text = render_plan(&report, OutputFormat::Text, &options).expect("render should succeed");
-
-    assert!(!text.contains("set force=true"));
 }
 
 #[test]

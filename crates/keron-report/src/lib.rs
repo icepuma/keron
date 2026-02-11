@@ -246,9 +246,7 @@ fn append_plan_op_line(
         }
     }
 
-    if options.hints
-        && let Some(hint) = &op.hint
-    {
+    if let Some(hint) = &op.hint {
         let rendered_hint = render_warning(hint, options.verbose);
         let _ = writeln!(output, "    {} {rendered_hint}", style.warn_prefix("warn:"));
     }

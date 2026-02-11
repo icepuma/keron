@@ -60,8 +60,6 @@ struct RenderFlags {
     color: ColorArg,
     #[arg(long)]
     verbose: bool,
-    #[arg(long)]
-    no_hints: bool,
 }
 
 impl RenderFlags {
@@ -69,7 +67,6 @@ impl RenderFlags {
         RenderOptions {
             color: self.color.into(),
             verbose: self.verbose,
-            hints: !self.no_hints,
             target: Some(target.to_string()),
         }
     }

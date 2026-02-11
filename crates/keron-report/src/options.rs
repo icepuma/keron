@@ -15,7 +15,6 @@ pub enum ColorChoice {
 pub struct RenderOptions {
     pub color: ColorChoice,
     pub verbose: bool,
-    pub hints: bool,
     pub target: Option<String>,
 }
 
@@ -24,7 +23,6 @@ impl Default for RenderOptions {
         Self {
             color: ColorChoice::Auto,
             verbose: false,
-            hints: true,
             target: None,
         }
     }

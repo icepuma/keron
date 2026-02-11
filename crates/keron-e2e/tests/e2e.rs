@@ -107,10 +107,7 @@ fn apply_supports_render_flags() {
     );
     write_file(&manifest, &script);
 
-    let output = run_apply(
-        temp.path(),
-        &["--color", "never", "--verbose", "--no-hints"],
-    );
+    let output = run_apply(temp.path(), &["--color", "never", "--verbose"]);
     assert_eq!(exit_code(&output), 1, "apply should still report drift");
 }
 
