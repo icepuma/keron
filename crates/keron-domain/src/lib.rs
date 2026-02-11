@@ -225,7 +225,7 @@ pub struct ManifestPath(PathBuf);
 
 impl ManifestPath {
     #[must_use]
-    pub fn new(path: PathBuf) -> Self {
+    pub const fn new(path: PathBuf) -> Self {
         Self(path)
     }
 
@@ -290,7 +290,7 @@ pub struct ManifestId {
 
 impl ManifestId {
     #[must_use]
-    pub fn new(path: PathBuf) -> Self {
+    pub const fn new(path: PathBuf) -> Self {
         Self {
             path: ManifestPath::new(path),
         }
@@ -306,7 +306,7 @@ pub struct ManifestSpec {
 
 impl ManifestSpec {
     #[must_use]
-    pub fn new(path: PathBuf) -> Self {
+    pub const fn new(path: PathBuf) -> Self {
         Self {
             id: ManifestId::new(path),
             dependencies: Vec::new(),

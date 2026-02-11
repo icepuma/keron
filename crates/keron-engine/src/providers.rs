@@ -42,7 +42,7 @@ impl ProviderSnapshot {
     }
 
     #[must_use]
-    pub fn any_available(&self) -> bool {
+    pub const fn any_available(&self) -> bool {
         self.default_available.is_some()
     }
 }

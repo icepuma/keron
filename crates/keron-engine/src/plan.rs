@@ -58,7 +58,7 @@ struct OperationContext {
 }
 
 impl OperationContext {
-    fn new(id: usize, manifest_path: PathBuf, resource: Resource) -> Self {
+    const fn new(id: usize, manifest_path: PathBuf, resource: Resource) -> Self {
         Self {
             id,
             manifest_path,
@@ -854,7 +854,7 @@ fn package_action_and_summary(
     }
 }
 
-fn desired_package_action(state: PackageState) -> PlanAction {
+const fn desired_package_action(state: PackageState) -> PlanAction {
     match state {
         PackageState::Present => PlanAction::PackageInstall,
         PackageState::Absent => PlanAction::PackageRemove,
