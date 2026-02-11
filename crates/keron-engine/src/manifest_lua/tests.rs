@@ -5,6 +5,7 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use keron_domain::{PackageState, Resource};
+use mlua::Table;
 
 use super::evaluate_manifest;
 
@@ -31,7 +32,7 @@ fn collects_declarative_state_from_lua() {
     let script = r#"
 depends_on("./base.lua")
 link("files/zshrc", "__DEST__", { mkdirs = true })
-packages("brew", { "git", "fd", "ripgrep" }, { state = "present" })
+install_packages("brew", { "git", "fd", "ripgrep" }, { state = "present" })
 cmd("echo", { "hello" })
 "#
     .replace("__DEST__", &lua_escape(&dest));
@@ -44,7 +45,7 @@ cmd("echo", { "hello" })
 
     match &spec.resources[1] {
         Resource::Package(package) => {
-            assert_eq!(package.name, "git");
+            assert_eq!(package.name.as_str(), "git");
             assert_eq!(package.provider_hint.as_deref(), Some("brew"));
             assert_eq!(package.state, PackageState::Present);
         }
@@ -53,7 +54,7 @@ cmd("echo", { "hello" })
 
     match &spec.resources[2] {
         Resource::Package(package) => {
-            assert_eq!(package.name, "fd");
+            assert_eq!(package.name.as_str(), "fd");
             assert_eq!(package.provider_hint.as_deref(), Some("brew"));
         }
         _ => unreachable!("expected package resource"),
@@ -74,25 +75,46 @@ fn pkg_alias_is_not_supported() {
 }
 
 #[test]
-fn package_function_is_removed() {
+fn package_function_is_not_defined() {
     let temp = tempfile::tempdir().expect("tempdir");
     let manifest = temp.path().join("main.lua");
     fs::write(&manifest, r#"package("git", { state = "present" })"#).expect("write manifest");
 
     let error = evaluate_manifest(&manifest).expect_err("package should fail");
     assert!(
-        error.to_string().contains("package(...) is removed"),
+        error.to_string().contains("attempt to call a nil value"),
         "unexpected error: {error:#}"
     );
 }
 
 #[test]
-fn packages_requires_explicit_manager_first_arg() {
+fn packages_function_is_not_defined() {
     let temp = tempfile::tempdir().expect("tempdir");
     let manifest = temp.path().join("main.lua");
-    fs::write(&manifest, r#"packages({ "git" }, { state = "present" })"#).expect("write manifest");
+    fs::write(
+        &manifest,
+        r#"packages("brew", { "git" }, { state = "present" })"#,
+    )
+    .expect("write manifest");
 
     let error = evaluate_manifest(&manifest).expect_err("packages should fail");
+    assert!(
+        error.to_string().contains("attempt to call a nil value"),
+        "unexpected error: {error:#}"
+    );
+}
+
+#[test]
+fn install_packages_requires_explicit_manager_first_arg() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let manifest = temp.path().join("main.lua");
+    fs::write(
+        &manifest,
+        r#"install_packages({ "git" }, { state = "present" })"#,
+    )
+    .expect("write manifest");
+
+    let error = evaluate_manifest(&manifest).expect_err("install_packages should fail");
     assert!(
         error
             .to_string()
@@ -102,16 +124,16 @@ fn packages_requires_explicit_manager_first_arg() {
 }
 
 #[test]
-fn packages_rejects_legacy_provider_option() {
+fn install_packages_rejects_legacy_provider_option() {
     let temp = tempfile::tempdir().expect("tempdir");
     let manifest = temp.path().join("main.lua");
     fs::write(
         &manifest,
-        r#"packages("brew", { "git" }, { provider = "brew", state = "present" })"#,
+        r#"install_packages("brew", { "git" }, { provider = "brew", state = "present" })"#,
     )
     .expect("write manifest");
 
-    let error = evaluate_manifest(&manifest).expect_err("packages should fail");
+    let error = evaluate_manifest(&manifest).expect_err("install_packages should fail");
     assert!(
         error.to_string().contains("provider option is removed"),
         "unexpected error: {error:#}"
@@ -123,6 +145,16 @@ fn uses_lua_5_4_runtime() {
     let lua = super::create_lua().expect("lua runtime");
     let version: String = lua.globals().get("_VERSION").expect("lua version");
     assert!(version.contains("Lua 5.4"), "unexpected version: {version}");
+}
+
+#[test]
+fn exposes_global_home_from_dirs() {
+    let lua = super::create_lua().expect("lua runtime");
+    let globals = lua.globals();
+    let global: Table = globals.get("global").expect("global table");
+    let home: Option<String> = global.get("HOME").expect("global.HOME");
+    let expected = dirs::home_dir().map(|path| path.to_string_lossy().into_owned());
+    assert_eq!(home, expected);
 }
 
 #[test]
@@ -156,7 +188,7 @@ template("{}", "{}", {{
     match &spec.resources[0] {
         Resource::Template(template) => {
             assert_eq!(template.src, src);
-            assert_eq!(template.dest, dest);
+            assert_eq!(template.dest.as_path(), dest.as_path());
             assert_eq!(template.vars.get("name").map(String::as_str), Some("keron"));
             assert!(template.force);
             assert!(template.mkdirs);
@@ -305,20 +337,23 @@ fn parse_secret_uri_bw_default_field() {
 fn parse_secret_uri_pp_scheme() {
     let provider = crate::secrets::parse_secret_uri("pp://v/i/f").expect("parse");
     assert_eq!(provider.binary, "pass-cli");
-    assert_eq!(provider.args, vec!["view", "pass://v/i/f"]);
+    assert_eq!(provider.args, vec!["item", "view", "pass://v/i/f"]);
 }
 
 #[test]
 fn parse_secret_uri_rejects_missing_scheme() {
     let error = crate::secrets::parse_secret_uri("just-a-string").expect_err("should fail");
-    assert!(error.contains("invalid URI"), "unexpected error: {error}");
+    assert!(
+        error.to_string().contains("invalid URI"),
+        "unexpected error: {error}"
+    );
 }
 
 #[test]
 fn parse_secret_uri_rejects_unknown_scheme() {
     let error = crate::secrets::parse_secret_uri("vault://foo").expect_err("should fail");
     assert!(
-        error.contains("unsupported scheme"),
+        error.to_string().contains("unsupported scheme"),
         "unexpected error: {error}"
     );
 }
@@ -326,13 +361,19 @@ fn parse_secret_uri_rejects_unknown_scheme() {
 #[test]
 fn parse_secret_uri_bw_rejects_empty_item() {
     let error = crate::secrets::parse_secret_uri("bw:///field").expect_err("should fail");
-    assert!(error.contains("bw://"), "unexpected error: {error}");
+    assert!(
+        error.to_string().contains("bw://"),
+        "unexpected error: {error}"
+    );
 }
 
 #[test]
 fn parse_secret_uri_pp_requires_full_path() {
     let error = crate::secrets::parse_secret_uri("pp://vault/item").expect_err("should fail");
-    assert!(error.contains("pp://"), "unexpected error: {error}");
+    assert!(
+        error.to_string().contains("pp://"),
+        "unexpected error: {error}"
+    );
 }
 
 // --- secret() integration tests ---

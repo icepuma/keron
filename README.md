@@ -58,7 +58,7 @@ link("files/zshrc", "/home/me/.zshrc", {
   force = false,
 })
 
-packages("brew", { "git", "fd", "ripgrep" }, {
+install_packages("brew", { "git", "fd", "ripgrep" }, {
   state = "present",
 })
 
@@ -88,15 +88,17 @@ cmd("echo", { "configured for " .. env("USER") })
   - renders a Tera template file to `dest`
   - use `opts.vars` for template variables
   - common opts: `mkdirs`, `force`
-- `packages(manager, names, opts)`
+- `install_packages(manager, names, opts)`
   - installs/removes packages through an explicit package manager (for example `"brew"`)
   - `opts.state` is `"present"` by default
-  - singular `package(...)` is not supported
+  - legacy `package(...)` and `packages(...)` are not supported
 - `cmd(program, args)`
   - runs a command in apply order
 - `env(name)`
   - reads an environment variable
   - missing variables fail manifest evaluation
+- `global.HOME`
+  - home directory resolved via `dirs::home_dir()` (XDG-style home location)
 - `secret(uri)`
   - reads secret values through configured secret providers
 - `is_macos()`, `is_linux()`, `is_windows()`
@@ -124,6 +126,7 @@ See `examples/README.md` for runnable manifest sets:
 - `examples/simple`
 - `examples/dependency`
 - `examples/template`
+- `examples/proton-pass`
 - `examples/packages`
 - `examples/complex`
 - `examples/invalid-cycle`

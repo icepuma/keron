@@ -1,21 +1,29 @@
 use std::path::Path;
 use std::process::Command;
 
+use crate::error::SecretError;
+
 #[derive(Debug)]
 pub struct SecretProvider {
     pub binary: &'static str,
     pub args: Vec<String>,
 }
 
-pub fn parse_secret_uri(uri: &str) -> Result<SecretProvider, String> {
-    let (scheme, path) = uri
-        .split_once("://")
-        .ok_or_else(|| format!("invalid URI: expected scheme://path, got \"{uri}\""))?;
+pub fn parse_secret_uri(uri: &str) -> Result<SecretProvider, SecretError> {
+    let Some((scheme, path)) = uri.split_once("://") else {
+        return Err(SecretError::InvalidUri {
+            uri: uri.to_string(),
+        });
+    };
 
     match scheme {
         "op" => {
             if path.is_empty() {
-                return Err("op:// URI requires a path (e.g. op://vault/item/field)".to_string());
+                return Err(SecretError::InvalidSchemePath {
+                    scheme: "op",
+                    expected: "a path (e.g. op://vault/item/field)",
+                    uri: uri.to_string(),
+                });
             }
             Ok(SecretProvider {
                 binary: "op",
@@ -37,38 +45,41 @@ pub fn parse_secret_uri(uri: &str) -> Result<SecretProvider, String> {
                     binary: "bw",
                     args: vec!["get".to_string(), (*field).to_string(), (*item).to_string()],
                 }),
-                _ => Err(format!(
-                    "bw:// URI requires bw://item or bw://item/field, got \"{uri}\""
-                )),
+                _ => Err(SecretError::InvalidSchemePath {
+                    scheme: "bw",
+                    expected: "bw://item or bw://item/field",
+                    uri: uri.to_string(),
+                }),
             }
         }
         "pp" => {
             let parts: Vec<&str> = path.split('/').collect();
-            if parts.len() != 3 || parts.iter().any(|p| p.is_empty()) {
-                return Err(format!(
-                    "pp:// URI requires pp://vault/item/field, got \"{uri}\""
-                ));
+            if parts.len() != 3 || parts.iter().any(|part| part.is_empty()) {
+                return Err(SecretError::InvalidSchemePath {
+                    scheme: "pp",
+                    expected: "pp://vault/item/field",
+                    uri: uri.to_string(),
+                });
             }
             let pass_uri = format!("pass://{path}");
             Ok(SecretProvider {
                 binary: "pass-cli",
-                args: vec!["view".to_string(), pass_uri],
+                args: vec!["item".to_string(), "view".to_string(), pass_uri],
             })
         }
-        _ => Err(format!(
-            "unsupported scheme \"{scheme}\" in secret URI \"{uri}\""
-        )),
+        _ => Err(SecretError::UnsupportedScheme {
+            scheme: scheme.to_string(),
+            uri: uri.to_string(),
+        }),
     }
 }
 
-pub fn resolve_secret(uri: &str) -> Result<String, String> {
+pub fn resolve_secret(uri: &str) -> Result<String, SecretError> {
     let provider = parse_secret_uri(uri)?;
 
-    let resolved_path = which::which(provider.binary).map_err(|_| {
-        format!(
-            "secret(\"{uri}\") requires the \"{}\" CLI to be installed and on PATH",
-            provider.binary
-        )
+    let resolved_path = which::which(provider.binary).map_err(|_| SecretError::CliMissing {
+        uri: uri.to_string(),
+        binary: provider.binary,
     })?;
 
     run_secret_command(&resolved_path, provider.binary, &provider.args, uri)
@@ -79,23 +90,23 @@ fn run_secret_command(
     provider_binary: &str,
     args: &[String],
     uri: &str,
-) -> Result<String, String> {
+) -> Result<String, SecretError> {
     let output = Command::new(binary_path)
         .args(args)
         .output()
-        .map_err(|err| {
-            format!(
-                "failed to execute \"{provider_binary}\" ({}) for secret(\"{uri}\"): {err}",
-                binary_path.display()
-            )
+        .map_err(|source| SecretError::CommandSpawn {
+            provider_binary: provider_binary.to_string(),
+            binary_path: binary_path.to_path_buf(),
+            uri: uri.to_string(),
+            source,
         })?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!(
-            "\"{provider_binary}\" exited with {}: {stderr}",
-            output.status
-        ));
+        return Err(SecretError::CommandFailed {
+            provider_binary: provider_binary.to_string(),
+            status: output.status,
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        });
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
@@ -132,20 +143,23 @@ mod tests {
     fn parse_secret_uri_pp_scheme() {
         let provider = parse_secret_uri("pp://v/i/f").expect("parse");
         assert_eq!(provider.binary, "pass-cli");
-        assert_eq!(provider.args, vec!["view", "pass://v/i/f"]);
+        assert_eq!(provider.args, vec!["item", "view", "pass://v/i/f"]);
     }
 
     #[test]
     fn parse_secret_uri_rejects_missing_scheme() {
         let error = parse_secret_uri("just-a-string").expect_err("should fail");
-        assert!(error.contains("invalid URI"), "unexpected error: {error}");
+        assert!(
+            error.to_string().contains("invalid URI"),
+            "unexpected error: {error}"
+        );
     }
 
     #[test]
     fn parse_secret_uri_rejects_unknown_scheme() {
         let error = parse_secret_uri("vault://foo").expect_err("should fail");
         assert!(
-            error.contains("unsupported scheme"),
+            error.to_string().contains("unsupported scheme"),
             "unexpected error: {error}"
         );
     }
@@ -153,20 +167,26 @@ mod tests {
     #[test]
     fn parse_secret_uri_bw_rejects_empty_item() {
         let error = parse_secret_uri("bw:///field").expect_err("should fail");
-        assert!(error.contains("bw://"), "unexpected error: {error}");
+        assert!(
+            error.to_string().contains("bw://"),
+            "unexpected error: {error}"
+        );
     }
 
     #[test]
     fn parse_secret_uri_pp_requires_full_path() {
         let error = parse_secret_uri("pp://vault/item").expect_err("should fail");
-        assert!(error.contains("pp://"), "unexpected error: {error}");
+        assert!(
+            error.to_string().contains("pp://"),
+            "unexpected error: {error}"
+        );
     }
 
     #[test]
     fn resolve_secret_errors_when_cli_missing() {
         let error = resolve_secret("op://vault/item/field").expect_err("should fail");
         assert!(
-            error.contains("requires the \"op\" CLI"),
+            error.to_string().contains("requires the \"op\" CLI"),
             "unexpected error: {error}"
         );
     }

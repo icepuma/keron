@@ -25,13 +25,22 @@ cargo run -- apply examples/template
 cargo run -- apply examples/template
 ```
 
+## Proton Pass Template
+
+```bash
+cargo run -- apply examples/proton-pass
+```
+
+This renders a template with `secret("pp://Personal/test/username")`.
+It requires `pass-cli` to be installed and authenticated.
+
 ## Package Lists
 
 ```bash
 cargo run -- apply examples/packages
 ```
 
-`packages("manager", {...}, opts)` expands into multiple package operations. `apply` depends on
+`install_packages("manager", {...}, opts)` expands into multiple package operations. `apply` depends on
 the matching package manager being available on your host.
 
 ## Complex Multi-Manifest

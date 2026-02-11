@@ -9,9 +9,9 @@ publish = false
 workspace = true
 
 [dependencies]
-anyhow = { workspace = true }
 clap = { workspace = true }
 minus = { workspace = true }
+thiserror = { workspace = true }
 keron-engine = { path = "../keron-engine" }
 keron-report = { path = "../keron-report" }
 keron-source = { path = "../keron-source" }

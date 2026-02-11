@@ -5,7 +5,6 @@ use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::io::IsTerminal;
 
-use anyhow::Result;
 use clap::error::ErrorKind;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use keron_engine::{
@@ -17,6 +16,10 @@ use keron_report::{
 };
 use keron_source::resolve_apply_source;
 use minus::{ExitStrategy, Pager, page_all};
+
+mod error;
+
+pub use error::CliError;
 
 #[derive(Debug, Parser)]
 #[command(name = "keron", about = "Lua-based dotfile manager")]
@@ -97,11 +100,11 @@ impl From<ColorArg> for ColorChoice {
 ///
 /// Returns an error when argument parsing fails (excluding help/version) or command
 /// execution fails.
-pub fn run() -> Result<i32> {
+pub fn run() -> std::result::Result<i32, CliError> {
     run_from(std::env::args_os())
 }
 
-fn run_from<I, T>(args: I) -> Result<i32>
+fn run_from<I, T>(args: I) -> std::result::Result<i32, CliError>
 where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,

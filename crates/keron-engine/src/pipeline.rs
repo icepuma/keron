@@ -1,11 +1,10 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use anyhow::{Result, bail};
 use keron_domain::{PlanAction, PlanReport, Resource};
 
 use crate::{
-    ProviderRegistry, build_execution_order, build_plan, discover_manifests,
+    PipelineError, ProviderRegistry, build_execution_order, build_plan, discover_manifests,
     evaluate_many_with_warnings,
 };
 
@@ -17,13 +16,12 @@ use crate::{
 pub fn build_plan_for_folder(
     folder: &Path,
     providers: &ProviderRegistry,
-) -> Result<(PlanReport, BTreeSet<String>)> {
+) -> std::result::Result<(PlanReport, BTreeSet<String>), PipelineError> {
     let manifests = discover_manifests(folder)?;
     if manifests.is_empty() {
-        bail!(
-            "no manifests found under {} (expected files ending with .lua)",
-            folder.display()
-        );
+        return Err(PipelineError::NoManifests {
+            folder: folder.to_path_buf(),
+        });
     }
 
     let (specs, manifest_warnings, mut sensitive_values) = evaluate_many_with_warnings(&manifests)?;
@@ -62,14 +60,21 @@ pub fn has_potentially_destructive_forced_changes(report: &PlanReport) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
+
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
     use keron_domain::{
-        LinkResource, PlanAction, PlanReport, PlannedOperation, Resource, TemplateResource,
+        AbsolutePath, LinkResource, PlanAction, PlanReport, PlannedOperation, Resource,
+        TemplateResource,
     };
 
     use super::has_potentially_destructive_forced_changes;
+
+    fn abs(path: PathBuf) -> AbsolutePath {
+        AbsolutePath::try_from(path).expect("test path should be absolute")
+    }
 
     fn make_operation(action: PlanAction, resource: Resource) -> PlannedOperation {
         PlannedOperation {
@@ -96,7 +101,7 @@ mod tests {
                 PlanAction::LinkReplace,
                 Resource::Link(LinkResource {
                     src: PathBuf::from("/tmp/src"),
-                    dest: PathBuf::from("/tmp/dest"),
+                    dest: abs(PathBuf::from("/tmp/dest")),
                     force: true,
                     mkdirs: false,
                 }),
@@ -117,7 +122,7 @@ mod tests {
                 PlanAction::LinkCreate,
                 Resource::Link(LinkResource {
                     src: PathBuf::from("/tmp/src"),
-                    dest: PathBuf::from("/tmp/dest"),
+                    dest: abs(PathBuf::from("/tmp/dest")),
                     force: true,
                     mkdirs: false,
                 }),
@@ -138,7 +143,7 @@ mod tests {
                 PlanAction::TemplateUpdate,
                 Resource::Template(TemplateResource {
                     src: PathBuf::from("/tmp/src.tmpl"),
-                    dest: PathBuf::from("/tmp/dest"),
+                    dest: abs(PathBuf::from("/tmp/dest")),
                     vars: BTreeMap::new(),
                     force: true,
                     mkdirs: false,

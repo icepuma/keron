@@ -9,8 +9,7 @@ publish = false
 workspace = true
 
 [dependencies]
-anyhow = { workspace = true }
 gix = { workspace = true, default-features = false, features = ["blocking-network-client", "blocking-http-transport-reqwest-rust-tls", "worktree-mutation"] }
 tempfile = { workspace = true }
 url = { workspace = true }
-
+thiserror = { workspace = true }

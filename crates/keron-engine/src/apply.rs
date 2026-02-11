@@ -3,15 +3,17 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use anyhow::{Context, Result, bail};
 use keron_domain::{
     ApplyOperationResult, ApplyReport, CommandResource, LinkResource, PackageResource,
     PackageState, PlanReport, Resource, TemplateResource,
 };
 
+use crate::error::ApplyError;
 use crate::fs_util::{path_exists_including_dangling_symlink, symlink_points_to};
-use crate::providers::{ProviderRegistry, apply_package, package_state};
+use crate::providers::{ProviderRegistry, ProviderSnapshot, apply_package, package_state};
 use crate::template::render_template_string;
+
+type ApplyResult<T> = std::result::Result<T, ApplyError>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ApplyOptions {
@@ -33,6 +35,7 @@ pub fn apply_plan(
     let mut results = Vec::with_capacity(plan.operations.len());
     let mut errors = Vec::new();
     let mut sensitive_values = BTreeSet::new();
+    let provider_snapshot = providers.snapshot();
 
     for (index, operation) in plan.operations.iter().enumerate() {
         if let Some(error) = &operation.error {
@@ -63,7 +66,9 @@ pub fn apply_plan(
                     Err(error) => Err(error),
                 }
             }
-            Resource::Package(package) => apply_package_resource(package, providers),
+            Resource::Package(package) => {
+                apply_package_resource(package, providers, &provider_snapshot)
+            }
             Resource::Command(command) => apply_command_resource(command),
         };
 
@@ -110,14 +115,22 @@ fn push_fail_fast_abort_message(errors: &mut Vec<String>, failed_index: usize, t
     ));
 }
 
-fn apply_package_resource(package: &PackageResource, providers: &ProviderRegistry) -> Result<bool> {
-    if let Ok((_provider, installed)) =
-        package_state(providers, &package.name, package.provider_hint.as_deref())
-    {
+fn apply_package_resource(
+    package: &PackageResource,
+    providers: &ProviderRegistry,
+    snapshot: &ProviderSnapshot,
+) -> ApplyResult<bool> {
+    if let Ok((_provider, installed)) = package_state(
+        providers,
+        snapshot,
+        &package.name,
+        package.provider_hint.as_deref(),
+    ) {
         match (package.state, installed) {
             (PackageState::Present, false) => {
                 let _ = apply_package(
                     providers,
+                    snapshot,
                     &package.name,
                     package.provider_hint.as_deref(),
                     true,
@@ -127,6 +140,7 @@ fn apply_package_resource(package: &PackageResource, providers: &ProviderRegistr
             (PackageState::Absent, true) => {
                 let _ = apply_package(
                     providers,
+                    snapshot,
                     &package.name,
                     package.provider_hint.as_deref(),
                     false,
@@ -139,6 +153,7 @@ fn apply_package_resource(package: &PackageResource, providers: &ProviderRegistr
         let install = matches!(package.state, PackageState::Present);
         let _ = apply_package(
             providers,
+            snapshot,
             &package.name,
             package.provider_hint.as_deref(),
             install,
@@ -147,164 +162,212 @@ fn apply_package_resource(package: &PackageResource, providers: &ProviderRegistr
     }
 }
 
-fn apply_command_resource(command: &CommandResource) -> Result<bool> {
-    let binary_path = which::which(&command.binary)
-        .with_context(|| format!("binary \"{}\" not found on PATH", command.binary))?;
+fn apply_command_resource(command: &CommandResource) -> ApplyResult<bool> {
+    let binary_path =
+        which::which(&command.binary).map_err(|_| ApplyError::CommandBinaryNotFound {
+            binary: command.binary.clone(),
+        })?;
 
     let status = Command::new(binary_path)
         .args(&command.args)
         .status()
-        .with_context(|| format!("failed to execute command: {}", command.binary))?;
+        .map_err(|source| ApplyError::CommandSpawn {
+            binary: command.binary.clone(),
+            source,
+        })?;
 
     if status.success() {
         Ok(true)
     } else {
-        bail!("command exited with non-zero status: {status}");
+        Err(ApplyError::CommandFailed { status })
     }
 }
 
-fn apply_link(link: &LinkResource) -> Result<bool> {
-    let source_exists = path_exists_including_dangling_symlink(&link.src)
-        .with_context(|| format!("failed to inspect source {}", link.src.display()))?;
+fn apply_link(link: &LinkResource) -> ApplyResult<bool> {
+    let source_exists =
+        path_exists_including_dangling_symlink(&link.src).map_err(|source| ApplyError::Io {
+            context: format!("failed to inspect source {}", link.src.display()),
+            source,
+        })?;
     if !source_exists {
-        bail!("source does not exist: {}", link.src.display());
+        return Err(ApplyError::Invariant {
+            message: format!("source does not exist: {}", link.src.display()),
+        });
     }
 
-    let destination_exists = path_exists_including_dangling_symlink(&link.dest)
-        .with_context(|| format!("failed to inspect destination {}", link.dest.display()))?;
+    let destination_exists =
+        path_exists_including_dangling_symlink(link.dest.as_path()).map_err(|source| {
+            ApplyError::Io {
+                context: format!("failed to inspect destination {}", link.dest.display()),
+                source,
+            }
+        })?;
     if destination_exists {
-        if symlink_points_to(&link.dest, &link.src)
-            .with_context(|| format!("failed to inspect symlink {}", link.dest.display()))?
-        {
+        if symlink_points_to(link.dest.as_path(), &link.src).map_err(|source| ApplyError::Io {
+            context: format!("failed to inspect symlink {}", link.dest.display()),
+            source,
+        })? {
             return Ok(false);
         }
 
         if !link.force {
-            bail!(
-                "destination exists and differs (set force=true to replace): {}",
-                link.dest.display()
-            );
+            return Err(ApplyError::Invariant {
+                message: format!(
+                    "destination exists and differs (set force=true to replace): {}",
+                    link.dest.display()
+                ),
+            });
         }
 
-        remove_existing_path(&link.dest)?;
+        remove_existing_path(link.dest.as_path())?;
     }
 
     if link.mkdirs
         && let Some(parent) = link.dest.parent()
     {
-        fs::create_dir_all(parent).with_context(|| {
-            format!(
+        fs::create_dir_all(parent).map_err(|source| ApplyError::Io {
+            context: format!(
                 "failed to create destination directory: {}",
                 parent.display()
-            )
+            ),
+            source,
         })?;
     }
 
-    create_symlink(&link.src, &link.dest)?;
+    create_symlink(&link.src, link.dest.as_path())?;
     Ok(true)
 }
 
-fn apply_template(template: &TemplateResource) -> Result<(bool, BTreeSet<String>)> {
+fn apply_template(template: &TemplateResource) -> ApplyResult<(bool, BTreeSet<String>)> {
     let source_exists =
-        path_exists_including_dangling_symlink(&template.src).with_context(|| {
-            format!(
+        path_exists_including_dangling_symlink(&template.src).map_err(|source| ApplyError::Io {
+            context: format!(
                 "failed to inspect template source {}",
                 template.src.display()
-            )
+            ),
+            source,
         })?;
     if !source_exists {
-        bail!("template source does not exist: {}", template.src.display());
+        return Err(ApplyError::Invariant {
+            message: format!("template source does not exist: {}", template.src.display()),
+        });
     }
 
-    let source = fs::read_to_string(&template.src)
-        .with_context(|| format!("failed to read template source {}", template.src.display()))?;
-    let (rendered, template_sensitive) = render_template_string(&source, &template.vars)
-        .with_context(|| format!("failed to render template {}", template.src.display()))?;
+    let source = fs::read_to_string(&template.src).map_err(|source| ApplyError::Io {
+        context: format!("failed to read template source {}", template.src.display()),
+        source,
+    })?;
+    let (rendered, template_sensitive) =
+        render_template_string(&source, &template.vars).map_err(|source| {
+            ApplyError::TemplateRender {
+                path: template.src.clone(),
+                source,
+            }
+        })?;
 
-    let destination_exists =
-        path_exists_including_dangling_symlink(&template.dest).with_context(|| {
-            format!(
+    let destination_exists = path_exists_including_dangling_symlink(template.dest.as_path())
+        .map_err(|source| ApplyError::Io {
+            context: format!(
                 "failed to inspect template destination {}",
                 template.dest.display()
-            )
+            ),
+            source,
         })?;
     if destination_exists {
-        match fs::read_to_string(&template.dest) {
+        match fs::read_to_string(template.dest.as_path()) {
             Ok(current) if current == rendered => {
                 return Ok((false, template_sensitive));
             }
             Ok(_) => {}
             Err(error) => {
                 if !template.force {
-                    bail!(
-                        "destination exists and cannot be read (set force=true to replace): {} ({error})",
-                        template.dest.display()
-                    );
+                    return Err(ApplyError::Invariant {
+                        message: format!(
+                            "destination exists and cannot be read (set force=true to replace): {} ({error})",
+                            template.dest.display()
+                        ),
+                    });
                 }
             }
         }
 
         if !template.force {
-            bail!(
-                "destination exists and differs (set force=true to replace): {}",
-                template.dest.display()
-            );
+            return Err(ApplyError::Invariant {
+                message: format!(
+                    "destination exists and differs (set force=true to replace): {}",
+                    template.dest.display()
+                ),
+            });
         }
 
-        remove_existing_path(&template.dest)?;
+        remove_existing_path(template.dest.as_path())?;
     }
 
     if template.mkdirs
         && let Some(parent) = template.dest.parent()
     {
-        fs::create_dir_all(parent).with_context(|| {
-            format!(
+        fs::create_dir_all(parent).map_err(|source| ApplyError::Io {
+            context: format!(
                 "failed to create destination directory: {}",
                 parent.display()
-            )
+            ),
+            source,
         })?;
     }
 
-    fs::write(&template.dest, rendered).with_context(|| {
-        format!(
+    fs::write(template.dest.as_path(), rendered).map_err(|source| ApplyError::Io {
+        context: format!(
             "failed to write rendered template destination: {}",
             template.dest.display()
-        )
+        ),
+        source,
     })?;
 
     Ok((true, template_sensitive))
 }
 
-fn remove_existing_path(path: &Path) -> Result<()> {
-    let metadata = fs::symlink_metadata(path)
-        .with_context(|| format!("failed to read metadata for {}", path.display()))?;
+fn remove_existing_path(path: &Path) -> ApplyResult<()> {
+    let metadata = fs::symlink_metadata(path).map_err(|source| ApplyError::Io {
+        context: format!("failed to read metadata for {}", path.display()),
+        source,
+    })?;
 
     if metadata.file_type().is_symlink() || metadata.file_type().is_file() {
-        fs::remove_file(path).with_context(|| format!("failed to remove file {}", path.display()))
+        fs::remove_file(path).map_err(|source| ApplyError::Io {
+            context: format!("failed to remove file {}", path.display()),
+            source,
+        })
     } else if metadata.is_dir() {
-        fs::remove_dir_all(path)
-            .with_context(|| format!("failed to remove directory {}", path.display()))
+        fs::remove_dir_all(path).map_err(|source| ApplyError::Io {
+            context: format!("failed to remove directory {}", path.display()),
+            source,
+        })
     } else {
-        bail!("unsupported existing path type: {}", path.display());
+        Err(ApplyError::Invariant {
+            message: format!("unsupported existing path type: {}", path.display()),
+        })
     }
 }
 
-fn create_symlink(src: &Path, dest: &Path) -> Result<()> {
+fn create_symlink(src: &Path, dest: &Path) -> ApplyResult<()> {
     #[cfg(unix)]
     {
-        std::os::unix::fs::symlink(src, dest).with_context(|| {
-            format!(
+        std::os::unix::fs::symlink(src, dest).map_err(|source| ApplyError::Io {
+            context: format!(
                 "failed to create symlink {} -> {}",
                 dest.display(),
                 src.display()
-            )
+            ),
+            source,
         })?;
     }
 
     #[cfg(windows)]
     {
-        let metadata = fs::metadata(src)
-            .with_context(|| format!("failed to inspect source {}", src.display()))?;
+        let metadata = fs::metadata(src).map_err(|source| ApplyError::Io {
+            context: format!("failed to inspect source {}", src.display()),
+            source,
+        })?;
 
         let result = if metadata.is_dir() {
             std::os::windows::fs::symlink_dir(src, dest)
@@ -312,12 +375,13 @@ fn create_symlink(src: &Path, dest: &Path) -> Result<()> {
             std::os::windows::fs::symlink_file(src, dest)
         };
 
-        result.with_context(|| {
-            format!(
+        result.map_err(|source| ApplyError::Io {
+            context: format!(
                 "failed to create symlink {} -> {}. Hint: enable Developer Mode or run an elevated shell",
                 dest.display(),
                 src.display()
-            )
+            ),
+            source,
         })?;
     }
 
@@ -335,9 +399,15 @@ mod tests {
     use crate::providers::ProviderRegistry;
     #[cfg(unix)]
     use keron_domain::LinkResource;
-    use keron_domain::{PlanAction, PlanReport, PlannedOperation, Resource, TemplateResource};
+    use keron_domain::{
+        AbsolutePath, PlanAction, PlanReport, PlannedOperation, Resource, TemplateResource,
+    };
 
     use super::{ApplyOptions, apply_plan};
+
+    fn abs(path: PathBuf) -> AbsolutePath {
+        AbsolutePath::try_from(path).expect("test path should be absolute")
+    }
 
     fn template_op(id: usize, src: PathBuf, dest: PathBuf) -> PlannedOperation {
         PlannedOperation {
@@ -346,7 +416,7 @@ mod tests {
             action: PlanAction::TemplateCreate,
             resource: Resource::Template(TemplateResource {
                 src,
-                dest,
+                dest: abs(dest),
                 vars: BTreeMap::new(),
                 force: false,
                 mkdirs: true,
@@ -465,7 +535,7 @@ mod tests {
                 action: PlanAction::LinkReplace,
                 resource: Resource::Link(LinkResource {
                     src: src.clone(),
-                    dest: dest.clone(),
+                    dest: abs(dest.clone()),
                     force: true,
                     mkdirs: false,
                 }),

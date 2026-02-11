@@ -4,8 +4,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use keron_domain::{
-    ApplyOperationResult, ApplyReport, CommandResource, LinkResource, PackageResource,
-    PackageState, PlanAction, PlanReport, PlannedOperation, Resource, TemplateResource,
+    AbsolutePath, ApplyOperationResult, ApplyReport, CommandResource, LinkResource,
+    PackageManagerName, PackageName, PackageResource, PackageState, PlanAction, PlanReport,
+    PlannedOperation, Resource, TemplateResource,
 };
 
 use super::{
@@ -50,6 +51,10 @@ fn verbose_options() -> RenderOptions {
     }
 }
 
+fn abs(path: &str) -> AbsolutePath {
+    AbsolutePath::try_from(PathBuf::from(path)).expect("test path should be absolute")
+}
+
 fn link_op(id: usize, action: PlanAction, src: &str, dest: &str) -> PlannedOperation {
     PlannedOperation {
         id,
@@ -57,7 +62,7 @@ fn link_op(id: usize, action: PlanAction, src: &str, dest: &str) -> PlannedOpera
         action,
         resource: Resource::Link(LinkResource {
             src: PathBuf::from(src),
-            dest: PathBuf::from(dest),
+            dest: abs(dest),
             force: false,
             mkdirs: true,
         }),
@@ -86,7 +91,7 @@ fn template_op(id: usize, action: PlanAction, src: &str, dest: &str) -> PlannedO
         action,
         resource: Resource::Template(TemplateResource {
             src: PathBuf::from(src),
-            dest: PathBuf::from(dest),
+            dest: abs(dest),
             vars: BTreeMap::default(),
             force: false,
             mkdirs: true,
@@ -115,8 +120,11 @@ fn package_op(
         manifest: PathBuf::from("/tmp/workstation.lua"),
         action,
         resource: Resource::Package(PackageResource {
-            name: name.to_string(),
-            provider_hint: provider.map(std::string::ToString::to_string),
+            name: PackageName::try_from(name).expect("package name"),
+            provider_hint: provider
+                .map(PackageManagerName::try_from)
+                .transpose()
+                .expect("provider hint"),
             state: PackageState::Present,
         }),
         summary: String::new(),
@@ -268,6 +276,8 @@ fn plan_conflict_shows_hint() {
         render_plan(&report, OutputFormat::Text, &base_options()).expect("render should succeed");
 
     assert!(text.contains("! conflict"));
+    assert!(text.contains("! conflict /tmp/src"));
+    assert!(!text.contains("! conflict      /tmp/src"));
     assert!(text.contains("set force=true or remove destination manually"));
 }
 
@@ -361,6 +371,70 @@ fn plan_warnings_and_errors() {
     assert!(text.contains("package provider 'pacman' is not supported"));
     assert!(text.contains("error:"));
     assert!(text.contains("dependency cycle detected"));
+}
+
+#[test]
+fn plan_global_diagnostics_render_before_operation_lines() {
+    let mut report = make_report();
+    report.operations = vec![link_op(1, PlanAction::LinkCreate, "/tmp/s", "/tmp/d")];
+    report.warnings = vec!["provider check warning".to_string()];
+    report.errors = vec!["provider check error".to_string()];
+
+    let text =
+        render_plan(&report, OutputFormat::Text, &base_options()).expect("render should succeed");
+
+    let warn_idx = text.find("warn: provider check warning").expect("warn");
+    let error_idx = text.find("error: provider check error").expect("error");
+    let op_idx = text.find("+ create link").expect("op line");
+    assert!(
+        warn_idx < op_idx,
+        "warning should appear before operation line"
+    );
+    assert!(
+        error_idx < op_idx,
+        "error should appear before operation line"
+    );
+}
+
+#[test]
+fn plan_operation_errors_render_inline_in_non_verbose_mode() {
+    let mut report = make_report();
+    let conflict = link_op(1, PlanAction::LinkConflict, "/tmp/src", "/tmp/dest");
+    report.operations = vec![conflict];
+
+    let text =
+        render_plan(&report, OutputFormat::Text, &base_options()).expect("render should succeed");
+
+    assert!(text.contains("! conflict"));
+    assert!(text.contains("error: destination conflicts with requested symlink"));
+}
+
+#[test]
+fn plan_hides_default_folder_list_in_non_verbose_warning_output() {
+    let mut report = make_report();
+    report.warnings = vec![
+        "package 'foo' resolves to /tmp/foo which is outside default 'brew' install folders (default folders: /opt/homebrew/bin, /usr/local/bin)".to_string(),
+    ];
+
+    let text =
+        render_plan(&report, OutputFormat::Text, &base_options()).expect("render should succeed");
+
+    assert!(text.contains("outside default 'brew' install folders"));
+    assert!(!text.contains("default folders:"));
+}
+
+#[test]
+fn plan_shows_default_folder_list_in_verbose_warning_output() {
+    let mut report = make_report();
+    report.warnings = vec![
+        "package 'foo' resolves to /tmp/foo which is outside default 'brew' install folders (default folders: /opt/homebrew/bin, /usr/local/bin)".to_string(),
+    ];
+
+    let text = render_plan(&report, OutputFormat::Text, &verbose_options())
+        .expect("render should succeed");
+
+    assert!(text.contains("outside default 'brew' install folders"));
+    assert!(text.contains("default folders: /opt/homebrew/bin, /usr/local/bin"));
 }
 
 // Apply tests

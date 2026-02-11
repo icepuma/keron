@@ -4,9 +4,14 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
-use anyhow::{Context, Result, bail};
 use tempfile::{Builder, TempDir};
 use url::Url;
+
+mod error;
+
+pub use error::SourceError;
+
+type SourceResult<T> = std::result::Result<T, SourceError>;
 
 #[derive(Debug)]
 struct GitSource {
@@ -59,7 +64,7 @@ impl ResolvedSource {
 ///
 /// Returns an error if source parsing fails, a remote clone/checkout fails, or
 /// the requested manifest directory does not exist in the cloned repository.
-pub fn resolve_apply_source(input: &str) -> Result<ResolvedSource> {
+pub fn resolve_apply_source(input: &str) -> SourceResult<ResolvedSource> {
     if !looks_like_remote_source(input) {
         return Ok(ResolvedSource::local(
             PathBuf::from(input),
@@ -94,28 +99,41 @@ fn looks_like_scp_style_remote(input: &str) -> bool {
     !user.is_empty() && !host.is_empty()
 }
 
-fn clone_into_tempdir(display_target: &str, source: &GitSource) -> Result<ResolvedSource> {
+fn clone_into_tempdir(display_target: &str, source: &GitSource) -> SourceResult<ResolvedSource> {
     let checkout_guard = Builder::new()
         .prefix("keron-remote-")
         .tempdir()
-        .context("failed to create temporary clone directory")?;
+        .map_err(|source| SourceError::TempDirCreate { source })?;
 
     let checkout_root = checkout_guard.path().join("repo");
-    let mut prepared = gix::prepare_clone(source.repo_url.as_str(), &checkout_root)
-        .with_context(|| format!("failed to prepare clone from {}", source.repo_url))?;
+    let mut prepared =
+        gix::prepare_clone(source.repo_url.as_str(), &checkout_root).map_err(|error| {
+            SourceError::PrepareClone {
+                repo_url: source.repo_url.to_string(),
+                source: Box::new(error),
+            }
+        })?;
 
     prepared = prepared
         .with_ref_name(Some(source.reference.as_str()))
-        .map_err(|_| anyhow::anyhow!("invalid git ref name: {}", source.reference))?;
+        .map_err(|_| SourceError::InvalidGitRefName {
+            reference: source.reference.clone(),
+        })?;
 
     let should_interrupt = AtomicBool::new(false);
     let (mut checkout, _) = prepared
         .fetch_then_checkout(gix::progress::Discard, &should_interrupt)
-        .with_context(|| format!("failed to fetch remote repository {}", source.repo_url))?;
+        .map_err(|error| SourceError::FetchRemote {
+            repo_url: source.repo_url.to_string(),
+            source: Box::new(error),
+        })?;
 
     let _ = checkout
         .main_worktree(gix::progress::Discard, &should_interrupt)
-        .with_context(|| format!("failed to check out repository {}", source.repo_url))?;
+        .map_err(|error| SourceError::CheckoutRemote {
+            repo_url: source.repo_url.to_string(),
+            source: Box::new(error),
+        })?;
 
     let manifest_root = resolve_manifest_root(&checkout_root, &source.subdir)?;
     Ok(ResolvedSource::remote(
@@ -125,22 +143,24 @@ fn clone_into_tempdir(display_target: &str, source: &GitSource) -> Result<Resolv
     ))
 }
 
-fn parse_git_source(input: &str) -> Result<GitSource> {
+fn parse_git_source(input: &str) -> SourceResult<GitSource> {
     let (mut repo_url, subdir_raw) = if looks_like_scp_style_remote(input) {
         parse_scp_style_source(input)?
     } else {
-        let source_url =
-            Url::parse(input).with_context(|| format!("invalid source URL: {input}"))?;
+        let source_url = Url::parse(input).map_err(|source| SourceError::InvalidSourceUrl {
+            input: input.to_string(),
+            source,
+        })?;
         validate_public_repo_url(&source_url)?;
 
         if source_url.query().is_some() {
-            bail!("query parameters are not supported; keron always checks out ref \"main\"");
+            return Err(SourceError::QueryParametersNotSupported);
         }
 
         if uses_legacy_subdir_delimiter(input)? {
-            bail!(
-                "\"//\" subdirectory delimiter is not supported; use a standard path (e.g. https://host/org/repo/manifests)"
-            );
+            return Err(SourceError::LegacySubdirDelimiter {
+                example: "https://host/org/repo/manifests",
+            });
         }
 
         split_repo_and_subdir(&source_url)?
@@ -158,9 +178,9 @@ fn parse_git_source(input: &str) -> Result<GitSource> {
     })
 }
 
-fn uses_legacy_subdir_delimiter(input: &str) -> Result<bool> {
+fn uses_legacy_subdir_delimiter(input: &str) -> SourceResult<bool> {
     let Some(scheme_offset) = input.find("://") else {
-        bail!("remote source must include a URL scheme")
+        return Err(SourceError::MissingRemoteScheme);
     };
 
     let offset_after_scheme = scheme_offset + 3;
@@ -168,39 +188,42 @@ fn uses_legacy_subdir_delimiter(input: &str) -> Result<bool> {
     Ok(after_scheme.contains("//"))
 }
 
-fn parse_scp_style_source(input: &str) -> Result<(Url, String)> {
+fn parse_scp_style_source(input: &str) -> SourceResult<(Url, String)> {
     let Some((left, right)) = input.split_once(':') else {
-        bail!("invalid scp-style source; expected user@host:path")
+        return Err(SourceError::InvalidScpStyleFormat);
     };
     let Some((user, host)) = left.rsplit_once('@') else {
-        bail!("invalid scp-style source; expected user@host:path")
+        return Err(SourceError::InvalidScpStyleFormat);
     };
     if user.is_empty() || host.is_empty() || right.is_empty() {
-        bail!("invalid scp-style source; expected user@host:path")
+        return Err(SourceError::InvalidScpStyleFormat);
     }
 
     if right.contains("//") {
-        bail!(
-            "\"//\" subdirectory delimiter is not supported; use a standard path (e.g. git@host:org/repo.git/manifests)"
-        );
+        return Err(SourceError::LegacySubdirDelimiter {
+            example: "git@host:org/repo.git/manifests",
+        });
     }
 
     let normalized = format!("ssh://{user}@{host}/{}", right.trim_start_matches('/'));
     let source_url =
-        Url::parse(&normalized).with_context(|| format!("invalid scp-style source: {input}"))?;
+        Url::parse(&normalized).map_err(|source| SourceError::InvalidScpStyleSource {
+            input: input.to_string(),
+            source,
+        })?;
 
     split_repo_and_subdir(&source_url)
 }
 
-fn split_repo_and_subdir(parsed: &Url) -> Result<(Url, String)> {
+fn split_repo_and_subdir(parsed: &Url) -> SourceResult<(Url, String)> {
     let segments: Vec<String> = parsed
         .path_segments()
-        .ok_or_else(|| anyhow::anyhow!("source path cannot be empty"))?
+        .ok_or(SourceError::EmptySourcePath)?
         .filter(|segment| !segment.is_empty())
         .map(ToOwned::to_owned)
         .collect();
     if segments.is_empty() {
-        bail!("source must include a repository path")
+        return Err(SourceError::MissingRepositoryPath);
     }
 
     let repo_segment_count = segments
@@ -218,43 +241,35 @@ fn split_repo_and_subdir(parsed: &Url) -> Result<(Url, String)> {
     Ok((repo_url, subdir))
 }
 
-fn validate_public_repo_url(url: &Url) -> Result<()> {
+fn validate_public_repo_url(url: &Url) -> SourceResult<()> {
     let scheme = url.scheme();
     match scheme {
         "https" | "git" | "ssh" => {}
-        "http" => {
-            bail!(
-                "http:// repositories are not supported; use https:// or git:// for public repositories"
-            )
+        "http" => return Err(SourceError::HttpSchemeNotSupported),
+        "file" => return Err(SourceError::FileSchemeNotSupported),
+        _ => {
+            return Err(SourceError::UnsupportedRepositoryScheme {
+                scheme: scheme.to_string(),
+            });
         }
-        "file" => {
-            bail!(
-                "file:// repositories are not supported; only public network repositories are allowed"
-            )
-        }
-        _ => bail!(
-            "unsupported repository scheme \"{scheme}\"; expected https://, git://, or git@host:path"
-        ),
     }
 
     if url.host_str().is_none() {
-        bail!("repository URL must include a host")
+        return Err(SourceError::MissingRepositoryHost);
     }
 
     if url.password().is_some() {
-        bail!("repository URLs with passwords are not supported");
+        return Err(SourceError::PasswordNotSupported);
     }
 
     if scheme != "ssh" && !url.username().is_empty() {
-        bail!(
-            "authenticated repository URLs are not supported; only public repositories are allowed"
-        )
+        return Err(SourceError::AuthenticatedUrlsNotSupported);
     }
 
     Ok(())
 }
 
-fn normalize_relative_subdir(raw_subdir: &str) -> Result<PathBuf> {
+fn normalize_relative_subdir(raw_subdir: &str) -> SourceResult<PathBuf> {
     let trimmed = raw_subdir.trim_matches('/');
     if trimmed.is_empty() {
         return Ok(PathBuf::new());
@@ -265,11 +280,9 @@ fn normalize_relative_subdir(raw_subdir: &str) -> Result<PathBuf> {
         match component {
             Component::CurDir => {}
             Component::Normal(segment) => normalized.push(segment),
-            Component::ParentDir => {
-                bail!("manifest subdirectory cannot contain '..'")
-            }
+            Component::ParentDir => return Err(SourceError::ParentDirNotAllowed),
             Component::RootDir | Component::Prefix(_) => {
-                bail!("manifest subdirectory must be relative")
+                return Err(SourceError::AbsoluteSubdirNotAllowed);
             }
         }
     }
@@ -277,7 +290,7 @@ fn normalize_relative_subdir(raw_subdir: &str) -> Result<PathBuf> {
     Ok(normalized)
 }
 
-fn resolve_manifest_root(checkout_root: &Path, subdir: &Path) -> Result<PathBuf> {
+fn resolve_manifest_root(checkout_root: &Path, subdir: &Path) -> SourceResult<PathBuf> {
     let candidate = if subdir.as_os_str().is_empty() {
         checkout_root.to_path_buf()
     } else {
@@ -286,28 +299,30 @@ fn resolve_manifest_root(checkout_root: &Path, subdir: &Path) -> Result<PathBuf>
 
     if !candidate.is_dir() {
         let subdir_display = if subdir.as_os_str().is_empty() {
-            "."
+            ".".to_string()
         } else {
-            subdir.to_str().unwrap_or("<non-utf8 path>")
+            subdir.to_str().unwrap_or("<non-utf8 path>").to_string()
         };
-        bail!("manifest directory \"{subdir_display}\" does not exist in cloned repository")
+        return Err(SourceError::MissingManifestDirectory {
+            subdir: subdir_display,
+        });
     }
 
-    let checkout_root = fs::canonicalize(checkout_root).with_context(|| {
-        format!(
-            "failed to canonicalize checkout root {}",
-            checkout_root.display()
-        )
+    let checkout_root = fs::canonicalize(checkout_root).map_err(|source| {
+        SourceError::CanonicalizeCheckoutRoot {
+            path: checkout_root.to_path_buf(),
+            source,
+        }
     })?;
-    let candidate = fs::canonicalize(&candidate).with_context(|| {
-        format!(
-            "failed to canonicalize manifest directory {}",
-            candidate.display()
-        )
+    let candidate = fs::canonicalize(&candidate).map_err(|source| {
+        SourceError::CanonicalizeManifestDirectory {
+            path: candidate.clone(),
+            source,
+        }
     })?;
 
     if !candidate.starts_with(&checkout_root) {
-        bail!("manifest directory escapes cloned repository checkout")
+        return Err(SourceError::ManifestDirectoryEscapesCheckout);
     }
 
     Ok(candidate)

@@ -1,16 +1,18 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::io::{self, IsTerminal};
 
-use anyhow::Result;
 use console::Style;
 use keron_domain::{
     ApplyOperationResult, ApplyReport, PlanAction, PlanReport, PlannedOperation, Resource,
 };
 
+mod error;
 mod options;
 mod redaction;
 
+pub use error::ReportError;
 pub use options::{ColorChoice, OutputFormat, RenderOptions};
 pub use redaction::redact_sensitive;
 
@@ -23,9 +25,10 @@ pub fn render_plan(
     report: &PlanReport,
     format: OutputFormat,
     options: &RenderOptions,
-) -> Result<String> {
+) -> std::result::Result<String, ReportError> {
     match format {
-        OutputFormat::Json => Ok(serde_json::to_string_pretty(report)?),
+        OutputFormat::Json => serde_json::to_string_pretty(report)
+            .map_err(|source| ReportError::JsonSerialize { source }),
         OutputFormat::Text => Ok(render_plan_text(report, options)),
     }
 }
@@ -39,9 +42,10 @@ pub fn render_apply(
     report: &ApplyReport,
     format: OutputFormat,
     options: &RenderOptions,
-) -> Result<String> {
+) -> std::result::Result<String, ReportError> {
     match format {
-        OutputFormat::Json => Ok(serde_json::to_string_pretty(report)?),
+        OutputFormat::Json => serde_json::to_string_pretty(report)
+            .map_err(|source| ReportError::JsonSerialize { source }),
         OutputFormat::Text => Ok(render_apply_text(report, options)),
     }
 }
@@ -58,7 +62,13 @@ fn render_plan_text(report: &PlanReport, options: &RenderOptions) -> String {
 
     if report.operations.is_empty() {
         let _ = writeln!(output, "  Nothing to do.");
-        append_warnings_and_errors(&mut output, &report.warnings, &report.errors, &style);
+        append_warnings_and_errors(
+            &mut output,
+            &report.warnings,
+            &report.errors,
+            options.verbose,
+            &style,
+        );
         return output;
     }
 
@@ -71,14 +81,27 @@ fn render_plan_text(report: &PlanReport, options: &RenderOptions) -> String {
         let _ = writeln!(output);
         let noop_counts = NoopCounts::from_ops(&noops);
         let _ = writeln!(output, "  {}", style.dim(&noop_counts.format()));
+        append_warnings_and_errors(
+            &mut output,
+            &report.warnings,
+            &report.errors,
+            options.verbose,
+            &style,
+        );
         let _ = writeln!(output);
         let tally = TallyCounts::from_plan_ops(&report.operations);
         let _ = writeln!(output, "{}", tally.format_plan(&style));
-        append_warnings_and_errors(&mut output, &report.warnings, &report.errors, &style);
         return output;
     }
 
     let _ = writeln!(output);
+    append_warnings_and_errors(
+        &mut output,
+        &report.warnings,
+        &report.errors,
+        options.verbose,
+        &style,
+    );
     for op in &changed {
         append_plan_op_line(&mut output, op, options, &style);
     }
@@ -94,8 +117,6 @@ fn render_plan_text(report: &PlanReport, options: &RenderOptions) -> String {
         let noop_counts = NoopCounts::from_ops(&noops);
         let _ = writeln!(output, "  {}", style.dim(&noop_counts.format()));
     }
-
-    append_warnings_and_errors(&mut output, &report.warnings, &report.errors, &style);
 
     let _ = writeln!(output);
     let tally = TallyCounts::from_plan_ops(&report.operations);
@@ -128,7 +149,7 @@ fn render_apply_text(report: &ApplyReport, options: &RenderOptions) -> String {
 
     if report.results.is_empty() {
         let _ = writeln!(output, "  Nothing to do.");
-        append_warnings_and_errors(&mut output, &[], &report.errors, &style);
+        append_warnings_and_errors(&mut output, &[], &report.errors, options.verbose, &style);
         return output;
     }
 
@@ -136,6 +157,7 @@ fn render_apply_text(report: &ApplyReport, options: &RenderOptions) -> String {
         report.results.iter().partition(|r| r.changed || !r.success);
 
     let _ = writeln!(output);
+    append_warnings_and_errors(&mut output, &[], &report.errors, options.verbose, &style);
     for result in &active {
         let planned = operation_map.get(&result.operation_id).copied();
         append_apply_op_line(&mut output, result, planned, options, &style);
@@ -156,8 +178,6 @@ fn render_apply_text(report: &ApplyReport, options: &RenderOptions) -> String {
             append_apply_op_line(&mut output, result, planned, options, &style);
         }
     }
-
-    append_warnings_and_errors(&mut output, &[], &report.errors, &style);
 
     let _ = writeln!(output);
     let tally = ApplyTally::from_results(&report.results);
@@ -226,28 +246,15 @@ fn append_plan_op_line(
         }
     }
 
-    if !options.verbose
-        && options.hints
-        && op.conflict
-        && op.error.is_none()
+    if options.hints
         && let Some(hint) = &op.hint
     {
-        let _ = writeln!(output, "                     {}", style.hint_text(hint));
+        let rendered_hint = render_warning(hint, options.verbose);
+        let _ = writeln!(output, "    {} {rendered_hint}", style.warn_prefix("warn:"));
     }
 
-    if options.verbose {
-        if options.hints
-            && let Some(hint) = &op.hint
-        {
-            let _ = writeln!(output, "    {}", style.hint_text(&format!("hint: {hint}")));
-        }
-        if let Some(error) = &op.error {
-            let _ = writeln!(
-                output,
-                "    {}",
-                style.error_detail(&format!("error: {error}"))
-            );
-        }
+    if let Some(error) = &op.error {
+        let _ = writeln!(output, "    {} {error}", style.error_prefix("error:"));
     }
 }
 
@@ -293,6 +300,7 @@ fn append_warnings_and_errors(
     output: &mut String,
     warnings: &[String],
     errors: &[String],
+    verbose: bool,
     style: &TextStyle,
 ) {
     if warnings.is_empty() && errors.is_empty() {
@@ -300,11 +308,24 @@ fn append_warnings_and_errors(
     }
     let _ = writeln!(output);
     for w in warnings {
-        let _ = writeln!(output, "  {} {w}", style.warn_prefix("warn:"));
+        let warning = render_warning(w, verbose);
+        let _ = writeln!(output, "  {} {warning}", style.warn_prefix("warn:"));
     }
     for e in errors {
         let _ = writeln!(output, "  {} {e}", style.error_prefix("error:"));
     }
+}
+
+fn render_warning(warning: &str, verbose: bool) -> Cow<'_, str> {
+    const DETAIL_MARKER: &str = " (default folders: ";
+    if verbose {
+        return Cow::Borrowed(warning);
+    }
+
+    warning.split_once(DETAIL_MARKER).map_or_else(
+        || Cow::Borrowed(warning),
+        |(summary, _)| Cow::Borrowed(summary),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -315,7 +336,7 @@ fn plan_symbol_and_label(op: &PlannedOperation, style: &TextStyle) -> (String, S
     if op.error.is_some() && op.conflict {
         return (
             style.conflict_symbol("!"),
-            TextStyle::pad_label(&style.conflict_label("conflict")),
+            format!("{} ", style.conflict_label("conflict")),
         );
     }
     if op.error.is_some() {
@@ -327,7 +348,7 @@ fn plan_symbol_and_label(op: &PlannedOperation, style: &TextStyle) -> (String, S
     if op.conflict {
         return (
             style.conflict_symbol("!"),
-            TextStyle::pad_label(&style.conflict_label("conflict")),
+            format!("{} ", style.conflict_label("conflict")),
         );
     }
 
@@ -701,7 +722,6 @@ struct TextStyle {
     // Content
     primary_style: Style,
     dim_style: Style,
-    hint_style: Style,
     error_detail_style: Style,
     // Header
     header_cmd_style: Style,
@@ -730,7 +750,6 @@ impl TextStyle {
             noop_label_style: Style::new().dim(),
             primary_style: Style::new().white(),
             dim_style: Style::new().dim(),
-            hint_style: Style::new().yellow(),
             error_detail_style: Style::new().red(),
             header_cmd_style: Style::new().white().bold(),
             header_target_style: Style::new().dim(),
@@ -798,9 +817,6 @@ impl TextStyle {
     }
     fn dim(&self, s: &str) -> String {
         self.paint(&self.dim_style, s)
-    }
-    fn hint_text(&self, s: &str) -> String {
-        self.paint(&self.hint_style, s)
     }
     fn error_detail(&self, s: &str) -> String {
         self.paint(&self.error_detail_style, s)

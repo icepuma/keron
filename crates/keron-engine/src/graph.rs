@@ -1,8 +1,9 @@
 use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 
-use anyhow::{Result, bail};
 use keron_domain::ManifestSpec;
+
+use crate::error::GraphError;
 
 /// Build a dependency-respecting execution order using topological sorting.
 ///
@@ -10,7 +11,9 @@ use keron_domain::ManifestSpec;
 ///
 /// Returns an error when dependencies point to missing manifests or when a
 /// dependency cycle is detected.
-pub fn build_execution_order(manifests: &[ManifestSpec]) -> Result<Vec<PathBuf>> {
+pub fn build_execution_order(
+    manifests: &[ManifestSpec],
+) -> std::result::Result<Vec<PathBuf>, GraphError> {
     if manifests.is_empty() {
         return Ok(Vec::new());
     }
@@ -19,14 +22,14 @@ pub fn build_execution_order(manifests: &[ManifestSpec]) -> Result<Vec<PathBuf>>
     let mut adjacency: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
 
     for manifest in manifests {
-        indegree.entry(manifest.id.path.clone()).or_insert(0);
-        adjacency.entry(manifest.id.path.clone()).or_default();
+        indegree.entry(manifest.id.path.to_path_buf()).or_insert(0);
+        adjacency.entry(manifest.id.path.to_path_buf()).or_default();
     }
 
     let mut missing = Vec::new();
     for manifest in manifests {
         for dependency in &manifest.dependencies {
-            if !indegree.contains_key(dependency) {
+            if !indegree.contains_key(dependency.as_path()) {
                 missing.push(format!(
                     "{} depends on missing manifest {}",
                     manifest.id.path.display(),
@@ -36,15 +39,17 @@ pub fn build_execution_order(manifests: &[ManifestSpec]) -> Result<Vec<PathBuf>>
             }
 
             adjacency
-                .entry(dependency.clone())
+                .entry(dependency.to_path_buf())
                 .or_default()
-                .push(manifest.id.path.clone());
+                .push(manifest.id.path.to_path_buf());
 
-            let Some(entry) = indegree.get_mut(&manifest.id.path) else {
-                bail!(
-                    "internal graph error: missing indegree for {}",
-                    manifest.id.path.display()
-                );
+            let Some(entry) = indegree.get_mut(manifest.id.path.as_path()) else {
+                return Err(GraphError::Invariant {
+                    message: format!(
+                        "internal graph error: missing indegree for {}",
+                        manifest.id.path.display()
+                    ),
+                });
             };
             *entry += 1;
         }
@@ -52,7 +57,7 @@ pub fn build_execution_order(manifests: &[ManifestSpec]) -> Result<Vec<PathBuf>>
 
     if !missing.is_empty() {
         let details = missing.join("\n  - ");
-        bail!("dependency graph has missing nodes:\n  - {details}");
+        return Err(GraphError::MissingNodes { details });
     }
 
     let mut ready = BTreeSet::new();
@@ -69,7 +74,9 @@ pub fn build_execution_order(manifests: &[ManifestSpec]) -> Result<Vec<PathBuf>>
         if let Some(neighbors) = adjacency.get(&next) {
             for neighbor in neighbors {
                 let Some(entry) = indegree.get_mut(neighbor) else {
-                    bail!("internal graph error: missing neighbor indegree");
+                    return Err(GraphError::Invariant {
+                        message: "internal graph error: missing neighbor indegree".to_string(),
+                    });
                 };
 
                 if *entry == 0 {
@@ -95,7 +102,7 @@ pub fn build_execution_order(manifests: &[ManifestSpec]) -> Result<Vec<PathBuf>>
             .map(|path| path.display().to_string())
             .collect::<Vec<_>>()
             .join(" -> ");
-        bail!("dependency cycle detected among: {cycle}");
+        return Err(GraphError::CycleDetected { cycle });
     }
 
     Ok(order)
@@ -118,7 +125,7 @@ mod tests {
 
         let one = ManifestSpec::new(a.clone());
         let mut two = ManifestSpec::new(b.clone());
-        two.dependencies.push(a);
+        two.dependencies.push(a.into());
 
         let ordered = build_execution_order(&[two, one]).expect("order");
         assert_eq!(ordered, vec![PathBuf::from("/tmp/a.lua"), b]);
@@ -129,8 +136,8 @@ mod tests {
         let mut one = ManifestSpec::new(PathBuf::from("/tmp/a.lua"));
         let mut two = ManifestSpec::new(PathBuf::from("/tmp/b.lua"));
 
-        one.dependencies.push(PathBuf::from("/tmp/b.lua"));
-        two.dependencies.push(PathBuf::from("/tmp/a.lua"));
+        one.dependencies.push(PathBuf::from("/tmp/b.lua").into());
+        two.dependencies.push(PathBuf::from("/tmp/a.lua").into());
 
         let err = build_execution_order(&[one, two]).expect_err("must fail");
         assert!(err.to_string().contains("cycle"));

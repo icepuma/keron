@@ -1,20 +1,55 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
 
-use anyhow::{Context, Result, anyhow, bail};
+use keron_domain::PackageName;
 
-pub trait PackageProvider {
+use crate::error::ProviderError;
+
+type ProviderResult<T> = std::result::Result<T, ProviderError>;
+
+pub trait PackageProvider: Send + Sync {
     fn name(&self) -> &'static str;
     fn detect(&self) -> bool;
-    fn is_installed(&self, package: &str) -> Result<bool>;
-    fn installed_packages(&self) -> Result<HashSet<String>>;
-    fn install(&self, package: &str) -> Result<()>;
-    fn remove(&self, package: &str) -> Result<()>;
+    fn is_installed(&self, package: &str) -> ProviderResult<bool>;
+    fn installed_packages(&self) -> ProviderResult<HashSet<String>>;
+    fn install(&self, package: &str) -> ProviderResult<()>;
+    fn remove(&self, package: &str) -> ProviderResult<()>;
+}
+
+#[derive(Debug, Clone)]
+pub struct ProviderSnapshot {
+    supported_names: Vec<String>,
+    supported_by_name: HashSet<String>,
+    available_by_name: HashMap<String, usize>,
+    default_available: Option<usize>,
+}
+
+impl ProviderSnapshot {
+    #[must_use]
+    pub fn supported_names(&self) -> &[String] {
+        &self.supported_names
+    }
+
+    #[must_use]
+    pub fn is_supported(&self, name: &str) -> bool {
+        self.supported_by_name.contains(&name.to_ascii_lowercase())
+    }
+
+    #[must_use]
+    pub fn is_available(&self, name: &str) -> bool {
+        self.available_by_name
+            .contains_key(&name.to_ascii_lowercase())
+    }
+
+    #[must_use]
+    pub fn any_available(&self) -> bool {
+        self.default_available.is_some()
+    }
 }
 
 #[derive(Default)]
 pub struct ProviderRegistry {
-    providers: Vec<Box<dyn PackageProvider>>,
+    providers: Vec<Box<dyn PackageProvider + Send + Sync>>,
 }
 
 impl ProviderRegistry {
@@ -25,96 +60,106 @@ impl ProviderRegistry {
                 Box::new(BrewProvider),
                 Box::new(AptProvider),
                 Box::new(WingetProvider),
+                Box::new(CargoProvider),
             ],
         }
     }
 
     #[must_use]
-    pub fn from_providers(providers: Vec<Box<dyn PackageProvider>>) -> Self {
+    pub fn from_providers(providers: Vec<Box<dyn PackageProvider + Send + Sync>>) -> Self {
         Self { providers }
     }
 
     #[must_use]
-    pub fn supported_names(&self) -> Vec<&'static str> {
-        self.providers
-            .iter()
-            .map(|provider| provider.name())
-            .collect()
-    }
+    pub fn snapshot(&self) -> ProviderSnapshot {
+        let mut supported_names = Vec::with_capacity(self.providers.len());
+        let mut supported_by_name = HashSet::with_capacity(self.providers.len());
+        let mut available_by_name = HashMap::new();
+        let mut default_available = None;
 
-    #[must_use]
-    pub fn is_supported(&self, name: &str) -> bool {
-        self.providers
-            .iter()
-            .any(|provider| provider.name().eq_ignore_ascii_case(name))
-    }
-
-    #[must_use]
-    pub fn is_available(&self, name: &str) -> bool {
-        self.providers
-            .iter()
-            .any(|provider| provider.name().eq_ignore_ascii_case(name) && provider.detect())
-    }
-
-    #[must_use]
-    pub fn any_available(&self) -> bool {
-        self.providers.iter().any(|provider| provider.detect())
-    }
-
-    pub fn select(&self, hint: Option<&str>) -> Option<&dyn PackageProvider> {
-        if let Some(hint) = hint {
-            for provider in &self.providers {
-                if provider.name().eq_ignore_ascii_case(hint) && provider.detect() {
-                    return Some(provider.as_ref());
+        for (index, provider) in self.providers.iter().enumerate() {
+            let provider_name = provider.name();
+            supported_names.push(provider_name.to_string());
+            supported_by_name.insert(provider_name.to_ascii_lowercase());
+            if provider.detect() {
+                available_by_name.insert(provider_name.to_ascii_lowercase(), index);
+                if default_available.is_none() {
+                    default_available = Some(index);
                 }
             }
-            return None;
         }
 
-        self.providers
-            .iter()
-            .find(|provider| provider.detect())
+        ProviderSnapshot {
+            supported_names,
+            supported_by_name,
+            available_by_name,
+            default_available,
+        }
+    }
+
+    fn select_with_snapshot<'a>(
+        &'a self,
+        snapshot: &ProviderSnapshot,
+        hint: Option<&str>,
+    ) -> Option<&'a (dyn PackageProvider + Send + Sync)> {
+        if let Some(hint) = hint {
+            let index = snapshot.available_by_name.get(&hint.to_ascii_lowercase())?;
+            return self.providers.get(*index).map(std::ops::Deref::deref);
+        }
+
+        snapshot
+            .default_available
+            .and_then(|index| self.providers.get(index))
             .map(std::ops::Deref::deref)
     }
 }
 
-fn run_status(program: &str, args: &[&str]) -> Result<std::process::ExitStatus> {
+fn run_status(program: &'static str, args: &[&str]) -> ProviderResult<ExitStatus> {
     Command::new(program)
         .args(args)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
-        .with_context(|| format!("failed to execute {program} {}", args.join(" ")))
+        .map_err(|source| ProviderError::CommandSpawn {
+            program,
+            args: args.join(" "),
+            source,
+        })
 }
 
-fn run_stdout(program: &str, args: &[&str]) -> Result<String> {
+fn run_stdout(program: &'static str, args: &[&str]) -> ProviderResult<String> {
     let output = Command::new(program)
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .output()
-        .with_context(|| format!("failed to execute {program} {}", args.join(" ")))?;
+        .map_err(|source| ProviderError::CommandSpawn {
+            program,
+            args: args.join(" "),
+            source,
+        })?;
 
     if !output.status.success() {
-        bail!(
-            "command failed: {program} {} (exit: {})",
-            args.join(" "),
-            output.status
-        );
+        return Err(ProviderError::CommandFailed {
+            program,
+            args: args.join(" "),
+            status: output.status,
+        });
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-fn ensure_success(program: &str, args: &[&str]) -> Result<()> {
+fn ensure_success(program: &'static str, args: &[&str]) -> ProviderResult<()> {
     let status = run_status(program, args)?;
     if status.success() {
         Ok(())
     } else {
-        bail!(
-            "command failed: {program} {} (exit: {status})",
-            args.join(" ")
-        );
+        Err(ProviderError::CommandFailed {
+            program,
+            args: args.join(" "),
+            status,
+        })
     }
 }
 
@@ -129,12 +174,12 @@ impl PackageProvider for BrewProvider {
         which::which("brew").is_ok()
     }
 
-    fn is_installed(&self, package: &str) -> Result<bool> {
+    fn is_installed(&self, package: &str) -> ProviderResult<bool> {
         let status = run_status("brew", &["list", "--formula", package])?;
         Ok(status.success())
     }
 
-    fn installed_packages(&self) -> Result<HashSet<String>> {
+    fn installed_packages(&self) -> ProviderResult<HashSet<String>> {
         let stdout = run_stdout("brew", &["list", "--formula", "--versions"])?;
         Ok(stdout
             .lines()
@@ -143,11 +188,11 @@ impl PackageProvider for BrewProvider {
             .collect())
     }
 
-    fn install(&self, package: &str) -> Result<()> {
+    fn install(&self, package: &str) -> ProviderResult<()> {
         ensure_success("brew", &["install", package])
     }
 
-    fn remove(&self, package: &str) -> Result<()> {
+    fn remove(&self, package: &str) -> ProviderResult<()> {
         ensure_success("brew", &["uninstall", package])
     }
 }
@@ -163,12 +208,12 @@ impl PackageProvider for AptProvider {
         which::which("apt-get").is_ok() && which::which("dpkg").is_ok()
     }
 
-    fn is_installed(&self, package: &str) -> Result<bool> {
+    fn is_installed(&self, package: &str) -> ProviderResult<bool> {
         let status = run_status("dpkg", &["-s", package])?;
         Ok(status.success())
     }
 
-    fn installed_packages(&self) -> Result<HashSet<String>> {
+    fn installed_packages(&self) -> ProviderResult<HashSet<String>> {
         let stdout = run_stdout("dpkg-query", &["-W", "-f=${binary:Package}\\n"])?;
         Ok(stdout
             .lines()
@@ -178,11 +223,11 @@ impl PackageProvider for AptProvider {
             .collect())
     }
 
-    fn install(&self, package: &str) -> Result<()> {
+    fn install(&self, package: &str) -> ProviderResult<()> {
         ensure_success("apt-get", &["install", "-y", package])
     }
 
-    fn remove(&self, package: &str) -> Result<()> {
+    fn remove(&self, package: &str) -> ProviderResult<()> {
         ensure_success("apt-get", &["remove", "-y", package])
     }
 }
@@ -198,12 +243,12 @@ impl PackageProvider for WingetProvider {
         which::which("winget").is_ok()
     }
 
-    fn is_installed(&self, package: &str) -> Result<bool> {
+    fn is_installed(&self, package: &str) -> ProviderResult<bool> {
         let status = run_status("winget", &["list", "--exact", "--id", package])?;
         Ok(status.success())
     }
 
-    fn installed_packages(&self) -> Result<HashSet<String>> {
+    fn installed_packages(&self) -> ProviderResult<HashSet<String>> {
         let stdout = run_stdout(
             "winget",
             &[
@@ -232,7 +277,7 @@ impl PackageProvider for WingetProvider {
         Ok(packages)
     }
 
-    fn install(&self, package: &str) -> Result<()> {
+    fn install(&self, package: &str) -> ProviderResult<()> {
         ensure_success(
             "winget",
             &[
@@ -246,36 +291,72 @@ impl PackageProvider for WingetProvider {
         )
     }
 
-    fn remove(&self, package: &str) -> Result<()> {
+    fn remove(&self, package: &str) -> ProviderResult<()> {
         ensure_success("winget", &["uninstall", "--exact", "--id", package])
+    }
+}
+
+struct CargoProvider;
+
+impl PackageProvider for CargoProvider {
+    fn name(&self) -> &'static str {
+        "cargo"
+    }
+
+    fn detect(&self) -> bool {
+        which::which("cargo").is_ok()
+    }
+
+    fn is_installed(&self, package: &str) -> ProviderResult<bool> {
+        let installed = self.installed_packages()?;
+        Ok(installed.contains(package))
+    }
+
+    fn installed_packages(&self) -> ProviderResult<HashSet<String>> {
+        let stdout = run_stdout("cargo", &["install", "--list"])?;
+        Ok(parse_cargo_installed_packages(&stdout))
+    }
+
+    fn install(&self, package: &str) -> ProviderResult<()> {
+        ensure_success("cargo", &["install", package])
+    }
+
+    fn remove(&self, package: &str) -> ProviderResult<()> {
+        ensure_success("cargo", &["uninstall", package])
     }
 }
 
 pub fn package_state(
     registry: &ProviderRegistry,
-    package_name: &str,
+    snapshot: &ProviderSnapshot,
+    package_name: &PackageName,
     hint: Option<&str>,
-) -> Result<(String, bool)> {
-    let Some(provider) = registry.select(hint) else {
-        return Err(anyhow!("no package provider available (hint: {hint:?})"));
+) -> ProviderResult<(String, bool)> {
+    let Some(provider) = registry.select_with_snapshot(snapshot, hint) else {
+        return Err(ProviderError::NoProviderAvailable {
+            hint: hint.map(str::to_string),
+        });
     };
-    let installed = provider.is_installed(package_name)?;
+    let installed = provider.is_installed(package_name.as_str())?;
     Ok((provider.name().to_string(), installed))
 }
 
 pub fn package_states_bulk(
     registry: &ProviderRegistry,
+    snapshot: &ProviderSnapshot,
     hint: Option<&str>,
-    package_names: &BTreeSet<String>,
-) -> Result<(String, HashMap<String, bool>)> {
-    let Some(provider) = registry.select(hint) else {
-        return Err(anyhow!("no package provider available (hint: {hint:?})"));
+    package_names: &BTreeSet<PackageName>,
+) -> ProviderResult<(String, HashMap<PackageName, bool>)> {
+    let Some(provider) = registry.select_with_snapshot(snapshot, hint) else {
+        return Err(ProviderError::NoProviderAvailable {
+            hint: hint.map(str::to_string),
+        });
     };
 
     let installed = provider.installed_packages()?;
     let states = package_names
         .iter()
-        .map(|package| (package.clone(), installed.contains(package)))
+        .map(|package| (package.clone(), installed.contains(package.as_str())))
         .collect();
 
     Ok((provider.name().to_string(), states))
@@ -283,18 +364,21 @@ pub fn package_states_bulk(
 
 pub fn apply_package(
     registry: &ProviderRegistry,
-    package_name: &str,
+    snapshot: &ProviderSnapshot,
+    package_name: &PackageName,
     hint: Option<&str>,
     install: bool,
-) -> Result<String> {
-    let Some(provider) = registry.select(hint) else {
-        return Err(anyhow!("no package provider available (hint: {hint:?})"));
+) -> ProviderResult<String> {
+    let Some(provider) = registry.select_with_snapshot(snapshot, hint) else {
+        return Err(ProviderError::NoProviderAvailable {
+            hint: hint.map(str::to_string),
+        });
     };
 
     if install {
-        provider.install(package_name)?;
+        provider.install(package_name.as_str())?;
     } else {
-        provider.remove(package_name)?;
+        provider.remove(package_name.as_str())?;
     }
 
     Ok(provider.name().to_string())
@@ -338,4 +422,50 @@ fn split_columns(line: &str) -> Vec<&str> {
 
 fn is_separator_line(line: &str) -> bool {
     line.chars().all(|ch| ch == '-' || ch == ' ')
+}
+
+fn parse_cargo_installed_packages(stdout: &str) -> HashSet<String> {
+    stdout
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || line.starts_with(char::is_whitespace) {
+                return None;
+            }
+            if !trimmed.ends_with(':') {
+                return None;
+            }
+            trimmed
+                .split_whitespace()
+                .next()
+                .map(|name| name.trim_end_matches(':').to_string())
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::parse_cargo_installed_packages;
+
+    #[test]
+    fn parses_cargo_install_list_output() {
+        let output = r"
+ripgrep v14.1.1:
+    rg
+cargo-watch v8.5.3:
+    cargo-watch
+serde-json-fmt v0.1.0 (path+file:///tmp/serde-json-fmt):
+    serde-json-fmt
+";
+        let parsed = parse_cargo_installed_packages(output);
+
+        let expected = HashSet::from([
+            "ripgrep".to_string(),
+            "cargo-watch".to_string(),
+            "serde-json-fmt".to_string(),
+        ]);
+        assert_eq!(parsed, expected);
+    }
 }

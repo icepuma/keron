@@ -1,8 +1,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
 use walkdir::WalkDir;
+
+use crate::error::DiscoveryError;
 
 /// Recursively discover manifest files (`*.lua`) under a root directory.
 ///
@@ -10,12 +11,16 @@ use walkdir::WalkDir;
 ///
 /// Returns an error if `root` is invalid, directory walking fails, or a manifest
 /// path cannot be canonicalized.
-pub fn discover_manifests(root: &Path) -> Result<Vec<PathBuf>> {
+pub fn discover_manifests(root: &Path) -> std::result::Result<Vec<PathBuf>, DiscoveryError> {
     if !root.exists() {
-        bail!("manifest root does not exist: {}", root.display());
+        return Err(DiscoveryError::RootDoesNotExist {
+            root: root.to_path_buf(),
+        });
     }
     if !root.is_dir() {
-        bail!("manifest root must be a directory: {}", root.display());
+        return Err(DiscoveryError::RootIsNotDirectory {
+            root: root.to_path_buf(),
+        });
     }
 
     let mut manifests = Vec::new();
@@ -23,9 +28,7 @@ pub fn discover_manifests(root: &Path) -> Result<Vec<PathBuf>> {
     for entry in WalkDir::new(root) {
         let entry = match entry {
             Ok(value) => value,
-            Err(error) => {
-                return Err(error).context("failed while walking manifest directory");
-            }
+            Err(source) => return Err(DiscoveryError::Walk { source }),
         };
 
         if !entry.file_type().is_file() {
@@ -40,12 +43,11 @@ pub fn discover_manifests(root: &Path) -> Result<Vec<PathBuf>> {
             continue;
         }
 
-        let canonical = fs::canonicalize(entry.path()).with_context(|| {
-            format!(
-                "failed to canonicalize manifest path: {}",
-                entry.path().display()
-            )
-        })?;
+        let canonical =
+            fs::canonicalize(entry.path()).map_err(|source| DiscoveryError::CanonicalizePath {
+                path: entry.path().to_path_buf(),
+                source,
+            })?;
         manifests.push(canonical);
     }
 

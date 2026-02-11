@@ -9,12 +9,14 @@ publish = false
 workspace = true
 
 [dependencies]
-anyhow = { workspace = true }
 mlua = { workspace = true }
 sha2 = { workspace = true }
 tera = { workspace = true }
 which = { workspace = true }
 walkdir = { workspace = true }
+dirs = { workspace = true }
+thiserror = { workspace = true }
+rayon = { workspace = true }
 keron-domain = { path = "../keron-domain" }
 
 [dev-dependencies]

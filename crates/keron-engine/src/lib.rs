@@ -1,5 +1,6 @@
 mod apply;
 mod discovery;
+mod error;
 mod fs_util;
 mod graph;
 mod manifest_lua;
@@ -11,6 +12,10 @@ mod template;
 
 pub use apply::{ApplyOptions, apply_plan};
 pub use discovery::discover_manifests;
+pub use error::{
+    ApplyError, DiscoveryError, GraphError, ManifestEvalError, PipelineError, PlanningError,
+    ProviderError, SecretError,
+};
 pub use graph::build_execution_order;
 pub use manifest_lua::{
     evaluate_manifest, evaluate_manifest_with_warnings, evaluate_many, evaluate_many_with_warnings,
