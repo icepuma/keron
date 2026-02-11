@@ -18,4 +18,4 @@ test:
 test-nextest:
     cargo nextest run --workspace --all-features --all-targets
 
-check: format-check lint test
+check: format-check lint test-nextest

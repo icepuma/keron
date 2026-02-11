@@ -20,6 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: taiki-e/install-action@just
+      - uses: taiki-e/install-action@nextest
       - uses: Swatinem/rust-cache@v2
       - run: just check
       - if: matrix.os == 'ubuntu-22.04'
