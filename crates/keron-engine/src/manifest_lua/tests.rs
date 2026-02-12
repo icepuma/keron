@@ -198,6 +198,67 @@ template("{}", "{}", {{
 }
 
 #[test]
+fn parses_elevate_flag_for_resources() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let manifest = temp.path().join("main.lua");
+    let link_src = temp.path().join("files/zshrc");
+    let link_dest = temp.path().join("home/.zshrc");
+    let template_src = temp.path().join("files/config.tmpl");
+    let template_dest = temp.path().join("out/config");
+
+    fs::create_dir_all(link_src.parent().expect("parent")).expect("mkdir");
+    fs::write(&link_src, "export PATH=$PATH").expect("write link src");
+    fs::write(&template_src, "hello {{name}}").expect("write template src");
+    fs::write(
+        &manifest,
+        format!(
+            r#"
+link("{}", "{}", {{ elevate = true }})
+template("{}", "{}", {{ elevate = true, vars = {{ name = "keron" }} }})
+install_packages("brew", {{ "ripgrep" }}, {{ state = "present", elevate = true }})
+cmd("echo", {{ "hello" }}, {{ elevate = true }})
+cmd("printf", nil, {{ elevate = true }})
+"#,
+            lua_escape(&link_src),
+            lua_escape(&link_dest),
+            lua_escape(&template_src),
+            lua_escape(&template_dest),
+        ),
+    )
+    .expect("write manifest");
+
+    let spec = evaluate_manifest(&manifest).expect("manifest eval");
+    assert_eq!(spec.resources.len(), 5);
+
+    match &spec.resources[0] {
+        Resource::Link(link) => assert!(link.elevate),
+        _ => unreachable!("expected link resource"),
+    }
+    match &spec.resources[1] {
+        Resource::Template(template) => assert!(template.elevate),
+        _ => unreachable!("expected template resource"),
+    }
+    match &spec.resources[2] {
+        Resource::Package(package) => assert!(package.elevate),
+        _ => unreachable!("expected package resource"),
+    }
+    match &spec.resources[3] {
+        Resource::Command(command) => {
+            assert!(command.elevate);
+            assert_eq!(command.args, vec!["hello".to_string()]);
+        }
+        _ => unreachable!("expected command resource"),
+    }
+    match &spec.resources[4] {
+        Resource::Command(command) => {
+            assert!(command.elevate);
+            assert!(command.args.is_empty());
+        }
+        _ => unreachable!("expected command resource"),
+    }
+}
+
+#[test]
 fn env_function_uses_process_environment_values() {
     let temp = tempfile::tempdir().expect("tempdir");
     let manifest = temp.path().join("main.lua");

@@ -37,6 +37,19 @@ keron apply https://github.com/org/repo.git/manifests
 
 `<source>` can be a local manifest folder or a public Git source.
 
+## Exit Codes
+
+`keron apply` (dry-run):
+
+- `0`: plan is clean (no drift)
+- `2`: plan contains drift (changes, conflicts, or operation errors)
+- `1`: planning/evaluation failed
+
+`keron apply --execute`:
+
+- `0`: apply completed successfully
+- `1`: apply failed
+
 ## Manifest
 
 Keron loads `*.lua` files recursively.

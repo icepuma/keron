@@ -17,6 +17,8 @@ walkdir = { workspace = true }
 dirs = { workspace = true }
 thiserror = { workspace = true }
 rayon = { workspace = true }
+serde_json = { workspace = true }
+nix = { version = "=0.31.1", features = ["fs", "user"] }
 keron-domain = { path = "../keron-domain" }
 
 [dev-dependencies]

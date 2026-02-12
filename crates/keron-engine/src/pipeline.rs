@@ -76,6 +76,10 @@ mod tests {
         AbsolutePath::try_from(path).expect("test path should be absolute")
     }
 
+    fn temp_abs(name: &str) -> PathBuf {
+        std::env::temp_dir().join("keron-pipeline-tests").join(name)
+    }
+
     fn make_operation(action: PlanAction, resource: Resource) -> PlannedOperation {
         PlannedOperation {
             id: 1,
@@ -101,9 +105,10 @@ mod tests {
                 PlanAction::LinkReplace,
                 Resource::Link(LinkResource {
                     src: PathBuf::from("/tmp/src"),
-                    dest: abs(PathBuf::from("/tmp/dest")),
+                    dest: abs(temp_abs("dest-link-replace")),
                     force: true,
                     mkdirs: false,
+                    elevate: false,
                 }),
             )],
             warnings: vec![],
@@ -122,9 +127,10 @@ mod tests {
                 PlanAction::LinkCreate,
                 Resource::Link(LinkResource {
                     src: PathBuf::from("/tmp/src"),
-                    dest: abs(PathBuf::from("/tmp/dest")),
+                    dest: abs(temp_abs("dest-link-create")),
                     force: true,
                     mkdirs: false,
+                    elevate: false,
                 }),
             )],
             warnings: vec![],
@@ -143,10 +149,11 @@ mod tests {
                 PlanAction::TemplateUpdate,
                 Resource::Template(TemplateResource {
                     src: PathBuf::from("/tmp/src.tmpl"),
-                    dest: abs(PathBuf::from("/tmp/dest")),
+                    dest: abs(temp_abs("dest-template-update")),
                     vars: BTreeMap::new(),
                     force: true,
                     mkdirs: false,
+                    elevate: false,
                 }),
             )],
             warnings: vec![],

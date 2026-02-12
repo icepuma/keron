@@ -97,6 +97,10 @@ fn parse_package_state(opts: Option<&Table>) -> LuaResult<PackageState> {
     }
 }
 
+fn parse_elevate(opts: Option<&Table>) -> LuaResult<bool> {
+    parse_bool(opts, "elevate", false)
+}
+
 fn add_link(
     collector: &Rc<RefCell<ManifestSpec>>,
     manifest_dir: &Path,
@@ -115,6 +119,7 @@ fn add_link(
         dest,
         force: parse_bool(opts, "force", false)?,
         mkdirs: parse_bool(opts, "mkdirs", false)?,
+        elevate: parse_elevate(opts)?,
     };
 
     collector.borrow_mut().resources.push(Resource::Link(link));
@@ -162,6 +167,7 @@ fn add_install_packages(
                 name: package_name,
                 provider_hint: Some(manager.clone()),
                 state,
+                elevate: parse_elevate(opts)?,
             }));
     }
 
@@ -179,6 +185,7 @@ fn add_command(
     collector: &Rc<RefCell<ManifestSpec>>,
     binary: String,
     args: Option<Table>,
+    opts: Option<&Table>,
 ) -> LuaResult<()> {
     let parsed_args = match args {
         Some(table) => {
@@ -200,6 +207,7 @@ fn add_command(
     let command_resource = CommandResource {
         binary,
         args: parsed_args,
+        elevate: parse_elevate(opts)?,
     };
 
     collector
@@ -228,6 +236,7 @@ fn add_template(
         vars: parse_string_map(opts, "vars")?,
         force: parse_bool(opts, "force", false)?,
         mkdirs: parse_bool(opts, "mkdirs", false)?,
+        elevate: parse_elevate(opts)?,
     };
 
     collector
@@ -469,8 +478,46 @@ fn register_cmd_function(
     collector: &Rc<RefCell<ManifestSpec>>,
 ) -> LuaResult<()> {
     let collector = Rc::clone(collector);
-    let function = lua.create_function(move |_, (binary, args): (String, Option<Table>)| {
-        add_command(&collector, binary, args)
+    let function = lua.create_function(move |_, args: MultiValue| {
+        if !(1..=3).contains(&args.len()) {
+            return Err(LuaError::RuntimeError(
+                "cmd(binary, args?, opts?) expects 1 to 3 arguments".to_string(),
+            ));
+        }
+
+        let Some(first) = args.front() else {
+            return Err(LuaError::RuntimeError(
+                "cmd(binary, args?, opts?) expects binary string as first argument".to_string(),
+            ));
+        };
+        let Value::String(binary) = first else {
+            return Err(LuaError::RuntimeError(
+                "cmd(binary, args?, opts?) expects binary string as first argument".to_string(),
+            ));
+        };
+        let binary = binary.to_str()?.to_owned();
+
+        let parsed_args = match args.get(1) {
+            Some(Value::Nil) | None => None,
+            Some(Value::Table(table)) => Some(table.clone()),
+            Some(_) => {
+                return Err(LuaError::RuntimeError(
+                    "cmd(binary, args?, opts?) expects args table as second argument".to_string(),
+                ));
+            }
+        };
+
+        let opts = match args.get(2) {
+            Some(Value::Nil) | None => None,
+            Some(Value::Table(table)) => Some(table),
+            Some(_) => {
+                return Err(LuaError::RuntimeError(
+                    "cmd(binary, args?, opts?) expects options table as third argument".to_string(),
+                ));
+            }
+        };
+
+        add_command(&collector, binary, parsed_args, opts)
     })?;
     globals.set("cmd", function)?;
     Ok(())

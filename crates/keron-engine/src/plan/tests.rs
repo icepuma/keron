@@ -3,6 +3,8 @@
 use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
 
 use crate::error::ProviderError;
@@ -12,6 +14,8 @@ use keron_domain::{
     PackageResource, PackageState, PlanAction, Resource, TemplateResource,
 };
 
+#[cfg(unix)]
+use super::{OwnershipTarget, set_test_ownership_target_override};
 use super::{build_plan, plan_link_operation, plan_template_operation, sha256_bytes};
 
 struct FakeProvider {
@@ -62,6 +66,7 @@ fn sample_package_manifest_with(
             .transpose()
             .expect("provider hint"),
         state,
+        elevate: false,
     }));
     spec
 }
@@ -92,6 +97,24 @@ fn create_temp_executable() -> (tempfile::TempDir, String) {
     }
 
     (dir, path.to_string_lossy().into_owned())
+}
+
+#[cfg(unix)]
+struct OwnershipOverrideGuard;
+
+#[cfg(unix)]
+impl OwnershipOverrideGuard {
+    fn with_target(target: OwnershipTarget) -> Self {
+        set_test_ownership_target_override(Some(target));
+        Self
+    }
+}
+
+#[cfg(unix)]
+impl Drop for OwnershipOverrideGuard {
+    fn drop(&mut self) {
+        set_test_ownership_target_override(None);
+    }
 }
 
 #[test]
@@ -286,15 +309,18 @@ fn sample_parallel_planning_spec(path: &str, package_name: &str) -> ManifestSpec
     spec.resources.push(Resource::Command(CommandResource {
         binary: "keron-nonexistent-precheck-binary-a".to_string(),
         args: vec!["--dry-run".to_string()],
+        elevate: false,
     }));
     spec.resources.push(Resource::Package(PackageResource {
         name: PackageName::try_from(package_name).expect("package name"),
         provider_hint: Some(PackageManagerName::try_from("brew").expect("provider hint")),
         state: PackageState::Present,
+        elevate: false,
     }));
     spec.resources.push(Resource::Command(CommandResource {
         binary: "keron-nonexistent-precheck-binary-b".to_string(),
         args: vec!["--version".to_string()],
+        elevate: false,
     }));
     spec
 }
@@ -360,6 +386,7 @@ fn link_noop_includes_content_hash() {
         dest: abs(dest),
         force: false,
         mkdirs: false,
+        elevate: false,
     };
     let resource = Resource::Link(link.clone());
     let op = plan_link_operation(1, PathBuf::from("test.lua"), resource, &link);
@@ -367,6 +394,38 @@ fn link_noop_includes_content_hash() {
     assert_eq!(op.action, PlanAction::LinkNoop);
     assert_eq!(op.content_hash, Some(sha256_bytes(b"hello")));
     assert!(op.dest_content_hash.is_none());
+}
+
+#[cfg(unix)]
+#[test]
+fn link_elevated_noop_with_owner_drift_plans_replace() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let src = dir.path().join("source.txt");
+    let dest = dir.path().join("link.txt");
+    std::fs::write(&src, "hello").expect("write src");
+    std::os::unix::fs::symlink(&src, &dest).expect("symlink");
+
+    let metadata = std::fs::symlink_metadata(&dest).expect("dest metadata");
+    let _guard = OwnershipOverrideGuard::with_target(OwnershipTarget {
+        uid: metadata.uid().wrapping_add(1),
+        gid: metadata.gid(),
+    });
+
+    let link = LinkResource {
+        src,
+        dest: abs(dest),
+        force: false,
+        mkdirs: false,
+        elevate: true,
+    };
+    let resource = Resource::Link(link.clone());
+    let op = plan_link_operation(1, PathBuf::from("test.lua"), resource, &link);
+
+    assert_eq!(op.action, PlanAction::LinkReplace);
+    assert!(op.would_change);
+    assert!(op.error.is_none());
+    let hint = op.hint.expect("expected ownership hint");
+    assert!(hint.contains("owner/group"), "hint was: {hint}");
 }
 
 #[test]
@@ -382,6 +441,7 @@ fn link_conflict_with_matching_content_shows_enhanced_hint() {
         dest: abs(dest),
         force: false,
         mkdirs: false,
+        elevate: false,
     };
     let resource = Resource::Link(link.clone());
     let op = plan_link_operation(1, PathBuf::from("test.lua"), resource, &link);
@@ -409,6 +469,7 @@ fn link_conflict_with_different_content_shows_standard_hint() {
         dest: abs(dest),
         force: false,
         mkdirs: false,
+        elevate: false,
     };
     let resource = Resource::Link(link.clone());
     let op = plan_link_operation(1, PathBuf::from("test.lua"), resource, &link);
@@ -436,6 +497,7 @@ fn link_create_includes_source_hash_no_dest_hash() {
         dest: abs(dest),
         force: false,
         mkdirs: false,
+        elevate: false,
     };
     let resource = Resource::Link(link.clone());
     let op = plan_link_operation(1, PathBuf::from("test.lua"), resource, &link);
@@ -456,6 +518,7 @@ fn link_missing_source_has_no_hashes() {
         dest: abs(dest),
         force: false,
         mkdirs: false,
+        elevate: false,
     };
     let resource = Resource::Link(link.clone());
     let op = plan_link_operation(1, PathBuf::from("test.lua"), resource, &link);
@@ -480,6 +543,7 @@ fn link_dangling_destination_requires_force() {
         dest: abs(dest),
         force: false,
         mkdirs: false,
+        elevate: false,
     };
     let resource = Resource::Link(link.clone());
     let op = plan_link_operation(1, PathBuf::from("test.lua"), resource, &link);
@@ -504,6 +568,7 @@ fn link_dangling_destination_force_plans_replace() {
         dest: abs(dest),
         force: true,
         mkdirs: false,
+        elevate: false,
     };
     let resource = Resource::Link(link.clone());
     let op = plan_link_operation(1, PathBuf::from("test.lua"), resource, &link);
@@ -529,6 +594,7 @@ fn template_create_includes_rendered_hash() {
         vars,
         force: false,
         mkdirs: false,
+        elevate: false,
     };
     let resource = Resource::Template(template.clone());
     let (op, _sensitive) =
@@ -553,6 +619,7 @@ fn template_noop_includes_both_hashes() {
         vars: BTreeMap::new(),
         force: false,
         mkdirs: false,
+        elevate: false,
     };
     let resource = Resource::Template(template.clone());
     let (op, _sensitive) =
@@ -562,6 +629,41 @@ fn template_noop_includes_both_hashes() {
     let expected = sha256_bytes(b"static content");
     assert_eq!(op.content_hash, Some(expected.clone()));
     assert_eq!(op.dest_content_hash, Some(expected));
+}
+
+#[cfg(unix)]
+#[test]
+fn template_elevated_noop_with_owner_drift_plans_update() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let src = dir.path().join("tmpl.txt");
+    let dest = dir.path().join("output.txt");
+    std::fs::write(&src, "stable").expect("write src");
+    std::fs::write(&dest, "stable").expect("write dest");
+
+    let metadata = std::fs::metadata(&dest).expect("dest metadata");
+    let _guard = OwnershipOverrideGuard::with_target(OwnershipTarget {
+        uid: metadata.uid().wrapping_add(1),
+        gid: metadata.gid(),
+    });
+
+    let template = TemplateResource {
+        src,
+        dest: abs(dest),
+        vars: BTreeMap::new(),
+        force: false,
+        mkdirs: false,
+        elevate: true,
+    };
+    let resource = Resource::Template(template.clone());
+    let (op, _sensitive) =
+        plan_template_operation(1, PathBuf::from("test.lua"), resource, &template);
+
+    assert_eq!(op.action, PlanAction::TemplateUpdate);
+    assert!(op.would_change);
+    assert!(op.error.is_none());
+    assert_eq!(op.content_hash, op.dest_content_hash);
+    let hint = op.hint.expect("expected ownership hint");
+    assert!(hint.contains("owner/group"), "hint was: {hint}");
 }
 
 #[cfg(unix)]
@@ -580,6 +682,7 @@ fn template_dangling_destination_with_force_plans_update() {
         vars: BTreeMap::new(),
         force: true,
         mkdirs: false,
+        elevate: false,
     };
     let resource = Resource::Template(template.clone());
     let (op, _sensitive) =

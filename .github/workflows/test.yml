@@ -23,6 +23,7 @@ jobs:
       - uses: taiki-e/install-action@nextest
       - uses: Swatinem/rust-cache@v2
       - run: just check
+      - run: just test-harness
       - if: matrix.os == 'ubuntu-22.04'
         env:
           RUSTDOCFLAGS: -D warnings

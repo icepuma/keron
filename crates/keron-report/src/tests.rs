@@ -49,8 +49,24 @@ fn verbose_options() -> RenderOptions {
     }
 }
 
+fn fixture_path(path: &str) -> PathBuf {
+    let raw = PathBuf::from(path);
+    if raw.is_absolute() {
+        raw
+    } else {
+        let trimmed = path.trim_start_matches(['/', '\\']);
+        std::env::temp_dir()
+            .join("keron-report-tests")
+            .join(trimmed)
+    }
+}
+
 fn abs(path: &str) -> AbsolutePath {
-    AbsolutePath::try_from(PathBuf::from(path)).expect("test path should be absolute")
+    AbsolutePath::try_from(fixture_path(path)).expect("test path should be absolute")
+}
+
+fn display_fixture_path(path: &str) -> String {
+    fixture_path(path).display().to_string()
 }
 
 fn link_op(id: usize, action: PlanAction, src: &str, dest: &str) -> PlannedOperation {
@@ -59,10 +75,11 @@ fn link_op(id: usize, action: PlanAction, src: &str, dest: &str) -> PlannedOpera
         manifest: PathBuf::from("/tmp/base.lua"),
         action,
         resource: Resource::Link(LinkResource {
-            src: PathBuf::from(src),
+            src: fixture_path(src),
             dest: abs(dest),
             force: false,
             mkdirs: true,
+            elevate: false,
         }),
         summary: String::new(),
         would_change: matches!(action, PlanAction::LinkCreate | PlanAction::LinkReplace),
@@ -88,11 +105,12 @@ fn template_op(id: usize, action: PlanAction, src: &str, dest: &str) -> PlannedO
         manifest: PathBuf::from("/tmp/workstation.lua"),
         action,
         resource: Resource::Template(TemplateResource {
-            src: PathBuf::from(src),
+            src: fixture_path(src),
             dest: abs(dest),
             vars: BTreeMap::default(),
             force: false,
             mkdirs: true,
+            elevate: false,
         }),
         summary: String::new(),
         would_change: matches!(
@@ -124,6 +142,7 @@ fn package_op(
                 .transpose()
                 .expect("provider hint"),
             state: PackageState::Present,
+            elevate: false,
         }),
         summary: String::new(),
         would_change: matches!(
@@ -146,6 +165,7 @@ fn command_op(id: usize, binary: &str) -> PlannedOperation {
         resource: Resource::Command(CommandResource {
             binary: binary.to_string(),
             args: Vec::new(),
+            elevate: false,
         }),
         summary: String::new(),
         would_change: true,
@@ -191,13 +211,20 @@ fn plan_shows_structured_detail() {
 
     let text =
         render_plan(&report, OutputFormat::Text, &base_options()).expect("render should succeed");
+    let link_src = display_fixture_path("/tmp/src/zshrc");
+    let link_dest = abs("/tmp/dest/.zshrc").display().to_string();
+    let template_src = display_fixture_path("/tmp/src/star.tmpl");
+    let template_dest = abs("/tmp/dest/star.toml").display().to_string();
 
     assert!(text.contains("+ create link"));
-    assert!(text.contains("/tmp/src/zshrc"));
-    assert!(text.contains("-> /tmp/dest/.zshrc"));
+    assert!(text.contains(&link_src), "text:\n{text}");
+    assert!(text.contains(&format!("-> {link_dest}")), "text:\n{text}");
     assert!(text.contains("~ rerender template"));
-    assert!(text.contains("/tmp/src/star.tmpl"));
-    assert!(text.contains("-> /tmp/dest/star.toml"));
+    assert!(text.contains(&template_src), "text:\n{text}");
+    assert!(
+        text.contains(&format!("-> {template_dest}")),
+        "text:\n{text}"
+    );
     assert!(text.contains("+ install package"));
     assert!(text.contains("ripgrep"));
     assert!(text.contains("via brew"));
@@ -272,10 +299,17 @@ fn plan_conflict_shows_hint() {
 
     let text =
         render_plan(&report, OutputFormat::Text, &base_options()).expect("render should succeed");
+    let conflict_src = display_fixture_path("/tmp/src");
 
     assert!(text.contains("! conflict"));
-    assert!(text.contains("! conflict /tmp/src"));
-    assert!(!text.contains("! conflict      /tmp/src"));
+    assert!(
+        text.contains(&format!("! conflict {conflict_src}")),
+        "text:\n{text}"
+    );
+    assert!(
+        !text.contains(&format!("! conflict      {conflict_src}")),
+        "text:\n{text}"
+    );
     assert!(text.contains("set force=true or remove destination manually"));
 }
 
@@ -432,10 +466,12 @@ fn apply_shows_structured_detail() {
 
     let text =
         render_apply(&apply, OutputFormat::Text, &base_options()).expect("render should succeed");
+    let src = display_fixture_path("/tmp/src");
+    let dest = abs("/tmp/dest").display().to_string();
 
     assert!(text.contains("~ replaced link"));
-    assert!(text.contains("/tmp/src"));
-    assert!(text.contains("-> /tmp/dest"));
+    assert!(text.contains(&src), "text:\n{text}");
+    assert!(text.contains(&format!("-> {dest}")), "text:\n{text}");
     assert!(text.contains("! failed command"));
     assert!(text.contains("command exited with non-zero status"));
 }

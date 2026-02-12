@@ -1,4 +1,6 @@
 use std::collections::{BTreeSet, HashMap};
+#[cfg(unix)]
+use std::env;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -13,8 +15,12 @@ use crate::error::{PlanningError, ProviderError};
 use crate::fs_util::{path_exists_including_dangling_symlink, symlink_points_to};
 use crate::providers::{ProviderRegistry, ProviderSnapshot, package_states_bulk};
 use crate::template::render_template_string;
+#[cfg(unix)]
+use nix::unistd::{Gid, Uid};
 use rayon::prelude::*;
 use sha2::{Digest, Sha256};
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -26,6 +32,30 @@ struct PackageQueryKey {
 type PackageDiagnostics = HashMap<PackageQueryKey, Vec<String>>;
 type PackageStateStatus = Result<(String, bool), PackageStateError>;
 type PackageStateEntry = (PackageQueryKey, PackageStateStatus);
+
+#[cfg(unix)]
+const KERON_INVOKING_UID_ENV: &str = "KERON_INVOKING_UID";
+#[cfg(unix)]
+const KERON_INVOKING_GID_ENV: &str = "KERON_INVOKING_GID";
+
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct OwnershipTarget {
+    uid: u32,
+    gid: u32,
+}
+
+#[cfg(all(unix, test))]
+thread_local! {
+    static TEST_OWNERSHIP_TARGET_OVERRIDE: std::cell::Cell<Option<OwnershipTarget>> = const {
+        std::cell::Cell::new(None)
+    };
+}
+
+#[cfg(all(unix, test))]
+fn set_test_ownership_target_override(target: Option<OwnershipTarget>) {
+    TEST_OWNERSHIP_TARGET_OVERRIDE.with(|slot| slot.set(target));
+}
 
 #[derive(Debug, Clone, Error)]
 enum PackageStateError {
@@ -583,6 +613,60 @@ fn sha256_bytes(data: &[u8]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+#[cfg(unix)]
+fn desired_ownership_target() -> OwnershipTarget {
+    #[cfg(test)]
+    if let Some(override_target) = TEST_OWNERSHIP_TARGET_OVERRIDE.with(std::cell::Cell::get) {
+        return override_target;
+    }
+
+    let parsed_uid = env::var(KERON_INVOKING_UID_ENV)
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok());
+    let parsed_group = env::var(KERON_INVOKING_GID_ENV)
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok());
+
+    match (parsed_uid, parsed_group) {
+        (Some(uid), Some(gid)) => OwnershipTarget { uid, gid },
+        _ => OwnershipTarget {
+            uid: Uid::current().as_raw(),
+            gid: Gid::current().as_raw(),
+        },
+    }
+}
+
+#[cfg(unix)]
+fn ownership_mismatch(path: &Path, follow_symlink: bool) -> Result<bool, io::Error> {
+    let metadata = if follow_symlink {
+        fs::metadata(path)
+    } else {
+        fs::symlink_metadata(path)
+    }?;
+    let target = desired_ownership_target();
+    Ok(metadata.uid() != target.uid || metadata.gid() != target.gid)
+}
+
+fn link_needs_ownership_reconcile(link: &LinkResource) -> Result<bool, io::Error> {
+    #[cfg(unix)]
+    {
+        if link.elevate {
+            return ownership_mismatch(link.dest.as_path(), false);
+        }
+    }
+    Ok(false)
+}
+
+fn template_needs_ownership_reconcile(template: &TemplateResource) -> Result<bool, io::Error> {
+    #[cfg(unix)]
+    {
+        if template.elevate {
+            return ownership_mismatch(template.dest.as_path(), true);
+        }
+    }
+    Ok(false)
+}
+
 fn link_summary(link: &LinkResource) -> String {
     format!("link {} -> {}", link.src.display(), link.dest.display())
 }
@@ -646,6 +730,25 @@ fn link_noop_operation(ctx: &OperationContext, link: &LinkResource) -> PlannedOp
         would_change: false,
         conflict: false,
         hint: None,
+        error: None,
+        content_hash: sha256_file(&link.src),
+        dest_content_hash: None,
+    })
+}
+
+fn link_ownership_reconcile_operation(
+    ctx: &OperationContext,
+    link: &LinkResource,
+) -> PlannedOperation {
+    ctx.planned_operation(OperationDecision {
+        action: PlanAction::LinkReplace,
+        summary: format!(
+            "link target is correct but owner/group differs: {}",
+            link.dest.display()
+        ),
+        would_change: true,
+        conflict: false,
+        hint: Some("will set owner/group to invoking user due to elevate=true".to_string()),
         error: None,
         content_hash: sha256_file(&link.src),
         dest_content_hash: None,
@@ -748,6 +851,25 @@ fn plan_link_operation(
         }
     };
     if same_target {
+        let needs_ownership_reconcile = match link_needs_ownership_reconcile(link) {
+            Ok(value) => value,
+            Err(error) => {
+                return link_conflict_operation(
+                    &ctx,
+                    link_summary(link),
+                    None,
+                    format!(
+                        "failed to inspect destination ownership {}: {error}",
+                        link.dest.display()
+                    ),
+                    sha256_file(&link.src),
+                    None,
+                );
+            }
+        };
+        if needs_ownership_reconcile {
+            return link_ownership_reconcile_operation(&ctx, link);
+        }
         return link_noop_operation(&ctx, link);
     }
 
@@ -1066,6 +1188,27 @@ fn template_noop_operation(
     })
 }
 
+fn template_ownership_reconcile_operation(
+    ctx: &OperationContext,
+    template: &TemplateResource,
+    rendered_hash: String,
+    current_hash: String,
+) -> PlannedOperation {
+    ctx.planned_operation(OperationDecision {
+        action: PlanAction::TemplateUpdate,
+        summary: format!(
+            "template content is current but owner/group differs: {}",
+            template.dest.display()
+        ),
+        would_change: true,
+        conflict: false,
+        hint: Some("will set owner/group to invoking user due to elevate=true".to_string()),
+        error: None,
+        content_hash: Some(rendered_hash),
+        dest_content_hash: Some(current_hash),
+    })
+}
+
 fn template_update_or_conflict_operation(
     ctx: &OperationContext,
     template: &TemplateResource,
@@ -1160,6 +1303,34 @@ fn plan_template_destination(
 
     let current_hash = sha256_bytes(current.as_bytes());
     if current == rendered.content {
+        let needs_ownership_reconcile = match template_needs_ownership_reconcile(template) {
+            Ok(value) => value,
+            Err(error) => {
+                return template_conflict_operation(
+                    ctx,
+                    template_summary(template),
+                    None,
+                    format!(
+                        "failed to inspect destination ownership {}: {error}",
+                        template.dest.display()
+                    ),
+                    Some(rendered.content_hash),
+                    Some(current_hash),
+                    rendered.sensitive,
+                );
+            }
+        };
+        if needs_ownership_reconcile {
+            return (
+                template_ownership_reconcile_operation(
+                    ctx,
+                    template,
+                    rendered.content_hash,
+                    current_hash,
+                ),
+                rendered.sensitive,
+            );
+        }
         return (
             template_noop_operation(ctx, template, rendered.content_hash, current_hash),
             rendered.sensitive,

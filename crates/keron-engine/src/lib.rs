@@ -10,7 +10,7 @@ mod providers;
 mod secrets;
 mod template;
 
-pub use apply::{ApplyOptions, apply_plan};
+pub use apply::{ApplyOptions, apply_operation_from_file, apply_plan};
 pub use discovery::discover_manifests;
 pub use error::{
     ApplyError, DiscoveryError, GraphError, ManifestEvalError, PipelineError, PlanningError,

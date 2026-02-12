@@ -33,6 +33,7 @@ cargo run -- apply examples/proton-pass
 
 This renders a template with `secret("pp://Personal/test/username")`.
 It requires `pass-cli` to be installed and authenticated.
+CI e2e coverage uses a mocked `pass-cli` shim (Bash on Unix, cmd on Windows), so no real Proton Pass account is required.
 
 ## Package Lists
 
