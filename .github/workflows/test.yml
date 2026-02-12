@@ -23,7 +23,7 @@ jobs:
       - uses: taiki-e/install-action@nextest
       - uses: Swatinem/rust-cache@v2
       - run: just check
-      - run: cargo nextest run -p keron-e2e --test harness_cli --success-output final --failure-output immediate-final
+      - run: just test-harness
       - if: matrix.os == 'ubuntu-22.04'
         env:
           RUSTDOCFLAGS: -D warnings
