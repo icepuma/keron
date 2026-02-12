@@ -137,12 +137,13 @@ where
             }
 
             if !execute {
+                let has_drift = report.has_drift();
                 let rendered = render_plan(&report, output_format, &render_options)?;
                 emit_output(&rendered, output_format, &sensitive_values);
-                if report.has_drift() && output_format == OutputFormat::Text {
+                if has_drift && output_format == OutputFormat::Text {
                     eprintln!("hint: re-run with --execute to apply changes");
                 }
-                return Ok(i32::from(report.has_drift()));
+                return Ok(if has_drift { 2 } else { 0 });
             }
 
             if output_format == OutputFormat::Text

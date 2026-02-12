@@ -87,7 +87,7 @@ fn apply_detects_drift_in_tempdir() {
     let output = run_apply(temp.path(), &[]);
     assert_eq!(
         exit_code(&output),
-        1,
+        2,
         "apply should report drift before execute"
     );
 }
@@ -108,7 +108,78 @@ fn apply_supports_render_flags() {
     write_file(&manifest, &script);
 
     let output = run_apply(temp.path(), &["--color", "never", "--verbose"]);
-    assert_eq!(exit_code(&output), 1, "apply should still report drift");
+    assert_eq!(exit_code(&output), 2, "apply should still report drift");
+}
+
+#[test]
+fn apply_exit_code_matrix_matches_terraform_style() {
+    let clean = TempDir::new().expect("tempdir");
+    write_file(&clean.path().join("main.lua"), "-- no-op");
+    let clean_output = run_apply(clean.path(), &[]);
+    assert_eq!(exit_code(&clean_output), 0, "clean dry-run should return 0");
+
+    let drift = TempDir::new().expect("tempdir");
+    let drift_src = drift.path().join("files/config");
+    let drift_dest = drift.path().join("out/config");
+    write_file(&drift_src, "hello\n");
+    write_file(
+        &drift.path().join("main.lua"),
+        &format!(
+            "link(\"{}\", \"{}\", {{ mkdirs = true }})",
+            to_lua_path(&drift_src),
+            to_lua_path(&drift_dest)
+        ),
+    );
+    let drift_output = run_apply(drift.path(), &[]);
+    assert_eq!(exit_code(&drift_output), 2, "drift dry-run should return 2");
+
+    let plan_error = TempDir::new().expect("tempdir");
+    write_file(&plan_error.path().join("a.lua"), "depends_on(\"./b.lua\")");
+    write_file(&plan_error.path().join("b.lua"), "depends_on(\"./a.lua\")");
+    let plan_error_output = run_apply(plan_error.path(), &[]);
+    assert_eq!(
+        exit_code(&plan_error_output),
+        1,
+        "planning errors should return 1"
+    );
+
+    let execute_success = TempDir::new().expect("tempdir");
+    let success_src = execute_success.path().join("files/profile.tmpl");
+    let success_dest = execute_success.path().join("out/profile.conf");
+    write_file(&success_src, "name=sam\n");
+    write_file(
+        &execute_success.path().join("main.lua"),
+        &format!(
+            r#"
+template("{}", "{}", {{
+  mkdirs = true,
+  force = true
+}})
+"#,
+            to_lua_path(&success_src),
+            to_lua_path(&success_dest)
+        ),
+    );
+    let execute_success_output = run_apply(execute_success.path(), &["--execute"]);
+    assert_eq!(
+        exit_code(&execute_success_output),
+        0,
+        "successful apply should return 0"
+    );
+
+    let execute_failure = TempDir::new().expect("tempdir");
+    let fail_command = if cfg!(windows) {
+        r#"cmd("cmd", {"/C", "exit", "1"})"#
+    } else {
+        r#"cmd("sh", {"-c", "exit 1"})"#
+    };
+    write_file(&execute_failure.path().join("main.lua"), fail_command);
+    let execute_failure_output = run_apply(execute_failure.path(), &["--execute"]);
+    assert_eq!(
+        exit_code(&execute_failure_output),
+        1,
+        "failed apply should return 1"
+    );
 }
 
 #[test]
@@ -206,7 +277,7 @@ template("{}", "{}", {{
     let plan_output = run_apply(temp.path(), &[]);
     assert_eq!(
         exit_code(&plan_output),
-        1,
+        2,
         "template should report pending change before apply"
     );
 
