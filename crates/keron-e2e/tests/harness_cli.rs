@@ -98,6 +98,7 @@ fn write_multi_manifest_templates(
 template("{}", "{}", {{
   mkdirs = true,
   force = true,
+  elevate = true,
   vars = {{ layer = "base" }}
 }})
 "#,
@@ -117,6 +118,7 @@ depends_on("./base.lua")
 template("{}", "{}", {{
   mkdirs = true,
   force = true,
+  elevate = true,
   vars = {{ layer = "dev" }}
 }})
 "#,
@@ -136,6 +138,7 @@ depends_on("./dev.lua")
 template("{}", "{}", {{
   mkdirs = true,
   force = true,
+  elevate = true,
   vars = {{ layer = "workstation" }}
 }})
 "#,
@@ -172,11 +175,11 @@ fn guarded_package_block(current_manager: &str, package: &str) -> String {
     format!(
         r#"
 if is_linux() then
-  install_packages("apt", {{ "{linux_package}" }}, {{ state = "present" }})
+  install_packages("apt", {{ "{linux_package}" }}, {{ state = "present", elevate = true }})
 elseif is_macos() then
-  install_packages("brew", {{ "{macos_package}" }}, {{ state = "present" }})
+  install_packages("brew", {{ "{macos_package}" }}, {{ state = "present", elevate = true }})
 elseif is_windows() then
-  install_packages("winget", {{ "{windows_package}" }}, {{ state = "present" }})
+  install_packages("winget", {{ "{windows_package}" }}, {{ state = "present", elevate = true }})
 end
 "#
     )

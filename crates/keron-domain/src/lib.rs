@@ -330,6 +330,7 @@ pub struct LinkResource {
     pub dest: AbsolutePath,
     pub force: bool,
     pub mkdirs: bool,
+    pub elevate: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -339,6 +340,7 @@ pub struct TemplateResource {
     pub vars: BTreeMap<String, String>,
     pub force: bool,
     pub mkdirs: bool,
+    pub elevate: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -346,6 +348,7 @@ pub struct PackageResource {
     pub name: PackageName,
     pub provider_hint: Option<PackageManagerName>,
     pub state: PackageState,
+    pub elevate: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -360,6 +363,7 @@ pub enum PackageState {
 pub struct CommandResource {
     pub binary: String,
     pub args: Vec<String>,
+    pub elevate: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

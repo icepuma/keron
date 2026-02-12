@@ -4,11 +4,12 @@
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::io::IsTerminal;
+use std::path::PathBuf;
 
 use clap::error::ErrorKind;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use keron_engine::{
-    ApplyOptions, ProviderRegistry, apply_plan, build_plan_for_folder,
+    ApplyOptions, ProviderRegistry, apply_operation_from_file, apply_plan, build_plan_for_folder,
     has_potentially_destructive_forced_changes,
 };
 use keron_report::{
@@ -38,6 +39,11 @@ enum Commands {
         format: FormatArg,
         #[arg(long)]
         execute: bool,
+    },
+    #[command(name = "__apply-op", hide = true)]
+    ApplyOperation {
+        #[arg(long = "op-file")]
+        op_file: PathBuf,
     },
 }
 
@@ -162,6 +168,10 @@ where
             let rendered = render_apply(&apply_report, output_format, &render_options)?;
             emit_output(&rendered, output_format, &all_sensitive);
             Ok(i32::from(apply_report.has_failures()))
+        }
+        Commands::ApplyOperation { op_file } => {
+            let _ = apply_operation_from_file(&op_file, &providers)?;
+            Ok(0)
         }
     }
 }

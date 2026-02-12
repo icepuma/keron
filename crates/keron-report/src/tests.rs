@@ -79,6 +79,7 @@ fn link_op(id: usize, action: PlanAction, src: &str, dest: &str) -> PlannedOpera
             dest: abs(dest),
             force: false,
             mkdirs: true,
+            elevate: false,
         }),
         summary: String::new(),
         would_change: matches!(action, PlanAction::LinkCreate | PlanAction::LinkReplace),
@@ -109,6 +110,7 @@ fn template_op(id: usize, action: PlanAction, src: &str, dest: &str) -> PlannedO
             vars: BTreeMap::default(),
             force: false,
             mkdirs: true,
+            elevate: false,
         }),
         summary: String::new(),
         would_change: matches!(
@@ -140,6 +142,7 @@ fn package_op(
                 .transpose()
                 .expect("provider hint"),
             state: PackageState::Present,
+            elevate: false,
         }),
         summary: String::new(),
         would_change: matches!(
@@ -162,6 +165,7 @@ fn command_op(id: usize, binary: &str) -> PlannedOperation {
         resource: Resource::Command(CommandResource {
             binary: binary.to_string(),
             args: Vec::new(),
+            elevate: false,
         }),
         summary: String::new(),
         would_change: true,

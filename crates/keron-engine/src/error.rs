@@ -108,6 +108,25 @@ pub enum ApplyError {
     },
     #[error("command exited with non-zero status: {status}")]
     CommandFailed { status: ExitStatus },
+    #[error("failed to encode elevated operation payload")]
+    OperationPayloadEncode {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("failed to decode elevated operation payload: {path}")]
+    OperationPayloadDecode {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("no elevated runner available: {detail}")]
+    ElevatedRunnerMissing { detail: String },
+    #[error("elevated operation failed (exit: {status}); stderr: {stderr}; stdout: {stdout}")]
+    ElevatedOperationFailed {
+        status: ExitStatus,
+        stdout: String,
+        stderr: String,
+    },
     #[error("{context}")]
     Io {
         context: String,

@@ -9,5 +9,7 @@ pub enum CliError {
     #[error(transparent)]
     Pipeline(#[from] keron_engine::PipelineError),
     #[error(transparent)]
+    Apply(#[from] keron_engine::ApplyError),
+    #[error(transparent)]
     Report(#[from] keron_report::ReportError),
 }
