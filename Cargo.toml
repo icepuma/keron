@@ -23,7 +23,7 @@ rust-version = "1.87"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-clap = { version = "=4.5.57", features = ["derive"] }
+clap = { version = "=4.5.60", features = ["derive"] }
 mlua = { version = "=0.11.6", default-features = false, features = ["lua54", "vendored"] }
 console = "=0.16.2"
 minus = { version = "=5.6.1", default-features = false, features = ["static_output"] }
@@ -34,8 +34,8 @@ thiserror = "=2.0.18"
 which = "=8.0.0"
 walkdir = "=2.5.0"
 sha2 = "=0.10.9"
-tempfile = "=3.25.0"
-gix = { version = "=0.78.0", default-features = false }
+tempfile = "=3.26.0"
+gix = { version = "=0.80.0", default-features = false }
 url = "=2.5.8"
 dirs = "=6.0.0"
 rayon = "=1.11.0"
