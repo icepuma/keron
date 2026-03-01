@@ -18,7 +18,7 @@ jobs:
       CARGO_TERM_COLOR: always
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: taiki-e/install-action@just
       - uses: taiki-e/install-action@nextest
       - uses: Swatinem/rust-cache@v2
