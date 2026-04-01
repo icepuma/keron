@@ -23,19 +23,19 @@ rust-version = "1.87"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-clap = { version = "=4.5.57", features = ["derive"] }
+clap = { version = "=4.6.0", features = ["derive"] }
 mlua = { version = "=0.11.6", default-features = false, features = ["lua54", "vendored"] }
-console = "=0.16.2"
+console = "=0.16.3"
 minus = { version = "=5.6.1", default-features = false, features = ["static_output"] }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.149"
 tera = "=1.20.1"
 thiserror = "=2.0.18"
-which = "=8.0.0"
+which = "=8.0.2"
 walkdir = "=2.5.0"
-sha2 = "=0.10.9"
-tempfile = "=3.25.0"
-gix = { version = "=0.78.0", default-features = false }
+sha2 = "=0.11.0"
+tempfile = "=3.27.0"
+gix = { version = "=0.81.0", default-features = false }
 url = "=2.5.8"
 dirs = "=6.0.0"
 rayon = "=1.11.0"
