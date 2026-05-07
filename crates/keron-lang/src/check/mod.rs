@@ -31,8 +31,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     ast::{
-        BinOp, Block, CallArg, Expr, FnDecl, Item, MapEntry, Param, Program, ReconcileDecl, Span,
-        Spanned, Stmt, StringPart, Type, UnaryOp, ValDecl,
+        BinOp, Block, CallArg, Expr, FnDecl, ForPattern, Item, MapEntry, Param, Program,
+        ReconcileDecl, Span, Spanned, Stmt, StringPart, Type, UnaryOp, ValDecl,
     },
     diagnostic::Diagnostic,
 };
@@ -555,7 +555,94 @@ fn expr_type(e: &Spanned<Expr>, env: &Env, fns: &FnEnv) -> Result<Type, Diagnost
             then_branch,
             else_branch,
         } => if_type(cond, then_branch, else_branch, env, fns),
+        Expr::For {
+            pattern,
+            iter_expr,
+            body,
+        } => for_type(pattern, iter_expr, body, env, fns),
     }
+}
+
+/// Type-check a `for` expression. Always synthesises [`Type::Void`].
+///
+/// Strict pattern↔iterable matching: list iterables only accept the
+/// single-bind form, map iterables only accept the pair form. The
+/// loop variable(s) bind in a fresh body scope as
+/// [`BindingKind::BodyLocal`], so they may not collide with outer
+/// vals, params, or other body locals (the standard "already
+/// defined" error fires). The body is checked against `Void`, so any
+/// value-producing trailing expression is rejected with the existing
+/// block-trailing diagnostic.
+fn for_type(
+    pattern: &ForPattern,
+    iter_expr: &Spanned<Expr>,
+    body: &Block,
+    env: &Env,
+    fns: &FnEnv,
+) -> Result<Type, Diagnostic> {
+    let iter_ty = expr_type(iter_expr, env, fns)?;
+    let mut scope = env.clone();
+    match (pattern, &iter_ty) {
+        (ForPattern::Elem(name), Type::List(elem)) => {
+            bind_loop_var(&mut scope, name, (**elem).clone())?;
+        }
+        (ForPattern::Entry { key, value }, Type::Map(k, v)) => {
+            if key.node == value.node {
+                return Err(Diagnostic::new(
+                    value.span.clone(),
+                    format!(
+                        "duplicate binding `{}` in `for` pattern: key and value must be distinct",
+                        value.node
+                    ),
+                ));
+            }
+            bind_loop_var(&mut scope, key, (**k).clone())?;
+            bind_loop_var(&mut scope, value, (**v).clone())?;
+        }
+        (ForPattern::Elem(_), Type::Map(_, _)) => {
+            return Err(Diagnostic::new(
+                iter_expr.span.clone(),
+                format!(
+                    "`for x in …` expects `List<T>`; use `for (k, v) in …` to iterate `{iter_ty}`"
+                ),
+            ));
+        }
+        (ForPattern::Entry { .. }, Type::List(_)) => {
+            return Err(Diagnostic::new(
+                iter_expr.span.clone(),
+                format!(
+                    "`for (k, v) in …` expects `Map<K, V>`; use `for x in …` to iterate `{iter_ty}`"
+                ),
+            ));
+        }
+        _ => {
+            return Err(Diagnostic::new(
+                iter_expr.span.clone(),
+                format!("`for` expects `List<T>` or `Map<K, V>`, found `{iter_ty}`"),
+            ));
+        }
+    }
+    check_block(body, &Type::Void, &scope, fns)?;
+    Ok(Type::Void)
+}
+
+fn bind_loop_var(env: &mut Env, name: &Spanned<String>, ty: Type) -> Result<(), Diagnostic> {
+    if let Some(kind) = env.lookup_kind(&name.node) {
+        let what = match kind {
+            BindingKind::Param => "parameter",
+            BindingKind::OuterVal => "outer `val`",
+            BindingKind::BodyLocal => "previous body `val`",
+        };
+        return Err(Diagnostic::new(
+            name.span.clone(),
+            format!(
+                "`{}` is already defined as a {what} in this scope",
+                name.node
+            ),
+        ));
+    }
+    env.bind(name.node.clone(), ty, BindingKind::BodyLocal);
+    Ok(())
 }
 
 fn if_type(

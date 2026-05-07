@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `x` is already defined as a outer `val` in this scope
+  --> 3:5
+  |
+3 | for x in xs { reconcile x }
+  |     ^

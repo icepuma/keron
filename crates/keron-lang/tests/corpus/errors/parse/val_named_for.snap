@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `for` is a reserved keyword
+  --> 1:5
+  |
+1 | val for: Int = 1
+  |     ^

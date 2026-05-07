@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: found ',' expected something else, '#', or ')'
+  --> 2:10
+  |
+2 | for (a, b, c) in m { reconcile c }
+  |          ^

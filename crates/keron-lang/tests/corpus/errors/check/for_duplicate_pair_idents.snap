@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: duplicate binding `k` in `for` pattern: key and value must be distinct
+  --> 2:9
+  |
+2 | for (k, k) in m { reconcile k }
+  |         ^

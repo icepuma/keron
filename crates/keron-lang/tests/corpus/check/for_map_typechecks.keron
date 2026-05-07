@@ -1,0 +1,27 @@
+# `for (k, v) in m` over a `Map<K, V>` binds `k: K` and `v: V` in
+# body scope.
+
+fn write_kv(key: String, count: Int): File {
+  file(path = "~/state/${key}", content = "${count}")
+}
+
+val counts: Map<String, Int> = {"alpha": 1, "beta": 2}
+
+for (name, n) in counts {
+  reconcile write_kv(name, n)
+}
+
+# Pair-form keys can be of any allowed key type (`String`, `Int`,
+# `Boolean`).
+val codes: Map<Int, String> = {200: "ok", 404: "missing"}
+for (code, label) in codes {
+  reconcile file(path = "/tmp/${code}", content = label)
+}
+
+# Body with inner `val` shadow-checks: `tag` doesn't collide with `k`
+# or `v`.
+val by_user: Map<String, Boolean> = {"alice": true, "bob": false}
+for (user, enabled) in by_user {
+  val tag: String = "${user}=${enabled}"
+  reconcile file(path = "/tmp/${user}", content = tag)
+}

@@ -146,6 +146,31 @@ pub enum Expr {
         then_branch: Box<Block>,
         else_branch: Box<Block>,
     },
+    /// `for x in xs { … }` over `List<T>` or
+    /// `for (k, v) in m { … }` over `Map<K, V>`. Always has type
+    /// [`Type::Void`]; the body's trailing expression must also be
+    /// `Void`. Used for iteration that declares resources or gates
+    /// `reconcile` directives. Permitted at top level via
+    /// [`Item::ExprStmt`]. The single-bind form is list-only and the
+    /// pair form is map-only — mismatches are type errors.
+    For {
+        pattern: ForPattern,
+        iter_expr: Box<Spanned<Self>>,
+        body: Box<Block>,
+    },
+}
+
+/// Binding shape for a [`Expr::For`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ForPattern {
+    /// `for x in xs` — list iteration; binds `x: T` for `xs: List<T>`.
+    Elem(Spanned<String>),
+    /// `for (k, v) in m` — map iteration; binds `k: K` and `v: V` for
+    /// `m: Map<K, V>`. `key` and `value` must be distinct names.
+    Entry {
+        key: Spanned<String>,
+        value: Spanned<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

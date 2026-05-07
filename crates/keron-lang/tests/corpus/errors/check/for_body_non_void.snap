@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: type mismatch: expected `Void`, found `Int`
+  --> 2:15
+  |
+2 | for x in xs { x }
+  |               ^

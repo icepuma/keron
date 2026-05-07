@@ -3372,15 +3372,222 @@ Program {
                             ),
                         ],
                         trailing: None,
-                        span: 4913..4937,
+                        span: 4913..5282,
                     },
                     else_branch: Block {
                         stmts: [],
                         trailing: None,
-                        span: 4937..4937,
+                        span: 5282..5282,
                     },
                 },
-                span: 4902..4937,
+                span: 4902..5282,
+            },
+        ),
+        ExprStmt(
+            Spanned {
+                node: For {
+                    pattern: Elem(
+                        Spanned {
+                            node: "one_link",
+                            span: 5286..5294,
+                        },
+                    ),
+                    iter_expr: Spanned {
+                        node: Var(
+                            "all_links",
+                        ),
+                        span: 5298..5307,
+                    },
+                    body: Block {
+                        stmts: [
+                            Reconcile(
+                                ReconcileDecl {
+                                    expr: Spanned {
+                                        node: Var(
+                                            "one_link",
+                                        ),
+                                        span: 5322..5330,
+                                    },
+                                    span: 5312..5331,
+                                },
+                            ),
+                        ],
+                        trailing: None,
+                        span: 5308..5401,
+                    },
+                },
+                span: 5282..5401,
+            },
+        ),
+        ExprStmt(
+            Spanned {
+                node: For {
+                    pattern: Entry {
+                        key: Spanned {
+                            node: "name",
+                            span: 5406..5410,
+                        },
+                        value: Spanned {
+                            node: "priority",
+                            span: 5412..5420,
+                        },
+                    },
+                    iter_expr: Spanned {
+                        node: Var(
+                            "by_name",
+                        ),
+                        span: 5425..5432,
+                    },
+                    body: Block {
+                        stmts: [
+                            Reconcile(
+                                ReconcileDecl {
+                                    expr: Spanned {
+                                        node: Call {
+                                            callee: Spanned {
+                                                node: "file",
+                                                span: 5447..5451,
+                                            },
+                                            args: [
+                                                CallArg {
+                                                    name: Some(
+                                                        Spanned {
+                                                            node: "path",
+                                                            span: 5452..5456,
+                                                        },
+                                                    ),
+                                                    value: Spanned {
+                                                        node: Interpolation(
+                                                            [
+                                                                Text(
+                                                                    "~/.priority/",
+                                                                ),
+                                                                Expr(
+                                                                    Spanned {
+                                                                        node: Var(
+                                                                            "name",
+                                                                        ),
+                                                                        span: 5474..5478,
+                                                                    },
+                                                                ),
+                                                            ],
+                                                        ),
+                                                        span: 5459..5480,
+                                                    },
+                                                    span: 5452..5480,
+                                                },
+                                                CallArg {
+                                                    name: Some(
+                                                        Spanned {
+                                                            node: "content",
+                                                            span: 5482..5489,
+                                                        },
+                                                    ),
+                                                    value: Spanned {
+                                                        node: Interpolation(
+                                                            [
+                                                                Expr(
+                                                                    Spanned {
+                                                                        node: Var(
+                                                                            "priority",
+                                                                        ),
+                                                                        span: 5495..5503,
+                                                                    },
+                                                                ),
+                                                            ],
+                                                        ),
+                                                        span: 5492..5505,
+                                                    },
+                                                    span: 5482..5505,
+                                                },
+                                            ],
+                                        },
+                                        span: 5447..5507,
+                                    },
+                                    span: 5437..5507,
+                                },
+                            ),
+                        ],
+                        trailing: None,
+                        span: 5433..5581,
+                    },
+                },
+                span: 5401..5581,
+            },
+        ),
+        ExprStmt(
+            Spanned {
+                node: For {
+                    pattern: Elem(
+                        Spanned {
+                            node: "f",
+                            span: 5585..5586,
+                        },
+                    ),
+                    iter_expr: Spanned {
+                        node: Var(
+                            "flags",
+                        ),
+                        span: 5590..5595,
+                    },
+                    body: Block {
+                        stmts: [],
+                        trailing: Some(
+                            Spanned {
+                                node: If {
+                                    cond: Spanned {
+                                        node: Var(
+                                            "f",
+                                        ),
+                                        span: 5603..5604,
+                                    },
+                                    then_branch: Block {
+                                        stmts: [
+                                            Reconcile(
+                                                ReconcileDecl {
+                                                    expr: Spanned {
+                                                        node: Call {
+                                                            callee: Spanned {
+                                                                node: "link",
+                                                                span: 5617..5621,
+                                                            },
+                                                            args: [
+                                                                CallArg {
+                                                                    name: None,
+                                                                    value: Spanned {
+                                                                        node: Literal(
+                                                                            String(
+                                                                                "alacritty.yml",
+                                                                            ),
+                                                                        ),
+                                                                        span: 5622..5637,
+                                                                    },
+                                                                    span: 5622..5637,
+                                                                },
+                                                            ],
+                                                        },
+                                                        span: 5617..5639,
+                                                    },
+                                                    span: 5607..5639,
+                                                },
+                                            ),
+                                        ],
+                                        trailing: None,
+                                        span: 5605..5641,
+                                    },
+                                    else_branch: Block {
+                                        stmts: [],
+                                        trailing: None,
+                                        span: 5641..5641,
+                                    },
+                                },
+                                span: 5600..5641,
+                            },
+                        ),
+                        span: 5596..5643,
+                    },
+                },
+                span: 5581..5643,
             },
         ),
     ],

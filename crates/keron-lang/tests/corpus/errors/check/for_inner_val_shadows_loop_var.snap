@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `x` is already defined as a previous body `val` in this scope
+  --> 3:7
+  |
+3 |   val x: Int = 99
+  |       ^

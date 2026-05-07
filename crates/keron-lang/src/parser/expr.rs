@@ -21,7 +21,9 @@
 
 use chumsky::prelude::*;
 
-use crate::ast::{BinOp, Block, CallArg, Expr, Literal, MapEntry, Span, Spanned, UnaryOp};
+use crate::ast::{
+    BinOp, Block, CallArg, Expr, ForPattern, Literal, MapEntry, Span, Spanned, UnaryOp,
+};
 
 use super::{
     block::block,
@@ -37,6 +39,7 @@ pub(super) fn expr<'src>() -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<
             list_atom(expr.clone()),
             map_atom(expr.clone()),
             if_atom(expr.clone()),
+            for_atom(expr.clone()),
             var_or_call(expr.clone()),
             expr.clone()
                 .delimited_by(just('(').padded_by(pad()), just(')').padded_by(pad())),
@@ -216,6 +219,44 @@ const fn empty_block_at(span: Span) -> Block {
         trailing: None,
         span,
     }
+}
+
+/// `for x in xs { … }` (list iteration) and
+/// `for (k, v) in m { … }` (map iteration).
+///
+/// The pair form is tried first because `(` after `for` is unambiguous.
+/// A successful pair commits to two distinct identifiers separated by
+/// `,`. Both forms then expect the `in` keyword, an iterable
+/// expression, and a brace-delimited block. The body's trailing
+/// expression must be `Void` (enforced at type-check time, not here).
+fn for_atom<'src, P>(expr: P) -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone
+where
+    P: Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone + 'src,
+{
+    let block_parser = block(expr.clone());
+
+    let pair = spanned_ident()
+        .then_ignore(just(',').padded_by(pad()))
+        .then(spanned_ident())
+        .delimited_by(just('(').padded_by(pad()), just(')').padded_by(pad()))
+        .map(|(key, value)| ForPattern::Entry { key, value });
+
+    let single = spanned_ident().map(ForPattern::Elem);
+
+    text::keyword("for")
+        .padded_by(pad())
+        .ignore_then(choice((pair, single)))
+        .then_ignore(text::keyword("in").padded_by(pad()))
+        .then(expr)
+        .then(block_parser)
+        .map_with(|((pattern, iter_expr), body), e| Spanned {
+            node: Expr::For {
+                pattern,
+                iter_expr: Box::new(iter_expr),
+                body: Box::new(body),
+            },
+            span: span_to_range(e.span()),
+        })
 }
 
 /// Combined Var/Call parser: a bare ident is a Var; an ident followed

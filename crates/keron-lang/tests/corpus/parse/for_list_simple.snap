@@ -1,0 +1,91 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "xs",
+                    span: 4..6,
+                },
+                ty: Some(
+                    Spanned {
+                        node: List(
+                            Int,
+                        ),
+                        span: 8..18,
+                    },
+                ),
+                value: Spanned {
+                    node: List(
+                        [
+                            Spanned {
+                                node: Literal(
+                                    Int(
+                                        1,
+                                    ),
+                                ),
+                                span: 21..22,
+                            },
+                            Spanned {
+                                node: Literal(
+                                    Int(
+                                        2,
+                                    ),
+                                ),
+                                span: 24..25,
+                            },
+                            Spanned {
+                                node: Literal(
+                                    Int(
+                                        3,
+                                    ),
+                                ),
+                                span: 27..28,
+                            },
+                        ],
+                    ),
+                    span: 20..30,
+                },
+                span: 0..30,
+            },
+        ),
+        ExprStmt(
+            Spanned {
+                node: For {
+                    pattern: Elem(
+                        Spanned {
+                            node: "x",
+                            span: 34..35,
+                        },
+                    ),
+                    iter_expr: Spanned {
+                        node: Var(
+                            "xs",
+                        ),
+                        span: 39..41,
+                    },
+                    body: Block {
+                        stmts: [
+                            Reconcile(
+                                ReconcileDecl {
+                                    expr: Spanned {
+                                        node: Var(
+                                            "x",
+                                        ),
+                                        span: 54..55,
+                                    },
+                                    span: 44..56,
+                                },
+                            ),
+                        ],
+                        trailing: None,
+                        span: 42..58,
+                    },
+                },
+                span: 30..58,
+            },
+        ),
+    ],
+}

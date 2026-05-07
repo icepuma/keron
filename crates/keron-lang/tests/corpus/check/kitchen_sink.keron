@@ -182,3 +182,25 @@ reconcile shellrc
 # Top-level expression statement: an `if` whose branches are `Void`
 # can stand alone at the top level, gating reconciles on a flag.
 if use_zsh { reconcile all_links }
+
+# --- `for` loops over lists and maps ---
+#
+# A `for` is pure control flow: the body must have type `Void`, and
+# the loop expression itself has type `Void` too — so it is allowed at
+# the top level alongside `if`. The single-bind form is list-only;
+# the pair form is map-only.
+
+# Iterate the list of pre-built links and reconcile each one.
+for one_link in all_links {
+  reconcile one_link
+}
+
+# Iterate a map of name → priority and reconcile a derived file.
+for (name, priority) in by_name {
+  reconcile file(path = "~/.priority/${name}", content = "${priority}")
+}
+
+# `for` composes with `if` for conditional declarations inside a loop.
+for f in flags {
+  if f { reconcile link("alacritty.yml") }
+}

@@ -1,0 +1,2 @@
+val xs: List<Int> = [1, 2]
+for (k, v) in xs { reconcile v }

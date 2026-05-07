@@ -13,6 +13,8 @@ const KEYWORDS: &[&str] = &[
     "reconcile",
     "if",
     "else",
+    "for",
+    "in",
     "true",
     "false",
     "String",

@@ -1,0 +1,2 @@
+val m: Map<String, Int> = {"a": 1}
+for (a, b, c) in m { reconcile c }

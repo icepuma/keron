@@ -1,0 +1,5 @@
+val xs: List<Int> = [1, 2]
+for x in xs {
+  val x: Int = 99
+  reconcile x
+}

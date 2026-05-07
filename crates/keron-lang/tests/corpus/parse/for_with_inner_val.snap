@@ -1,0 +1,118 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "xs",
+                    span: 4..6,
+                },
+                ty: Some(
+                    Spanned {
+                        node: List(
+                            Int,
+                        ),
+                        span: 8..18,
+                    },
+                ),
+                value: Spanned {
+                    node: List(
+                        [
+                            Spanned {
+                                node: Literal(
+                                    Int(
+                                        1,
+                                    ),
+                                ),
+                                span: 21..22,
+                            },
+                            Spanned {
+                                node: Literal(
+                                    Int(
+                                        2,
+                                    ),
+                                ),
+                                span: 24..25,
+                            },
+                        ],
+                    ),
+                    span: 20..27,
+                },
+                span: 0..27,
+            },
+        ),
+        ExprStmt(
+            Spanned {
+                node: For {
+                    pattern: Elem(
+                        Spanned {
+                            node: "x",
+                            span: 31..32,
+                        },
+                    ),
+                    iter_expr: Spanned {
+                        node: Var(
+                            "xs",
+                        ),
+                        span: 36..38,
+                    },
+                    body: Block {
+                        stmts: [
+                            Val(
+                                ValDecl {
+                                    name: Spanned {
+                                        node: "doubled",
+                                        span: 47..54,
+                                    },
+                                    ty: Some(
+                                        Spanned {
+                                            node: Int,
+                                            span: 56..59,
+                                        },
+                                    ),
+                                    value: Spanned {
+                                        node: Binary {
+                                            op: Mul,
+                                            lhs: Spanned {
+                                                node: Var(
+                                                    "x",
+                                                ),
+                                                span: 62..63,
+                                            },
+                                            rhs: Spanned {
+                                                node: Literal(
+                                                    Int(
+                                                        2,
+                                                    ),
+                                                ),
+                                                span: 66..67,
+                                            },
+                                        },
+                                        span: 62..67,
+                                    },
+                                    span: 43..70,
+                                },
+                            ),
+                            Reconcile(
+                                ReconcileDecl {
+                                    expr: Spanned {
+                                        node: Var(
+                                            "doubled",
+                                        ),
+                                        span: 80..87,
+                                    },
+                                    span: 70..88,
+                                },
+                            ),
+                        ],
+                        trailing: None,
+                        span: 39..90,
+                    },
+                },
+                span: 27..90,
+            },
+        ),
+    ],
+}

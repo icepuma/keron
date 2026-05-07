@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `for x in …` expects `List<T>`; use `for (k, v) in …` to iterate `Map<String, Int>`
+  --> 2:10
+  |
+2 | for x in m { reconcile m }
+  |          ^

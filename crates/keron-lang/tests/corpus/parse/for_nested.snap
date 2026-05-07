@@ -1,0 +1,149 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "groups",
+                    span: 4..10,
+                },
+                ty: Some(
+                    Spanned {
+                        node: List(
+                            Map(
+                                String,
+                                Int,
+                            ),
+                        ),
+                        span: 12..35,
+                    },
+                ),
+                value: Spanned {
+                    node: List(
+                        [
+                            Spanned {
+                                node: Map(
+                                    [
+                                        MapEntry {
+                                            key: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "a",
+                                                    ),
+                                                ),
+                                                span: 39..42,
+                                            },
+                                            value: Spanned {
+                                                node: Literal(
+                                                    Int(
+                                                        1,
+                                                    ),
+                                                ),
+                                                span: 44..45,
+                                            },
+                                            span: 39..45,
+                                        },
+                                    ],
+                                ),
+                                span: 38..46,
+                            },
+                            Spanned {
+                                node: Map(
+                                    [
+                                        MapEntry {
+                                            key: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "b",
+                                                    ),
+                                                ),
+                                                span: 49..52,
+                                            },
+                                            value: Spanned {
+                                                node: Literal(
+                                                    Int(
+                                                        2,
+                                                    ),
+                                                ),
+                                                span: 54..55,
+                                            },
+                                            span: 49..55,
+                                        },
+                                    ],
+                                ),
+                                span: 48..56,
+                            },
+                        ],
+                    ),
+                    span: 37..58,
+                },
+                span: 0..58,
+            },
+        ),
+        ExprStmt(
+            Spanned {
+                node: For {
+                    pattern: Elem(
+                        Spanned {
+                            node: "g",
+                            span: 62..63,
+                        },
+                    ),
+                    iter_expr: Spanned {
+                        node: Var(
+                            "groups",
+                        ),
+                        span: 67..73,
+                    },
+                    body: Block {
+                        stmts: [],
+                        trailing: Some(
+                            Spanned {
+                                node: For {
+                                    pattern: Entry {
+                                        key: Spanned {
+                                            node: "k",
+                                            span: 83..84,
+                                        },
+                                        value: Spanned {
+                                            node: "v",
+                                            span: 86..87,
+                                        },
+                                    },
+                                    iter_expr: Spanned {
+                                        node: Var(
+                                            "g",
+                                        ),
+                                        span: 92..93,
+                                    },
+                                    body: Block {
+                                        stmts: [
+                                            Reconcile(
+                                                ReconcileDecl {
+                                                    expr: Spanned {
+                                                        node: Var(
+                                                            "v",
+                                                        ),
+                                                        span: 110..111,
+                                                    },
+                                                    span: 100..114,
+                                                },
+                                            ),
+                                        ],
+                                        trailing: None,
+                                        span: 94..116,
+                                    },
+                                },
+                                span: 78..116,
+                            },
+                        ),
+                        span: 74..118,
+                    },
+                },
+                span: 58..118,
+            },
+        ),
+    ],
+}

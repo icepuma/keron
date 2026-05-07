@@ -21,6 +21,8 @@ const KEYWORDS: &[&str] = &[
     "val",
     "fn",
     "reconcile",
+    "for",
+    "in",
     "true",
     "false",
     "String",
@@ -117,7 +119,8 @@ fn eval_simple(e: &Expr) -> Literal {
         | Expr::Map(_)
         | Expr::Var(_)
         | Expr::Call { .. }
-        | Expr::If { .. } => {
+        | Expr::If { .. }
+        | Expr::For { .. } => {
             panic!("eval_simple only supports literals and unary")
         }
     }
@@ -591,5 +594,73 @@ proptest! {
         let parens = format!("val r: {ty} = {a}{lit} + ({b}{lit} * {c}{lit})");
         prop_assert!(check(&parse(&plain).unwrap()).is_ok());
         prop_assert!(check(&parse(&parens).unwrap()).is_ok());
+    }
+
+    // ---------- for loops ----------
+
+    #[test]
+    fn for_over_random_int_list_typechecks(
+        items in prop::collection::vec((i64::MIN + 1)..=i64::MAX, 0..6),
+    ) {
+        let body = items
+            .iter()
+            .map(i64::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        // The loop's body uses the bound element to construct a File,
+        // exercising the binding's type. A `Void` loop with body
+        // `reconcile <File>` is well-typed.
+        let src = format!(
+            "val xs: List<Int> = [{body}]\nfor x in xs {{ reconcile file(path = \"/tmp/${{x}}\", content = \"\") }}"
+        );
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok(), "check failed for: {src}");
+    }
+
+    #[test]
+    fn for_over_random_string_int_map_typechecks(
+        entries in prop::collection::vec(("[a-zA-Z]{1,8}", 0i64..1000), 0..6),
+    ) {
+        // De-duplicate by key so the map literal has no repeats.
+        let mut seen = std::collections::HashSet::new();
+        let dedup: Vec<_> = entries
+            .into_iter()
+            .filter(|(k, _)| seen.insert(k.clone()))
+            .collect();
+        let body = dedup
+            .iter()
+            .map(|(k, v)| format!("\"{k}\": {v}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let src = format!(
+            "val m: Map<String, Int> = {{{body}}}\nfor (k, v) in m {{ reconcile file(path = \"/tmp/${{k}}\", content = \"${{v}}\") }}"
+        );
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok(), "check failed for: {src}");
+    }
+
+    #[test]
+    fn for_with_non_iterable_always_errors(n in (i64::MIN + 1)..=i64::MAX) {
+        // An `Int` is neither a `List<T>` nor a `Map<K, V>`.
+        let src = format!("val n: Int = {n}\nfor x in n {{ reconcile x }}");
+        let prog = parse(&src).expect("parse should succeed");
+        let errs = check(&prog).expect_err("should fail");
+        prop_assert!(
+            errs[0].message.contains("`for`") && errs[0].message.contains("List"),
+            "got: {}", errs[0].message
+        );
+    }
+
+    #[test]
+    fn for_value_producing_body_always_errors(n in (i64::MIN + 1)..=i64::MAX) {
+        // Body trailing of type `Int` is not `Void`, so the loop's
+        // body fails the Void check.
+        let src = format!("val xs: List<Int> = [{n}]\nfor x in xs {{ x }}");
+        let prog = parse(&src).expect("parse should succeed");
+        let errs = check(&prog).expect_err("should fail");
+        prop_assert!(
+            errs[0].message.contains("Void"),
+            "got: {}", errs[0].message
+        );
     }
 }

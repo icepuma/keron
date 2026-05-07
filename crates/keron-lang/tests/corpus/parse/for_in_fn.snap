@@ -1,0 +1,76 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "ensure",
+                    span: 3..9,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "xs",
+                            span: 10..12,
+                        },
+                        ty: Spanned {
+                            node: List(
+                                Symlink,
+                            ),
+                            span: 14..27,
+                        },
+                        default: None,
+                        span: 10..27,
+                    },
+                ],
+                return_type: Spanned {
+                    node: Void,
+                    span: 30..34,
+                },
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: For {
+                                pattern: Elem(
+                                    Spanned {
+                                        node: "s",
+                                        span: 43..44,
+                                    },
+                                ),
+                                iter_expr: Spanned {
+                                    node: Var(
+                                        "xs",
+                                    ),
+                                    span: 48..50,
+                                },
+                                body: Block {
+                                    stmts: [
+                                        Reconcile(
+                                            ReconcileDecl {
+                                                expr: Spanned {
+                                                    node: Var(
+                                                        "s",
+                                                    ),
+                                                    span: 63..64,
+                                                },
+                                                span: 53..65,
+                                            },
+                                        ),
+                                    ],
+                                    trailing: None,
+                                    span: 51..67,
+                                },
+                            },
+                            span: 39..67,
+                        },
+                    ),
+                    span: 35..69,
+                },
+                span: 0..69,
+            },
+        ),
+    ],
+}

@@ -1,0 +1,110 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "m",
+                    span: 4..5,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Map(
+                            String,
+                            Int,
+                        ),
+                        span: 7..24,
+                    },
+                ),
+                value: Spanned {
+                    node: Map(
+                        [
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "a",
+                                        ),
+                                    ),
+                                    span: 27..30,
+                                },
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            1,
+                                        ),
+                                    ),
+                                    span: 32..33,
+                                },
+                                span: 27..33,
+                            },
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "b",
+                                        ),
+                                    ),
+                                    span: 35..38,
+                                },
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            2,
+                                        ),
+                                    ),
+                                    span: 40..41,
+                                },
+                                span: 35..41,
+                            },
+                        ],
+                    ),
+                    span: 26..43,
+                },
+                span: 0..43,
+            },
+        ),
+        ExprStmt(
+            Spanned {
+                node: For {
+                    pattern: Entry {
+                        key: Spanned {
+                            node: "k",
+                            span: 48..49,
+                        },
+                        value: Spanned {
+                            node: "v",
+                            span: 51..52,
+                        },
+                    },
+                    iter_expr: Spanned {
+                        node: Var(
+                            "m",
+                        ),
+                        span: 57..58,
+                    },
+                    body: Block {
+                        stmts: [
+                            Reconcile(
+                                ReconcileDecl {
+                                    expr: Spanned {
+                                        node: Var(
+                                            "v",
+                                        ),
+                                        span: 71..72,
+                                    },
+                                    span: 61..73,
+                                },
+                            ),
+                        ],
+                        trailing: None,
+                        span: 59..75,
+                    },
+                },
+                span: 43..75,
+            },
+        ),
+    ],
+}

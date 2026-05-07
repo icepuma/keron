@@ -1,0 +1,4 @@
+fn outer(x: Int): Void {
+  val xs: List<Int> = [1, 2]
+  for x in xs { reconcile x }
+}

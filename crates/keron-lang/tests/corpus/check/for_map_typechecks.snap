@@ -1,0 +1,583 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "write_kv",
+                    span: 84..92,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "key",
+                            span: 93..96,
+                        },
+                        ty: Spanned {
+                            node: String,
+                            span: 98..104,
+                        },
+                        default: None,
+                        span: 93..104,
+                    },
+                    Param {
+                        name: Spanned {
+                            node: "count",
+                            span: 106..111,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 113..116,
+                        },
+                        default: None,
+                        span: 106..116,
+                    },
+                ],
+                return_type: Spanned {
+                    node: File,
+                    span: 119..123,
+                },
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "file",
+                                    span: 128..132,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: Some(
+                                            Spanned {
+                                                node: "path",
+                                                span: 133..137,
+                                            },
+                                        ),
+                                        value: Spanned {
+                                            node: Interpolation(
+                                                [
+                                                    Text(
+                                                        "~/state/",
+                                                    ),
+                                                    Expr(
+                                                        Spanned {
+                                                            node: Var(
+                                                                "key",
+                                                            ),
+                                                            span: 151..154,
+                                                        },
+                                                    ),
+                                                ],
+                                            ),
+                                            span: 140..156,
+                                        },
+                                        span: 133..156,
+                                    },
+                                    CallArg {
+                                        name: Some(
+                                            Spanned {
+                                                node: "content",
+                                                span: 158..165,
+                                            },
+                                        ),
+                                        value: Spanned {
+                                            node: Interpolation(
+                                                [
+                                                    Expr(
+                                                        Spanned {
+                                                            node: Var(
+                                                                "count",
+                                                            ),
+                                                            span: 171..176,
+                                                        },
+                                                    ),
+                                                ],
+                                            ),
+                                            span: 168..178,
+                                        },
+                                        span: 158..178,
+                                    },
+                                ],
+                            },
+                            span: 128..180,
+                        },
+                    ),
+                    span: 124..183,
+                },
+                span: 81..183,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "counts",
+                    span: 187..193,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Map(
+                            String,
+                            Int,
+                        ),
+                        span: 195..212,
+                    },
+                ),
+                value: Spanned {
+                    node: Map(
+                        [
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "alpha",
+                                        ),
+                                    ),
+                                    span: 215..222,
+                                },
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            1,
+                                        ),
+                                    ),
+                                    span: 224..225,
+                                },
+                                span: 215..225,
+                            },
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "beta",
+                                        ),
+                                    ),
+                                    span: 227..233,
+                                },
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            2,
+                                        ),
+                                    ),
+                                    span: 235..236,
+                                },
+                                span: 227..236,
+                            },
+                        ],
+                    ),
+                    span: 214..239,
+                },
+                span: 183..239,
+            },
+        ),
+        ExprStmt(
+            Spanned {
+                node: For {
+                    pattern: Entry {
+                        key: Spanned {
+                            node: "name",
+                            span: 244..248,
+                        },
+                        value: Spanned {
+                            node: "n",
+                            span: 250..251,
+                        },
+                    },
+                    iter_expr: Spanned {
+                        node: Var(
+                            "counts",
+                        ),
+                        span: 256..262,
+                    },
+                    body: Block {
+                        stmts: [
+                            Reconcile(
+                                ReconcileDecl {
+                                    expr: Spanned {
+                                        node: Call {
+                                            callee: Spanned {
+                                                node: "write_kv",
+                                                span: 277..285,
+                                            },
+                                            args: [
+                                                CallArg {
+                                                    name: None,
+                                                    value: Spanned {
+                                                        node: Var(
+                                                            "name",
+                                                        ),
+                                                        span: 286..290,
+                                                    },
+                                                    span: 286..290,
+                                                },
+                                                CallArg {
+                                                    name: None,
+                                                    value: Spanned {
+                                                        node: Var(
+                                                            "n",
+                                                        ),
+                                                        span: 292..293,
+                                                    },
+                                                    span: 292..293,
+                                                },
+                                            ],
+                                        },
+                                        span: 277..295,
+                                    },
+                                    span: 267..295,
+                                },
+                            ),
+                        ],
+                        trailing: None,
+                        span: 263..378,
+                    },
+                },
+                span: 239..378,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "codes",
+                    span: 382..387,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Map(
+                            Int,
+                            String,
+                        ),
+                        span: 389..406,
+                    },
+                ),
+                value: Spanned {
+                    node: Map(
+                        [
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            200,
+                                        ),
+                                    ),
+                                    span: 409..412,
+                                },
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "ok",
+                                        ),
+                                    ),
+                                    span: 414..418,
+                                },
+                                span: 409..418,
+                            },
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            404,
+                                        ),
+                                    ),
+                                    span: 420..423,
+                                },
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "missing",
+                                        ),
+                                    ),
+                                    span: 425..434,
+                                },
+                                span: 420..434,
+                            },
+                        ],
+                    ),
+                    span: 408..436,
+                },
+                span: 378..436,
+            },
+        ),
+        ExprStmt(
+            Spanned {
+                node: For {
+                    pattern: Entry {
+                        key: Spanned {
+                            node: "code",
+                            span: 441..445,
+                        },
+                        value: Spanned {
+                            node: "label",
+                            span: 447..452,
+                        },
+                    },
+                    iter_expr: Spanned {
+                        node: Var(
+                            "codes",
+                        ),
+                        span: 457..462,
+                    },
+                    body: Block {
+                        stmts: [
+                            Reconcile(
+                                ReconcileDecl {
+                                    expr: Spanned {
+                                        node: Call {
+                                            callee: Spanned {
+                                                node: "file",
+                                                span: 477..481,
+                                            },
+                                            args: [
+                                                CallArg {
+                                                    name: Some(
+                                                        Spanned {
+                                                            node: "path",
+                                                            span: 482..486,
+                                                        },
+                                                    ),
+                                                    value: Spanned {
+                                                        node: Interpolation(
+                                                            [
+                                                                Text(
+                                                                    "/tmp/",
+                                                                ),
+                                                                Expr(
+                                                                    Spanned {
+                                                                        node: Var(
+                                                                            "code",
+                                                                        ),
+                                                                        span: 497..501,
+                                                                    },
+                                                                ),
+                                                            ],
+                                                        ),
+                                                        span: 489..503,
+                                                    },
+                                                    span: 482..503,
+                                                },
+                                                CallArg {
+                                                    name: Some(
+                                                        Spanned {
+                                                            node: "content",
+                                                            span: 505..512,
+                                                        },
+                                                    ),
+                                                    value: Spanned {
+                                                        node: Var(
+                                                            "label",
+                                                        ),
+                                                        span: 515..520,
+                                                    },
+                                                    span: 505..520,
+                                                },
+                                            ],
+                                        },
+                                        span: 477..522,
+                                    },
+                                    span: 467..522,
+                                },
+                            ),
+                        ],
+                        trailing: None,
+                        span: 463..605,
+                    },
+                },
+                span: 436..605,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "by_user",
+                    span: 609..616,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Map(
+                            String,
+                            Boolean,
+                        ),
+                        span: 618..639,
+                    },
+                ),
+                value: Spanned {
+                    node: Map(
+                        [
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "alice",
+                                        ),
+                                    ),
+                                    span: 642..649,
+                                },
+                                value: Spanned {
+                                    node: Literal(
+                                        Boolean(
+                                            true,
+                                        ),
+                                    ),
+                                    span: 651..655,
+                                },
+                                span: 642..655,
+                            },
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "bob",
+                                        ),
+                                    ),
+                                    span: 657..662,
+                                },
+                                value: Spanned {
+                                    node: Literal(
+                                        Boolean(
+                                            false,
+                                        ),
+                                    ),
+                                    span: 664..669,
+                                },
+                                span: 657..669,
+                            },
+                        ],
+                    ),
+                    span: 641..671,
+                },
+                span: 605..671,
+            },
+        ),
+        ExprStmt(
+            Spanned {
+                node: For {
+                    pattern: Entry {
+                        key: Spanned {
+                            node: "user",
+                            span: 676..680,
+                        },
+                        value: Spanned {
+                            node: "enabled",
+                            span: 682..689,
+                        },
+                    },
+                    iter_expr: Spanned {
+                        node: Var(
+                            "by_user",
+                        ),
+                        span: 694..701,
+                    },
+                    body: Block {
+                        stmts: [
+                            Val(
+                                ValDecl {
+                                    name: Spanned {
+                                        node: "tag",
+                                        span: 710..713,
+                                    },
+                                    ty: Some(
+                                        Spanned {
+                                            node: String,
+                                            span: 715..721,
+                                        },
+                                    ),
+                                    value: Spanned {
+                                        node: Interpolation(
+                                            [
+                                                Expr(
+                                                    Spanned {
+                                                        node: Var(
+                                                            "user",
+                                                        ),
+                                                        span: 727..731,
+                                                    },
+                                                ),
+                                                Text(
+                                                    "=",
+                                                ),
+                                                Expr(
+                                                    Spanned {
+                                                        node: Var(
+                                                            "enabled",
+                                                        ),
+                                                        span: 735..742,
+                                                    },
+                                                ),
+                                            ],
+                                        ),
+                                        span: 724..744,
+                                    },
+                                    span: 706..747,
+                                },
+                            ),
+                            Reconcile(
+                                ReconcileDecl {
+                                    expr: Spanned {
+                                        node: Call {
+                                            callee: Spanned {
+                                                node: "file",
+                                                span: 757..761,
+                                            },
+                                            args: [
+                                                CallArg {
+                                                    name: Some(
+                                                        Spanned {
+                                                            node: "path",
+                                                            span: 762..766,
+                                                        },
+                                                    ),
+                                                    value: Spanned {
+                                                        node: Interpolation(
+                                                            [
+                                                                Text(
+                                                                    "/tmp/",
+                                                                ),
+                                                                Expr(
+                                                                    Spanned {
+                                                                        node: Var(
+                                                                            "user",
+                                                                        ),
+                                                                        span: 777..781,
+                                                                    },
+                                                                ),
+                                                            ],
+                                                        ),
+                                                        span: 769..783,
+                                                    },
+                                                    span: 762..783,
+                                                },
+                                                CallArg {
+                                                    name: Some(
+                                                        Spanned {
+                                                            node: "content",
+                                                            span: 785..792,
+                                                        },
+                                                    ),
+                                                    value: Spanned {
+                                                        node: Var(
+                                                            "tag",
+                                                        ),
+                                                        span: 795..798,
+                                                    },
+                                                    span: 785..798,
+                                                },
+                                            ],
+                                        },
+                                        span: 757..800,
+                                    },
+                                    span: 747..800,
+                                },
+                            ),
+                        ],
+                        trailing: None,
+                        span: 702..802,
+                    },
+                },
+                span: 671..802,
+            },
+        ),
+    ],
+}
