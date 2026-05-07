@@ -6,6 +6,6 @@ default:
     cargo nextest run --workspace --all-features --locked --no-tests=pass
 
 mutants:
-    cargo mutants
+    cargo mutants -j8
 
 qualitygate: default mutants
