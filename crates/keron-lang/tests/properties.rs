@@ -5,6 +5,7 @@
 //! - any non-keyword identifier is accepted as a `val` name
 //! - matching-type declarations always pass `check`
 //! - mismatched-type declarations always produce one diagnostic per decl
+//! - arithmetic on Int/Double obeys promotion rules
 //!
 //! Strategies emit parser-safe source strings (no exponent notation, no
 //! escape characters) since we don't yet have a pretty-printer to drive
@@ -12,7 +13,7 @@
 
 use std::fmt::Write as _;
 
-use keron_lang::{Item, Literal, Type, check, parse};
+use keron_lang::{Expr, Item, Literal, Spanned, Type, UnaryOp, check, parse};
 use proptest::prelude::*;
 
 const KEYWORDS: &[&str] = &["val", "true", "false", "String", "Int", "Boolean", "Double"];
@@ -31,56 +32,80 @@ fn ty_strategy() -> impl Strategy<Value = Type> {
     ]
 }
 
-fn literal_source_for(ty: Type) -> BoxedStrategy<(String, Literal)> {
+fn numeric_ty_strategy() -> impl Strategy<Value = Type> {
+    prop_oneof![Just(Type::Int), Just(Type::Double)]
+}
+
+/// Generate a literal source + the `Type` it will yield. Note: the type
+/// reflects the *literal* itself (always positive); a `-` prefix in
+/// `mismatched_decl_yields_one_error` does not change the type.
+fn literal_source_for(ty: Type) -> BoxedStrategy<(String, Type)> {
     match ty {
-        Type::Int => any::<i64>()
-            .prop_map(|n| (n.to_string(), Literal::Int(n)))
+        // i64::MIN's positive form overflows, so trim one off the bottom.
+        Type::Int => ((i64::MIN + 1)..=i64::MAX)
+            .prop_map(|n| (n.to_string(), Type::Int))
             .boxed(),
         Type::Boolean => any::<bool>()
-            .prop_map(|b| (b.to_string(), Literal::Boolean(b)))
+            .prop_map(|b| (b.to_string(), Type::Boolean))
             .boxed(),
         Type::String => "[a-zA-Z0-9 _.!?]{0,32}"
-            .prop_map(|s: String| (format!("\"{s}\""), Literal::String(s)))
+            .prop_map(|s: String| (format!("\"{s}\""), Type::String))
             .boxed(),
-        Type::Double => (any::<i32>(), 0u32..1_000_000_000u32)
-            .prop_map(|(int, frac)| {
-                let s = format!("{int}.{frac:09}");
-                let f: f64 = s.parse().expect("decimal literal parses as f64");
-                (s, Literal::Double(f))
-            })
+        Type::Double => (0i32..1_000_000_i32, 0u32..1_000_000_000u32)
+            .prop_map(|(int, frac)| (format!("{int}.{frac:09}"), Type::Double))
             .boxed(),
     }
 }
 
-fn first_val_literal(src: &str) -> Literal {
+fn first_value(src: &str) -> Spanned<Expr> {
     let prog = parse(src).expect("parse should succeed");
     let Some(Item::Val(v)) = prog.items.into_iter().next() else {
         panic!("expected a val item");
     };
-    v.value.node
+    v.value
+}
+
+/// Walk an expression and reduce literal-and-unary-only forms to a
+/// concrete `Literal`. Panics on anything more complex; the property
+/// tests construct only those shapes.
+fn eval_simple(e: &Expr) -> Literal {
+    match e {
+        Expr::Literal(l) => l.clone(),
+        Expr::Unary {
+            op: UnaryOp::Neg,
+            operand,
+        } => match eval_simple(&operand.node) {
+            Literal::Int(n) => Literal::Int(-n),
+            Literal::Double(f) => Literal::Double(-f),
+            other => panic!("cannot negate {other:?}"),
+        },
+        Expr::Binary { .. } | Expr::Interpolation(_) => {
+            panic!("eval_simple only supports literals and unary")
+        }
+    }
 }
 
 proptest! {
     #[test]
-    fn any_int_literal_round_trips(n in any::<i64>()) {
+    fn any_int_literal_round_trips(n in (i64::MIN + 1)..=i64::MAX) {
         let src = format!("val a: Int = {n}");
-        prop_assert_eq!(first_val_literal(&src), Literal::Int(n));
+        prop_assert_eq!(eval_simple(&first_value(&src).node), Literal::Int(n));
     }
 
     #[test]
     fn any_bool_literal_round_trips(b in any::<bool>()) {
         let src = format!("val a: Boolean = {b}");
-        prop_assert_eq!(first_val_literal(&src), Literal::Boolean(b));
+        prop_assert_eq!(eval_simple(&first_value(&src).node), Literal::Boolean(b));
     }
 
     #[test]
     fn any_double_literal_round_trips(
-        int in any::<i32>(),
+        int in 0i32..1_000_000_i32,
         frac in 0u32..1_000_000_000u32,
     ) {
         let lit = format!("{int}.{frac:09}");
         let src = format!("val a: Double = {lit}");
-        let Literal::Double(parsed) = first_val_literal(&src) else {
+        let Literal::Double(parsed) = eval_simple(&first_value(&src).node) else {
             panic!("expected double");
         };
         let expected: f64 = lit.parse().expect("decimal literal parses as f64");
@@ -90,7 +115,7 @@ proptest! {
     #[test]
     fn any_simple_string_literal_round_trips(s in "[a-zA-Z0-9 _.!?]{0,64}") {
         let src = format!("val a: String = \"{s}\"");
-        prop_assert_eq!(first_val_literal(&src), Literal::String(s));
+        prop_assert_eq!(eval_simple(&first_value(&src).node), Literal::String(s));
     }
 
     #[test]
@@ -104,10 +129,21 @@ proptest! {
     }
 
     #[test]
+    fn inferred_decl_always_checks_ok(
+        name in ident_strategy(),
+        case in ty_strategy().prop_flat_map(literal_source_for),
+    ) {
+        let (lit_src, _) = case;
+        let src = format!("val {name} = {lit_src}");
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok());
+    }
+
+    #[test]
     fn matching_decl_checks_ok(
         name in ident_strategy(),
         case in ty_strategy().prop_flat_map(|ty| {
-            literal_source_for(ty).prop_map(move |(src, lit)| (ty, src, lit))
+            literal_source_for(ty).prop_map(move |(src, lit_ty)| (ty, src, lit_ty))
         }),
     ) {
         let (ty, lit_src, _) = case;
@@ -122,8 +158,8 @@ proptest! {
         annot in ty_strategy(),
         lit_pair in ty_strategy().prop_flat_map(literal_source_for),
     ) {
-        let (lit_src, lit) = lit_pair;
-        prop_assume!(lit.type_of() != annot);
+        let (lit_src, lit_ty) = lit_pair;
+        prop_assume!(lit_ty != annot);
         let src = format!("val {name}: {} = {lit_src}", annot.name());
         let prog = parse(&src).expect("parse should succeed");
         let errs = check(&prog).expect_err("expected mismatch");
@@ -143,10 +179,10 @@ proptest! {
     ) {
         let mut src = String::new();
         let mut expected_errs = 0usize;
-        for (name, annot, (lit_src, lit)) in &cases {
+        for (name, annot, (lit_src, lit_ty)) in &cases {
             writeln!(src, "val {name}: {} = {lit_src}", annot.name())
                 .expect("write to String");
-            if lit.type_of() != *annot {
+            if lit_ty != annot {
                 expected_errs += 1;
             }
         }
@@ -155,5 +191,86 @@ proptest! {
             Ok(()) => prop_assert_eq!(expected_errs, 0),
             Err(errs) => prop_assert_eq!(errs.len(), expected_errs),
         }
+    }
+
+    // ---------- arithmetic ----------
+
+    #[test]
+    fn int_plus_int_typechecks_int(a in 0i32..1000, b in 0i32..1000) {
+        let src = format!("val r: Int = {a} + {b}");
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok());
+    }
+
+    #[test]
+    fn double_plus_double_typechecks_double(a in 0i32..100, b in 0i32..100) {
+        let src = format!("val r: Double = {a}.5 + {b}.25");
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok());
+    }
+
+    #[test]
+    fn int_promotes_to_double_in_mixed_arithmetic(a in 0i32..1000, b in 0i32..100) {
+        // Mixed Int + Double satisfies a Double annotation, never an Int one.
+        let src_double = format!("val r: Double = {a} + {b}.5");
+        let src_int = format!("val r: Int = {a} + {b}.5");
+        prop_assert!(check(&parse(&src_double).unwrap()).is_ok());
+        prop_assert!(check(&parse(&src_int).unwrap()).is_err());
+    }
+
+    #[test]
+    fn arithmetic_with_non_numeric_errors(
+        ty in prop_oneof![Just(Type::String), Just(Type::Boolean)],
+        op in prop_oneof![Just("+"), Just("-"), Just("*"), Just("/"), Just("**")],
+    ) {
+        let (lit_src, _) = match ty {
+            Type::String => (String::from("\"x\""), Type::String),
+            Type::Boolean => (String::from("true"), Type::Boolean),
+            _ => unreachable!(),
+        };
+        let src = format!("val r = {lit_src} {op} 1");
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_err());
+    }
+
+    #[test]
+    fn any_interpolation_typechecks_as_string(
+        prefix in "[a-zA-Z0-9 ]{0,16}",
+        n in 0i32..1000,
+        suffix in "[a-zA-Z0-9 ]{0,16}",
+    ) {
+        // An interpolation always typechecks as String regardless of
+        // the inner expression's type (so any well-typed inner works).
+        let src = format!("val a: String = \"{prefix}${{{n}}}{suffix}\"");
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok());
+    }
+
+    #[test]
+    fn interpolation_with_inner_arithmetic_typechecks(
+        a in 0i32..1000,
+        b in 0i32..1000,
+    ) {
+        let src = format!("val s = \"{a} + {b} = ${{{a} + {b}}}\"");
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok());
+    }
+
+    #[test]
+    fn parens_do_not_change_typing(
+        ty in numeric_ty_strategy(),
+        a in 0i32..1000,
+        b in 0i32..1000,
+        c in 1i32..1000,
+    ) {
+        let lit = match ty {
+            Type::Int => String::new(),
+            Type::Double => String::from(".0"),
+            _ => unreachable!(),
+        };
+        let plain = format!("val r: {} = {a}{lit} + {b}{lit} * {c}{lit}", ty.name());
+        let parens = format!("val r: {} = {a}{lit} + ({b}{lit} * {c}{lit})", ty.name());
+        prop_assert!(check(&parse(&plain).unwrap()).is_ok());
+        prop_assert!(check(&parse(&parens).unwrap()).is_ok());
     }
 }

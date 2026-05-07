@@ -9,17 +9,21 @@ Program {
                     node: "pi",
                     span: 4..6,
                 },
-                ty: Spanned {
-                    node: Double,
-                    span: 8..14,
-                },
+                ty: Some(
+                    Spanned {
+                        node: Double,
+                        span: 8..14,
+                    },
+                ),
                 value: Spanned {
-                    node: Double(
-                        2.5,
+                    node: Literal(
+                        Double(
+                            2.5,
+                        ),
                     ),
                     span: 17..20,
                 },
-                span: 0..20,
+                span: 0..21,
             },
         ),
     ],

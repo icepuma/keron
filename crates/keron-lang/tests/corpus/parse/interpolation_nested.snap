@@ -1,0 +1,52 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "a",
+                    span: 4..5,
+                },
+                ty: None,
+                value: Spanned {
+                    node: Interpolation(
+                        [
+                            Text(
+                                "outer ",
+                            ),
+                            Expr(
+                                Spanned {
+                                    node: Interpolation(
+                                        [
+                                            Text(
+                                                "inner ",
+                                            ),
+                                            Expr(
+                                                Spanned {
+                                                    node: Literal(
+                                                        Int(
+                                                            42,
+                                                        ),
+                                                    ),
+                                                    span: 26..28,
+                                                },
+                                            ),
+                                        ],
+                                    ),
+                                    span: 17..30,
+                                },
+                            ),
+                            Text(
+                                " done",
+                            ),
+                        ],
+                    ),
+                    span: 8..37,
+                },
+                span: 0..38,
+            },
+        ),
+    ],
+}

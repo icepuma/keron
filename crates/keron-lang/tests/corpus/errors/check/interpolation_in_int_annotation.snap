@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: type mismatch: expected `Int`, found `String`
+  --> 1:14
+  |
+1 | val n: Int = "result: ${1 + 2}"
+  |              ^^^^^^^^^^^^^^^^^^

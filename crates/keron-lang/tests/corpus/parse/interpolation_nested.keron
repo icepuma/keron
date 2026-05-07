@@ -1,0 +1,1 @@
+val a = "outer ${"inner ${42}"} done"

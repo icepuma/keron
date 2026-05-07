@@ -23,9 +23,72 @@ pub enum Item {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ValDecl {
     pub name: Spanned<String>,
-    pub ty: Spanned<Type>,
-    pub value: Spanned<Literal>,
+    /// Optional type annotation. When `None`, the type is inferred from
+    /// `value` (which makes the inferred type trivially correct, so the
+    /// checker has nothing to verify).
+    pub ty: Option<Spanned<Type>>,
+    pub value: Spanned<Expr>,
     pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Expr {
+    Literal(Literal),
+    Unary {
+        op: UnaryOp,
+        operand: Box<Spanned<Self>>,
+    },
+    Binary {
+        op: BinOp,
+        lhs: Box<Spanned<Self>>,
+        rhs: Box<Spanned<Self>>,
+    },
+    /// A double-quoted string with one or more `${expr}` interpolations.
+    /// Strings without interpolations are stored as `Literal::String`
+    /// instead, so this variant always has at least one [`StringPart::Expr`].
+    Interpolation(Vec<StringPart>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum StringPart {
+    Text(String),
+    Expr(Box<Spanned<Expr>>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnaryOp {
+    Neg,
+}
+
+impl UnaryOp {
+    #[must_use]
+    pub const fn symbol(self) -> &'static str {
+        match self {
+            Self::Neg => "-",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Pow,
+}
+
+impl BinOp {
+    #[must_use]
+    pub const fn symbol(self) -> &'static str {
+        match self {
+            Self::Add => "+",
+            Self::Sub => "-",
+            Self::Mul => "*",
+            Self::Div => "/",
+            Self::Pow => "**",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

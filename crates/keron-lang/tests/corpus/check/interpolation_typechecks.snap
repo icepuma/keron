@@ -1,0 +1,152 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "annotated",
+                    span: 4..13,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 15..21,
+                    },
+                ),
+                value: Spanned {
+                    node: Interpolation(
+                        [
+                            Text(
+                                "n = ",
+                            ),
+                            Expr(
+                                Spanned {
+                                    node: Binary {
+                                        op: Add,
+                                        lhs: Spanned {
+                                            node: Literal(
+                                                Int(
+                                                    1,
+                                                ),
+                                            ),
+                                            span: 31..32,
+                                        },
+                                        rhs: Spanned {
+                                            node: Literal(
+                                                Int(
+                                                    2,
+                                                ),
+                                            ),
+                                            span: 35..36,
+                                        },
+                                    },
+                                    span: 31..36,
+                                },
+                            ),
+                        ],
+                    ),
+                    span: 24..38,
+                },
+                span: 0..39,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "inferred",
+                    span: 43..51,
+                },
+                ty: None,
+                value: Spanned {
+                    node: Interpolation(
+                        [
+                            Expr(
+                                Spanned {
+                                    node: Literal(
+                                        Boolean(
+                                            true,
+                                        ),
+                                    ),
+                                    span: 57..61,
+                                },
+                            ),
+                            Text(
+                                " and ",
+                            ),
+                            Expr(
+                                Spanned {
+                                    node: Binary {
+                                        op: Mul,
+                                        lhs: Spanned {
+                                            node: Literal(
+                                                Double(
+                                                    1.5,
+                                                ),
+                                            ),
+                                            span: 69..72,
+                                        },
+                                        rhs: Spanned {
+                                            node: Literal(
+                                                Int(
+                                                    2,
+                                                ),
+                                            ),
+                                            span: 75..76,
+                                        },
+                                    },
+                                    span: 69..76,
+                                },
+                            ),
+                        ],
+                    ),
+                    span: 54..78,
+                },
+                span: 39..79,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "mixed",
+                    span: 83..88,
+                },
+                ty: None,
+                value: Spanned {
+                    node: Interpolation(
+                        [
+                            Expr(
+                                Spanned {
+                                    node: Interpolation(
+                                        [
+                                            Text(
+                                                "nested ",
+                                            ),
+                                            Expr(
+                                                Spanned {
+                                                    node: Literal(
+                                                        Int(
+                                                            10,
+                                                        ),
+                                                    ),
+                                                    span: 104..106,
+                                                },
+                                            ),
+                                        ],
+                                    ),
+                                    span: 94..108,
+                                },
+                            ),
+                            Text(
+                                " done",
+                            ),
+                        ],
+                    ),
+                    span: 91..115,
+                },
+                span: 79..116,
+            },
+        ),
+    ],
+}

@@ -1,0 +1,1 @@
+val a = "literal \${not_interp}"

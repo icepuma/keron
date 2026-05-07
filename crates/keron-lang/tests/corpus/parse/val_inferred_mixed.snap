@@ -9,90 +9,70 @@ Program {
                     node: "name",
                     span: 4..8,
                 },
-                ty: Some(
-                    Spanned {
-                        node: String,
-                        span: 10..16,
-                    },
-                ),
+                ty: None,
                 value: Spanned {
                     node: Literal(
                         String(
                             "keron",
                         ),
                     ),
-                    span: 19..26,
+                    span: 11..18,
                 },
-                span: 0..27,
+                span: 0..19,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "count",
-                    span: 31..36,
+                    span: 23..28,
                 },
-                ty: Some(
-                    Spanned {
-                        node: Int,
-                        span: 38..41,
-                    },
-                ),
+                ty: None,
                 value: Spanned {
                     node: Literal(
                         Int(
                             3,
                         ),
                     ),
-                    span: 44..45,
+                    span: 31..32,
                 },
-                span: 27..46,
+                span: 19..33,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "ratio",
-                    span: 50..55,
+                    span: 37..42,
                 },
-                ty: Some(
-                    Spanned {
-                        node: Double,
-                        span: 57..63,
-                    },
-                ),
+                ty: None,
                 value: Spanned {
                     node: Literal(
                         Double(
                             0.75,
                         ),
                     ),
-                    span: 66..70,
+                    span: 45..49,
                 },
-                span: 46..71,
+                span: 33..50,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "enabled",
-                    span: 75..82,
+                    span: 54..61,
                 },
-                ty: Some(
-                    Spanned {
-                        node: Boolean,
-                        span: 84..91,
-                    },
-                ),
+                ty: None,
                 value: Spanned {
                     node: Literal(
                         Boolean(
                             true,
                         ),
                     ),
-                    span: 94..98,
+                    span: 64..68,
                 },
-                span: 71..99,
+                span: 50..69,
             },
         ),
     ],

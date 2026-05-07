@@ -1,8 +1,0 @@
----
-source: crates/keron-lang/tests/harness/mod.rs
----
-error: found '=' expected something else, '#', or ':'
-  --> 1:7
-  |
-1 | val a = 1
-  |       ^

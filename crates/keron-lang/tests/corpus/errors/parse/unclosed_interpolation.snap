@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: found '"' expected something else, '.', '#', '*', '/', '+', '-', or '}'
+  --> 1:21
+  |
+1 | val a = "x = ${1 + 2"
+  |                     ^

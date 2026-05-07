@@ -1,7 +1,7 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
 ---
-error: found end of input expected any, '#', '"true"', '"false"', '"', '-', or int
+error: found end of input expected any, '#', '-', '"', '"true"', '"false"', int, or '('
   --> 2:1
   |
 2 | 

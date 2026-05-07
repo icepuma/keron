@@ -1,0 +1,1 @@
+val a = "bad: ${"hello" + 1}"

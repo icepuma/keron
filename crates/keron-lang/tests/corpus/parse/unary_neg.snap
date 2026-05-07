@@ -1,0 +1,45 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "a",
+                    span: 4..5,
+                },
+                ty: None,
+                value: Spanned {
+                    node: Unary {
+                        op: Neg,
+                        operand: Spanned {
+                            node: Binary {
+                                op: Pow,
+                                lhs: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            2,
+                                        ),
+                                    ),
+                                    span: 9..10,
+                                },
+                                rhs: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            2,
+                                        ),
+                                    ),
+                                    span: 14..15,
+                                },
+                            },
+                            span: 9..15,
+                        },
+                    },
+                    span: 8..16,
+                },
+                span: 0..16,
+            },
+        ),
+    ],
+}

@@ -9,21 +9,16 @@ Program {
                     node: "a",
                     span: 4..5,
                 },
-                ty: Some(
-                    Spanned {
-                        node: String,
-                        span: 7..13,
-                    },
-                ),
+                ty: None,
                 value: Spanned {
                     node: Literal(
                         String(
-                            "hello",
+                            "literal ${not_interp}",
                         ),
                     ),
-                    span: 16..23,
+                    span: 8..32,
                 },
-                span: 0..24,
+                span: 0..33,
             },
         ),
     ],

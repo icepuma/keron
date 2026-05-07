@@ -1,0 +1,32 @@
+//! Parser unit tests, grouped by topic.
+
+mod arithmetic;
+mod decl;
+mod string;
+
+use crate::{
+    ast::{Expr, Item, Literal, Program, Spanned, ValDecl},
+    parser::parse,
+};
+
+fn ok(src: &str) -> Program {
+    parse(src).expect("parse should succeed")
+}
+
+fn first_val(prog: &Program) -> &ValDecl {
+    match prog.items.first().expect("at least one item") {
+        Item::Val(v) => v,
+    }
+}
+
+fn lit(prog: &Program) -> &Literal {
+    let Expr::Literal(l) = &first_val(prog).value.node else {
+        panic!("expected a literal expression");
+    };
+    l
+}
+
+fn expr_of(src: &str) -> Spanned<Expr> {
+    let prog = ok(src);
+    first_val(&prog).value.clone()
+}

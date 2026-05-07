@@ -9,17 +9,21 @@ Program {
                     node: "flag",
                     span: 4..8,
                 },
-                ty: Spanned {
-                    node: Boolean,
-                    span: 10..17,
-                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 10..17,
+                    },
+                ),
                 value: Spanned {
-                    node: Boolean(
-                        true,
+                    node: Literal(
+                        Boolean(
+                            true,
+                        ),
                     ),
                     span: 20..24,
                 },
-                span: 0..24,
+                span: 0..25,
             },
         ),
     ],

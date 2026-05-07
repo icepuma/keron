@@ -1,0 +1,4 @@
+val a = 1
+val b: String = "x"
+val c = true
+val d: Double = 0.5
