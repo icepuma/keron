@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: type mismatch: expected `String`, found `Int`
+  --> 1:33
+  |
+1 | val s: Symlink = symlink(from = 1, to = "x")
+  |                                 ^

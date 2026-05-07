@@ -1,0 +1,57 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Realize(
+            RealizeDecl {
+                expr: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "symlink",
+                            span: 8..15,
+                        },
+                        args: [
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "from",
+                                        span: 16..20,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "a",
+                                        ),
+                                    ),
+                                    span: 23..26,
+                                },
+                                span: 16..26,
+                            },
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "to",
+                                        span: 28..30,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "b",
+                                        ),
+                                    ),
+                                    span: 33..36,
+                                },
+                                span: 28..36,
+                            },
+                        ],
+                    },
+                    span: 8..38,
+                },
+                span: 0..38,
+            },
+        ),
+    ],
+}

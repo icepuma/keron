@@ -14,6 +14,9 @@ pub(super) fn type_annotation<'src>() -> impl Parser<'src, &'src str, Type, Extr
             text::keyword("Int").to(Type::Int),
             text::keyword("Boolean").to(Type::Boolean),
             text::keyword("Double").to(Type::Double),
+            text::keyword("Symlink").to(Type::Symlink),
+            text::keyword("File").to(Type::File),
+            text::keyword("Directory").to(Type::Directory),
         ));
         let list = text::keyword("List")
             .ignore_then(just('<').padded_by(pad()))

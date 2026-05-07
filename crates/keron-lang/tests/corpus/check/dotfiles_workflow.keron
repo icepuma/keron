@@ -1,0 +1,37 @@
+# Realistic dotfile workflow: declare configs, packages-style file
+# placements, and ensure-existence directories. All values are built
+# purely first; the trailing `realize` directives are the only acts of
+# intent.
+
+fn link(name: String): Symlink {
+  symlink(from = "~/dotfiles/${name}", to = "~/.${name}")
+}
+
+val home_dirs: List<Directory> = [
+  directory(path = "~/.config"),
+  directory(path = "~/.local/bin"),
+  directory(path = "~/.local/share"),
+]
+
+val shell_links: List<Symlink> = [
+  link("zshrc"),
+  link("zsh_history"),
+  link("p10k.zsh"),
+]
+
+val editor_links: List<Symlink> = [
+  link("vimrc"),
+  link("ideavimrc"),
+]
+
+val gitconfig: File = file(
+  path = "~/.gitconfig",
+  content = "[user]\n  email = me@example.com\n  name = Me",
+)
+
+# Order matters at apply time: directories first, then symlinks into
+# them, then the gitconfig file.
+realize home_dirs
+realize shell_links
+realize editor_links
+realize gitconfig

@@ -1,0 +1,15 @@
+# A function builds Symlinks; multiple are gathered into a List, then
+# the entire list is realized in one shot. Demonstrates that resource
+# construction is pure — no I/O until `realize`.
+
+fn link(name: String): Symlink {
+  symlink(from = "~/dotfiles/${name}", to = "~/.${name}")
+}
+
+val configs: List<Symlink> = [
+  link("zshrc"),
+  link("vimrc"),
+  link("tmux.conf"),
+]
+
+realize configs

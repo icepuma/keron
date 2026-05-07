@@ -120,6 +120,37 @@ fn span_covers_full_decl() {
 }
 
 #[test]
+fn val_symlink_annotation_parses() {
+    let prog = ok(r#"val s: Symlink = symlink(from = "a", to = "b")"#);
+    let v = first_val(&prog);
+    assert_eq!(v.ty.as_ref().expect("annotation").node, Type::Symlink);
+}
+
+#[test]
+fn val_file_annotation_parses() {
+    let prog = ok(r#"val f: File = file(path = "p", content = "c")"#);
+    let v = first_val(&prog);
+    assert_eq!(v.ty.as_ref().expect("annotation").node, Type::File);
+}
+
+#[test]
+fn val_directory_annotation_parses() {
+    let prog = ok(r#"val d: Directory = directory(path = "p")"#);
+    let v = first_val(&prog);
+    assert_eq!(v.ty.as_ref().expect("annotation").node, Type::Directory);
+}
+
+#[test]
+fn val_list_of_resources_parses() {
+    let prog = ok(r"val xs: List<File> = []");
+    let v = first_val(&prog);
+    assert_eq!(
+        v.ty.as_ref().expect("annotation").node,
+        Type::List(Box::new(Type::File))
+    );
+}
+
+#[test]
 fn span_covers_full_decl_without_annotation() {
     let src = "val a = 42";
     let prog = ok(src);

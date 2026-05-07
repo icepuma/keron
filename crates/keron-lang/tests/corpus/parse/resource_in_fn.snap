@@ -1,0 +1,141 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "link",
+                    span: 3..7,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "name",
+                            span: 8..12,
+                        },
+                        ty: Spanned {
+                            node: String,
+                            span: 14..20,
+                        },
+                        default: None,
+                        span: 8..20,
+                    },
+                ],
+                return_type: Spanned {
+                    node: Symlink,
+                    span: 23..30,
+                },
+                body: FnBody {
+                    bindings: [],
+                    result: Spanned {
+                        node: Call {
+                            callee: Spanned {
+                                node: "symlink",
+                                span: 35..42,
+                            },
+                            args: [
+                                CallArg {
+                                    name: Some(
+                                        Spanned {
+                                            node: "from",
+                                            span: 43..47,
+                                        },
+                                    ),
+                                    value: Spanned {
+                                        node: Interpolation(
+                                            [
+                                                Text(
+                                                    "~/dotfiles/",
+                                                ),
+                                                Expr(
+                                                    Spanned {
+                                                        node: Var(
+                                                            "name",
+                                                        ),
+                                                        span: 64..68,
+                                                    },
+                                                ),
+                                            ],
+                                        ),
+                                        span: 50..70,
+                                    },
+                                    span: 43..70,
+                                },
+                                CallArg {
+                                    name: Some(
+                                        Spanned {
+                                            node: "to",
+                                            span: 72..74,
+                                        },
+                                    ),
+                                    value: Spanned {
+                                        node: Interpolation(
+                                            [
+                                                Text(
+                                                    "~/.",
+                                                ),
+                                                Expr(
+                                                    Spanned {
+                                                        node: Var(
+                                                            "name",
+                                                        ),
+                                                        span: 83..87,
+                                                    },
+                                                ),
+                                            ],
+                                        ),
+                                        span: 77..89,
+                                    },
+                                    span: 72..89,
+                                },
+                            ],
+                        },
+                        span: 35..91,
+                    },
+                    span: 35..91,
+                },
+                span: 0..94,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "zshrc",
+                    span: 98..103,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Symlink,
+                        span: 105..112,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "link",
+                            span: 115..119,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "zshrc",
+                                        ),
+                                    ),
+                                    span: 120..127,
+                                },
+                                span: 120..127,
+                            },
+                        ],
+                    },
+                    span: 115..129,
+                },
+                span: 94..129,
+            },
+        ),
+    ],
+}

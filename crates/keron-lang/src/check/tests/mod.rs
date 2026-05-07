@@ -5,6 +5,8 @@ mod fns;
 mod lists;
 mod literals;
 mod maps;
+mod realize;
+mod resources;
 mod strings;
 mod vars;
 

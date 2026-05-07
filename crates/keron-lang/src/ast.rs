@@ -19,6 +19,13 @@ pub struct Program {
 pub enum Item {
     Val(ValDecl),
     Fn(FnDecl),
+    Realize(RealizeDecl),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RealizeDecl {
+    pub expr: Spanned<Expr>,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -168,6 +175,14 @@ pub enum Type {
     /// `Map<K, V>`. Allowed key types are validated at type-check
     /// time: only `String`, `Int`, and `Boolean` are accepted.
     Map(Box<Self>, Box<Self>),
+    /// Filesystem symlink. Constructed via the builtin `symlink(...)`
+    /// fn; only enters the apply queue via `realize`.
+    Symlink,
+    /// File-with-content. Constructed via the builtin `file(...)` fn.
+    File,
+    /// Directory ensure-existence. Constructed via the builtin
+    /// `directory(...)` fn.
+    Directory,
 }
 
 impl fmt::Display for Type {
@@ -179,6 +194,9 @@ impl fmt::Display for Type {
             Self::Double => f.write_str("Double"),
             Self::List(inner) => write!(f, "List<{inner}>"),
             Self::Map(k, v) => write!(f, "Map<{k}, {v}>"),
+            Self::Symlink => f.write_str("Symlink"),
+            Self::File => f.write_str("File"),
+            Self::Directory => f.write_str("Directory"),
         }
     }
 }

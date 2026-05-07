@@ -1,0 +1,5 @@
+fn link(name: String): Symlink {
+  symlink(from = "~/dotfiles/${name}", to = "~/.${name}")
+}
+
+val zshrc: Symlink = link("zshrc")

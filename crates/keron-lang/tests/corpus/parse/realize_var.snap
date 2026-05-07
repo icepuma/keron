@@ -1,0 +1,78 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "zshrc",
+                    span: 4..9,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Symlink,
+                        span: 11..18,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "symlink",
+                            span: 21..28,
+                        },
+                        args: [
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "from",
+                                        span: 29..33,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "~/df/zshrc",
+                                        ),
+                                    ),
+                                    span: 36..48,
+                                },
+                                span: 29..48,
+                            },
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "to",
+                                        span: 50..52,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "~/.zshrc",
+                                        ),
+                                    ),
+                                    span: 55..65,
+                                },
+                                span: 50..65,
+                            },
+                        ],
+                    },
+                    span: 21..67,
+                },
+                span: 0..67,
+            },
+        ),
+        Realize(
+            RealizeDecl {
+                expr: Spanned {
+                    node: Var(
+                        "zshrc",
+                    ),
+                    span: 75..80,
+                },
+                span: 67..81,
+            },
+        ),
+    ],
+}

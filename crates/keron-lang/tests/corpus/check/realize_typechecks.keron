@@ -1,0 +1,12 @@
+val zshrc: Symlink = symlink(from = "~/df/zshrc", to = "~/.zshrc")
+val gitcfg: File = file(path = "~/.gitconfig", content = "[user]")
+val xdgcfg: Directory = directory(path = "~/.config")
+
+realize zshrc
+realize gitcfg
+realize xdgcfg
+
+realize [
+  symlink(from = "~/df/vimrc", to = "~/.vimrc"),
+  symlink(from = "~/df/tmux.conf", to = "~/.tmux.conf"),
+]

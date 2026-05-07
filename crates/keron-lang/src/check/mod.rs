@@ -25,12 +25,14 @@
 //! Mixed shadowing: params may shadow outer vals; body-locals may not
 //! shadow anything (param, outer val, or earlier body-local).
 
+mod builtins;
+
 use std::collections::{HashMap, HashSet};
 
 use crate::{
     ast::{
-        BinOp, CallArg, Expr, FnBody, FnDecl, Item, MapEntry, Param, Program, Span, Spanned,
-        StringPart, Type, UnaryOp, ValDecl,
+        BinOp, CallArg, Expr, FnBody, FnDecl, Item, MapEntry, Param, Program, RealizeDecl, Span,
+        Spanned, StringPart, Type, UnaryOp, ValDecl,
     },
     diagnostic::Diagnostic,
 };
@@ -62,19 +64,19 @@ impl Env {
 }
 
 #[derive(Debug, Clone)]
-struct ParamSig {
-    name: String,
-    ty: Type,
-    has_default: bool,
+pub(super) struct ParamSig {
+    pub(super) name: String,
+    pub(super) ty: Type,
+    pub(super) has_default: bool,
 }
 
 #[derive(Debug, Clone)]
-struct FnSig {
-    params: Vec<ParamSig>,
-    return_type: Type,
+pub(super) struct FnSig {
+    pub(super) params: Vec<ParamSig>,
+    pub(super) return_type: Type,
 }
 
-type FnEnv = HashMap<String, FnSig>;
+pub(super) type FnEnv = HashMap<String, FnSig>;
 
 #[derive(Clone, Copy)]
 enum ItemKind {
@@ -92,9 +94,12 @@ pub fn check(program: &Program) -> Result<(), Vec<Diagnostic>> {
     let mut diags = Vec::new();
 
     // Pass 1: collect every top-level name; reject duplicates across
-    // val/fn namespaces; validate fn signatures.
+    // val/fn namespaces (including builtin fns); validate fn signatures.
     let mut top_names: HashMap<String, ItemKind> = HashMap::new();
-    let mut fn_env: FnEnv = HashMap::new();
+    let mut fn_env: FnEnv = builtins::builtin_fn_env();
+    for name in fn_env.keys() {
+        top_names.insert(name.clone(), ItemKind::Fn);
+    }
     for item in &program.items {
         match item {
             Item::Val(v) => {
@@ -120,6 +125,7 @@ pub fn check(program: &Program) -> Result<(), Vec<Diagnostic>> {
                     fn_env.insert(f.name.node.clone(), sig);
                 }
             }
+            Item::Realize(_) => {}
         }
     }
 
@@ -129,6 +135,7 @@ pub fn check(program: &Program) -> Result<(), Vec<Diagnostic>> {
         match item {
             Item::Val(v) => check_val_decl(v, &mut val_env, &fn_env, &mut diags),
             Item::Fn(f) => check_fn_decl(f, &val_env, &fn_env, &mut diags),
+            Item::Realize(r) => check_realize_decl(r, &val_env, &fn_env, &mut diags),
         }
     }
 
@@ -528,7 +535,13 @@ fn validate_type_annotation(ty: &Spanned<Type>, diags: &mut Vec<Diagnostic>) {
 
 fn walk_type(ty: &Type, span: &Span, diags: &mut Vec<Diagnostic>) {
     match ty {
-        Type::String | Type::Int | Type::Boolean | Type::Double => {}
+        Type::String
+        | Type::Int
+        | Type::Boolean
+        | Type::Double
+        | Type::Symlink
+        | Type::File
+        | Type::Directory => {}
         Type::List(inner) => walk_type(inner, span, diags),
         Type::Map(k, v) => {
             if !is_valid_map_key(k) {
@@ -542,6 +555,28 @@ fn walk_type(ty: &Type, span: &Span, diags: &mut Vec<Diagnostic>) {
             walk_type(k, span, diags);
             walk_type(v, span, diags);
         }
+    }
+}
+
+fn check_realize_decl(r: &RealizeDecl, env: &Env, fns: &FnEnv, diags: &mut Vec<Diagnostic>) {
+    match expr_type(&r.expr, env, fns) {
+        Ok(ty) => {
+            if !is_realizable(&ty) {
+                diags.push(Diagnostic::new(
+                    r.expr.span.clone(),
+                    format!("`realize` expects a resource or list of resources, found `{ty}`"),
+                ));
+            }
+        }
+        Err(d) => diags.push(d),
+    }
+}
+
+const fn is_realizable(ty: &Type) -> bool {
+    match ty {
+        Type::Symlink | Type::File | Type::Directory => true,
+        Type::List(inner) => matches!(**inner, Type::Symlink | Type::File | Type::Directory),
+        _ => false,
     }
 }
 

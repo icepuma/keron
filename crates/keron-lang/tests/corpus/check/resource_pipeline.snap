@@ -1,0 +1,207 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "link",
+                    span: 195..199,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "name",
+                            span: 200..204,
+                        },
+                        ty: Spanned {
+                            node: String,
+                            span: 206..212,
+                        },
+                        default: None,
+                        span: 200..212,
+                    },
+                ],
+                return_type: Spanned {
+                    node: Symlink,
+                    span: 215..222,
+                },
+                body: FnBody {
+                    bindings: [],
+                    result: Spanned {
+                        node: Call {
+                            callee: Spanned {
+                                node: "symlink",
+                                span: 227..234,
+                            },
+                            args: [
+                                CallArg {
+                                    name: Some(
+                                        Spanned {
+                                            node: "from",
+                                            span: 235..239,
+                                        },
+                                    ),
+                                    value: Spanned {
+                                        node: Interpolation(
+                                            [
+                                                Text(
+                                                    "~/dotfiles/",
+                                                ),
+                                                Expr(
+                                                    Spanned {
+                                                        node: Var(
+                                                            "name",
+                                                        ),
+                                                        span: 256..260,
+                                                    },
+                                                ),
+                                            ],
+                                        ),
+                                        span: 242..262,
+                                    },
+                                    span: 235..262,
+                                },
+                                CallArg {
+                                    name: Some(
+                                        Spanned {
+                                            node: "to",
+                                            span: 264..266,
+                                        },
+                                    ),
+                                    value: Spanned {
+                                        node: Interpolation(
+                                            [
+                                                Text(
+                                                    "~/.",
+                                                ),
+                                                Expr(
+                                                    Spanned {
+                                                        node: Var(
+                                                            "name",
+                                                        ),
+                                                        span: 275..279,
+                                                    },
+                                                ),
+                                            ],
+                                        ),
+                                        span: 269..281,
+                                    },
+                                    span: 264..281,
+                                },
+                            ],
+                        },
+                        span: 227..283,
+                    },
+                    span: 227..283,
+                },
+                span: 192..286,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "configs",
+                    span: 290..297,
+                },
+                ty: Some(
+                    Spanned {
+                        node: List(
+                            Symlink,
+                        ),
+                        span: 299..313,
+                    },
+                ),
+                value: Spanned {
+                    node: List(
+                        [
+                            Spanned {
+                                node: Call {
+                                    callee: Spanned {
+                                        node: "link",
+                                        span: 319..323,
+                                    },
+                                    args: [
+                                        CallArg {
+                                            name: None,
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "zshrc",
+                                                    ),
+                                                ),
+                                                span: 324..331,
+                                            },
+                                            span: 324..331,
+                                        },
+                                    ],
+                                },
+                                span: 319..332,
+                            },
+                            Spanned {
+                                node: Call {
+                                    callee: Spanned {
+                                        node: "link",
+                                        span: 336..340,
+                                    },
+                                    args: [
+                                        CallArg {
+                                            name: None,
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "vimrc",
+                                                    ),
+                                                ),
+                                                span: 341..348,
+                                            },
+                                            span: 341..348,
+                                        },
+                                    ],
+                                },
+                                span: 336..349,
+                            },
+                            Spanned {
+                                node: Call {
+                                    callee: Spanned {
+                                        node: "link",
+                                        span: 353..357,
+                                    },
+                                    args: [
+                                        CallArg {
+                                            name: None,
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "tmux.conf",
+                                                    ),
+                                                ),
+                                                span: 358..369,
+                                            },
+                                            span: 358..369,
+                                        },
+                                    ],
+                                },
+                                span: 353..370,
+                            },
+                        ],
+                    ),
+                    span: 315..375,
+                },
+                span: 286..375,
+            },
+        ),
+        Realize(
+            RealizeDecl {
+                expr: Spanned {
+                    node: Var(
+                        "configs",
+                    ),
+                    span: 383..390,
+                },
+                span: 375..391,
+            },
+        ),
+    ],
+}

@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `symlink` is already defined
+  --> 1:5
+  |
+1 | val symlink = 1
+  |     ^^^^^^^

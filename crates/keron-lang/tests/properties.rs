@@ -16,7 +16,28 @@ use std::fmt::Write as _;
 use keron_lang::{Expr, Item, Literal, Spanned, Type, UnaryOp, check, parse};
 use proptest::prelude::*;
 
-const KEYWORDS: &[&str] = &["val", "true", "false", "String", "Int", "Boolean", "Double"];
+const KEYWORDS: &[&str] = &[
+    // Parser-level keywords.
+    "val",
+    "fn",
+    "realize",
+    "true",
+    "false",
+    "String",
+    "Int",
+    "Boolean",
+    "Double",
+    "List",
+    "Map",
+    "Symlink",
+    "File",
+    "Directory",
+    // Builtin function names — collide with `val`/`fn` declarations
+    // even though they aren't parser keywords.
+    "symlink",
+    "file",
+    "directory",
+];
 
 fn ident_strategy() -> impl Strategy<Value = String> {
     "[a-zA-Z_][a-zA-Z0-9_]{0,16}"
@@ -55,9 +76,10 @@ fn literal_source_for(ty: &Type) -> BoxedStrategy<(String, Type)> {
             .prop_map(|(int, frac)| (format!("{int}.{frac:09}"), Type::Double))
             .boxed(),
         // The property tests only use the four primitive variants;
-        // `List`/`Map` are exercised via dedicated properties below.
-        Type::List(_) | Type::Map(_, _) => {
-            unreachable!("structured types are not used in literal_source_for")
+        // `List`/`Map`/resource types are exercised via dedicated
+        // properties below.
+        Type::List(_) | Type::Map(_, _) | Type::Symlink | Type::File | Type::Directory => {
+            unreachable!("structured/resource types are not used in literal_source_for")
         }
     }
 }
@@ -410,6 +432,54 @@ proptest! {
         name in ident_strategy(),
     ) {
         let src = format!("val {name}: List<{elem_ty}> = []");
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok());
+    }
+
+    // ---------- resources & realize ----------
+
+    #[test]
+    fn random_symlink_pair_typechecks(
+        from in "[a-zA-Z0-9 _./]{1,32}",
+        to in "[a-zA-Z0-9 _./]{1,32}",
+    ) {
+        let src = format!(
+            "val s: Symlink = symlink(from = \"{from}\", to = \"{to}\")\nrealize s"
+        );
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok());
+    }
+
+    #[test]
+    fn realize_of_int_always_errors(n in (i64::MIN + 1)..=i64::MAX) {
+        let src = format!("realize {n}");
+        let prog = parse(&src).expect("parse should succeed");
+        let errs = check(&prog).expect_err("should fail");
+        prop_assert!(
+            errs[0].message.contains("`realize` expects a resource or list of resources"),
+            "got: {}", errs[0].message
+        );
+    }
+
+    #[test]
+    fn realize_of_homogeneous_symlink_list_typechecks(
+        names in prop::collection::vec("[a-zA-Z0-9_]{1,8}", 0..6),
+    ) {
+        // Build a List<Symlink> via repeated calls and realize the whole list.
+        // Length 0 stays well-typed because the explicit annotation drives
+        // bidirectional inference into the empty literal.
+        let body = if names.is_empty() {
+            String::new()
+        } else {
+            names
+                .iter()
+                .map(|n| format!("symlink(from = \"~/{n}\", to = \"~/.{n}\")"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let src = format!(
+            "val xs: List<Symlink> = [{body}]\nrealize xs"
+        );
         let prog = parse(&src).expect("parse should succeed");
         prop_assert!(check(&prog).is_ok());
     }

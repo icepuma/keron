@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `realize` expects a resource or list of resources, found `List<Int>`
+  --> 1:9
+  |
+1 | realize [1, 2, 3]
+  |         ^^^^^^^^^^

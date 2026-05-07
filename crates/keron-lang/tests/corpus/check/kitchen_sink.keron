@@ -96,3 +96,24 @@ val empty_map: Map<String, Int> = {}
 val by_name: Map<String, Int> = {"alice": 1, "bob": 2, "carol": 3}
 val codes: Map<Int, String> = {200: "ok", 404: "missing"}
 val nested_map: Map<String, List<Int>> = {"primes": [2, 3, 5, 7], "evens": [2, 4]}
+
+# --- resources & realize ---
+fn link(name: String): Symlink {
+  symlink(from = "~/dotfiles/${name}", to = "~/.${name}")
+}
+
+val zshrc: Symlink = link("zshrc")
+val gitcfg: File = file(path = "~/.gitconfig", content = "[user]\n  email = me")
+val xdgcfg: Directory = directory(path = "~/.config")
+
+val all_links: List<Symlink> = [
+  link("vimrc"),
+  link("tmux.conf"),
+]
+
+# `realize` is the only side-effect-bearing form; constructing the
+# values above does nothing on its own.
+realize zshrc
+realize gitcfg
+realize xdgcfg
+realize all_links
