@@ -437,6 +437,52 @@ proptest! {
         prop_assert!(check(&prog).is_ok());
     }
 
+    // ---------- comparisons ----------
+
+    #[test]
+    fn random_int_equality_typechecks(
+        a in (i64::MIN + 1)..=i64::MAX,
+        b in (i64::MIN + 1)..=i64::MAX,
+        op in prop_oneof![Just("=="), Just("!="), Just("<"), Just("<="), Just(">"), Just(">=")],
+    ) {
+        let src = format!("val r: Boolean = {a} {op} {b}");
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok());
+    }
+
+    #[test]
+    fn random_string_equality_typechecks(
+        a in "[a-zA-Z0-9 ]{0,16}",
+        b in "[a-zA-Z0-9 ]{0,16}",
+        op in prop_oneof![Just("=="), Just("!="), Just("<"), Just("<="), Just(">"), Just(">=")],
+    ) {
+        let src = format!("val r: Boolean = \"{a}\" {op} \"{b}\"");
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok());
+    }
+
+    #[test]
+    fn ordering_on_boolean_always_errors(
+        a in any::<bool>(),
+        b in any::<bool>(),
+        op in prop_oneof![Just("<"), Just("<="), Just(">"), Just(">=")],
+    ) {
+        let src = format!("val r = {a} {op} {b}");
+        let prog = parse(&src).expect("parse should succeed");
+        let errs = check(&prog).expect_err("ordering on bool must fail");
+        prop_assert!(errs[0].message.contains("requires"));
+    }
+
+    #[test]
+    fn comparison_in_if_cond_random_ints_typechecks(
+        a in (i64::MIN + 1)..=i64::MAX,
+        b in (i64::MIN + 1)..=i64::MAX,
+    ) {
+        let src = format!("val r: Int = if {a} < {b} {{ 1 }} else {{ 2 }}");
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok());
+    }
+
     // ---------- conditionals ----------
 
     #[test]

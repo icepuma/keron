@@ -3,7 +3,9 @@
 //! Grammar (lowest to highest precedence):
 //!
 //! ```text
-//! expr           := additive
+//! expr           := comparison
+//! comparison     := additive (cmp_op additive)*                   -- left-assoc
+//! cmp_op         := '==' | '!=' | '<=' | '>=' | '<' | '>'
 //! additive       := multiplicative (('+' | '-') multiplicative)*  -- left-assoc
 //! multiplicative := unary (('*' | '/') unary)*                    -- left-assoc
 //! unary          := '-' unary | power
@@ -82,9 +84,26 @@ pub(super) fn expr<'src>() -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<
             just('-').to(BinOp::Sub),
         ))
         .padded_by(pad());
-        multiplicative
+        let additive = multiplicative
             .clone()
             .then(add_op.then(multiplicative).repeated().collect::<Vec<_>>())
+            .map(|(lhs, ops)| ops.into_iter().fold(lhs, fold_left));
+
+        // Comparison ops bind looser than additive. Two-character ops
+        // (`==`, `!=`, `<=`, `>=`) must be tried before their
+        // single-character prefixes (`<`, `>`).
+        let cmp_op = choice((
+            just("==").to(BinOp::Eq),
+            just("!=").to(BinOp::Neq),
+            just("<=").to(BinOp::Le),
+            just(">=").to(BinOp::Ge),
+            just('<').to(BinOp::Lt),
+            just('>').to(BinOp::Gt),
+        ))
+        .padded_by(pad());
+        additive
+            .clone()
+            .then(cmp_op.then(additive).repeated().collect::<Vec<_>>())
             .map(|(lhs, ops)| ops.into_iter().fold(lhs, fold_left))
     })
 }

@@ -1,0 +1,341 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "a",
+                    span: 4..5,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 7..14,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Eq,
+                        lhs: Spanned {
+                            node: Literal(
+                                Int(
+                                    1,
+                                ),
+                            ),
+                            span: 17..18,
+                        },
+                        rhs: Spanned {
+                            node: Literal(
+                                Int(
+                                    2,
+                                ),
+                            ),
+                            span: 22..23,
+                        },
+                    },
+                    span: 17..23,
+                },
+                span: 0..24,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "b",
+                    span: 28..29,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 31..38,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Lt,
+                        lhs: Spanned {
+                            node: Literal(
+                                Double(
+                                    1.5,
+                                ),
+                            ),
+                            span: 41..44,
+                        },
+                        rhs: Spanned {
+                            node: Literal(
+                                Double(
+                                    2.5,
+                                ),
+                            ),
+                            span: 47..50,
+                        },
+                    },
+                    span: 41..50,
+                },
+                span: 24..51,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "c",
+                    span: 55..56,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 58..65,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Lt,
+                        lhs: Spanned {
+                            node: Literal(
+                                Int(
+                                    1,
+                                ),
+                            ),
+                            span: 68..69,
+                        },
+                        rhs: Spanned {
+                            node: Literal(
+                                Double(
+                                    2.0,
+                                ),
+                            ),
+                            span: 72..75,
+                        },
+                    },
+                    span: 68..75,
+                },
+                span: 51..76,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "d",
+                    span: 80..81,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 83..90,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Lt,
+                        lhs: Spanned {
+                            node: Literal(
+                                String(
+                                    "alice",
+                                ),
+                            ),
+                            span: 93..100,
+                        },
+                        rhs: Spanned {
+                            node: Literal(
+                                String(
+                                    "bob",
+                                ),
+                            ),
+                            span: 103..108,
+                        },
+                    },
+                    span: 93..108,
+                },
+                span: 76..109,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "e",
+                    span: 113..114,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 116..123,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Neq,
+                        lhs: Spanned {
+                            node: Literal(
+                                Boolean(
+                                    true,
+                                ),
+                            ),
+                            span: 126..130,
+                        },
+                        rhs: Spanned {
+                            node: Literal(
+                                Boolean(
+                                    false,
+                                ),
+                            ),
+                            span: 134..139,
+                        },
+                    },
+                    span: 126..139,
+                },
+                span: 109..175,
+            },
+        ),
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "classify",
+                    span: 178..186,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "n",
+                            span: 187..188,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 190..193,
+                        },
+                        default: None,
+                        span: 187..193,
+                    },
+                ],
+                return_type: Spanned {
+                    node: String,
+                    span: 196..202,
+                },
+                body: FnBody {
+                    bindings: [],
+                    result: Spanned {
+                        node: If {
+                            cond: Spanned {
+                                node: Binary {
+                                    op: Eq,
+                                    lhs: Spanned {
+                                        node: Var(
+                                            "n",
+                                        ),
+                                        span: 210..211,
+                                    },
+                                    rhs: Spanned {
+                                        node: Literal(
+                                            Int(
+                                                0,
+                                            ),
+                                        ),
+                                        span: 215..216,
+                                    },
+                                },
+                                span: 210..216,
+                            },
+                            then_branch: Spanned {
+                                node: Literal(
+                                    String(
+                                        "zero",
+                                    ),
+                                ),
+                                span: 223..229,
+                            },
+                            else_branch: Spanned {
+                                node: If {
+                                    cond: Spanned {
+                                        node: Binary {
+                                            op: Lt,
+                                            lhs: Spanned {
+                                                node: Var(
+                                                    "n",
+                                                ),
+                                                span: 242..243,
+                                            },
+                                            rhs: Spanned {
+                                                node: Literal(
+                                                    Int(
+                                                        0,
+                                                    ),
+                                                ),
+                                                span: 246..247,
+                                            },
+                                        },
+                                        span: 242..247,
+                                    },
+                                    then_branch: Spanned {
+                                        node: Literal(
+                                            String(
+                                                "negative",
+                                            ),
+                                        ),
+                                        span: 254..264,
+                                    },
+                                    else_branch: Spanned {
+                                        node: Literal(
+                                            String(
+                                                "positive",
+                                            ),
+                                        ),
+                                        span: 280..290,
+                                    },
+                                },
+                                span: 239..295,
+                            },
+                        },
+                        span: 207..295,
+                    },
+                    span: 207..295,
+                },
+                span: 175..298,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "verdict",
+                    span: 302..309,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 311..317,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "classify",
+                            span: 320..328,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Unary {
+                                        op: Neg,
+                                        operand: Spanned {
+                                            node: Literal(
+                                                Int(
+                                                    3,
+                                                ),
+                                            ),
+                                            span: 330..331,
+                                        },
+                                    },
+                                    span: 329..331,
+                                },
+                                span: 329..331,
+                            },
+                        ],
+                    },
+                    span: 320..333,
+                },
+                span: 298..333,
+            },
+        ),
+    ],
+}

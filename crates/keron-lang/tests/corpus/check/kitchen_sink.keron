@@ -131,6 +131,31 @@ val ratio_label: String = if released {
   "wip"
 }
 
+# --- comparisons + if ---
+val verdict: String = if seed > 100 {
+  "many"
+} else if seed == 0 {
+  "none"
+} else {
+  "few"
+}
+
+val tier: String = if version_major >= 1 {
+  "v1+"
+} else if version_minor < 5 {
+  "early"
+} else {
+  "rc"
+}
+
+val rounded: String = if ratio < 1.5 {
+  "small"
+} else if ratio == 1.618 {
+  "phi"
+} else {
+  "large"
+}
+
 # `realize` is the only side-effect-bearing form; constructing the
 # values above does nothing on its own.
 realize zshrc

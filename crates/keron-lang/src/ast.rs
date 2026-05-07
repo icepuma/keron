@@ -157,6 +157,16 @@ pub enum BinOp {
     /// same element type. Same precedence as `+`/`-`. (String concat
     /// uses `+` instead.)
     Concat,
+    /// `==` / `!=` — equality on `String`, `Int`, `Boolean`, `Double`
+    /// (with `Int`↔`Double` promotion). Result is `Boolean`.
+    Eq,
+    Neq,
+    /// `<` / `<=` / `>` / `>=` — ordering on `String` and numeric
+    /// (`Int`/`Double`, with promotion). Result is `Boolean`.
+    Lt,
+    Le,
+    Gt,
+    Ge,
 }
 
 impl BinOp {
@@ -169,6 +179,12 @@ impl BinOp {
             Self::Div => "/",
             Self::Pow => "**",
             Self::Concat => "++",
+            Self::Eq => "==",
+            Self::Neq => "!=",
+            Self::Lt => "<",
+            Self::Le => "<=",
+            Self::Gt => ">",
+            Self::Ge => ">=",
         }
     }
 }

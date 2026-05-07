@@ -1,0 +1,18 @@
+val a: Boolean = 1 == 2
+val b: Boolean = 1.5 < 2.5
+val c: Boolean = 1 < 2.0
+val d: Boolean = "alice" < "bob"
+val e: Boolean = true != false
+
+# Comparisons drive conditionals.
+fn classify(n: Int): String {
+  if n == 0 {
+    "zero"
+  } else if n < 0 {
+    "negative"
+  } else {
+    "positive"
+  }
+}
+
+val verdict: String = classify(-3)

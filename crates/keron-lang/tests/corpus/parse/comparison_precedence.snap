@@ -1,0 +1,86 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "r",
+                    span: 4..5,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 7..14,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Lt,
+                        lhs: Spanned {
+                            node: Binary {
+                                op: Add,
+                                lhs: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            1,
+                                        ),
+                                    ),
+                                    span: 17..18,
+                                },
+                                rhs: Spanned {
+                                    node: Binary {
+                                        op: Mul,
+                                        lhs: Spanned {
+                                            node: Literal(
+                                                Int(
+                                                    2,
+                                                ),
+                                            ),
+                                            span: 21..22,
+                                        },
+                                        rhs: Spanned {
+                                            node: Literal(
+                                                Int(
+                                                    3,
+                                                ),
+                                            ),
+                                            span: 25..26,
+                                        },
+                                    },
+                                    span: 21..26,
+                                },
+                            },
+                            span: 17..26,
+                        },
+                        rhs: Spanned {
+                            node: Binary {
+                                op: Sub,
+                                lhs: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            10,
+                                        ),
+                                    ),
+                                    span: 29..31,
+                                },
+                                rhs: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            1,
+                                        ),
+                                    ),
+                                    span: 34..35,
+                                },
+                            },
+                            span: 29..35,
+                        },
+                    },
+                    span: 17..35,
+                },
+                span: 0..36,
+            },
+        ),
+    ],
+}

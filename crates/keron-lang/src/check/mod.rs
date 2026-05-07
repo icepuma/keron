@@ -647,6 +647,8 @@ fn binop_result(op: BinOp, lhs: &Type, rhs: &Type) -> Option<Type> {
         BinOp::Add => add_result(lhs, rhs),
         BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Pow => numeric_result(lhs, rhs),
         BinOp::Concat => concat_result(lhs, rhs),
+        BinOp::Eq | BinOp::Neq => equality_result(lhs, rhs),
+        BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => ordering_result(lhs, rhs),
     }
 }
 
@@ -675,11 +677,41 @@ fn concat_result(lhs: &Type, rhs: &Type) -> Option<Type> {
     }
 }
 
+const fn is_numeric_pair(lhs: &Type, rhs: &Type) -> bool {
+    matches!(
+        (lhs, rhs),
+        (Type::Int | Type::Double, Type::Int | Type::Double)
+    )
+}
+
+const fn equality_result(lhs: &Type, rhs: &Type) -> Option<Type> {
+    if is_numeric_pair(lhs, rhs) {
+        return Some(Type::Boolean);
+    }
+    match (lhs, rhs) {
+        (Type::String, Type::String) | (Type::Boolean, Type::Boolean) => Some(Type::Boolean),
+        _ => None,
+    }
+}
+
+const fn ordering_result(lhs: &Type, rhs: &Type) -> Option<Type> {
+    if is_numeric_pair(lhs, rhs) {
+        return Some(Type::Boolean);
+    }
+    match (lhs, rhs) {
+        (Type::String, Type::String) => Some(Type::Boolean),
+        _ => None,
+    }
+}
+
 fn binop_error(op: BinOp, lhs: &Type, rhs: &Type) -> String {
     let kind = match op {
-        BinOp::Add => "`Int`, `Double`, or `String`",
+        BinOp::Add | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
+            "`Int`, `Double`, or `String`"
+        }
         BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Pow => "`Int` or `Double`",
         BinOp::Concat => "matching `List<T>`",
+        BinOp::Eq | BinOp::Neq => "`String`, `Int`, `Boolean`, or `Double`",
     };
     format!(
         "`{}` requires {kind} operands, found `{lhs}` and `{rhs}`",

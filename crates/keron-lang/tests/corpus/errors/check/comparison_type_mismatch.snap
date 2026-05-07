@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `==` requires `String`, `Int`, `Boolean`, or `Double` operands, found `Int` and `String`
+  --> 1:9
+  |
+1 | val r = 1 == "one"
+  |         ^^^^^^^^^^

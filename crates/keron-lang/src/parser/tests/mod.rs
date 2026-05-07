@@ -2,6 +2,7 @@
 
 mod arithmetic;
 mod calls;
+mod comparisons;
 mod conditional;
 mod decl;
 mod fn_decl;

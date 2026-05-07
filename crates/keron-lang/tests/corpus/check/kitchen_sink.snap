@@ -2814,12 +2814,279 @@ Program {
                                     span: 3654..3659,
                                 },
                             },
-                            span: 3626..3770,
+                            span: 3626..3690,
                         },
                     },
-                    span: 3594..3770,
+                    span: 3594..3690,
                 },
-                span: 3568..3770,
+                span: 3568..3690,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "verdict",
+                    span: 3694..3701,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 3703..3709,
+                    },
+                ),
+                value: Spanned {
+                    node: If {
+                        cond: Spanned {
+                            node: Binary {
+                                op: Gt,
+                                lhs: Spanned {
+                                    node: Var(
+                                        "seed",
+                                    ),
+                                    span: 3715..3719,
+                                },
+                                rhs: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            100,
+                                        ),
+                                    ),
+                                    span: 3722..3725,
+                                },
+                            },
+                            span: 3715..3725,
+                        },
+                        then_branch: Spanned {
+                            node: Literal(
+                                String(
+                                    "many",
+                                ),
+                            ),
+                            span: 3730..3736,
+                        },
+                        else_branch: Spanned {
+                            node: If {
+                                cond: Spanned {
+                                    node: Binary {
+                                        op: Eq,
+                                        lhs: Spanned {
+                                            node: Var(
+                                                "seed",
+                                            ),
+                                            span: 3747..3751,
+                                        },
+                                        rhs: Spanned {
+                                            node: Literal(
+                                                Int(
+                                                    0,
+                                                ),
+                                            ),
+                                            span: 3755..3756,
+                                        },
+                                    },
+                                    span: 3747..3756,
+                                },
+                                then_branch: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "none",
+                                        ),
+                                    ),
+                                    span: 3761..3767,
+                                },
+                                else_branch: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "few",
+                                        ),
+                                    ),
+                                    span: 3779..3784,
+                                },
+                            },
+                            span: 3744..3788,
+                        },
+                    },
+                    span: 3712..3788,
+                },
+                span: 3690..3788,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "tier",
+                    span: 3792..3796,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 3798..3804,
+                    },
+                ),
+                value: Spanned {
+                    node: If {
+                        cond: Spanned {
+                            node: Binary {
+                                op: Ge,
+                                lhs: Spanned {
+                                    node: Var(
+                                        "version_major",
+                                    ),
+                                    span: 3810..3823,
+                                },
+                                rhs: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            1,
+                                        ),
+                                    ),
+                                    span: 3827..3828,
+                                },
+                            },
+                            span: 3810..3828,
+                        },
+                        then_branch: Spanned {
+                            node: Literal(
+                                String(
+                                    "v1+",
+                                ),
+                            ),
+                            span: 3833..3838,
+                        },
+                        else_branch: Spanned {
+                            node: If {
+                                cond: Spanned {
+                                    node: Binary {
+                                        op: Lt,
+                                        lhs: Spanned {
+                                            node: Var(
+                                                "version_minor",
+                                            ),
+                                            span: 3849..3862,
+                                        },
+                                        rhs: Spanned {
+                                            node: Literal(
+                                                Int(
+                                                    5,
+                                                ),
+                                            ),
+                                            span: 3865..3866,
+                                        },
+                                    },
+                                    span: 3849..3866,
+                                },
+                                then_branch: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "early",
+                                        ),
+                                    ),
+                                    span: 3871..3878,
+                                },
+                                else_branch: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "rc",
+                                        ),
+                                    ),
+                                    span: 3890..3894,
+                                },
+                            },
+                            span: 3846..3898,
+                        },
+                    },
+                    span: 3807..3898,
+                },
+                span: 3788..3898,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "rounded",
+                    span: 3902..3909,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 3911..3917,
+                    },
+                ),
+                value: Spanned {
+                    node: If {
+                        cond: Spanned {
+                            node: Binary {
+                                op: Lt,
+                                lhs: Spanned {
+                                    node: Var(
+                                        "ratio",
+                                    ),
+                                    span: 3923..3928,
+                                },
+                                rhs: Spanned {
+                                    node: Literal(
+                                        Double(
+                                            1.5,
+                                        ),
+                                    ),
+                                    span: 3931..3934,
+                                },
+                            },
+                            span: 3923..3934,
+                        },
+                        then_branch: Spanned {
+                            node: Literal(
+                                String(
+                                    "small",
+                                ),
+                            ),
+                            span: 3939..3946,
+                        },
+                        else_branch: Spanned {
+                            node: If {
+                                cond: Spanned {
+                                    node: Binary {
+                                        op: Eq,
+                                        lhs: Spanned {
+                                            node: Var(
+                                                "ratio",
+                                            ),
+                                            span: 3957..3962,
+                                        },
+                                        rhs: Spanned {
+                                            node: Literal(
+                                                Double(
+                                                    1.618,
+                                                ),
+                                            ),
+                                            span: 3966..3971,
+                                        },
+                                    },
+                                    span: 3957..3971,
+                                },
+                                then_branch: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "phi",
+                                        ),
+                                    ),
+                                    span: 3976..3981,
+                                },
+                                else_branch: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "large",
+                                        ),
+                                    ),
+                                    span: 3993..4000,
+                                },
+                            },
+                            span: 3954..4111,
+                        },
+                    },
+                    span: 3920..4111,
+                },
+                span: 3898..4111,
             },
         ),
         Realize(
@@ -2828,9 +3095,9 @@ Program {
                     node: Var(
                         "zshrc",
                     ),
-                    span: 3778..3783,
+                    span: 4119..4124,
                 },
-                span: 3770..3784,
+                span: 4111..4125,
             },
         ),
         Realize(
@@ -2839,9 +3106,9 @@ Program {
                     node: Var(
                         "gitcfg",
                     ),
-                    span: 3792..3798,
+                    span: 4133..4139,
                 },
-                span: 3784..3799,
+                span: 4125..4140,
             },
         ),
         Realize(
@@ -2850,9 +3117,9 @@ Program {
                     node: Var(
                         "xdgcfg",
                     ),
-                    span: 3807..3813,
+                    span: 4148..4154,
                 },
-                span: 3799..3814,
+                span: 4140..4155,
             },
         ),
         Realize(
@@ -2861,9 +3128,9 @@ Program {
                     node: Var(
                         "all_links",
                     ),
-                    span: 3822..3831,
+                    span: 4163..4172,
                 },
-                span: 3814..3832,
+                span: 4155..4173,
             },
         ),
         Realize(
@@ -2872,9 +3139,9 @@ Program {
                     node: Var(
                         "shellrc",
                     ),
-                    span: 3840..3847,
+                    span: 4181..4188,
                 },
-                span: 3832..3848,
+                span: 4173..4189,
             },
         ),
     ],

@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `<` requires `Int`, `Double`, or `String` operands, found `Boolean` and `Boolean`
+  --> 1:9
+  |
+1 | val r = true < false
+  |         ^^^^^^^^^^^^
