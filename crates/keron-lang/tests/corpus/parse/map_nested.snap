@@ -1,0 +1,145 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "nested",
+                    span: 4..10,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Map(
+                            String,
+                            Map(
+                                String,
+                                Int,
+                            ),
+                        ),
+                        span: 12..42,
+                    },
+                ),
+                value: Spanned {
+                    node: Map(
+                        [
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "outer1",
+                                        ),
+                                    ),
+                                    span: 48..56,
+                                },
+                                value: Spanned {
+                                    node: Map(
+                                        [
+                                            MapEntry {
+                                                key: Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "a",
+                                                        ),
+                                                    ),
+                                                    span: 59..62,
+                                                },
+                                                value: Spanned {
+                                                    node: Literal(
+                                                        Int(
+                                                            1,
+                                                        ),
+                                                    ),
+                                                    span: 64..65,
+                                                },
+                                                span: 59..65,
+                                            },
+                                            MapEntry {
+                                                key: Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "b",
+                                                        ),
+                                                    ),
+                                                    span: 67..70,
+                                                },
+                                                value: Spanned {
+                                                    node: Literal(
+                                                        Int(
+                                                            2,
+                                                        ),
+                                                    ),
+                                                    span: 72..73,
+                                                },
+                                                span: 67..73,
+                                            },
+                                        ],
+                                    ),
+                                    span: 58..74,
+                                },
+                                span: 48..74,
+                            },
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "outer2",
+                                        ),
+                                    ),
+                                    span: 78..86,
+                                },
+                                value: Spanned {
+                                    node: Map(
+                                        [
+                                            MapEntry {
+                                                key: Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "c",
+                                                        ),
+                                                    ),
+                                                    span: 89..92,
+                                                },
+                                                value: Spanned {
+                                                    node: Literal(
+                                                        Int(
+                                                            3,
+                                                        ),
+                                                    ),
+                                                    span: 94..95,
+                                                },
+                                                span: 89..95,
+                                            },
+                                        ],
+                                    ),
+                                    span: 88..96,
+                                },
+                                span: 78..96,
+                            },
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "outer3",
+                                        ),
+                                    ),
+                                    span: 100..108,
+                                },
+                                value: Spanned {
+                                    node: Map(
+                                        [],
+                                    ),
+                                    span: 110..112,
+                                },
+                                span: 100..112,
+                            },
+                        ],
+                    ),
+                    span: 44..116,
+                },
+                span: 0..116,
+            },
+        ),
+    ],
+}

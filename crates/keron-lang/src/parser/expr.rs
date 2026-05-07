@@ -19,7 +19,7 @@
 
 use chumsky::prelude::*;
 
-use crate::ast::{BinOp, CallArg, Expr, Literal, Spanned, UnaryOp};
+use crate::ast::{BinOp, CallArg, Expr, Literal, MapEntry, Spanned, UnaryOp};
 
 use super::{
     string::string_expr,
@@ -32,6 +32,7 @@ pub(super) fn expr<'src>() -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<
             string_expr(expr.clone()).padded_by(pad()),
             non_string_literal_expr(),
             list_atom(expr.clone()),
+            map_atom(expr.clone()),
             var_or_call(expr.clone()),
             expr.clone()
                 .delimited_by(just('(').padded_by(pad()), just(')').padded_by(pad())),
@@ -104,6 +105,31 @@ where
         .delimited_by(just('[').padded_by(pad()), just(']').padded_by(pad()))
         .map_with(|items, e| Spanned {
             node: Expr::List(items),
+            span: span_to_range(e.span()),
+        })
+}
+
+fn map_atom<'src, P>(expr: P) -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone
+where
+    P: Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone + 'src,
+{
+    let entry = expr
+        .clone()
+        .then_ignore(just(':').padded_by(pad()))
+        .then(expr)
+        .map_with(|(key, value), e| MapEntry {
+            key,
+            value,
+            span: span_to_range(e.span()),
+        });
+
+    entry
+        .separated_by(just(',').padded_by(pad()))
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .delimited_by(just('{').padded_by(pad()), just('}').padded_by(pad()))
+        .map_with(|entries, e| Spanned {
+            node: Expr::Map(entries),
             span: span_to_range(e.span()),
         })
 }

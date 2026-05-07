@@ -90,3 +90,9 @@ fn odd(n: Int): Boolean {
 val cube_8: Int = double(double(2))
 val color: Int = rgb(255, b = 128)
 val parity: Boolean = even(4)
+
+# --- maps ---
+val empty_map: Map<String, Int> = {}
+val by_name: Map<String, Int> = {"alice": 1, "bob": 2, "carol": 3}
+val codes: Map<Int, String> = {200: "ok", 404: "missing"}
+val nested_map: Map<String, List<Int>> = {"primes": [2, 3, 5, 7], "evens": [2, 4]}

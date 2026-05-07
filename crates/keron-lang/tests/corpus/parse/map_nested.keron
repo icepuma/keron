@@ -1,0 +1,5 @@
+val nested: Map<String, Map<String, Int>> = {
+  "outer1": {"a": 1, "b": 2},
+  "outer2": {"c": 3},
+  "outer3": {},
+}

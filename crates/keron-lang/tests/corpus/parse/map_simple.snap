@@ -1,0 +1,70 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "users",
+                    span: 4..9,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Map(
+                            String,
+                            Int,
+                        ),
+                        span: 11..28,
+                    },
+                ),
+                value: Spanned {
+                    node: Map(
+                        [
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "alice",
+                                        ),
+                                    ),
+                                    span: 31..38,
+                                },
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            1,
+                                        ),
+                                    ),
+                                    span: 40..41,
+                                },
+                                span: 31..41,
+                            },
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "bob",
+                                        ),
+                                    ),
+                                    span: 43..48,
+                                },
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            2,
+                                        ),
+                                    ),
+                                    span: 50..51,
+                                },
+                                span: 43..51,
+                            },
+                        ],
+                    ),
+                    span: 30..53,
+                },
+                span: 0..53,
+            },
+        ),
+    ],
+}

@@ -1,7 +1,7 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
 ---
-error: found '}' expected something else, '#', '"val"', '-', '"', '"true"', '"false"', int, '[', identifier, or '('
+error: found '}' expected something else, '#', '"val"', '-', '"', '"true"', '"false"', int, '[', '{', identifier, or '('
   --> 1:21
   |
 1 | fn nothing(): Int { }

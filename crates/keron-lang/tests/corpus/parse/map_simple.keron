@@ -1,0 +1,1 @@
+val users: Map<String, Int> = {"alice": 1, "bob": 2}

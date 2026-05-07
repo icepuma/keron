@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `Double` is not a valid `Map` key type; allowed keys are `String`, `Int`, `Boolean`
+  --> 1:8
+  |
+1 | val m: Map<Double, Int> = {}
+  |        ^^^^^^^^^^^^^^^^^

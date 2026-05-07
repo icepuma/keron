@@ -29,8 +29,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     ast::{
-        BinOp, CallArg, Expr, FnBody, FnDecl, Item, Param, Program, Span, Spanned, StringPart,
-        Type, UnaryOp, ValDecl,
+        BinOp, CallArg, Expr, FnBody, FnDecl, Item, MapEntry, Param, Program, Span, Spanned,
+        StringPart, Type, UnaryOp, ValDecl,
     },
     diagnostic::Diagnostic,
 };
@@ -141,6 +141,7 @@ fn build_sig(f: &FnDecl, diags: &mut Vec<Diagnostic>) -> Option<FnSig> {
     let mut seen_default = false;
     let mut ok = true;
     for p in &f.params {
+        validate_type_annotation(&p.ty, diags);
         if !seen.insert(p.name.node.clone()) {
             diags.push(Diagnostic::new(
                 p.name.span.clone(),
@@ -165,6 +166,7 @@ fn build_sig(f: &FnDecl, diags: &mut Vec<Diagnostic>) -> Option<FnSig> {
             has_default,
         });
     }
+    validate_type_annotation(&f.return_type, diags);
     if ok {
         Some(FnSig {
             params,
@@ -176,6 +178,9 @@ fn build_sig(f: &FnDecl, diags: &mut Vec<Diagnostic>) -> Option<FnSig> {
 }
 
 fn check_val_decl(v: &ValDecl, env: &mut Env, fns: &FnEnv, diags: &mut Vec<Diagnostic>) {
+    if let Some(annot) = &v.ty {
+        validate_type_annotation(annot, diags);
+    }
     let bind_ty: Option<Type> = match &v.ty {
         Some(annot) => {
             if let Err(d) = check_expr(&v.value, &annot.node, env, fns) {
@@ -251,6 +256,9 @@ fn check_fn_body(
             ));
             continue;
         }
+        if let Some(annot) = &binding.ty {
+            validate_type_annotation(annot, diags);
+        }
         let bind_ty: Option<Type> = match &binding.ty {
             Some(annot) => {
                 if let Err(d) = check_expr(&binding.value, &annot.node, &env, fns) {
@@ -293,6 +301,20 @@ fn check_expr(
             _ if items.is_empty() => Err(Diagnostic::new(
                 e.span.clone(),
                 format!("type mismatch: expected `{expected}`, found empty list"),
+            )),
+            _ => switch_to_synth(e, expected, env, fns),
+        },
+        Expr::Map(entries) => match expected {
+            Type::Map(key_ty, value_ty) => {
+                for entry in entries {
+                    check_expr(&entry.key, key_ty, env, fns)?;
+                    check_expr(&entry.value, value_ty, env, fns)?;
+                }
+                Ok(())
+            }
+            _ if entries.is_empty() => Err(Diagnostic::new(
+                e.span.clone(),
+                format!("type mismatch: expected `{expected}`, found empty map"),
             )),
             _ => switch_to_synth(e, expected, env, fns),
         },
@@ -361,6 +383,7 @@ fn expr_type(e: &Spanned<Expr>, env: &Env, fns: &FnEnv) -> Result<Type, Diagnost
             Ok(Type::String)
         }
         Expr::List(items) => list_type(e.span.clone(), items, env, fns),
+        Expr::Map(entries) => map_type(e.span.clone(), entries, env, fns),
         Expr::Call { callee, args } => check_call(e.span.clone(), callee, args, env, fns),
     }
 }
@@ -449,6 +472,77 @@ fn check_call(
     }
 
     Ok(sig.return_type.clone())
+}
+
+fn map_type(
+    map_span: Span,
+    entries: &[MapEntry],
+    env: &Env,
+    fns: &FnEnv,
+) -> Result<Type, Diagnostic> {
+    let Some((first, rest)) = entries.split_first() else {
+        return Err(Diagnostic::new(
+            map_span,
+            "cannot infer type of empty map; add a `Map<K, V>` annotation",
+        ));
+    };
+    let key_ty = expr_type(&first.key, env, fns)?;
+    if !is_valid_map_key(&key_ty) {
+        return Err(Diagnostic::new(
+            first.key.span.clone(),
+            format!(
+                "`{key_ty}` is not a valid `Map` key type; allowed keys are `String`, `Int`, `Boolean`"
+            ),
+        ));
+    }
+    let value_ty = expr_type(&first.value, env, fns)?;
+    for entry in rest {
+        let k = expr_type(&entry.key, env, fns)?;
+        if k != key_ty {
+            return Err(Diagnostic::new(
+                entry.key.span.clone(),
+                format!("map key type mismatch: expected `{key_ty}`, found `{k}`"),
+            ));
+        }
+        let v = expr_type(&entry.value, env, fns)?;
+        if v != value_ty {
+            return Err(Diagnostic::new(
+                entry.value.span.clone(),
+                format!("map value type mismatch: expected `{value_ty}`, found `{v}`"),
+            ));
+        }
+    }
+    Ok(Type::Map(Box::new(key_ty), Box::new(value_ty)))
+}
+
+const fn is_valid_map_key(ty: &Type) -> bool {
+    matches!(ty, Type::String | Type::Int | Type::Boolean)
+}
+
+/// Recursively check that every `Map<K, V>` occurrence in a declared
+/// type annotation has a valid key type. Errors are reported at the
+/// annotation's outer span.
+fn validate_type_annotation(ty: &Spanned<Type>, diags: &mut Vec<Diagnostic>) {
+    walk_type(&ty.node, &ty.span, diags);
+}
+
+fn walk_type(ty: &Type, span: &Span, diags: &mut Vec<Diagnostic>) {
+    match ty {
+        Type::String | Type::Int | Type::Boolean | Type::Double => {}
+        Type::List(inner) => walk_type(inner, span, diags),
+        Type::Map(k, v) => {
+            if !is_valid_map_key(k) {
+                diags.push(Diagnostic::new(
+                    span.clone(),
+                    format!(
+                        "`{k}` is not a valid `Map` key type; allowed keys are `String`, `Int`, `Boolean`"
+                    ),
+                ));
+            }
+            walk_type(k, span, diags);
+            walk_type(v, span, diags);
+        }
+    }
 }
 
 fn list_type(

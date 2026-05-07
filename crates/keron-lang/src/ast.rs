@@ -63,6 +63,13 @@ pub struct FnBody {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct MapEntry {
+    pub key: Spanned<Expr>,
+    pub value: Spanned<Expr>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct CallArg {
     /// `Some(name)` for `name = value`; `None` for positional args.
     pub name: Option<Spanned<String>>,
@@ -89,6 +96,9 @@ pub enum Expr {
     /// `[e1, e2, …]`. Empty lists carry no element type and require a
     /// `List<T>` annotation upstream to be type-checked.
     List(Vec<Spanned<Self>>),
+    /// `{k: v, …}`. Empty maps similarly require a `Map<K, V>`
+    /// annotation. Allowed key types: `String`, `Int`, `Boolean`.
+    Map(Vec<MapEntry>),
     /// Reference to a previously-declared `val`. Resolved against the
     /// declaration order; forward references are an error.
     Var(String),
@@ -155,6 +165,9 @@ pub enum Type {
     Boolean,
     Double,
     List(Box<Self>),
+    /// `Map<K, V>`. Allowed key types are validated at type-check
+    /// time: only `String`, `Int`, and `Boolean` are accepted.
+    Map(Box<Self>, Box<Self>),
 }
 
 impl fmt::Display for Type {
@@ -165,6 +178,7 @@ impl fmt::Display for Type {
             Self::Boolean => f.write_str("Boolean"),
             Self::Double => f.write_str("Double"),
             Self::List(inner) => write!(f, "List<{inner}>"),
+            Self::Map(k, v) => write!(f, "Map<{k}, {v}>"),
         }
     }
 }

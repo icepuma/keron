@@ -55,8 +55,10 @@ fn literal_source_for(ty: &Type) -> BoxedStrategy<(String, Type)> {
             .prop_map(|(int, frac)| (format!("{int}.{frac:09}"), Type::Double))
             .boxed(),
         // The property tests only use the four primitive variants;
-        // `List` is exercised via dedicated list properties below.
-        Type::List(_) => unreachable!("list types are not used in literal_source_for"),
+        // `List`/`Map` are exercised via dedicated properties below.
+        Type::List(_) | Type::Map(_, _) => {
+            unreachable!("structured types are not used in literal_source_for")
+        }
     }
 }
 
@@ -85,6 +87,7 @@ fn eval_simple(e: &Expr) -> Literal {
         Expr::Binary { .. }
         | Expr::Interpolation(_)
         | Expr::List(_)
+        | Expr::Map(_)
         | Expr::Var(_)
         | Expr::Call { .. } => {
             panic!("eval_simple only supports literals and unary")
@@ -323,6 +326,42 @@ proptest! {
         let src = format!("val {a} = {n}\nval {b}: Int = {a}");
         let prog = parse(&src).expect("parse should succeed");
         prop_assert!(check(&prog).is_ok());
+    }
+
+    #[test]
+    fn random_string_int_map_typechecks(
+        keys in prop::collection::vec("[a-zA-Z0-9_]{1,8}", 1..6),
+        values in prop::collection::vec((i64::MIN + 1)..=i64::MAX, 1..6),
+    ) {
+        let n = keys.len().min(values.len());
+        let entries = keys
+            .iter()
+            .zip(values.iter())
+            .take(n)
+            .map(|(k, v)| format!("\"{k}\": {v}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let src = format!("val m: Map<String, Int> = {{{entries}}}");
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok());
+    }
+
+    #[test]
+    fn empty_map_with_map_annotation_typechecks(
+        k in prop_oneof![Just(Type::String), Just(Type::Int), Just(Type::Boolean)],
+        v in ty_strategy(),
+        name in ident_strategy(),
+    ) {
+        let src = format!("val {name}: Map<{k}, {v}> = {{}}");
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok());
+    }
+
+    #[test]
+    fn empty_map_without_annotation_always_errors(name in ident_strategy()) {
+        let src = format!("val {name} = {{}}");
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_err());
     }
 
     #[test]

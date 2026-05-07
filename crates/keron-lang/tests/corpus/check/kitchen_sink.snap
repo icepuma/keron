@@ -2074,9 +2074,289 @@ Program {
                             },
                         ],
                     },
-                    span: 2629..2637,
+                    span: 2629..2653,
                 },
-                span: 2607..2637,
+                span: 2607..2653,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "empty_map",
+                    span: 2657..2666,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Map(
+                            String,
+                            Int,
+                        ),
+                        span: 2668..2685,
+                    },
+                ),
+                value: Spanned {
+                    node: Map(
+                        [],
+                    ),
+                    span: 2687..2690,
+                },
+                span: 2653..2690,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "by_name",
+                    span: 2694..2701,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Map(
+                            String,
+                            Int,
+                        ),
+                        span: 2703..2720,
+                    },
+                ),
+                value: Spanned {
+                    node: Map(
+                        [
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "alice",
+                                        ),
+                                    ),
+                                    span: 2723..2730,
+                                },
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            1,
+                                        ),
+                                    ),
+                                    span: 2732..2733,
+                                },
+                                span: 2723..2733,
+                            },
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "bob",
+                                        ),
+                                    ),
+                                    span: 2735..2740,
+                                },
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            2,
+                                        ),
+                                    ),
+                                    span: 2742..2743,
+                                },
+                                span: 2735..2743,
+                            },
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "carol",
+                                        ),
+                                    ),
+                                    span: 2745..2752,
+                                },
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            3,
+                                        ),
+                                    ),
+                                    span: 2754..2755,
+                                },
+                                span: 2745..2755,
+                            },
+                        ],
+                    ),
+                    span: 2722..2757,
+                },
+                span: 2690..2757,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "codes",
+                    span: 2761..2766,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Map(
+                            Int,
+                            String,
+                        ),
+                        span: 2768..2785,
+                    },
+                ),
+                value: Spanned {
+                    node: Map(
+                        [
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            200,
+                                        ),
+                                    ),
+                                    span: 2788..2791,
+                                },
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "ok",
+                                        ),
+                                    ),
+                                    span: 2793..2797,
+                                },
+                                span: 2788..2797,
+                            },
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            404,
+                                        ),
+                                    ),
+                                    span: 2799..2802,
+                                },
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "missing",
+                                        ),
+                                    ),
+                                    span: 2804..2813,
+                                },
+                                span: 2799..2813,
+                            },
+                        ],
+                    ),
+                    span: 2787..2815,
+                },
+                span: 2757..2815,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "nested_map",
+                    span: 2819..2829,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Map(
+                            String,
+                            List(
+                                Int,
+                            ),
+                        ),
+                        span: 2831..2854,
+                    },
+                ),
+                value: Spanned {
+                    node: Map(
+                        [
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "primes",
+                                        ),
+                                    ),
+                                    span: 2857..2865,
+                                },
+                                value: Spanned {
+                                    node: List(
+                                        [
+                                            Spanned {
+                                                node: Literal(
+                                                    Int(
+                                                        2,
+                                                    ),
+                                                ),
+                                                span: 2868..2869,
+                                            },
+                                            Spanned {
+                                                node: Literal(
+                                                    Int(
+                                                        3,
+                                                    ),
+                                                ),
+                                                span: 2871..2872,
+                                            },
+                                            Spanned {
+                                                node: Literal(
+                                                    Int(
+                                                        5,
+                                                    ),
+                                                ),
+                                                span: 2874..2875,
+                                            },
+                                            Spanned {
+                                                node: Literal(
+                                                    Int(
+                                                        7,
+                                                    ),
+                                                ),
+                                                span: 2877..2878,
+                                            },
+                                        ],
+                                    ),
+                                    span: 2867..2879,
+                                },
+                                span: 2857..2879,
+                            },
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "evens",
+                                        ),
+                                    ),
+                                    span: 2881..2888,
+                                },
+                                value: Spanned {
+                                    node: List(
+                                        [
+                                            Spanned {
+                                                node: Literal(
+                                                    Int(
+                                                        2,
+                                                    ),
+                                                ),
+                                                span: 2891..2892,
+                                            },
+                                            Spanned {
+                                                node: Literal(
+                                                    Int(
+                                                        4,
+                                                    ),
+                                                ),
+                                                span: 2894..2895,
+                                            },
+                                        ],
+                                    ),
+                                    span: 2890..2896,
+                                },
+                                span: 2881..2896,
+                            },
+                        ],
+                    ),
+                    span: 2856..2898,
+                },
+                span: 2815..2898,
             },
         ),
     ],

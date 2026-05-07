@@ -8,7 +8,7 @@ use crate::ast::{Span, Spanned};
 pub(super) type Extra<'src> = extra::Err<Rich<'src, char>>;
 
 const KEYWORDS: &[&str] = &[
-    "val", "fn", "true", "false", "String", "Int", "Boolean", "Double", "List",
+    "val", "fn", "true", "false", "String", "Int", "Boolean", "Double", "List", "Map",
 ];
 
 pub(super) fn ident<'src>() -> impl Parser<'src, &'src str, String, Extra<'src>> + Clone {

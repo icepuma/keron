@@ -4,6 +4,7 @@ mod arithmetic;
 mod calls;
 mod decl;
 mod fn_decl;
+mod maps;
 mod string;
 
 use crate::{

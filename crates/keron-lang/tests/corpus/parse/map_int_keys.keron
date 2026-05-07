@@ -1,0 +1,1 @@
+val codes: Map<Int, String> = {200: "ok", 404: "not found", 500: "error"}

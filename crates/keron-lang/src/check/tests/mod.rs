@@ -4,6 +4,7 @@ mod arithmetic;
 mod fns;
 mod lists;
 mod literals;
+mod maps;
 mod strings;
 mod vars;
 

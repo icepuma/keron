@@ -17,9 +17,16 @@ pub(super) fn type_annotation<'src>() -> impl Parser<'src, &'src str, Type, Extr
         ));
         let list = text::keyword("List")
             .ignore_then(just('<').padded_by(pad()))
-            .ignore_then(ty)
+            .ignore_then(ty.clone())
             .then_ignore(just('>').padded_by(pad()))
             .map(|inner| Type::List(Box::new(inner)));
-        choice((list, primitive))
+        let map = text::keyword("Map")
+            .ignore_then(just('<').padded_by(pad()))
+            .ignore_then(ty.clone())
+            .then_ignore(just(',').padded_by(pad()))
+            .then(ty)
+            .then_ignore(just('>').padded_by(pad()))
+            .map(|(k, v)| Type::Map(Box::new(k), Box::new(v)));
+        choice((list, map, primitive))
     })
 }

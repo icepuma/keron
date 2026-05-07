@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: map key type mismatch: expected `String`, found `Int`
+  --> 1:18
+  |
+1 | val m = {"a": 1, 2: 2}
+  |                  ^

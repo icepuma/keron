@@ -1,0 +1,7 @@
+val by_name: Map<String, Int> = {"alice": 1, "bob": 2}
+val codes: Map<Int, String> = {200: "ok", 404: "missing"}
+val flags: Map<Boolean, String> = {true: "on", false: "off"}
+val empty: Map<String, List<Int>> = {}
+val with_lists: Map<String, List<Int>> = {"a": [1, 2], "b": []}
+val with_exprs: Map<String, Int> = {"sum": 1 + 2, "prod": 3 * 4}
+val nested: Map<String, Map<String, Int>> = {"k": {"inner": 1}}

@@ -1,0 +1,89 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "codes",
+                    span: 4..9,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Map(
+                            Int,
+                            String,
+                        ),
+                        span: 11..28,
+                    },
+                ),
+                value: Spanned {
+                    node: Map(
+                        [
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            200,
+                                        ),
+                                    ),
+                                    span: 31..34,
+                                },
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "ok",
+                                        ),
+                                    ),
+                                    span: 36..40,
+                                },
+                                span: 31..40,
+                            },
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            404,
+                                        ),
+                                    ),
+                                    span: 42..45,
+                                },
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "not found",
+                                        ),
+                                    ),
+                                    span: 47..58,
+                                },
+                                span: 42..58,
+                            },
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            500,
+                                        ),
+                                    ),
+                                    span: 60..63,
+                                },
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "error",
+                                        ),
+                                    ),
+                                    span: 65..72,
+                                },
+                                span: 60..72,
+                            },
+                        ],
+                    ),
+                    span: 30..74,
+                },
+                span: 0..74,
+            },
+        ),
+    ],
+}
