@@ -3193,18 +3193,115 @@ Program {
                                                     span: 3995..4002,
                                                 },
                                             ),
-                                            span: 3991..4115,
+                                            span: 3991..4259,
                                         },
                                     },
-                                    span: 3956..4115,
+                                    span: 3956..4259,
                                 },
                             ),
-                            span: 3956..4115,
+                            span: 3956..4259,
                         },
                     },
-                    span: 3922..4115,
+                    span: 3922..4259,
                 },
-                span: 3900..4115,
+                span: 3900..4259,
+            },
+        ),
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "ensure_extra_dirs",
+                    span: 4262..4279,
+                },
+                params: [],
+                return_type: Spanned {
+                    node: Void,
+                    span: 4283..4287,
+                },
+                body: Block {
+                    stmts: [
+                        Reconcile(
+                            ReconcileDecl {
+                                expr: Spanned {
+                                    node: Var(
+                                        "xdgcfg",
+                                    ),
+                                    span: 4302..4308,
+                                },
+                                span: 4292..4309,
+                            },
+                        ),
+                    ],
+                    trailing: None,
+                    span: 4288..4504,
+                },
+                span: 4259..4504,
+            },
+        ),
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "install_optional_extras",
+                    span: 4507..4530,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "flag",
+                            span: 4531..4535,
+                        },
+                        ty: Spanned {
+                            node: Boolean,
+                            span: 4537..4544,
+                        },
+                        default: None,
+                        span: 4531..4544,
+                    },
+                ],
+                return_type: Spanned {
+                    node: Void,
+                    span: 4547..4551,
+                },
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: If {
+                                cond: Spanned {
+                                    node: Var(
+                                        "flag",
+                                    ),
+                                    span: 4559..4563,
+                                },
+                                then_branch: Block {
+                                    stmts: [
+                                        Reconcile(
+                                            ReconcileDecl {
+                                                expr: Spanned {
+                                                    node: Var(
+                                                        "all_links",
+                                                    ),
+                                                    span: 4576..4585,
+                                                },
+                                                span: 4566..4586,
+                                            },
+                                        ),
+                                    ],
+                                    trailing: None,
+                                    span: 4564..4588,
+                                },
+                                else_branch: Block {
+                                    stmts: [],
+                                    trailing: None,
+                                    span: 4588..4588,
+                                },
+                            },
+                            span: 4556..4588,
+                        },
+                    ),
+                    span: 4552..4700,
+                },
+                span: 4504..4700,
             },
         ),
         Reconcile(
@@ -3213,9 +3310,9 @@ Program {
                     node: Var(
                         "zshrc",
                     ),
-                    span: 4125..4130,
+                    span: 4710..4715,
                 },
-                span: 4115..4131,
+                span: 4700..4716,
             },
         ),
         Reconcile(
@@ -3224,9 +3321,9 @@ Program {
                     node: Var(
                         "gitcfg",
                     ),
-                    span: 4141..4147,
+                    span: 4726..4732,
                 },
-                span: 4131..4148,
+                span: 4716..4733,
             },
         ),
         Reconcile(
@@ -3235,20 +3332,9 @@ Program {
                     node: Var(
                         "xdgcfg",
                     ),
-                    span: 4158..4164,
+                    span: 4743..4749,
                 },
-                span: 4148..4165,
-            },
-        ),
-        Reconcile(
-            ReconcileDecl {
-                expr: Spanned {
-                    node: Var(
-                        "all_links",
-                    ),
-                    span: 4175..4184,
-                },
-                span: 4165..4185,
+                span: 4733..4750,
             },
         ),
         Reconcile(
@@ -3257,9 +3343,44 @@ Program {
                     node: Var(
                         "shellrc",
                     ),
-                    span: 4195..4202,
+                    span: 4760..4767,
                 },
-                span: 4185..4203,
+                span: 4750..4902,
+            },
+        ),
+        ExprStmt(
+            Spanned {
+                node: If {
+                    cond: Spanned {
+                        node: Var(
+                            "use_zsh",
+                        ),
+                        span: 4905..4912,
+                    },
+                    then_branch: Block {
+                        stmts: [
+                            Reconcile(
+                                ReconcileDecl {
+                                    expr: Spanned {
+                                        node: Var(
+                                            "all_links",
+                                        ),
+                                        span: 4925..4934,
+                                    },
+                                    span: 4915..4935,
+                                },
+                            ),
+                        ],
+                        trailing: None,
+                        span: 4913..4937,
+                    },
+                    else_branch: Block {
+                        stmts: [],
+                        trailing: None,
+                        span: 4937..4937,
+                    },
+                },
+                span: 4902..4937,
             },
         ),
     ],
