@@ -1,7 +1,7 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
 ---
-error: `+` requires `Int` or `Double` operands, found `String` and `Int`
+error: `+` requires `Int`, `Double`, or `String` operands, found `String` and `Int`
   --> 1:9
   |
 1 | val a = "hello" + 1

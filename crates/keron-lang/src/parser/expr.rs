@@ -83,7 +83,12 @@ pub(super) fn expr<'src>() -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<
             .then(mul_op.then(unary).repeated().collect::<Vec<_>>())
             .map(|(lhs, ops)| ops.into_iter().fold(lhs, fold_left));
 
-        let add_op = choice((just('+').to(BinOp::Add), just('-').to(BinOp::Sub))).padded_by(pad());
+        let add_op = choice((
+            just("++").to(BinOp::Concat),
+            just('+').to(BinOp::Add),
+            just('-').to(BinOp::Sub),
+        ))
+        .padded_by(pad());
         multiplicative
             .clone()
             .then(add_op.then(multiplicative).repeated().collect::<Vec<_>>())

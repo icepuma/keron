@@ -1,0 +1,60 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "mixed",
+                    span: 4..9,
+                },
+                ty: None,
+                value: Spanned {
+                    node: Binary {
+                        op: Concat,
+                        lhs: Spanned {
+                            node: Binary {
+                                op: Add,
+                                lhs: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            1,
+                                        ),
+                                    ),
+                                    span: 12..13,
+                                },
+                                rhs: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            2,
+                                        ),
+                                    ),
+                                    span: 16..17,
+                                },
+                            },
+                            span: 12..17,
+                        },
+                        rhs: Spanned {
+                            node: List(
+                                [
+                                    Spanned {
+                                        node: Literal(
+                                            Int(
+                                                3,
+                                            ),
+                                        ),
+                                        span: 22..23,
+                                    },
+                                ],
+                            ),
+                            span: 21..25,
+                        },
+                    },
+                    span: 12..25,
+                },
+                span: 0..25,
+            },
+        ),
+    ],
+}

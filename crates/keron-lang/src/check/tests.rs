@@ -119,9 +119,140 @@ fn unary_neg_on_double_is_double() {
 }
 
 #[test]
-fn arithmetic_on_string_errors() {
+fn string_plus_int_errors() {
+    // `+` is overloaded: String+String works, but String+Int still doesn't.
     let err = check_src(r#"val a = "x" + 1"#).expect_err("should fail");
     assert!(err[0].message.contains("String"));
+    assert!(err[0].message.contains("Int"));
+}
+
+#[test]
+fn string_plus_string_concatenates() {
+    assert!(check_src(r#"val s: String = "hello" + " " + "world""#).is_ok());
+    assert!(check_src(r#"val s = "a" + "b""#).is_ok());
+}
+
+#[test]
+fn string_concat_does_not_satisfy_int_annotation() {
+    let err = check_src(r#"val n: Int = "a" + "b""#).expect_err("should fail");
+    assert!(err[0].message.contains("expected `Int`"));
+    assert!(err[0].message.contains("found `String`"));
+}
+
+#[test]
+fn boolean_plus_string_errors() {
+    let err = check_src(r#"val a = true + "x""#).expect_err("should fail");
+    assert!(err[0].message.contains("Boolean"));
+}
+
+#[test]
+fn list_concat_typechecks() {
+    assert!(check_src("val xs: List<Int> = [1, 2] ++ [3]").is_ok());
+    assert!(check_src("val xs = [1] ++ [2, 3] ++ [4]").is_ok());
+}
+
+#[test]
+fn list_concat_inferred() {
+    let prog = parse(r#"val xs = ["a"] ++ ["b", "c"]"#).expect("parse");
+    assert!(check(&prog).is_ok());
+}
+
+#[test]
+fn list_concat_mismatched_element_types_errors() {
+    let err = check_src(r#"val xs = [1] ++ ["a"]"#).expect_err("should fail");
+    assert!(err[0].message.contains("matching `List<T>`"));
+    assert!(err[0].message.contains("List<Int>"));
+    assert!(err[0].message.contains("List<String>"));
+}
+
+#[test]
+fn list_concat_with_non_list_errors() {
+    let err = check_src("val xs = [1] ++ 2").expect_err("should fail");
+    assert!(err[0].message.contains("matching `List<T>`"));
+}
+
+#[test]
+fn list_concat_does_not_promote_int_to_double() {
+    let err = check_src("val xs = [1] ++ [2.5]").expect_err("should fail");
+    assert!(err[0].message.contains("List<Int>"));
+    assert!(err[0].message.contains("List<Double>"));
+}
+
+#[test]
+fn nested_list_concat() {
+    assert!(check_src("val xs: List<List<Int>> = [[1]] ++ [[2, 3]]").is_ok());
+}
+
+#[test]
+fn list_concat_chain_left_associative() {
+    // `a ++ b ++ c` parses as `(a ++ b) ++ c`; verify it still typechecks.
+    assert!(check_src("val xs: List<Int> = [1] ++ [2] ++ [3] ++ [4]").is_ok());
+}
+
+// ---------- bidirectional checking ----------
+
+#[test]
+fn empty_list_in_concat_with_annotation() {
+    // The annotation pushes `List<Int>` into both sides of `++`, so
+    // the empty list resolves trivially.
+    assert!(check_src("val xs: List<Int> = [] ++ [1, 2]").is_ok());
+    assert!(check_src("val xs: List<Int> = [1, 2] ++ []").is_ok());
+    assert!(check_src("val xs: List<String> = [] ++ []").is_ok());
+}
+
+#[test]
+fn nested_empty_list_with_annotation() {
+    // Element type pushes through nested list literals.
+    assert!(check_src("val xs: List<List<Int>> = [[1], []]").is_ok());
+    assert!(check_src("val xs: List<List<Int>> = [[], [2]]").is_ok());
+    assert!(check_src("val xs: List<List<Int>> = [[], []]").is_ok());
+}
+
+#[test]
+fn empty_list_concat_without_annotation_still_errors() {
+    // Synth path can't infer an empty list's type without context.
+    let err = check_src("val xs = [] ++ [1, 2]").expect_err("should fail");
+    assert!(err[0].message.contains("empty list"));
+}
+
+#[test]
+fn check_mode_propagates_element_mismatch() {
+    // `[1, "x"]` against `List<Int>` should error on "x", not on the
+    // outer list shape.
+    let err = check_src(r#"val xs: List<Int> = [1, "x"]"#).expect_err("should fail");
+    assert!(err[0].message.contains("expected `Int`"));
+    assert!(err[0].message.contains("found `String`"));
+}
+
+#[test]
+fn check_mode_empty_list_against_non_list_keeps_clear_error() {
+    let err = check_src("val n: Int = []").expect_err("should fail");
+    assert!(err[0].message.contains("expected `Int`"));
+    assert!(err[0].message.contains("empty list"));
+}
+
+#[test]
+fn check_mode_nonempty_list_against_non_list_reports_list_type() {
+    // The empty-list error path must only fire for *empty* lists;
+    // a non-empty list mismatch should mention the synthesised
+    // `List<T>`, never the literal "empty list".
+    let err = check_src("val n: Int = [1, 2]").expect_err("should fail");
+    assert!(err[0].message.contains("expected `Int`"));
+    assert!(err[0].message.contains("List<Int>"));
+    assert!(!err[0].message.contains("empty list"));
+}
+
+#[test]
+fn check_mode_concat_against_non_list_falls_back_to_synth() {
+    // Concat in a non-list-annotated context: switches to synth, which
+    // produces a single mismatch error spanning the whole concat
+    // expression — not its LHS sublist.
+    let src = "val n: Int = [1] ++ [2]";
+    let prog = parse(src).expect("parse should succeed");
+    let err = check(&prog).expect_err("should fail");
+    assert!(err[0].message.contains("expected `Int`"));
+    assert!(err[0].message.contains("List<Int>"));
+    assert_eq!(&src[err[0].span.clone()], "[1] ++ [2]");
 }
 
 #[test]
@@ -231,10 +362,13 @@ fn list_does_not_promote_int_to_double() {
 }
 
 #[test]
-fn list_annotation_mismatch() {
+fn list_annotation_mismatch_points_at_element() {
+    // With bidirectional checking, the expected element type is pushed
+    // into each list item, so the error pinpoints the offending value
+    // rather than reporting a whole-list mismatch.
     let err = check_src(r"val xs: List<String> = [1]").expect_err("should fail");
-    assert!(err[0].message.contains("expected `List<String>`"));
-    assert!(err[0].message.contains("found `List<Int>`"));
+    assert!(err[0].message.contains("expected `String`"));
+    assert!(err[0].message.contains("found `Int`"));
 }
 
 #[test]

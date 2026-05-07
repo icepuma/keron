@@ -1,0 +1,58 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "greeting",
+                    span: 4..12,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 14..20,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Add,
+                        lhs: Spanned {
+                            node: Binary {
+                                op: Add,
+                                lhs: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "hello, ",
+                                        ),
+                                    ),
+                                    span: 23..32,
+                                },
+                                rhs: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "world",
+                                        ),
+                                    ),
+                                    span: 35..42,
+                                },
+                            },
+                            span: 23..42,
+                        },
+                        rhs: Spanned {
+                            node: Literal(
+                                String(
+                                    "!",
+                                ),
+                            ),
+                            span: 45..48,
+                        },
+                    },
+                    span: 23..48,
+                },
+                span: 0..49,
+            },
+        ),
+    ],
+}

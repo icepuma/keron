@@ -1,0 +1,236 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "s",
+                    span: 4..5,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 7..13,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Add,
+                        lhs: Spanned {
+                            node: Literal(
+                                String(
+                                    "hello ",
+                                ),
+                            ),
+                            span: 16..24,
+                        },
+                        rhs: Spanned {
+                            node: Literal(
+                                String(
+                                    "world",
+                                ),
+                            ),
+                            span: 27..34,
+                        },
+                    },
+                    span: 16..34,
+                },
+                span: 0..35,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "xs",
+                    span: 39..41,
+                },
+                ty: Some(
+                    Spanned {
+                        node: List(
+                            Int,
+                        ),
+                        span: 43..53,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Concat,
+                        lhs: Spanned {
+                            node: List(
+                                [
+                                    Spanned {
+                                        node: Literal(
+                                            Int(
+                                                1,
+                                            ),
+                                        ),
+                                        span: 56..57,
+                                    },
+                                    Spanned {
+                                        node: Literal(
+                                            Int(
+                                                2,
+                                            ),
+                                        ),
+                                        span: 59..60,
+                                    },
+                                ],
+                            ),
+                            span: 55..62,
+                        },
+                        rhs: Spanned {
+                            node: List(
+                                [
+                                    Spanned {
+                                        node: Literal(
+                                            Int(
+                                                3,
+                                            ),
+                                        ),
+                                        span: 66..67,
+                                    },
+                                ],
+                            ),
+                            span: 65..69,
+                        },
+                    },
+                    span: 55..69,
+                },
+                span: 35..69,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "nested",
+                    span: 73..79,
+                },
+                ty: Some(
+                    Spanned {
+                        node: List(
+                            List(
+                                String,
+                            ),
+                        ),
+                        span: 81..100,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Concat,
+                        lhs: Spanned {
+                            node: List(
+                                [
+                                    Spanned {
+                                        node: List(
+                                            [
+                                                Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "a",
+                                                        ),
+                                                    ),
+                                                    span: 104..107,
+                                                },
+                                            ],
+                                        ),
+                                        span: 103..108,
+                                    },
+                                ],
+                            ),
+                            span: 102..110,
+                        },
+                        rhs: Spanned {
+                            node: List(
+                                [
+                                    Spanned {
+                                        node: List(
+                                            [
+                                                Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "b",
+                                                        ),
+                                                    ),
+                                                    span: 115..118,
+                                                },
+                                                Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "c",
+                                                        ),
+                                                    ),
+                                                    span: 120..123,
+                                                },
+                                            ],
+                                        ),
+                                        span: 114..124,
+                                    },
+                                ],
+                            ),
+                            span: 113..126,
+                        },
+                    },
+                    span: 102..126,
+                },
+                span: 69..126,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "mixed_inferred",
+                    span: 130..144,
+                },
+                ty: None,
+                value: Spanned {
+                    node: Binary {
+                        op: Concat,
+                        lhs: Spanned {
+                            node: List(
+                                [
+                                    Spanned {
+                                        node: Literal(
+                                            String(
+                                                "x",
+                                            ),
+                                        ),
+                                        span: 148..151,
+                                    },
+                                ],
+                            ),
+                            span: 147..153,
+                        },
+                        rhs: Spanned {
+                            node: List(
+                                [
+                                    Spanned {
+                                        node: Literal(
+                                            String(
+                                                "y",
+                                            ),
+                                        ),
+                                        span: 157..160,
+                                    },
+                                    Spanned {
+                                        node: Literal(
+                                            String(
+                                                "z",
+                                            ),
+                                        ),
+                                        span: 162..165,
+                                    },
+                                ],
+                            ),
+                            span: 156..167,
+                        },
+                    },
+                    span: 147..167,
+                },
+                span: 126..167,
+            },
+        ),
+    ],
+}

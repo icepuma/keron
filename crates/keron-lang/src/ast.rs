@@ -79,6 +79,10 @@ pub enum BinOp {
     Mul,
     Div,
     Pow,
+    /// `++` — list concat. Operands must both be `List<T>` with the
+    /// same element type. Same precedence as `+`/`-`. (String concat
+    /// uses `+` instead.)
+    Concat,
 }
 
 impl BinOp {
@@ -90,6 +94,7 @@ impl BinOp {
             Self::Mul => "*",
             Self::Div => "/",
             Self::Pow => "**",
+            Self::Concat => "++",
         }
     }
 }

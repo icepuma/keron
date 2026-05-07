@@ -284,6 +284,28 @@ proptest! {
     }
 
     #[test]
+    fn string_plus_string_typechecks(
+        a in "[a-zA-Z0-9 ]{0,32}",
+        b in "[a-zA-Z0-9 ]{0,32}",
+    ) {
+        let src = format!("val s: String = \"{a}\" + \"{b}\"");
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok());
+    }
+
+    #[test]
+    fn matching_list_concat_typechecks(
+        elems_a in prop::collection::vec((i64::MIN + 1)..=i64::MAX, 1..6),
+        elems_b in prop::collection::vec((i64::MIN + 1)..=i64::MAX, 1..6),
+    ) {
+        let body_a = elems_a.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
+        let body_b = elems_b.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
+        let src = format!("val xs: List<Int> = [{body_a}] ++ [{body_b}]");
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok());
+    }
+
+    #[test]
     fn empty_list_with_list_annotation_typechecks(
         elem_ty in ty_strategy(),
         name in ident_strategy(),

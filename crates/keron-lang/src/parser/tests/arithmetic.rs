@@ -129,3 +129,40 @@ fn rejects_unmatched_paren() {
     assert!(parse("val a = (1 + 2").is_err());
     assert!(parse("val a = 1 + 2)").is_err());
 }
+
+// ---------- ++ (concat) ----------
+
+#[test]
+fn double_plus_parses_as_concat() {
+    let e = expr_of("val a = [1] ++ [2]");
+    let (op, _, _) = binop(&e.node);
+    assert_eq!(op, BinOp::Concat);
+}
+
+#[test]
+fn concat_left_associative() {
+    // [1] ++ [2] ++ [3] = (([1] ++ [2]) ++ [3])
+    let e = expr_of("val a = [1] ++ [2] ++ [3]");
+    let (op, lhs, _) = binop(&e.node);
+    assert_eq!(op, BinOp::Concat);
+    let (lop, _, _) = binop(&lhs.node);
+    assert_eq!(lop, BinOp::Concat);
+}
+
+#[test]
+fn plus_disambiguates_from_double_plus() {
+    // Single `+` between two ints is still Add, not Concat.
+    let e = expr_of("val a = 1 + 2");
+    let (op, _, _) = binop(&e.node);
+    assert_eq!(op, BinOp::Add);
+}
+
+#[test]
+fn concat_at_same_precedence_as_plus() {
+    // 1 + 2 ++ [3] = (1 + 2) ++ [3]   (left-assoc, same precedence)
+    let e = expr_of("val a = 1 + 2 ++ [3]");
+    let (op, lhs, _) = binop(&e.node);
+    assert_eq!(op, BinOp::Concat);
+    let (lop, _, _) = binop(&lhs.node);
+    assert_eq!(lop, BinOp::Add);
+}
