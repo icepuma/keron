@@ -1,0 +1,164 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "target",
+                    span: 4..10,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Symlink,
+                        span: 12..19,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "symlink",
+                            span: 22..29,
+                        },
+                        args: [
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "from",
+                                        span: 30..34,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "a",
+                                        ),
+                                    ),
+                                    span: 37..40,
+                                },
+                                span: 30..40,
+                            },
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "to",
+                                        span: 42..44,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "b",
+                                        ),
+                                    ),
+                                    span: 47..50,
+                                },
+                                span: 42..50,
+                            },
+                        ],
+                    },
+                    span: 22..53,
+                },
+                span: 0..53,
+            },
+        ),
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "install",
+                    span: 56..63,
+                },
+                params: [],
+                return_type: Spanned {
+                    node: Void,
+                    span: 67..71,
+                },
+                body: Block {
+                    stmts: [
+                        Reconcile(
+                            ReconcileDecl {
+                                expr: Spanned {
+                                    node: Var(
+                                        "target",
+                                    ),
+                                    span: 86..92,
+                                },
+                                span: 76..93,
+                            },
+                        ),
+                    ],
+                    trailing: None,
+                    span: 72..96,
+                },
+                span: 53..96,
+            },
+        ),
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "install_if",
+                    span: 99..109,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "flag",
+                            span: 110..114,
+                        },
+                        ty: Spanned {
+                            node: Boolean,
+                            span: 116..123,
+                        },
+                        default: None,
+                        span: 110..123,
+                    },
+                ],
+                return_type: Spanned {
+                    node: Void,
+                    span: 126..130,
+                },
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: If {
+                                cond: Spanned {
+                                    node: Var(
+                                        "flag",
+                                    ),
+                                    span: 138..142,
+                                },
+                                then_branch: Block {
+                                    stmts: [
+                                        Reconcile(
+                                            ReconcileDecl {
+                                                expr: Spanned {
+                                                    node: Var(
+                                                        "target",
+                                                    ),
+                                                    span: 155..161,
+                                                },
+                                                span: 145..162,
+                                            },
+                                        ),
+                                    ],
+                                    trailing: None,
+                                    span: 143..164,
+                                },
+                                else_branch: Block {
+                                    stmts: [],
+                                    trailing: None,
+                                    span: 164..164,
+                                },
+                            },
+                            span: 135..164,
+                        },
+                    ),
+                    span: 131..166,
+                },
+                span: 96..166,
+            },
+        ),
+    ],
+}

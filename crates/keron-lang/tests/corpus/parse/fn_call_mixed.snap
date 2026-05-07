@@ -69,39 +69,41 @@ Program {
                     node: Int,
                     span: 40..43,
                 },
-                body: FnBody {
-                    bindings: [],
-                    result: Spanned {
-                        node: Binary {
-                            op: Add,
-                            lhs: Spanned {
-                                node: Binary {
-                                    op: Add,
-                                    lhs: Spanned {
-                                        node: Var(
-                                            "r",
-                                        ),
-                                        span: 46..47,
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Binary {
+                                op: Add,
+                                lhs: Spanned {
+                                    node: Binary {
+                                        op: Add,
+                                        lhs: Spanned {
+                                            node: Var(
+                                                "r",
+                                            ),
+                                            span: 46..47,
+                                        },
+                                        rhs: Spanned {
+                                            node: Var(
+                                                "g",
+                                            ),
+                                            span: 50..51,
+                                        },
                                     },
-                                    rhs: Spanned {
-                                        node: Var(
-                                            "g",
-                                        ),
-                                        span: 50..51,
-                                    },
+                                    span: 46..51,
                                 },
-                                span: 46..51,
+                                rhs: Spanned {
+                                    node: Var(
+                                        "b",
+                                    ),
+                                    span: 54..55,
+                                },
                             },
-                            rhs: Spanned {
-                                node: Var(
-                                    "b",
-                                ),
-                                span: 54..55,
-                            },
+                            span: 46..55,
                         },
-                        span: 46..55,
-                    },
-                    span: 46..56,
+                    ),
+                    span: 44..58,
                 },
                 span: 0..58,
             },

@@ -39,27 +39,29 @@ Program {
                     node: Int,
                     span: 24..27,
                 },
-                body: FnBody {
-                    bindings: [],
-                    result: Spanned {
-                        node: Binary {
-                            op: Add,
-                            lhs: Spanned {
-                                node: Var(
-                                    "a",
-                                ),
-                                span: 30..31,
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Binary {
+                                op: Add,
+                                lhs: Spanned {
+                                    node: Var(
+                                        "a",
+                                    ),
+                                    span: 30..31,
+                                },
+                                rhs: Spanned {
+                                    node: Var(
+                                        "b",
+                                    ),
+                                    span: 34..35,
+                                },
                             },
-                            rhs: Spanned {
-                                node: Var(
-                                    "b",
-                                ),
-                                span: 34..35,
-                            },
+                            span: 30..35,
                         },
-                        span: 30..35,
-                    },
-                    span: 30..36,
+                    ),
+                    span: 28..38,
                 },
                 span: 0..38,
             },

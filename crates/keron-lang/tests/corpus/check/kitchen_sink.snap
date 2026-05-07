@@ -1671,29 +1671,31 @@ Program {
                     node: Int,
                     span: 2314..2317,
                 },
-                body: FnBody {
-                    bindings: [],
-                    result: Spanned {
-                        node: Binary {
-                            op: Mul,
-                            lhs: Spanned {
-                                node: Var(
-                                    "n",
-                                ),
-                                span: 2322..2323,
-                            },
-                            rhs: Spanned {
-                                node: Literal(
-                                    Int(
-                                        2,
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Binary {
+                                op: Mul,
+                                lhs: Spanned {
+                                    node: Var(
+                                        "n",
                                     ),
-                                ),
-                                span: 2326..2327,
+                                    span: 2322..2323,
+                                },
+                                rhs: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            2,
+                                        ),
+                                    ),
+                                    span: 2326..2327,
+                                },
                             },
+                            span: 2322..2327,
                         },
-                        span: 2322..2327,
-                    },
-                    span: 2322..2328,
+                    ),
+                    span: 2318..2331,
                 },
                 span: 2295..2331,
             },
@@ -1764,39 +1766,41 @@ Program {
                     node: Int,
                     span: 2371..2374,
                 },
-                body: FnBody {
-                    bindings: [],
-                    result: Spanned {
-                        node: Binary {
-                            op: Add,
-                            lhs: Spanned {
-                                node: Binary {
-                                    op: Add,
-                                    lhs: Spanned {
-                                        node: Var(
-                                            "r",
-                                        ),
-                                        span: 2379..2380,
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Binary {
+                                op: Add,
+                                lhs: Spanned {
+                                    node: Binary {
+                                        op: Add,
+                                        lhs: Spanned {
+                                            node: Var(
+                                                "r",
+                                            ),
+                                            span: 2379..2380,
+                                        },
+                                        rhs: Spanned {
+                                            node: Var(
+                                                "g",
+                                            ),
+                                            span: 2383..2384,
+                                        },
                                     },
-                                    rhs: Spanned {
-                                        node: Var(
-                                            "g",
-                                        ),
-                                        span: 2383..2384,
-                                    },
+                                    span: 2379..2384,
                                 },
-                                span: 2379..2384,
+                                rhs: Spanned {
+                                    node: Var(
+                                        "b",
+                                    ),
+                                    span: 2387..2388,
+                                },
                             },
-                            rhs: Spanned {
-                                node: Var(
-                                    "b",
-                                ),
-                                span: 2387..2388,
-                            },
+                            span: 2379..2388,
                         },
-                        span: 2379..2388,
-                    },
-                    span: 2379..2389,
+                    ),
+                    span: 2375..2450,
                 },
                 span: 2331..2450,
             },
@@ -1825,44 +1829,46 @@ Program {
                     node: Boolean,
                     span: 2467..2474,
                 },
-                body: FnBody {
-                    bindings: [],
-                    result: Spanned {
-                        node: Call {
-                            callee: Spanned {
-                                node: "odd",
-                                span: 2479..2482,
-                            },
-                            args: [
-                                CallArg {
-                                    name: None,
-                                    value: Spanned {
-                                        node: Binary {
-                                            op: Sub,
-                                            lhs: Spanned {
-                                                node: Var(
-                                                    "n",
-                                                ),
-                                                span: 2483..2484,
-                                            },
-                                            rhs: Spanned {
-                                                node: Literal(
-                                                    Int(
-                                                        1,
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "odd",
+                                    span: 2479..2482,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: None,
+                                        value: Spanned {
+                                            node: Binary {
+                                                op: Sub,
+                                                lhs: Spanned {
+                                                    node: Var(
+                                                        "n",
                                                     ),
-                                                ),
-                                                span: 2487..2488,
+                                                    span: 2483..2484,
+                                                },
+                                                rhs: Spanned {
+                                                    node: Literal(
+                                                        Int(
+                                                            1,
+                                                        ),
+                                                    ),
+                                                    span: 2487..2488,
+                                                },
                                             },
+                                            span: 2483..2488,
                                         },
                                         span: 2483..2488,
                                     },
-                                    span: 2483..2488,
-                                },
-                            ],
+                                ],
+                            },
+                            span: 2479..2490,
                         },
-                        span: 2479..2490,
-                    },
-                    span: 2479..2490,
+                    ),
+                    span: 2475..2493,
                 },
                 span: 2450..2493,
             },
@@ -1891,44 +1897,46 @@ Program {
                     node: Boolean,
                     span: 2509..2516,
                 },
-                body: FnBody {
-                    bindings: [],
-                    result: Spanned {
-                        node: Call {
-                            callee: Spanned {
-                                node: "even",
-                                span: 2521..2525,
-                            },
-                            args: [
-                                CallArg {
-                                    name: None,
-                                    value: Spanned {
-                                        node: Binary {
-                                            op: Sub,
-                                            lhs: Spanned {
-                                                node: Var(
-                                                    "n",
-                                                ),
-                                                span: 2526..2527,
-                                            },
-                                            rhs: Spanned {
-                                                node: Literal(
-                                                    Int(
-                                                        1,
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "even",
+                                    span: 2521..2525,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: None,
+                                        value: Spanned {
+                                            node: Binary {
+                                                op: Sub,
+                                                lhs: Spanned {
+                                                    node: Var(
+                                                        "n",
                                                     ),
-                                                ),
-                                                span: 2530..2531,
+                                                    span: 2526..2527,
+                                                },
+                                                rhs: Spanned {
+                                                    node: Literal(
+                                                        Int(
+                                                            1,
+                                                        ),
+                                                    ),
+                                                    span: 2530..2531,
+                                                },
                                             },
+                                            span: 2526..2531,
                                         },
                                         span: 2526..2531,
                                     },
-                                    span: 2526..2531,
-                                },
-                            ],
+                                ],
+                            },
+                            span: 2521..2533,
                         },
-                        span: 2521..2533,
-                    },
-                    span: 2521..2533,
+                    ),
+                    span: 2517..2536,
                 },
                 span: 2493..2536,
             },
@@ -2383,74 +2391,76 @@ Program {
                     node: Symlink,
                     span: 2954..2961,
                 },
-                body: FnBody {
-                    bindings: [],
-                    result: Spanned {
-                        node: Call {
-                            callee: Spanned {
-                                node: "symlink",
-                                span: 2966..2973,
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "symlink",
+                                    span: 2966..2973,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: Some(
+                                            Spanned {
+                                                node: "from",
+                                                span: 2974..2978,
+                                            },
+                                        ),
+                                        value: Spanned {
+                                            node: Interpolation(
+                                                [
+                                                    Text(
+                                                        "~/dotfiles/",
+                                                    ),
+                                                    Expr(
+                                                        Spanned {
+                                                            node: Var(
+                                                                "name",
+                                                            ),
+                                                            span: 2995..2999,
+                                                        },
+                                                    ),
+                                                ],
+                                            ),
+                                            span: 2981..3001,
+                                        },
+                                        span: 2974..3001,
+                                    },
+                                    CallArg {
+                                        name: Some(
+                                            Spanned {
+                                                node: "to",
+                                                span: 3003..3005,
+                                            },
+                                        ),
+                                        value: Spanned {
+                                            node: Interpolation(
+                                                [
+                                                    Text(
+                                                        "~/.",
+                                                    ),
+                                                    Expr(
+                                                        Spanned {
+                                                            node: Var(
+                                                                "name",
+                                                            ),
+                                                            span: 3014..3018,
+                                                        },
+                                                    ),
+                                                ],
+                                            ),
+                                            span: 3008..3020,
+                                        },
+                                        span: 3003..3020,
+                                    },
+                                ],
                             },
-                            args: [
-                                CallArg {
-                                    name: Some(
-                                        Spanned {
-                                            node: "from",
-                                            span: 2974..2978,
-                                        },
-                                    ),
-                                    value: Spanned {
-                                        node: Interpolation(
-                                            [
-                                                Text(
-                                                    "~/dotfiles/",
-                                                ),
-                                                Expr(
-                                                    Spanned {
-                                                        node: Var(
-                                                            "name",
-                                                        ),
-                                                        span: 2995..2999,
-                                                    },
-                                                ),
-                                            ],
-                                        ),
-                                        span: 2981..3001,
-                                    },
-                                    span: 2974..3001,
-                                },
-                                CallArg {
-                                    name: Some(
-                                        Spanned {
-                                            node: "to",
-                                            span: 3003..3005,
-                                        },
-                                    ),
-                                    value: Spanned {
-                                        node: Interpolation(
-                                            [
-                                                Text(
-                                                    "~/.",
-                                                ),
-                                                Expr(
-                                                    Spanned {
-                                                        node: Var(
-                                                            "name",
-                                                        ),
-                                                        span: 3014..3018,
-                                                    },
-                                                ),
-                                            ],
-                                        ),
-                                        span: 3008..3020,
-                                    },
-                                    span: 3003..3020,
-                                },
-                            ],
+                            span: 2966..3022,
                         },
-                        span: 2966..3022,
-                    },
-                    span: 2966..3022,
+                    ),
+                    span: 2962..3025,
                 },
                 span: 2931..3025,
             },
@@ -2709,51 +2719,63 @@ Program {
                             ),
                             span: 3453..3460,
                         },
-                        then_branch: Spanned {
-                            node: Call {
-                                callee: Spanned {
-                                    node: "link",
-                                    span: 3465..3469,
-                                },
-                                args: [
-                                    CallArg {
-                                        name: None,
-                                        value: Spanned {
-                                            node: Literal(
-                                                String(
-                                                    "zshrc",
-                                                ),
-                                            ),
-                                            span: 3470..3477,
+                        then_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: Call {
+                                        callee: Spanned {
+                                            node: "link",
+                                            span: 3465..3469,
                                         },
-                                        span: 3470..3477,
+                                        args: [
+                                            CallArg {
+                                                name: None,
+                                                value: Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "zshrc",
+                                                        ),
+                                                    ),
+                                                    span: 3470..3477,
+                                                },
+                                                span: 3470..3477,
+                                            },
+                                        ],
                                     },
-                                ],
-                            },
-                            span: 3465..3479,
+                                    span: 3465..3479,
+                                },
+                            ),
+                            span: 3461..3481,
                         },
-                        else_branch: Spanned {
-                            node: Call {
-                                callee: Spanned {
-                                    node: "link",
-                                    span: 3490..3494,
-                                },
-                                args: [
-                                    CallArg {
-                                        name: None,
-                                        value: Spanned {
-                                            node: Literal(
-                                                String(
-                                                    "bashrc",
-                                                ),
-                                            ),
-                                            span: 3495..3503,
+                        else_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: Call {
+                                        callee: Spanned {
+                                            node: "link",
+                                            span: 3490..3494,
                                         },
-                                        span: 3495..3503,
+                                        args: [
+                                            CallArg {
+                                                name: None,
+                                                value: Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "bashrc",
+                                                        ),
+                                                    ),
+                                                    span: 3495..3503,
+                                                },
+                                                span: 3495..3503,
+                                            },
+                                        ],
                                     },
-                                ],
-                            },
-                            span: 3490..3505,
+                                    span: 3490..3505,
+                                },
+                            ),
+                            span: 3486..3570,
                         },
                     },
                     span: 3450..3570,
@@ -2781,39 +2803,63 @@ Program {
                             ),
                             span: 3599..3607,
                         },
-                        then_branch: Spanned {
-                            node: Literal(
-                                String(
-                                    "stable",
-                                ),
+                        then_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: Literal(
+                                        String(
+                                            "stable",
+                                        ),
+                                    ),
+                                    span: 3612..3620,
+                                },
                             ),
-                            span: 3612..3620,
+                            span: 3608..3623,
                         },
-                        else_branch: Spanned {
-                            node: If {
-                                cond: Spanned {
-                                    node: Var(
-                                        "warm",
-                                    ),
-                                    span: 3631..3635,
+                        else_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: If {
+                                        cond: Spanned {
+                                            node: Var(
+                                                "warm",
+                                            ),
+                                            span: 3631..3635,
+                                        },
+                                        then_branch: Block {
+                                            stmts: [],
+                                            trailing: Some(
+                                                Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "rc",
+                                                        ),
+                                                    ),
+                                                    span: 3640..3644,
+                                                },
+                                            ),
+                                            span: 3636..3647,
+                                        },
+                                        else_branch: Block {
+                                            stmts: [],
+                                            trailing: Some(
+                                                Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "wip",
+                                                        ),
+                                                    ),
+                                                    span: 3656..3661,
+                                                },
+                                            ),
+                                            span: 3652..3692,
+                                        },
+                                    },
+                                    span: 3628..3692,
                                 },
-                                then_branch: Spanned {
-                                    node: Literal(
-                                        String(
-                                            "rc",
-                                        ),
-                                    ),
-                                    span: 3640..3644,
-                                },
-                                else_branch: Spanned {
-                                    node: Literal(
-                                        String(
-                                            "wip",
-                                        ),
-                                    ),
-                                    span: 3656..3661,
-                                },
-                            },
+                            ),
                             span: 3628..3692,
                         },
                     },
@@ -2856,53 +2902,77 @@ Program {
                             },
                             span: 3717..3727,
                         },
-                        then_branch: Spanned {
-                            node: Literal(
-                                String(
-                                    "many",
-                                ),
+                        then_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: Literal(
+                                        String(
+                                            "many",
+                                        ),
+                                    ),
+                                    span: 3732..3738,
+                                },
                             ),
-                            span: 3732..3738,
+                            span: 3728..3741,
                         },
-                        else_branch: Spanned {
-                            node: If {
-                                cond: Spanned {
-                                    node: Binary {
-                                        op: Eq,
-                                        lhs: Spanned {
-                                            node: Var(
-                                                "seed",
-                                            ),
-                                            span: 3749..3753,
+                        else_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: If {
+                                        cond: Spanned {
+                                            node: Binary {
+                                                op: Eq,
+                                                lhs: Spanned {
+                                                    node: Var(
+                                                        "seed",
+                                                    ),
+                                                    span: 3749..3753,
+                                                },
+                                                rhs: Spanned {
+                                                    node: Literal(
+                                                        Int(
+                                                            0,
+                                                        ),
+                                                    ),
+                                                    span: 3757..3758,
+                                                },
+                                            },
+                                            span: 3749..3758,
                                         },
-                                        rhs: Spanned {
-                                            node: Literal(
-                                                Int(
-                                                    0,
-                                                ),
+                                        then_branch: Block {
+                                            stmts: [],
+                                            trailing: Some(
+                                                Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "none",
+                                                        ),
+                                                    ),
+                                                    span: 3763..3769,
+                                                },
                                             ),
-                                            span: 3757..3758,
+                                            span: 3759..3772,
+                                        },
+                                        else_branch: Block {
+                                            stmts: [],
+                                            trailing: Some(
+                                                Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "few",
+                                                        ),
+                                                    ),
+                                                    span: 3781..3786,
+                                                },
+                                            ),
+                                            span: 3777..3790,
                                         },
                                     },
-                                    span: 3749..3758,
+                                    span: 3746..3790,
                                 },
-                                then_branch: Spanned {
-                                    node: Literal(
-                                        String(
-                                            "none",
-                                        ),
-                                    ),
-                                    span: 3763..3769,
-                                },
-                                else_branch: Spanned {
-                                    node: Literal(
-                                        String(
-                                            "few",
-                                        ),
-                                    ),
-                                    span: 3781..3786,
-                                },
-                            },
+                            ),
                             span: 3746..3790,
                         },
                     },
@@ -2945,53 +3015,77 @@ Program {
                             },
                             span: 3812..3830,
                         },
-                        then_branch: Spanned {
-                            node: Literal(
-                                String(
-                                    "v1+",
-                                ),
+                        then_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: Literal(
+                                        String(
+                                            "v1+",
+                                        ),
+                                    ),
+                                    span: 3835..3840,
+                                },
                             ),
-                            span: 3835..3840,
+                            span: 3831..3843,
                         },
-                        else_branch: Spanned {
-                            node: If {
-                                cond: Spanned {
-                                    node: Binary {
-                                        op: Lt,
-                                        lhs: Spanned {
-                                            node: Var(
-                                                "version_minor",
-                                            ),
-                                            span: 3851..3864,
+                        else_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: If {
+                                        cond: Spanned {
+                                            node: Binary {
+                                                op: Lt,
+                                                lhs: Spanned {
+                                                    node: Var(
+                                                        "version_minor",
+                                                    ),
+                                                    span: 3851..3864,
+                                                },
+                                                rhs: Spanned {
+                                                    node: Literal(
+                                                        Int(
+                                                            5,
+                                                        ),
+                                                    ),
+                                                    span: 3867..3868,
+                                                },
+                                            },
+                                            span: 3851..3868,
                                         },
-                                        rhs: Spanned {
-                                            node: Literal(
-                                                Int(
-                                                    5,
-                                                ),
+                                        then_branch: Block {
+                                            stmts: [],
+                                            trailing: Some(
+                                                Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "early",
+                                                        ),
+                                                    ),
+                                                    span: 3873..3880,
+                                                },
                                             ),
-                                            span: 3867..3868,
+                                            span: 3869..3883,
+                                        },
+                                        else_branch: Block {
+                                            stmts: [],
+                                            trailing: Some(
+                                                Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "rc",
+                                                        ),
+                                                    ),
+                                                    span: 3892..3896,
+                                                },
+                                            ),
+                                            span: 3888..3900,
                                         },
                                     },
-                                    span: 3851..3868,
+                                    span: 3848..3900,
                                 },
-                                then_branch: Spanned {
-                                    node: Literal(
-                                        String(
-                                            "early",
-                                        ),
-                                    ),
-                                    span: 3873..3880,
-                                },
-                                else_branch: Spanned {
-                                    node: Literal(
-                                        String(
-                                            "rc",
-                                        ),
-                                    ),
-                                    span: 3892..3896,
-                                },
-                            },
+                            ),
                             span: 3848..3900,
                         },
                     },
@@ -3034,53 +3128,77 @@ Program {
                             },
                             span: 3925..3936,
                         },
-                        then_branch: Spanned {
-                            node: Literal(
-                                String(
-                                    "small",
-                                ),
+                        then_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: Literal(
+                                        String(
+                                            "small",
+                                        ),
+                                    ),
+                                    span: 3941..3948,
+                                },
                             ),
-                            span: 3941..3948,
+                            span: 3937..3951,
                         },
-                        else_branch: Spanned {
-                            node: If {
-                                cond: Spanned {
-                                    node: Binary {
-                                        op: Eq,
-                                        lhs: Spanned {
-                                            node: Var(
-                                                "ratio",
-                                            ),
-                                            span: 3959..3964,
+                        else_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: If {
+                                        cond: Spanned {
+                                            node: Binary {
+                                                op: Eq,
+                                                lhs: Spanned {
+                                                    node: Var(
+                                                        "ratio",
+                                                    ),
+                                                    span: 3959..3964,
+                                                },
+                                                rhs: Spanned {
+                                                    node: Literal(
+                                                        Double(
+                                                            1.618,
+                                                        ),
+                                                    ),
+                                                    span: 3968..3973,
+                                                },
+                                            },
+                                            span: 3959..3973,
                                         },
-                                        rhs: Spanned {
-                                            node: Literal(
-                                                Double(
-                                                    1.618,
-                                                ),
+                                        then_branch: Block {
+                                            stmts: [],
+                                            trailing: Some(
+                                                Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "phi",
+                                                        ),
+                                                    ),
+                                                    span: 3978..3983,
+                                                },
                                             ),
-                                            span: 3968..3973,
+                                            span: 3974..3986,
+                                        },
+                                        else_branch: Block {
+                                            stmts: [],
+                                            trailing: Some(
+                                                Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "large",
+                                                        ),
+                                                    ),
+                                                    span: 3995..4002,
+                                                },
+                                            ),
+                                            span: 3991..4115,
                                         },
                                     },
-                                    span: 3959..3973,
+                                    span: 3956..4115,
                                 },
-                                then_branch: Spanned {
-                                    node: Literal(
-                                        String(
-                                            "phi",
-                                        ),
-                                    ),
-                                    span: 3978..3983,
-                                },
-                                else_branch: Spanned {
-                                    node: Literal(
-                                        String(
-                                            "large",
-                                        ),
-                                    ),
-                                    span: 3995..4002,
-                                },
-                            },
+                            ),
                             span: 3956..4115,
                         },
                     },

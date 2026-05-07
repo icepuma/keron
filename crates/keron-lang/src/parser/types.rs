@@ -1,5 +1,6 @@
-//! Type-annotation parser. Supports the four primitives plus a single
-//! generic constructor `List<T>` (recursively nestable).
+//! Type-annotation parser. Supports the four value primitives, the
+//! resource types, `Void`, and the generic constructors `List<T>` and
+//! `Map<K, V>` (recursively nestable).
 
 use chumsky::prelude::*;
 
@@ -17,6 +18,7 @@ pub(super) fn type_annotation<'src>() -> impl Parser<'src, &'src str, Type, Extr
             text::keyword("Symlink").to(Type::Symlink),
             text::keyword("File").to(Type::File),
             text::keyword("Directory").to(Type::Directory),
+            text::keyword("Void").to(Type::Void),
         ));
         let list = text::keyword("List")
             .ignore_then(just('<').padded_by(pad()))

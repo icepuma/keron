@@ -25,33 +25,24 @@ Program {
                             ),
                             span: 23..27,
                         },
-                        then_branch: Spanned {
-                            node: Literal(
-                                String(
-                                    "A",
-                                ),
-                            ),
-                            span: 32..35,
-                        },
-                        else_branch: Spanned {
-                            node: If {
-                                cond: Spanned {
-                                    node: Literal(
-                                        Boolean(
-                                            false,
-                                        ),
-                                    ),
-                                    span: 46..51,
-                                },
-                                then_branch: Spanned {
+                        then_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
                                     node: Literal(
                                         String(
-                                            "B",
+                                            "A",
                                         ),
                                     ),
-                                    span: 56..59,
+                                    span: 32..35,
                                 },
-                                else_branch: Spanned {
+                            ),
+                            span: 28..38,
+                        },
+                        else_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
                                     node: If {
                                         cond: Spanned {
                                             node: Literal(
@@ -59,28 +50,73 @@ Program {
                                                     false,
                                                 ),
                                             ),
-                                            span: 70..75,
+                                            span: 46..51,
                                         },
-                                        then_branch: Spanned {
-                                            node: Literal(
-                                                String(
-                                                    "C",
-                                                ),
+                                        then_branch: Block {
+                                            stmts: [],
+                                            trailing: Some(
+                                                Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "B",
+                                                        ),
+                                                    ),
+                                                    span: 56..59,
+                                                },
                                             ),
-                                            span: 80..83,
+                                            span: 52..62,
                                         },
-                                        else_branch: Spanned {
-                                            node: Literal(
-                                                String(
-                                                    "F",
-                                                ),
+                                        else_branch: Block {
+                                            stmts: [],
+                                            trailing: Some(
+                                                Spanned {
+                                                    node: If {
+                                                        cond: Spanned {
+                                                            node: Literal(
+                                                                Boolean(
+                                                                    false,
+                                                                ),
+                                                            ),
+                                                            span: 70..75,
+                                                        },
+                                                        then_branch: Block {
+                                                            stmts: [],
+                                                            trailing: Some(
+                                                                Spanned {
+                                                                    node: Literal(
+                                                                        String(
+                                                                            "C",
+                                                                        ),
+                                                                    ),
+                                                                    span: 80..83,
+                                                                },
+                                                            ),
+                                                            span: 76..86,
+                                                        },
+                                                        else_branch: Block {
+                                                            stmts: [],
+                                                            trailing: Some(
+                                                                Spanned {
+                                                                    node: Literal(
+                                                                        String(
+                                                                            "F",
+                                                                        ),
+                                                                    ),
+                                                                    span: 95..98,
+                                                                },
+                                                            ),
+                                                            span: 91..101,
+                                                        },
+                                                    },
+                                                    span: 67..101,
+                                                },
                                             ),
-                                            span: 95..98,
+                                            span: 67..101,
                                         },
                                     },
-                                    span: 67..101,
+                                    span: 43..101,
                                 },
-                            },
+                            ),
                             span: 43..101,
                         },
                     },

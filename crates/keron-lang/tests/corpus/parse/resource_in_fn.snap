@@ -27,74 +27,76 @@ Program {
                     node: Symlink,
                     span: 23..30,
                 },
-                body: FnBody {
-                    bindings: [],
-                    result: Spanned {
-                        node: Call {
-                            callee: Spanned {
-                                node: "symlink",
-                                span: 35..42,
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "symlink",
+                                    span: 35..42,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: Some(
+                                            Spanned {
+                                                node: "from",
+                                                span: 43..47,
+                                            },
+                                        ),
+                                        value: Spanned {
+                                            node: Interpolation(
+                                                [
+                                                    Text(
+                                                        "~/dotfiles/",
+                                                    ),
+                                                    Expr(
+                                                        Spanned {
+                                                            node: Var(
+                                                                "name",
+                                                            ),
+                                                            span: 64..68,
+                                                        },
+                                                    ),
+                                                ],
+                                            ),
+                                            span: 50..70,
+                                        },
+                                        span: 43..70,
+                                    },
+                                    CallArg {
+                                        name: Some(
+                                            Spanned {
+                                                node: "to",
+                                                span: 72..74,
+                                            },
+                                        ),
+                                        value: Spanned {
+                                            node: Interpolation(
+                                                [
+                                                    Text(
+                                                        "~/.",
+                                                    ),
+                                                    Expr(
+                                                        Spanned {
+                                                            node: Var(
+                                                                "name",
+                                                            ),
+                                                            span: 83..87,
+                                                        },
+                                                    ),
+                                                ],
+                                            ),
+                                            span: 77..89,
+                                        },
+                                        span: 72..89,
+                                    },
+                                ],
                             },
-                            args: [
-                                CallArg {
-                                    name: Some(
-                                        Spanned {
-                                            node: "from",
-                                            span: 43..47,
-                                        },
-                                    ),
-                                    value: Spanned {
-                                        node: Interpolation(
-                                            [
-                                                Text(
-                                                    "~/dotfiles/",
-                                                ),
-                                                Expr(
-                                                    Spanned {
-                                                        node: Var(
-                                                            "name",
-                                                        ),
-                                                        span: 64..68,
-                                                    },
-                                                ),
-                                            ],
-                                        ),
-                                        span: 50..70,
-                                    },
-                                    span: 43..70,
-                                },
-                                CallArg {
-                                    name: Some(
-                                        Spanned {
-                                            node: "to",
-                                            span: 72..74,
-                                        },
-                                    ),
-                                    value: Spanned {
-                                        node: Interpolation(
-                                            [
-                                                Text(
-                                                    "~/.",
-                                                ),
-                                                Expr(
-                                                    Spanned {
-                                                        node: Var(
-                                                            "name",
-                                                        ),
-                                                        span: 83..87,
-                                                    },
-                                                ),
-                                            ],
-                                        ),
-                                        span: 77..89,
-                                    },
-                                    span: 72..89,
-                                },
-                            ],
+                            span: 35..91,
                         },
-                        span: 35..91,
-                    },
-                    span: 35..91,
+                    ),
+                    span: 31..94,
                 },
                 span: 0..94,
             },

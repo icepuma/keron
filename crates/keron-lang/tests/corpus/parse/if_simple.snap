@@ -25,21 +25,33 @@ Program {
                             ),
                             span: 16..20,
                         },
-                        then_branch: Spanned {
-                            node: Literal(
-                                Int(
-                                    1,
-                                ),
+                        then_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: Literal(
+                                        Int(
+                                            1,
+                                        ),
+                                    ),
+                                    span: 23..24,
+                                },
                             ),
-                            span: 23..24,
+                            span: 21..27,
                         },
-                        else_branch: Spanned {
-                            node: Literal(
-                                Int(
-                                    2,
-                                ),
+                        else_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: Literal(
+                                        Int(
+                                            2,
+                                        ),
+                                    ),
+                                    span: 34..35,
+                                },
                             ),
-                            span: 34..35,
+                            span: 32..38,
                         },
                     },
                     span: 13..38,

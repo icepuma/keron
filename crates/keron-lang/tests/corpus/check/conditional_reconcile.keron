@@ -1,0 +1,6 @@
+val use_zsh: Boolean = true
+val zshrc: Symlink = symlink(from = "~/df/zshrc", to = "~/.zshrc")
+val bashrc: Symlink = symlink(from = "~/df/bashrc", to = "~/.bashrc")
+
+if use_zsh { reconcile zshrc }
+if use_zsh { reconcile zshrc } else { reconcile bashrc }

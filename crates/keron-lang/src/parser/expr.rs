@@ -21,9 +21,10 @@
 
 use chumsky::prelude::*;
 
-use crate::ast::{BinOp, CallArg, Expr, Literal, MapEntry, Spanned, UnaryOp};
+use crate::ast::{BinOp, Block, CallArg, Expr, Literal, MapEntry, Span, Spanned, UnaryOp};
 
 use super::{
+    block::block,
     string::string_expr,
     util::{Extra, ident, pad, span_to_range},
 };
@@ -154,38 +155,67 @@ where
         })
 }
 
-/// `if cond { a } else { b }` and `if cond { a } else if cond2 { b }
-/// else { c }` chains. Each branch block contains exactly one
-/// expression; `else` is mandatory because keron is expression-based.
-/// `else if` is parsed right-associatively by recursing into the same
-/// parser for the else branch.
+/// `if cond { … } [else { … } | else if … ]` chains.
+///
+/// Each branch is a [`Block`] (statements + optional trailing expr).
+/// `else` is **optional**; an omitted else parses as an empty block,
+/// which has type `Void`. The "branches must match" rule still holds,
+/// so omitting `else` is well-typed only when the then-branch is also
+/// `Void` — i.e. the `if` is being used as control flow.
+///
+/// `else if` is parsed right-associatively: the else branch may be
+/// either another `if`-expression (wrapped in a synthetic block whose
+/// trailing is that if-expr) or a literal `{ … }` block.
 fn if_atom<'src, P>(expr: P) -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone
 where
     P: Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone + 'src,
 {
-    let block = expr
-        .clone()
-        .delimited_by(just('{').padded_by(pad()), just('}').padded_by(pad()));
+    let block_parser = block(expr.clone());
 
     recursive(|if_chain| {
+        let else_block = block_parser.clone();
+        let else_if = if_chain.map(else_if_to_block);
+
         let else_branch = text::keyword("else")
             .padded_by(pad())
-            .ignore_then(choice((if_chain, block.clone())));
+            .ignore_then(choice((else_if, else_block)));
 
         text::keyword("if")
             .padded_by(pad())
-            .ignore_then(expr)
-            .then(block)
-            .then(else_branch)
-            .map_with(|((cond, then_branch), else_branch), e| Spanned {
-                node: Expr::If {
-                    cond: Box::new(cond),
-                    then_branch: Box::new(then_branch),
-                    else_branch: Box::new(else_branch),
-                },
-                span: span_to_range(e.span()),
+            .ignore_then(expr.clone())
+            .then(block_parser.clone())
+            .then(else_branch.or_not())
+            .map_with(|((cond, then_branch), else_branch), e| {
+                let span = span_to_range(e.span());
+                let else_branch =
+                    else_branch.unwrap_or_else(|| empty_block_at(then_branch.span.end..span.end));
+                Spanned {
+                    node: Expr::If {
+                        cond: Box::new(cond),
+                        then_branch: Box::new(then_branch),
+                        else_branch: Box::new(else_branch),
+                    },
+                    span,
+                }
             })
     })
+}
+
+fn else_if_to_block(if_expr: Spanned<Expr>) -> Block {
+    let span = if_expr.span.clone();
+    Block {
+        stmts: Vec::new(),
+        trailing: Some(if_expr),
+        span,
+    }
+}
+
+const fn empty_block_at(span: Span) -> Block {
+    Block {
+        stmts: Vec::new(),
+        trailing: None,
+        span,
+    }
 }
 
 /// Combined Var/Call parser: a bare ident is a Var; an ident followed

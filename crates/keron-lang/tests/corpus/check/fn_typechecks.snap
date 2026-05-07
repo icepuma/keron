@@ -27,29 +27,31 @@ Program {
                     node: Int,
                     span: 19..22,
                 },
-                body: FnBody {
-                    bindings: [],
-                    result: Spanned {
-                        node: Binary {
-                            op: Mul,
-                            lhs: Spanned {
-                                node: Var(
-                                    "n",
-                                ),
-                                span: 27..28,
-                            },
-                            rhs: Spanned {
-                                node: Literal(
-                                    Int(
-                                        2,
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Binary {
+                                op: Mul,
+                                lhs: Spanned {
+                                    node: Var(
+                                        "n",
                                     ),
-                                ),
-                                span: 31..32,
+                                    span: 27..28,
+                                },
+                                rhs: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            2,
+                                        ),
+                                    ),
+                                    span: 31..32,
+                                },
                             },
+                            span: 27..32,
                         },
-                        span: 27..32,
-                    },
-                    span: 27..33,
+                    ),
+                    span: 23..36,
                 },
                 span: 0..36,
             },
@@ -90,27 +92,29 @@ Program {
                     node: Int,
                     span: 60..63,
                 },
-                body: FnBody {
-                    bindings: [],
-                    result: Spanned {
-                        node: Binary {
-                            op: Add,
-                            lhs: Spanned {
-                                node: Var(
-                                    "a",
-                                ),
-                                span: 68..69,
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Binary {
+                                op: Add,
+                                lhs: Spanned {
+                                    node: Var(
+                                        "a",
+                                    ),
+                                    span: 68..69,
+                                },
+                                rhs: Spanned {
+                                    node: Var(
+                                        "b",
+                                    ),
+                                    span: 72..73,
+                                },
                             },
-                            rhs: Spanned {
-                                node: Var(
-                                    "b",
-                                ),
-                                span: 72..73,
-                            },
+                            span: 68..73,
                         },
-                        span: 68..73,
-                    },
-                    span: 68..74,
+                    ),
+                    span: 64..77,
                 },
                 span: 36..77,
             },
@@ -139,54 +143,58 @@ Program {
                     node: Int,
                     span: 101..104,
                 },
-                body: FnBody {
-                    bindings: [
-                        ValDecl {
-                            name: Spanned {
-                                node: "sq",
-                                span: 113..115,
-                            },
-                            ty: None,
-                            value: Spanned {
-                                node: Binary {
-                                    op: Mul,
-                                    lhs: Spanned {
-                                        node: Var(
-                                            "n",
-                                        ),
-                                        span: 118..119,
-                                    },
-                                    rhs: Spanned {
-                                        node: Var(
-                                            "n",
-                                        ),
-                                        span: 122..123,
-                                    },
+                body: Block {
+                    stmts: [
+                        Val(
+                            ValDecl {
+                                name: Spanned {
+                                    node: "sq",
+                                    span: 113..115,
                                 },
-                                span: 118..123,
+                                ty: None,
+                                value: Spanned {
+                                    node: Binary {
+                                        op: Mul,
+                                        lhs: Spanned {
+                                            node: Var(
+                                                "n",
+                                            ),
+                                            span: 118..119,
+                                        },
+                                        rhs: Spanned {
+                                            node: Var(
+                                                "n",
+                                            ),
+                                            span: 122..123,
+                                        },
+                                    },
+                                    span: 118..123,
+                                },
+                                span: 109..126,
                             },
-                            span: 109..126,
-                        },
+                        ),
                     ],
-                    result: Spanned {
-                        node: Binary {
-                            op: Add,
-                            lhs: Spanned {
-                                node: Var(
-                                    "sq",
-                                ),
-                                span: 126..128,
+                    trailing: Some(
+                        Spanned {
+                            node: Binary {
+                                op: Add,
+                                lhs: Spanned {
+                                    node: Var(
+                                        "sq",
+                                    ),
+                                    span: 126..128,
+                                },
+                                rhs: Spanned {
+                                    node: Var(
+                                        "sq",
+                                    ),
+                                    span: 131..133,
+                                },
                             },
-                            rhs: Spanned {
-                                node: Var(
-                                    "sq",
-                                ),
-                                span: 131..133,
-                            },
+                            span: 126..133,
                         },
-                        span: 126..133,
-                    },
-                    span: 109..134,
+                    ),
+                    span: 105..137,
                 },
                 span: 77..137,
             },
@@ -215,44 +223,46 @@ Program {
                     node: Int,
                     span: 155..158,
                 },
-                body: FnBody {
-                    bindings: [],
-                    result: Spanned {
-                        node: Call {
-                            callee: Spanned {
-                                node: "loop_",
-                                span: 163..168,
-                            },
-                            args: [
-                                CallArg {
-                                    name: None,
-                                    value: Spanned {
-                                        node: Binary {
-                                            op: Sub,
-                                            lhs: Spanned {
-                                                node: Var(
-                                                    "n",
-                                                ),
-                                                span: 169..170,
-                                            },
-                                            rhs: Spanned {
-                                                node: Literal(
-                                                    Int(
-                                                        1,
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "loop_",
+                                    span: 163..168,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: None,
+                                        value: Spanned {
+                                            node: Binary {
+                                                op: Sub,
+                                                lhs: Spanned {
+                                                    node: Var(
+                                                        "n",
                                                     ),
-                                                ),
-                                                span: 173..174,
+                                                    span: 169..170,
+                                                },
+                                                rhs: Spanned {
+                                                    node: Literal(
+                                                        Int(
+                                                            1,
+                                                        ),
+                                                    ),
+                                                    span: 173..174,
+                                                },
                                             },
+                                            span: 169..174,
                                         },
                                         span: 169..174,
                                     },
-                                    span: 169..174,
-                                },
-                            ],
+                                ],
+                            },
+                            span: 163..176,
                         },
-                        span: 163..176,
-                    },
-                    span: 163..176,
+                    ),
+                    span: 159..179,
                 },
                 span: 137..179,
             },

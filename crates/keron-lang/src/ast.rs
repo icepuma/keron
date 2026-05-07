@@ -20,6 +20,11 @@ pub enum Item {
     Val(ValDecl),
     Fn(FnDecl),
     Reconcile(ReconcileDecl),
+    /// A top-level expression evaluated for its effect (e.g.
+    /// `if cond { reconcile foo }`). The expression must have type
+    /// `Void`; the type checker rejects anything else, which is how
+    /// keron prevents pointless top-level computations.
+    ExprStmt(Spanned<Expr>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -44,7 +49,7 @@ pub struct FnDecl {
     pub name: Spanned<String>,
     pub params: Vec<Param>,
     pub return_type: Spanned<Type>,
-    pub body: FnBody,
+    pub body: Block,
     pub span: Span,
 }
 
@@ -58,15 +63,29 @@ pub struct Param {
     pub span: Span,
 }
 
+/// A `{ stmt* trailing? }` block. Used as a function body and as the
+/// `then` / `else` arm of an `if` expression. The block's type is the
+/// trailing expression's type if present, otherwise [`Type::Void`].
+///
+/// Statements inside a block are restricted to local `val`s and
+/// `reconcile` directives (see [`Stmt`]); arbitrary expression
+/// statements are not permitted, since keron is otherwise pure and
+/// such statements would be no-ops. Conditional side effects use the
+/// trailing expression slot or appear at top level via
+/// [`Item::ExprStmt`].
 #[derive(Debug, Clone, PartialEq)]
-pub struct FnBody {
-    /// Body-local `val`s in source order. Forward references are an
-    /// error (same as top-level).
-    pub bindings: Vec<ValDecl>,
-    /// Required final expression: its type must equal the function's
-    /// declared return type.
-    pub result: Spanned<Expr>,
+pub struct Block {
+    pub stmts: Vec<Stmt>,
+    pub trailing: Option<Spanned<Expr>>,
     pub span: Span,
+}
+
+/// A statement inside a [`Block`]. Restricted to local bindings and
+/// `reconcile` directives; the type checker rejects everything else.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Stmt {
+    Val(ValDecl),
+    Reconcile(ReconcileDecl),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -116,13 +135,16 @@ pub enum Expr {
         callee: Spanned<String>,
         args: Vec<CallArg>,
     },
-    /// `if cond then a else b`. Both branches are required (the
-    /// expression must always have a value). The `cond` must be
-    /// `Boolean`; the two branches must have the same type.
+    /// `if cond { … } else { … }`. Both branches are full [`Block`]s.
+    /// `else` is optional in source; an omitted `else` is stored as an
+    /// empty [`Block`] (type [`Type::Void`]). The condition must be
+    /// `Boolean`, and the two branches' block types must match. When
+    /// both branches are `Void`, the `if` is being used as control
+    /// flow; otherwise, it is a value-producing expression.
     If {
         cond: Box<Spanned<Self>>,
-        then_branch: Box<Spanned<Self>>,
-        else_branch: Box<Spanned<Self>>,
+        then_branch: Box<Block>,
+        else_branch: Box<Block>,
     },
 }
 
@@ -207,6 +229,10 @@ pub enum Type {
     /// Directory ensure-existence. Constructed via the builtin
     /// `directory(...)` fn.
     Directory,
+    /// "No value." The type of an empty block, of a `Void`-returning
+    /// function's body, and of an `if` expression used as control
+    /// flow. Writable in source as the annotation `Void`.
+    Void,
 }
 
 impl fmt::Display for Type {
@@ -221,6 +247,7 @@ impl fmt::Display for Type {
             Self::Symlink => f.write_str("Symlink"),
             Self::File => f.write_str("File"),
             Self::Directory => f.write_str("Directory"),
+            Self::Void => f.write_str("Void"),
         }
     }
 }

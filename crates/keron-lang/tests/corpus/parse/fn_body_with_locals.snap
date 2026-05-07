@@ -39,94 +39,100 @@ Program {
                     node: Int,
                     span: 25..28,
                 },
-                body: FnBody {
-                    bindings: [
-                        ValDecl {
-                            name: Spanned {
-                                node: "base",
-                                span: 37..41,
-                            },
-                            ty: None,
-                            value: Spanned {
-                                node: Binary {
-                                    op: Mul,
-                                    lhs: Spanned {
-                                        node: Var(
-                                            "w",
-                                        ),
-                                        span: 44..45,
-                                    },
-                                    rhs: Spanned {
-                                        node: Var(
-                                            "h",
-                                        ),
-                                        span: 48..49,
-                                    },
+                body: Block {
+                    stmts: [
+                        Val(
+                            ValDecl {
+                                name: Spanned {
+                                    node: "base",
+                                    span: 37..41,
                                 },
-                                span: 44..49,
-                            },
-                            span: 33..52,
-                        },
-                        ValDecl {
-                            name: Spanned {
-                                node: "perim",
-                                span: 56..61,
-                            },
-                            ty: None,
-                            value: Spanned {
-                                node: Binary {
-                                    op: Mul,
-                                    lhs: Spanned {
-                                        node: Literal(
-                                            Int(
-                                                2,
+                                ty: None,
+                                value: Spanned {
+                                    node: Binary {
+                                        op: Mul,
+                                        lhs: Spanned {
+                                            node: Var(
+                                                "w",
                                             ),
-                                        ),
-                                        span: 64..65,
-                                    },
-                                    rhs: Spanned {
-                                        node: Binary {
-                                            op: Add,
-                                            lhs: Spanned {
-                                                node: Var(
-                                                    "w",
-                                                ),
-                                                span: 69..70,
-                                            },
-                                            rhs: Spanned {
-                                                node: Var(
-                                                    "h",
-                                                ),
-                                                span: 73..74,
-                                            },
+                                            span: 44..45,
                                         },
-                                        span: 69..74,
+                                        rhs: Spanned {
+                                            node: Var(
+                                                "h",
+                                            ),
+                                            span: 48..49,
+                                        },
                                     },
+                                    span: 44..49,
                                 },
-                                span: 64..74,
+                                span: 33..52,
                             },
-                            span: 52..78,
-                        },
+                        ),
+                        Val(
+                            ValDecl {
+                                name: Spanned {
+                                    node: "perim",
+                                    span: 56..61,
+                                },
+                                ty: None,
+                                value: Spanned {
+                                    node: Binary {
+                                        op: Mul,
+                                        lhs: Spanned {
+                                            node: Literal(
+                                                Int(
+                                                    2,
+                                                ),
+                                            ),
+                                            span: 64..65,
+                                        },
+                                        rhs: Spanned {
+                                            node: Binary {
+                                                op: Add,
+                                                lhs: Spanned {
+                                                    node: Var(
+                                                        "w",
+                                                    ),
+                                                    span: 69..70,
+                                                },
+                                                rhs: Spanned {
+                                                    node: Var(
+                                                        "h",
+                                                    ),
+                                                    span: 73..74,
+                                                },
+                                            },
+                                            span: 69..74,
+                                        },
+                                    },
+                                    span: 64..74,
+                                },
+                                span: 52..78,
+                            },
+                        ),
                     ],
-                    result: Spanned {
-                        node: Binary {
-                            op: Add,
-                            lhs: Spanned {
-                                node: Var(
-                                    "base",
-                                ),
-                                span: 78..82,
+                    trailing: Some(
+                        Spanned {
+                            node: Binary {
+                                op: Add,
+                                lhs: Spanned {
+                                    node: Var(
+                                        "base",
+                                    ),
+                                    span: 78..82,
+                                },
+                                rhs: Spanned {
+                                    node: Var(
+                                        "perim",
+                                    ),
+                                    span: 85..90,
+                                },
                             },
-                            rhs: Spanned {
-                                node: Var(
-                                    "perim",
-                                ),
-                                span: 85..90,
-                            },
+                            span: 78..90,
                         },
-                        span: 78..90,
-                    },
-                    span: 33..91,
+                    ),
+                    span: 29..93,
                 },
                 span: 0..93,
             },

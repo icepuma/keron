@@ -212,83 +212,109 @@ Program {
                     node: String,
                     span: 196..202,
                 },
-                body: FnBody {
-                    bindings: [],
-                    result: Spanned {
-                        node: If {
-                            cond: Spanned {
-                                node: Binary {
-                                    op: Eq,
-                                    lhs: Spanned {
-                                        node: Var(
-                                            "n",
-                                        ),
-                                        span: 210..211,
-                                    },
-                                    rhs: Spanned {
-                                        node: Literal(
-                                            Int(
-                                                0,
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: If {
+                                cond: Spanned {
+                                    node: Binary {
+                                        op: Eq,
+                                        lhs: Spanned {
+                                            node: Var(
+                                                "n",
                                             ),
-                                        ),
-                                        span: 215..216,
-                                    },
-                                },
-                                span: 210..216,
-                            },
-                            then_branch: Spanned {
-                                node: Literal(
-                                    String(
-                                        "zero",
-                                    ),
-                                ),
-                                span: 223..229,
-                            },
-                            else_branch: Spanned {
-                                node: If {
-                                    cond: Spanned {
-                                        node: Binary {
-                                            op: Lt,
-                                            lhs: Spanned {
-                                                node: Var(
-                                                    "n",
-                                                ),
-                                                span: 242..243,
-                                            },
-                                            rhs: Spanned {
-                                                node: Literal(
-                                                    Int(
-                                                        0,
-                                                    ),
-                                                ),
-                                                span: 246..247,
-                                            },
+                                            span: 210..211,
                                         },
-                                        span: 242..247,
-                                    },
-                                    then_branch: Spanned {
-                                        node: Literal(
-                                            String(
-                                                "negative",
+                                        rhs: Spanned {
+                                            node: Literal(
+                                                Int(
+                                                    0,
+                                                ),
                                             ),
-                                        ),
-                                        span: 254..264,
+                                            span: 215..216,
+                                        },
                                     },
-                                    else_branch: Spanned {
-                                        node: Literal(
-                                            String(
-                                                "positive",
-                                            ),
-                                        ),
-                                        span: 280..290,
-                                    },
+                                    span: 210..216,
                                 },
-                                span: 239..295,
+                                then_branch: Block {
+                                    stmts: [],
+                                    trailing: Some(
+                                        Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "zero",
+                                                ),
+                                            ),
+                                            span: 223..229,
+                                        },
+                                    ),
+                                    span: 217..234,
+                                },
+                                else_branch: Block {
+                                    stmts: [],
+                                    trailing: Some(
+                                        Spanned {
+                                            node: If {
+                                                cond: Spanned {
+                                                    node: Binary {
+                                                        op: Lt,
+                                                        lhs: Spanned {
+                                                            node: Var(
+                                                                "n",
+                                                            ),
+                                                            span: 242..243,
+                                                        },
+                                                        rhs: Spanned {
+                                                            node: Literal(
+                                                                Int(
+                                                                    0,
+                                                                ),
+                                                            ),
+                                                            span: 246..247,
+                                                        },
+                                                    },
+                                                    span: 242..247,
+                                                },
+                                                then_branch: Block {
+                                                    stmts: [],
+                                                    trailing: Some(
+                                                        Spanned {
+                                                            node: Literal(
+                                                                String(
+                                                                    "negative",
+                                                                ),
+                                                            ),
+                                                            span: 254..264,
+                                                        },
+                                                    ),
+                                                    span: 248..269,
+                                                },
+                                                else_branch: Block {
+                                                    stmts: [],
+                                                    trailing: Some(
+                                                        Spanned {
+                                                            node: Literal(
+                                                                String(
+                                                                    "positive",
+                                                                ),
+                                                            ),
+                                                            span: 280..290,
+                                                        },
+                                                    ),
+                                                    span: 274..295,
+                                                },
+                                            },
+                                            span: 239..295,
+                                        },
+                                    ),
+                                    span: 239..295,
+                                },
                             },
+                            span: 207..295,
                         },
-                        span: 207..295,
-                    },
-                    span: 207..295,
+                    ),
+                    span: 203..298,
                 },
                 span: 175..298,
             },

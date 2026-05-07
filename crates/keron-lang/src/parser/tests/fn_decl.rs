@@ -10,7 +10,7 @@ fn first_fn(src: &str) -> crate::ast::FnDecl {
     let prog = ok(src);
     match prog.items.into_iter().next().expect("at least one item") {
         Item::Fn(f) => f,
-        Item::Val(_) | Item::Reconcile(_) => panic!("expected a fn item"),
+        Item::Val(_) | Item::Reconcile(_) | Item::ExprStmt(_) => panic!("expected a fn item"),
     }
 }
 
@@ -19,8 +19,11 @@ fn fn_no_params() {
     let f = first_fn("fn it(): Int { 1 }");
     assert_eq!(f.name.node, "it");
     assert_eq!(f.params.len(), 0);
-    assert_eq!(f.body.bindings.len(), 0);
-    assert_eq!(f.body.result.node, Expr::Literal(Literal::Int(1)));
+    assert_eq!(f.body.stmts.len(), 0);
+    assert_eq!(
+        f.body.trailing.as_ref().expect("trailing expr").node,
+        Expr::Literal(Literal::Int(1))
+    );
 }
 
 #[test]
@@ -48,12 +51,18 @@ fn fn_with_default() {
 
 #[test]
 fn fn_body_with_locals() {
-    // No semicolons — bindings are separated by whitespace; `val` keyword
-    // is the sentinel that starts each binding.
+    // No semicolons — statements are separated by whitespace; `val` /
+    // `reconcile` keywords are the sentinels that start each one.
     let f = first_fn("fn area(): Int { val w = 3 val h = 4 w * h }");
-    assert_eq!(f.body.bindings.len(), 2);
-    assert_eq!(f.body.bindings[0].name.node, "w");
-    assert_eq!(f.body.bindings[1].name.node, "h");
+    assert_eq!(f.body.stmts.len(), 2);
+    let crate::ast::Stmt::Val(w) = &f.body.stmts[0] else {
+        panic!("expected val stmt");
+    };
+    assert_eq!(w.name.node, "w");
+    let crate::ast::Stmt::Val(h) = &f.body.stmts[1] else {
+        panic!("expected val stmt");
+    };
+    assert_eq!(h.name.node, "h");
 }
 
 #[test]
@@ -70,13 +79,21 @@ fn fn_complex_return_type() {
 }
 
 #[test]
-fn rejects_empty_body() {
-    assert!(parse("fn f(): Int { }").is_err());
+fn empty_body_parses_for_void_fn() {
+    // An empty `{ }` is a Block with no trailing — type-legal only
+    // when the return type is `Void`. Whether it type-checks is the
+    // checker's concern, but the parser must accept the syntax.
+    assert!(parse("fn f(): Void { }").is_ok());
 }
 
 #[test]
-fn rejects_only_locals_no_result() {
-    assert!(parse("fn f(): Int { val x = 1 }").is_err());
+fn fn_body_with_only_locals_parses() {
+    // Like the empty case, this is type-legal only when returning Void
+    // (a non-Void return needs a trailing expression). The parser
+    // happily produces a Block whose trailing is None.
+    let f = first_fn("fn f(): Void { val x = 1 }");
+    assert_eq!(f.body.stmts.len(), 1);
+    assert!(f.body.trailing.is_none());
 }
 
 #[test]

@@ -39,21 +39,33 @@ Program {
                                             ),
                                             span: 21..25,
                                         },
-                                        then_branch: Spanned {
-                                            node: Literal(
-                                                Int(
-                                                    1,
-                                                ),
+                                        then_branch: Block {
+                                            stmts: [],
+                                            trailing: Some(
+                                                Spanned {
+                                                    node: Literal(
+                                                        Int(
+                                                            1,
+                                                        ),
+                                                    ),
+                                                    span: 28..29,
+                                                },
                                             ),
-                                            span: 28..29,
+                                            span: 26..32,
                                         },
-                                        else_branch: Spanned {
-                                            node: Literal(
-                                                Int(
-                                                    2,
-                                                ),
+                                        else_branch: Block {
+                                            stmts: [],
+                                            trailing: Some(
+                                                Spanned {
+                                                    node: Literal(
+                                                        Int(
+                                                            2,
+                                                        ),
+                                                    ),
+                                                    span: 39..40,
+                                                },
                                             ),
-                                            span: 39..40,
+                                            span: 37..43,
                                         },
                                     },
                                     span: 18..43,

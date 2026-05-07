@@ -76,10 +76,15 @@ fn literal_source_for(ty: &Type) -> BoxedStrategy<(String, Type)> {
             .prop_map(|(int, frac)| (format!("{int}.{frac:09}"), Type::Double))
             .boxed(),
         // The property tests only use the four primitive variants;
-        // `List`/`Map`/resource types are exercised via dedicated
-        // properties below.
-        Type::List(_) | Type::Map(_, _) | Type::Symlink | Type::File | Type::Directory => {
-            unreachable!("structured/resource types are not used in literal_source_for")
+        // `List`/`Map`/resource types and `Void` are exercised via
+        // dedicated properties below.
+        Type::List(_)
+        | Type::Map(_, _)
+        | Type::Symlink
+        | Type::File
+        | Type::Directory
+        | Type::Void => {
+            unreachable!("structured/resource/void types are not used in literal_source_for")
         }
     }
 }

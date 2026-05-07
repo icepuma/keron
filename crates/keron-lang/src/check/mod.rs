@@ -31,8 +31,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     ast::{
-        BinOp, CallArg, Expr, FnBody, FnDecl, Item, MapEntry, Param, Program, ReconcileDecl, Span,
-        Spanned, StringPart, Type, UnaryOp, ValDecl,
+        BinOp, Block, CallArg, Expr, FnDecl, Item, MapEntry, Param, Program, ReconcileDecl, Span,
+        Spanned, Stmt, StringPart, Type, UnaryOp, ValDecl,
     },
     diagnostic::Diagnostic,
 };
@@ -125,7 +125,7 @@ pub fn check(program: &Program) -> Result<(), Vec<Diagnostic>> {
                     fn_env.insert(f.name.node.clone(), sig);
                 }
             }
-            Item::Reconcile(_) => {}
+            Item::Reconcile(_) | Item::ExprStmt(_) => {}
         }
     }
 
@@ -136,6 +136,7 @@ pub fn check(program: &Program) -> Result<(), Vec<Diagnostic>> {
             Item::Val(v) => check_val_decl(v, &mut val_env, &fn_env, &mut diags),
             Item::Fn(f) => check_fn_decl(f, &val_env, &fn_env, &mut diags),
             Item::Reconcile(r) => check_reconcile_decl(r, &val_env, &fn_env, &mut diags),
+            Item::ExprStmt(e) => check_top_expr_stmt(e, &val_env, &fn_env, &mut diags),
         }
     }
 
@@ -229,7 +230,7 @@ fn check_fn_decl(f: &FnDecl, outer_env: &Env, fns: &FnEnv, diags: &mut Vec<Diagn
         }
     }
 
-    check_fn_body(&f.body, &f.return_type.node, scope, fns, diags);
+    check_top_block(&f.body, &f.return_type.node, scope, fns, diags);
 }
 
 fn check_param_default(p: &Param, env: &Env, fns: &FnEnv, diags: &mut Vec<Diagnostic>) {
@@ -240,52 +241,199 @@ fn check_param_default(p: &Param, env: &Env, fns: &FnEnv, diags: &mut Vec<Diagno
     }
 }
 
-fn check_fn_body(
-    body: &FnBody,
-    return_ty: &Type,
+/// Top-level block check, used for fn bodies and (with `Type::Void`)
+/// for top-level expression statements that span a block. Processes
+/// every statement in source order — collecting diagnostics rather
+/// than short-circuiting — then bidirectionally checks the trailing
+/// expression against `expected`. When the trailing is absent, the
+/// block has type `Void`; if `expected` is anything else, that's an
+/// error.
+fn check_top_block(
+    body: &Block,
+    expected: &Type,
     mut env: Env,
     fns: &FnEnv,
     diags: &mut Vec<Diagnostic>,
 ) {
-    for binding in &body.bindings {
-        if let Some(kind) = env.lookup_kind(&binding.name.node) {
-            let what = match kind {
-                BindingKind::Param => "parameter",
-                BindingKind::OuterVal => "outer `val`",
-                BindingKind::BodyLocal => "previous body `val`",
-            };
-            diags.push(Diagnostic::new(
-                binding.name.span.clone(),
-                format!(
-                    "`{}` is already defined as a {what} in this scope",
-                    binding.name.node
-                ),
-            ));
-            continue;
-        }
-        if let Some(annot) = &binding.ty {
-            validate_type_annotation(annot, diags);
-        }
-        let bind_ty: Option<Type> = match &binding.ty {
-            Some(annot) => {
-                if let Err(d) = check_expr(&binding.value, &annot.node, &env, fns) {
-                    diags.push(d);
-                }
-                Some(annot.node.clone())
+    process_block_stmts_collecting(&body.stmts, &mut env, fns, diags);
+    check_block_trailing(body, expected, &env, fns, diags);
+}
+
+fn check_block_trailing(
+    body: &Block,
+    expected: &Type,
+    env: &Env,
+    fns: &FnEnv,
+    diags: &mut Vec<Diagnostic>,
+) {
+    match &body.trailing {
+        Some(expr) => {
+            if let Err(d) = check_expr(expr, expected, env, fns) {
+                diags.push(d);
             }
-            None => match expr_type(&binding.value, &env, fns) {
-                Ok(t) => Some(t),
-                Err(d) => {
-                    diags.push(d);
-                    None
-                }
-            },
-        };
-        if let Some(t) = bind_ty {
-            env.bind(binding.name.node.clone(), t, BindingKind::BodyLocal);
+        }
+        None => {
+            if !matches!(expected, Type::Void) {
+                diags.push(Diagnostic::new(
+                    body.span.clone(),
+                    format!(
+                        "expected `{expected}`, found block with no trailing expression (type `Void`)"
+                    ),
+                ));
+            }
         }
     }
-    if let Err(d) = check_expr(&body.result, return_ty, &env, fns) {
+}
+
+/// Process a block's statements, mutating `env` with each new local
+/// binding, and pushing one diagnostic per problem encountered. Used
+/// where we want to keep checking later statements even when an
+/// earlier one fails (top-level fn bodies and top-level expression
+/// statements that wrap blocks).
+fn process_block_stmts_collecting(
+    stmts: &[Stmt],
+    env: &mut Env,
+    fns: &FnEnv,
+    diags: &mut Vec<Diagnostic>,
+) {
+    for stmt in stmts {
+        match stmt {
+            Stmt::Val(v) => check_local_val_collecting(v, env, fns, diags),
+            Stmt::Reconcile(r) => check_reconcile_decl(r, env, fns, diags),
+        }
+    }
+}
+
+fn check_local_val_collecting(
+    binding: &ValDecl,
+    env: &mut Env,
+    fns: &FnEnv,
+    diags: &mut Vec<Diagnostic>,
+) {
+    if let Some(kind) = env.lookup_kind(&binding.name.node) {
+        let what = match kind {
+            BindingKind::Param => "parameter",
+            BindingKind::OuterVal => "outer `val`",
+            BindingKind::BodyLocal => "previous body `val`",
+        };
+        diags.push(Diagnostic::new(
+            binding.name.span.clone(),
+            format!(
+                "`{}` is already defined as a {what} in this scope",
+                binding.name.node
+            ),
+        ));
+        return;
+    }
+    if let Some(annot) = &binding.ty {
+        validate_type_annotation(annot, diags);
+    }
+    let bind_ty: Option<Type> = match &binding.ty {
+        Some(annot) => {
+            if let Err(d) = check_expr(&binding.value, &annot.node, env, fns) {
+                diags.push(d);
+            }
+            Some(annot.node.clone())
+        }
+        None => match expr_type(&binding.value, env, fns) {
+            Ok(t) => Some(t),
+            Err(d) => {
+                diags.push(d);
+                None
+            }
+        },
+    };
+    if let Some(t) = bind_ty {
+        env.bind(binding.name.node.clone(), t, BindingKind::BodyLocal);
+    }
+}
+
+/// Single-error block check used inside expression-typing recursion
+/// (for `if`-branches embedded inside other expressions). Mirrors the
+/// "first error wins" behavior of [`expr_type`] / [`check_expr`].
+fn check_block(block: &Block, expected: &Type, env: &Env, fns: &FnEnv) -> Result<(), Diagnostic> {
+    let mut local = env.clone();
+    process_block_stmts_strict(&block.stmts, &mut local, fns)?;
+    block.trailing.as_ref().map_or_else(
+        || {
+            if matches!(expected, Type::Void) {
+                Ok(())
+            } else {
+                Err(Diagnostic::new(
+                    block.span.clone(),
+                    format!(
+                        "expected `{expected}`, found block with no trailing expression (type `Void`)"
+                    ),
+                ))
+            }
+        },
+        |expr| check_expr(expr, expected, &local, fns),
+    )
+}
+
+/// Single-error block synthesis used in the same recursive contexts.
+fn block_type(block: &Block, env: &Env, fns: &FnEnv) -> Result<Type, Diagnostic> {
+    let mut local = env.clone();
+    process_block_stmts_strict(&block.stmts, &mut local, fns)?;
+    block
+        .trailing
+        .as_ref()
+        .map_or(Ok(Type::Void), |expr| expr_type(expr, &local, fns))
+}
+
+fn process_block_stmts_strict(
+    stmts: &[Stmt],
+    env: &mut Env,
+    fns: &FnEnv,
+) -> Result<(), Diagnostic> {
+    for stmt in stmts {
+        match stmt {
+            Stmt::Val(v) => check_local_val_strict(v, env, fns)?,
+            Stmt::Reconcile(r) => {
+                let ty = expr_type(&r.expr, env, fns)?;
+                if !is_reconcilable(&ty) {
+                    return Err(Diagnostic::new(
+                        r.expr.span.clone(),
+                        format!(
+                            "`reconcile` expects a resource or list of resources, found `{ty}`"
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn check_local_val_strict(binding: &ValDecl, env: &mut Env, fns: &FnEnv) -> Result<(), Diagnostic> {
+    if let Some(kind) = env.lookup_kind(&binding.name.node) {
+        let what = match kind {
+            BindingKind::Param => "parameter",
+            BindingKind::OuterVal => "outer `val`",
+            BindingKind::BodyLocal => "previous body `val`",
+        };
+        return Err(Diagnostic::new(
+            binding.name.span.clone(),
+            format!(
+                "`{}` is already defined as a {what} in this scope",
+                binding.name.node
+            ),
+        ));
+    }
+    let ty = match &binding.ty {
+        Some(annot) => {
+            check_expr(&binding.value, &annot.node, env, fns)?;
+            annot.node.clone()
+        }
+        None => expr_type(&binding.value, env, fns)?,
+    };
+    env.bind(binding.name.node.clone(), ty, BindingKind::BodyLocal);
+    Ok(())
+}
+
+/// Top-level expression statement: must have type `Void`.
+fn check_top_expr_stmt(e: &Spanned<Expr>, env: &Env, fns: &FnEnv, diags: &mut Vec<Diagnostic>) {
+    if let Err(d) = check_expr(e, &Type::Void, env, fns) {
         diags.push(d);
     }
 }
@@ -340,8 +488,8 @@ fn check_expr(
             else_branch,
         } => {
             check_expr(cond, &Type::Boolean, env, fns)?;
-            check_expr(then_branch, expected, env, fns)?;
-            check_expr(else_branch, expected, env, fns)?;
+            check_block(then_branch, expected, env, fns)?;
+            check_block(else_branch, expected, env, fns)?;
             Ok(())
         }
         _ => switch_to_synth(e, expected, env, fns),
@@ -412,19 +560,28 @@ fn expr_type(e: &Spanned<Expr>, env: &Env, fns: &FnEnv) -> Result<Type, Diagnost
 
 fn if_type(
     cond: &Spanned<Expr>,
-    then_branch: &Spanned<Expr>,
-    else_branch: &Spanned<Expr>,
+    then_branch: &Block,
+    else_branch: &Block,
     env: &Env,
     fns: &FnEnv,
 ) -> Result<Type, Diagnostic> {
     check_expr(cond, &Type::Boolean, env, fns)?;
-    let then_ty = expr_type(then_branch, env, fns)?;
-    let else_ty = expr_type(else_branch, env, fns)?;
+    let then_ty = block_type(then_branch, env, fns)?;
+    let else_ty = block_type(else_branch, env, fns)?;
     if then_ty == else_ty {
         Ok(then_ty)
     } else {
+        // The branch we point at depends on which side is the "implicit
+        // empty Void block" (an omitted `else`); pointing at the
+        // non-trailing else with span at the closing `}` is more
+        // legible than at the missing token.
+        let span = if else_branch.trailing.is_none() && else_branch.stmts.is_empty() {
+            then_branch.span.clone()
+        } else {
+            else_branch.span.clone()
+        };
         Err(Diagnostic::new(
-            else_branch.span.clone(),
+            span,
             format!(
                 "`if` branches have mismatched types: `then` is `{then_ty}`, `else` is `{else_ty}`"
             ),
@@ -578,7 +735,8 @@ fn walk_type(ty: &Type, span: &Span, diags: &mut Vec<Diagnostic>) {
         | Type::Double
         | Type::Symlink
         | Type::File
-        | Type::Directory => {}
+        | Type::Directory
+        | Type::Void => {}
         Type::List(inner) => walk_type(inner, span, diags),
         Type::Map(k, v) => {
             if !is_valid_map_key(k) {

@@ -50,15 +50,17 @@ Program {
                     node: String,
                     span: 36..42,
                 },
-                body: FnBody {
-                    bindings: [],
-                    result: Spanned {
-                        node: Var(
-                            "n",
-                        ),
-                        span: 47..48,
-                    },
-                    span: 47..49,
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Var(
+                                "n",
+                            ),
+                            span: 47..48,
+                        },
+                    ),
+                    span: 43..52,
                 },
                 span: 16..52,
             },

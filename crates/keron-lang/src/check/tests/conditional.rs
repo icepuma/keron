@@ -181,3 +181,106 @@ fn reconcile_if_int_errors() {
     );
     assert!(err[0].message.contains("found `Int`"));
 }
+
+// ---------- if-without-else (control flow) ----------
+
+#[test]
+fn if_without_else_void_branches_typechecks() {
+    // `if cond { reconcile foo }` — both branches are Void, so the
+    // implicit empty else matches and the whole if is a Void
+    // expression statement.
+    let src = r#"
+        val flag: Boolean = true
+        val target: Symlink = symlink(from = "a", to = "b")
+        if flag { reconcile target }
+    "#;
+    assert!(check_src(src).is_ok());
+}
+
+#[test]
+fn if_without_else_with_value_branch_errors() {
+    // The implicit else is Void; an Int trailing in the then-branch
+    // can't match it, so this is a branch-mismatch.
+    let err = check_src("val r = if true { 1 }").expect_err("should fail");
+    assert!(
+        err[0]
+            .message
+            .contains("`if` branches have mismatched types"),
+        "got: {}",
+        err[0].message
+    );
+    assert!(err[0].message.contains("`else` is `Void`"));
+}
+
+#[test]
+fn else_if_chain_without_terminal_else_errors() {
+    // Each else-if's omitted else is Void; if any branch produces a
+    // value, the implicit Void doesn't match.
+    let err = check_src("val r: Int = if true { 1 } else if false { 2 }").expect_err("should fail");
+    assert!(
+        err[0].message.contains("mismatched types") || err[0].message.contains("expected `Int`"),
+        "got: {}",
+        err[0].message
+    );
+}
+
+// ---------- Void in fn return / blocks ----------
+
+#[test]
+fn void_fn_with_no_trailing_typechecks() {
+    let src = r#"
+        val target: Symlink = symlink(from = "a", to = "b")
+        fn install(): Void {
+          reconcile target
+        }
+    "#;
+    assert!(check_src(src).is_ok());
+}
+
+#[test]
+fn void_fn_with_conditional_reconcile_typechecks() {
+    let src = r#"
+        val target: Symlink = symlink(from = "a", to = "b")
+        fn install_if(flag: Boolean): Void {
+          if flag { reconcile target }
+        }
+    "#;
+    assert!(check_src(src).is_ok());
+}
+
+#[test]
+fn fn_returning_int_with_no_trailing_errors() {
+    let err = check_src("fn nothing(): Int { }").expect_err("should fail");
+    assert!(
+        err[0]
+            .message
+            .contains("expected `Int`, found block with no trailing expression"),
+        "got: {}",
+        err[0].message
+    );
+}
+
+#[test]
+fn void_fn_with_int_trailing_errors() {
+    let err = check_src("fn lies(): Void { 42 }").expect_err("should fail");
+    assert!(
+        err[0].message.contains("expected `Void`") || err[0].message.contains("found `Int`"),
+        "got: {}",
+        err[0].message
+    );
+}
+
+// ---------- top-level expression statements ----------
+
+#[test]
+fn top_level_if_with_value_branches_errors() {
+    // `if cond { 1 } else { 2 }` at top level isn't bound — it's an
+    // expression statement, so its type must be `Void`. Int doesn't
+    // match.
+    let err = check_src("if true { 1 } else { 2 }").expect_err("should fail");
+    assert!(
+        err[0].message.contains("expected `Void`"),
+        "got: {}",
+        err[0].message
+    );
+}

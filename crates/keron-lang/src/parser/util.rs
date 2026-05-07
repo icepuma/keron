@@ -24,6 +24,7 @@ const KEYWORDS: &[&str] = &[
     "Symlink",
     "File",
     "Directory",
+    "Void",
 ];
 
 pub(super) fn ident<'src>() -> impl Parser<'src, &'src str, String, Extra<'src>> + Clone {

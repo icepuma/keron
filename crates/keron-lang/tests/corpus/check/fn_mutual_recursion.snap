@@ -27,44 +27,46 @@ Program {
                     node: Boolean,
                     span: 17..24,
                 },
-                body: FnBody {
-                    bindings: [],
-                    result: Spanned {
-                        node: Call {
-                            callee: Spanned {
-                                node: "odd",
-                                span: 29..32,
-                            },
-                            args: [
-                                CallArg {
-                                    name: None,
-                                    value: Spanned {
-                                        node: Binary {
-                                            op: Sub,
-                                            lhs: Spanned {
-                                                node: Var(
-                                                    "n",
-                                                ),
-                                                span: 33..34,
-                                            },
-                                            rhs: Spanned {
-                                                node: Literal(
-                                                    Int(
-                                                        1,
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "odd",
+                                    span: 29..32,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: None,
+                                        value: Spanned {
+                                            node: Binary {
+                                                op: Sub,
+                                                lhs: Spanned {
+                                                    node: Var(
+                                                        "n",
                                                     ),
-                                                ),
-                                                span: 37..38,
+                                                    span: 33..34,
+                                                },
+                                                rhs: Spanned {
+                                                    node: Literal(
+                                                        Int(
+                                                            1,
+                                                        ),
+                                                    ),
+                                                    span: 37..38,
+                                                },
                                             },
+                                            span: 33..38,
                                         },
                                         span: 33..38,
                                     },
-                                    span: 33..38,
-                                },
-                            ],
+                                ],
+                            },
+                            span: 29..40,
                         },
-                        span: 29..40,
-                    },
-                    span: 29..40,
+                    ),
+                    span: 25..43,
                 },
                 span: 0..43,
             },
@@ -93,44 +95,46 @@ Program {
                     node: Boolean,
                     span: 59..66,
                 },
-                body: FnBody {
-                    bindings: [],
-                    result: Spanned {
-                        node: Call {
-                            callee: Spanned {
-                                node: "even",
-                                span: 71..75,
-                            },
-                            args: [
-                                CallArg {
-                                    name: None,
-                                    value: Spanned {
-                                        node: Binary {
-                                            op: Sub,
-                                            lhs: Spanned {
-                                                node: Var(
-                                                    "n",
-                                                ),
-                                                span: 76..77,
-                                            },
-                                            rhs: Spanned {
-                                                node: Literal(
-                                                    Int(
-                                                        1,
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "even",
+                                    span: 71..75,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: None,
+                                        value: Spanned {
+                                            node: Binary {
+                                                op: Sub,
+                                                lhs: Spanned {
+                                                    node: Var(
+                                                        "n",
                                                     ),
-                                                ),
-                                                span: 80..81,
+                                                    span: 76..77,
+                                                },
+                                                rhs: Spanned {
+                                                    node: Literal(
+                                                        Int(
+                                                            1,
+                                                        ),
+                                                    ),
+                                                    span: 80..81,
+                                                },
                                             },
+                                            span: 76..81,
                                         },
                                         span: 76..81,
                                     },
-                                    span: 76..81,
-                                },
-                            ],
+                                ],
+                            },
+                            span: 71..83,
                         },
-                        span: 71..83,
-                    },
-                    span: 71..83,
+                    ),
+                    span: 67..86,
                 },
                 span: 43..86,
             },

@@ -1,5 +1,6 @@
 //! chumsky-based parser for keron source.
 
+mod block;
 mod expr;
 mod fn_decl;
 mod reconcile;
@@ -55,10 +56,22 @@ fn program<'src>() -> impl Parser<'src, &'src str, Program, Extra<'src>> {
 
 fn item<'src>() -> impl Parser<'src, &'src str, Item, Extra<'src>> {
     let e = expr();
+    // Top-level expression statements are restricted to expressions
+    // beginning with `if` — that's the only construct that produces
+    // a `Void` value (and so the only one whose top-level use as a
+    // statement is meaningful). Gating this with a `peek` for the
+    // `if` keyword also keeps normal declarations' error messages
+    // crisp: errors inside `val x = …` aren't merged with a generic
+    // "expression here" alternative.
+    let if_stmt = text::keyword("if")
+        .rewind()
+        .ignore_then(e.clone())
+        .map(Item::ExprStmt);
     choice((
         val_decl(e.clone()).map(Item::Val),
         fn_decl(e.clone()).map(Item::Fn),
         reconcile_decl(e).map(Item::Reconcile),
+        if_stmt,
     ))
     .padded_by(pad())
 }

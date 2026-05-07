@@ -27,29 +27,31 @@ Program {
                     node: Int,
                     span: 19..22,
                 },
-                body: FnBody {
-                    bindings: [],
-                    result: Spanned {
-                        node: Binary {
-                            op: Mul,
-                            lhs: Spanned {
-                                node: Var(
-                                    "n",
-                                ),
-                                span: 27..28,
-                            },
-                            rhs: Spanned {
-                                node: Literal(
-                                    Int(
-                                        2,
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Binary {
+                                op: Mul,
+                                lhs: Spanned {
+                                    node: Var(
+                                        "n",
                                     ),
-                                ),
-                                span: 31..32,
+                                    span: 27..28,
+                                },
+                                rhs: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            2,
+                                        ),
+                                    ),
+                                    span: 31..32,
+                                },
                             },
+                            span: 27..32,
                         },
-                        span: 27..32,
-                    },
-                    span: 27..33,
+                    ),
+                    span: 23..35,
                 },
                 span: 0..35,
             },

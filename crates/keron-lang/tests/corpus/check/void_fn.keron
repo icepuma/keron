@@ -1,0 +1,9 @@
+val target: Symlink = symlink(from = "a", to = "b")
+
+fn install(): Void {
+  reconcile target
+}
+
+fn install_if(flag: Boolean): Void {
+  if flag { reconcile target }
+}
