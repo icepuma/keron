@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: unknown variable `second`
+  --> 1:13
+  |
+1 | val first = second + 1
+  |             ^^^^^^

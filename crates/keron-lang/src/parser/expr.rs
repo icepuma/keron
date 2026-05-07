@@ -23,7 +23,7 @@ use crate::ast::{BinOp, Expr, Literal, Spanned, UnaryOp};
 
 use super::{
     string::string_expr,
-    util::{Extra, pad, span_to_range},
+    util::{Extra, ident, pad, span_to_range},
 };
 
 pub(super) fn expr<'src>() -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone {
@@ -39,10 +39,18 @@ pub(super) fn expr<'src>() -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<
                 span: span_to_range(e.span()),
             });
 
+        let var = ident()
+            .map_with(|name, e| Spanned {
+                node: Expr::Var(name),
+                span: span_to_range(e.span()),
+            })
+            .padded_by(pad());
+
         let atom = choice((
             string_expr(expr.clone()).padded_by(pad()),
             non_string_literal_expr(),
             list,
+            var,
             expr.delimited_by(just('(').padded_by(pad()), just(')').padded_by(pad())),
         ));
 

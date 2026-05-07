@@ -50,6 +50,9 @@ pub enum Expr {
     /// `[e1, e2, …]`. Empty lists carry no element type and require a
     /// `List<T>` annotation upstream to be type-checked.
     List(Vec<Spanned<Self>>),
+    /// Reference to a previously-declared `val`. Resolved against the
+    /// declaration order; forward references are an error.
+    Var(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]

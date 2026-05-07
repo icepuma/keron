@@ -1,0 +1,262 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "name",
+                    span: 4..8,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 10..16,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        String(
+                            "keron",
+                        ),
+                    ),
+                    span: 19..26,
+                },
+                span: 0..27,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "major",
+                    span: 31..36,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Int,
+                        span: 38..41,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        Int(
+                            0,
+                        ),
+                    ),
+                    span: 44..45,
+                },
+                span: 27..46,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "minor",
+                    span: 50..55,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Int,
+                        span: 57..60,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        Int(
+                            1,
+                        ),
+                    ),
+                    span: 63..64,
+                },
+                span: 46..66,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "banner",
+                    span: 70..76,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 78..84,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Add,
+                        lhs: Spanned {
+                            node: Var(
+                                "name",
+                            ),
+                            span: 87..91,
+                        },
+                        rhs: Spanned {
+                            node: Interpolation(
+                                [
+                                    Text(
+                                        " v",
+                                    ),
+                                    Expr(
+                                        Spanned {
+                                            node: Var(
+                                                "major",
+                                            ),
+                                            span: 99..104,
+                                        },
+                                    ),
+                                    Text(
+                                        ".",
+                                    ),
+                                    Expr(
+                                        Spanned {
+                                            node: Var(
+                                                "minor",
+                                            ),
+                                            span: 108..113,
+                                        },
+                                    ),
+                                ],
+                            ),
+                            span: 94..115,
+                        },
+                    },
+                    span: 87..115,
+                },
+                span: 66..116,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "numbers",
+                    span: 120..127,
+                },
+                ty: Some(
+                    Spanned {
+                        node: List(
+                            Int,
+                        ),
+                        span: 129..139,
+                    },
+                ),
+                value: Spanned {
+                    node: List(
+                        [
+                            Spanned {
+                                node: Var(
+                                    "major",
+                                ),
+                                span: 142..147,
+                            },
+                            Spanned {
+                                node: Var(
+                                    "minor",
+                                ),
+                                span: 149..154,
+                            },
+                            Spanned {
+                                node: Binary {
+                                    op: Add,
+                                    lhs: Spanned {
+                                        node: Var(
+                                            "major",
+                                        ),
+                                        span: 156..161,
+                                    },
+                                    rhs: Spanned {
+                                        node: Var(
+                                            "minor",
+                                        ),
+                                        span: 164..169,
+                                    },
+                                },
+                                span: 156..169,
+                            },
+                        ],
+                    ),
+                    span: 141..171,
+                },
+                span: 116..171,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "doubled",
+                    span: 175..182,
+                },
+                ty: Some(
+                    Spanned {
+                        node: List(
+                            Int,
+                        ),
+                        span: 184..194,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Concat,
+                        lhs: Spanned {
+                            node: Var(
+                                "numbers",
+                            ),
+                            span: 196..203,
+                        },
+                        rhs: Spanned {
+                            node: List(
+                                [
+                                    Spanned {
+                                        node: Binary {
+                                            op: Mul,
+                                            lhs: Spanned {
+                                                node: Var(
+                                                    "major",
+                                                ),
+                                                span: 208..213,
+                                            },
+                                            rhs: Spanned {
+                                                node: Literal(
+                                                    Int(
+                                                        2,
+                                                    ),
+                                                ),
+                                                span: 216..217,
+                                            },
+                                        },
+                                        span: 208..217,
+                                    },
+                                    Spanned {
+                                        node: Binary {
+                                            op: Mul,
+                                            lhs: Spanned {
+                                                node: Var(
+                                                    "minor",
+                                                ),
+                                                span: 219..224,
+                                            },
+                                            rhs: Spanned {
+                                                node: Literal(
+                                                    Int(
+                                                        2,
+                                                    ),
+                                                ),
+                                                span: 227..228,
+                                            },
+                                        },
+                                        span: 219..228,
+                                    },
+                                ],
+                            ),
+                            span: 207..230,
+                        },
+                    },
+                    span: 196..230,
+                },
+                span: 171..230,
+            },
+        ),
+    ],
+}

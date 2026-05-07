@@ -1,0 +1,2 @@
+val first = second + 1
+val second = 10

@@ -1,0 +1,7 @@
+val name: String = "keron"
+val major: Int = 0
+val minor: Int = 1
+
+val banner: String = name + " v${major}.${minor}"
+val numbers: List<Int> = [major, minor, major + minor]
+val doubled: List<Int> = numbers ++ [major * 2, minor * 2]

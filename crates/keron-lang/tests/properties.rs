@@ -82,7 +82,7 @@ fn eval_simple(e: &Expr) -> Literal {
             Literal::Double(f) => Literal::Double(-f),
             other => panic!("cannot negate {other:?}"),
         },
-        Expr::Binary { .. } | Expr::Interpolation(_) | Expr::List(_) => {
+        Expr::Binary { .. } | Expr::Interpolation(_) | Expr::List(_) | Expr::Var(_) => {
             panic!("eval_simple only supports literals and unary")
         }
     }
@@ -184,8 +184,10 @@ proptest! {
     ) {
         let mut src = String::new();
         let mut expected_errs = 0usize;
-        for (name, annot, (lit_src, lit_ty)) in &cases {
-            writeln!(src, "val {name}: {annot} = {lit_src}").expect("write to String");
+        for (idx, (name, annot, (lit_src, lit_ty))) in cases.iter().enumerate() {
+            // Suffix the index to dodge duplicate-`val` errors when the
+            // strategy happens to draw the same name twice.
+            writeln!(src, "val {name}_{idx}: {annot} = {lit_src}").expect("write to String");
             if lit_ty != annot {
                 expected_errs += 1;
             }
@@ -303,6 +305,29 @@ proptest! {
         let src = format!("val xs: List<Int> = [{body_a}] ++ [{body_b}]");
         let prog = parse(&src).expect("parse should succeed");
         prop_assert!(check(&prog).is_ok());
+    }
+
+    #[test]
+    fn var_ref_propagates_type(
+        a in ident_strategy(),
+        b in ident_strategy(),
+        n in any::<i32>(),
+    ) {
+        // `val a = N; val b: Int = a` typechecks for any non-keyword
+        // `a` and any non-keyword `b != a`.
+        prop_assume!(a != b);
+        let src = format!("val {a} = {n}\nval {b}: Int = {a}");
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok());
+    }
+
+    #[test]
+    fn forward_reference_errors(a in ident_strategy(), b in ident_strategy()) {
+        // `val a = b` before `b` is defined errors.
+        prop_assume!(a != b);
+        let src = format!("val {a} = {b}\nval {b} = 1");
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_err());
     }
 
     #[test]

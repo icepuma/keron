@@ -1,0 +1,70 @@
+# Kitchen-sink example: every language feature shipped so far in one
+# file. The corpus harness verifies that this parses *and* typechecks.
+
+# --- primitive types: explicit annotations ---
+val app_name: String = "keron"
+val version_major: Int = 0
+val version_minor: Int = 1
+val released: Boolean = false
+val ratio: Double = 1.618
+
+# --- inferred annotations ---
+val tag = "wip"
+val seed = 42
+val warm = true
+
+# --- arithmetic with PEMDAS ---
+val area: Int = 4 * 5 + 2
+val cube: Int = 2 ** 10
+val signed: Int = -7 * 3 + 1
+val rms: Double = (3 ** 2 + 4 ** 2) * 0.5
+
+# --- mixed Int/Double promotion inside expressions ---
+val mixed: Double = 1 + 2.5 * 3
+
+# --- string concat (`+` overloaded for String + String) ---
+val greeting: String = "Hello, " + "world" + "!"
+
+# --- string interpolation with arbitrary inner expressions ---
+val math: String = "5 squared is ${5 * 5}, and 1 + 2 is ${1 + 2}"
+val flag: String = "active = ${true}"
+val nested: String = "${"inner ${42}"}"
+
+# --- escapes: \", \\, \n, \r, \t, \$ ---
+val price: String = "Costs \$9.99"
+val tabbed: String = "col1\tcol2\tcol3"
+val raw_dollar: String = "Bare $5 stays literal (only \"\${\" opens an interp)"
+
+# --- list literals ---
+val numbers: List<Int> = [1, 2, 3, 4, 5]
+val flags: List<Boolean> = [true, false, true]
+val rates: List<Double> = [1.0, 2.5, 3.14]
+
+# --- expressions inside lists + trailing comma ---
+val computed: List<Int> = [
+  1 + 2,
+  3 * 4,
+  -5,
+  2 ** 8,
+]
+
+# --- nested lists ---
+val matrix: List<List<Int>> = [[1, 2, 3], [4, 5, 6], []]
+
+# --- list concat with `++` ---
+val all_numbers: List<Int> = [1, 2] ++ [3, 4] ++ [5]
+
+# --- bidirectional checking: annotation flows through `++` and into
+#     empty list literals, including nested ones ---
+val padded: List<String> = [] ++ ["a", "b"] ++ []
+val sparse: List<List<Int>> = [[], [1], [], [2, 3]]
+val empty_strs: List<String> = []
+
+# --- inferred list element types ---
+val colors = ["red", "green", "blue"]
+val powers = [2 ** 2, 2 ** 4, 2 ** 8]
+
+# --- variable references: pull together previously-bound `val`s ---
+val full_version: String = "${version_major}.${version_minor}"
+val build_id: Int = version_major * 1000 + version_minor * 10 + 7
+val summary: String = app_name + " v" + full_version + " (build ${build_id})"

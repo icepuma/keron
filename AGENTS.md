@@ -48,7 +48,7 @@ Add new crates under `crates/`. Keep each crate single-responsibility.
 
 ## File size & modularization
 
-- **Soft cap: 300 lines per `.rs` file.** When a file approaches the
+- **Soft cap: 1000 lines per `.rs` file.** When a file approaches the
   cap, split it. Prefer a folder module (`foo/mod.rs` + siblings) over
   a single bloated file.
 - **Group by concern, not by kind**: `parser/expr.rs`,
