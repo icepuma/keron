@@ -31,7 +31,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     ast::{
-        BinOp, CallArg, Expr, FnBody, FnDecl, Item, MapEntry, Param, Program, RealizeDecl, Span,
+        BinOp, CallArg, Expr, FnBody, FnDecl, Item, MapEntry, Param, Program, ReconcileDecl, Span,
         Spanned, StringPart, Type, UnaryOp, ValDecl,
     },
     diagnostic::Diagnostic,
@@ -125,7 +125,7 @@ pub fn check(program: &Program) -> Result<(), Vec<Diagnostic>> {
                     fn_env.insert(f.name.node.clone(), sig);
                 }
             }
-            Item::Realize(_) => {}
+            Item::Reconcile(_) => {}
         }
     }
 
@@ -135,7 +135,7 @@ pub fn check(program: &Program) -> Result<(), Vec<Diagnostic>> {
         match item {
             Item::Val(v) => check_val_decl(v, &mut val_env, &fn_env, &mut diags),
             Item::Fn(f) => check_fn_decl(f, &val_env, &fn_env, &mut diags),
-            Item::Realize(r) => check_realize_decl(r, &val_env, &fn_env, &mut diags),
+            Item::Reconcile(r) => check_reconcile_decl(r, &val_env, &fn_env, &mut diags),
         }
     }
 
@@ -595,13 +595,13 @@ fn walk_type(ty: &Type, span: &Span, diags: &mut Vec<Diagnostic>) {
     }
 }
 
-fn check_realize_decl(r: &RealizeDecl, env: &Env, fns: &FnEnv, diags: &mut Vec<Diagnostic>) {
+fn check_reconcile_decl(r: &ReconcileDecl, env: &Env, fns: &FnEnv, diags: &mut Vec<Diagnostic>) {
     match expr_type(&r.expr, env, fns) {
         Ok(ty) => {
-            if !is_realizable(&ty) {
+            if !is_reconcilable(&ty) {
                 diags.push(Diagnostic::new(
                     r.expr.span.clone(),
-                    format!("`realize` expects a resource or list of resources, found `{ty}`"),
+                    format!("`reconcile` expects a resource or list of resources, found `{ty}`"),
                 ));
             }
         }
@@ -609,7 +609,7 @@ fn check_realize_decl(r: &RealizeDecl, env: &Env, fns: &FnEnv, diags: &mut Vec<D
     }
 }
 
-const fn is_realizable(ty: &Type) -> bool {
+const fn is_reconcilable(ty: &Type) -> bool {
     match ty {
         Type::Symlink | Type::File | Type::Directory => true,
         Type::List(inner) => matches!(**inner, Type::Symlink | Type::File | Type::Directory),

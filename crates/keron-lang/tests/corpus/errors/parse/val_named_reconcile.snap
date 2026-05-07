@@ -1,8 +1,8 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
 ---
-error: `realize` is a reserved keyword
+error: `reconcile` is a reserved keyword
   --> 1:5
   |
-1 | val realize = 1
+1 | val reconcile = 1
   |     ^

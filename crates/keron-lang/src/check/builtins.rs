@@ -1,7 +1,7 @@
 //! Built-in function signatures seeded into the checker's `fn_env`.
 //!
 //! Each builtin returns a resource-typed value. Resources are pure
-//! values: they don't touch disk until promoted via `realize`. The
+//! values: they don't touch disk until promoted via `reconcile`. The
 //! lowercase fn names reuse the regular call infrastructure
 //! (positional/named args, type checking) — keron treats them as
 //! ordinary functions whose definitions just happen to live outside

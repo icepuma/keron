@@ -6,7 +6,7 @@ pub mod diagnostic;
 pub mod parser;
 
 pub use ast::{
-    BinOp, CallArg, Expr, FnBody, FnDecl, Item, Literal, MapEntry, Param, Program, RealizeDecl,
+    BinOp, CallArg, Expr, FnBody, FnDecl, Item, Literal, MapEntry, Param, Program, ReconcileDecl,
     Span, Spanned, StringPart, Type, UnaryOp, ValDecl,
 };
 pub use check::check;

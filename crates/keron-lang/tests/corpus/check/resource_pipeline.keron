@@ -1,6 +1,6 @@
 # A function builds Symlinks; multiple are gathered into a List, then
-# the entire list is realized in one shot. Demonstrates that resource
-# construction is pure — no I/O until `realize`.
+# the entire list is reconciled in one shot. Demonstrates that resource
+# construction is pure — no I/O until `reconcile`.
 
 fn link(name: String): Symlink {
   symlink(from = "~/dotfiles/${name}", to = "~/.${name}")
@@ -12,4 +12,4 @@ val configs: List<Symlink> = [
   link("tmux.conf"),
 ]
 
-realize configs
+reconcile configs

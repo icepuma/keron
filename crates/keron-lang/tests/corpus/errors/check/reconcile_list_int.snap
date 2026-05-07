@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `reconcile` expects a resource or list of resources, found `List<Int>`
+  --> 1:11
+  |
+1 | reconcile [1, 2, 3]
+  |           ^^^^^^^^^^

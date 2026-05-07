@@ -27,4 +27,4 @@ fn classify(n: Int): String {
   }
 }
 
-realize shellrc
+reconcile shellrc

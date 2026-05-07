@@ -2,7 +2,7 @@
 
 mod expr;
 mod fn_decl;
-mod realize;
+mod reconcile;
 mod string;
 #[cfg(test)]
 mod tests;
@@ -19,7 +19,7 @@ use crate::{
 use self::{
     expr::expr,
     fn_decl::fn_decl,
-    realize::realize_decl,
+    reconcile::reconcile_decl,
     types::type_annotation,
     util::{Extra, ident, pad, span_to_range, spanned},
 };
@@ -58,7 +58,7 @@ fn item<'src>() -> impl Parser<'src, &'src str, Item, Extra<'src>> {
     choice((
         val_decl(e.clone()).map(Item::Val),
         fn_decl(e.clone()).map(Item::Fn),
-        realize_decl(e).map(Item::Realize),
+        reconcile_decl(e).map(Item::Reconcile),
     ))
     .padded_by(pad())
 }

@@ -3,20 +3,20 @@ source: crates/keron-lang/tests/harness/mod.rs
 ---
 Program {
     items: [
-        Realize(
-            RealizeDecl {
+        Reconcile(
+            ReconcileDecl {
                 expr: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "symlink",
-                            span: 8..15,
+                            span: 10..17,
                         },
                         args: [
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "from",
-                                        span: 16..20,
+                                        span: 18..22,
                                     },
                                 ),
                                 value: Spanned {
@@ -25,15 +25,15 @@ Program {
                                             "a",
                                         ),
                                     ),
-                                    span: 23..26,
+                                    span: 25..28,
                                 },
-                                span: 16..26,
+                                span: 18..28,
                             },
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "to",
-                                        span: 28..30,
+                                        span: 30..32,
                                     },
                                 ),
                                 value: Spanned {
@@ -42,15 +42,15 @@ Program {
                                             "b",
                                         ),
                                     ),
-                                    span: 33..36,
+                                    span: 35..38,
                                 },
-                                span: 28..36,
+                                span: 30..38,
                             },
                         ],
                     },
-                    span: 8..38,
+                    span: 10..40,
                 },
-                span: 0..38,
+                span: 0..40,
             },
         ),
     ],

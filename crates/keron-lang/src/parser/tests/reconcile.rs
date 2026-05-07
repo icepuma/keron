@@ -1,32 +1,33 @@
-//! `realize` declaration parser tests.
+//! `reconcile` declaration parser tests.
 
 use super::ok;
 use crate::{
-    ast::{Expr, Item, RealizeDecl},
+    ast::{Expr, Item, ReconcileDecl},
     parser::parse,
 };
 
-fn first_realize(src: &str) -> RealizeDecl {
+fn first_reconcile(src: &str) -> ReconcileDecl {
     let prog = ok(src);
     prog.items
         .into_iter()
         .find_map(|i| match i {
-            Item::Realize(r) => Some(r),
+            Item::Reconcile(r) => Some(r),
             _ => None,
         })
-        .expect("expected at least one realize item")
+        .expect("expected at least one reconcile item")
 }
 
 #[test]
-fn realize_call_expr_parses() {
-    let r = first_realize(r#"realize symlink(from = "a", to = "b")"#);
+fn reconcile_call_expr_parses() {
+    let r = first_reconcile(r#"reconcile symlink(from = "a", to = "b")"#);
     assert!(matches!(r.expr.node, Expr::Call { .. }));
 }
 
 #[test]
-fn realize_list_parses() {
-    let r =
-        first_realize(r#"realize [symlink(from = "a", to = "b"), symlink(from = "c", to = "d")]"#);
+fn reconcile_list_parses() {
+    let r = first_reconcile(
+        r#"reconcile [symlink(from = "a", to = "b"), symlink(from = "c", to = "d")]"#,
+    );
     let Expr::List(items) = r.expr.node else {
         panic!("expected list");
     };
@@ -34,36 +35,36 @@ fn realize_list_parses() {
 }
 
 #[test]
-fn realize_var_parses() {
-    let r = first_realize("val x: Symlink = symlink(from = \"a\", to = \"b\")\nrealize x");
+fn reconcile_var_parses() {
+    let r = first_reconcile("val x: Symlink = symlink(from = \"a\", to = \"b\")\nreconcile x");
     assert!(matches!(r.expr.node, Expr::Var(_)));
 }
 
 #[test]
-fn realize_user_fn_call_parses() {
+fn reconcile_user_fn_call_parses() {
     let src = "
         fn make(): Symlink {
             symlink(from = \"a\", to = \"b\")
         }
-        realize make()
+        reconcile make()
     ";
-    let r = first_realize(src);
+    let r = first_reconcile(src);
     assert!(matches!(r.expr.node, Expr::Call { .. }));
 }
 
 #[test]
-fn rejects_realize_without_expr() {
-    assert!(parse("realize").is_err());
+fn rejects_reconcile_without_expr() {
+    assert!(parse("reconcile").is_err());
 }
 
 #[test]
-fn rejects_val_named_realize() {
-    assert!(parse("val realize = 1").is_err());
+fn rejects_val_named_reconcile() {
+    assert!(parse("val reconcile = 1").is_err());
 }
 
 #[test]
-fn rejects_fn_named_realize() {
-    assert!(parse("fn realize(): Int { 1 }").is_err());
+fn rejects_fn_named_reconcile() {
+    assert!(parse("fn reconcile(): Int { 1 }").is_err());
 }
 
 #[test]
@@ -79,18 +80,18 @@ fn rejects_fn_named_capitalized_type() {
 }
 
 #[test]
-fn multiple_realize_decls_parse() {
+fn multiple_reconcile_decls_parse() {
     let prog = ok("
         val a: Symlink = symlink(from = \"x\", to = \"y\")
         val b: File = file(path = \"p\", content = \"c\")
-        realize a
-        realize b
+        reconcile a
+        reconcile b
     ");
     assert_eq!(prog.items.len(), 4);
-    let realize_count = prog
+    let reconcile_count = prog
         .items
         .iter()
-        .filter(|i| matches!(i, Item::Realize(_)))
+        .filter(|i| matches!(i, Item::Reconcile(_)))
         .count();
-    assert_eq!(realize_count, 2);
+    assert_eq!(reconcile_count, 2);
 }

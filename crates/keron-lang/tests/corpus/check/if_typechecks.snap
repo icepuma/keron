@@ -288,15 +288,15 @@ Program {
                 span: 402..523,
             },
         ),
-        Realize(
-            RealizeDecl {
+        Reconcile(
+            ReconcileDecl {
                 expr: Spanned {
                     node: Var(
                         "shellrc",
                     ),
-                    span: 531..538,
+                    span: 533..540,
                 },
-                span: 523..539,
+                span: 523..541,
             },
         ),
     ],

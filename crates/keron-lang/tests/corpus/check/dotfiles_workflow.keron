@@ -1,6 +1,6 @@
 # Realistic dotfile workflow: declare configs, packages-style file
 # placements, and ensure-existence directories. All values are built
-# purely first; the trailing `realize` directives are the only acts of
+# purely first; the trailing `reconcile` directives are the only acts of
 # intent.
 
 fn link(name: String): Symlink {
@@ -31,7 +31,7 @@ val gitconfig: File = file(
 
 # Order matters at apply time: directories first, then symlinks into
 # them, then the gitconfig file.
-realize home_dirs
-realize shell_links
-realize editor_links
-realize gitconfig
+reconcile home_dirs
+reconcile shell_links
+reconcile editor_links
+reconcile gitconfig

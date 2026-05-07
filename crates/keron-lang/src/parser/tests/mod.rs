@@ -7,7 +7,7 @@ mod conditional;
 mod decl;
 mod fn_decl;
 mod maps;
-mod realize;
+mod reconcile;
 mod string;
 
 use crate::{
@@ -22,7 +22,7 @@ fn ok(src: &str) -> Program {
 fn first_val(prog: &Program) -> &ValDecl {
     match prog.items.first().expect("at least one item") {
         Item::Val(v) => v,
-        Item::Fn(_) | Item::Realize(_) => panic!("expected a val item, got fn or realize"),
+        Item::Fn(_) | Item::Reconcile(_) => panic!("expected a val item, got fn or reconcile"),
     }
 }
 

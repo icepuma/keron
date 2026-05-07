@@ -1,2 +1,2 @@
 val zshrc: Symlink = symlink(from = "~/df/zshrc", to = "~/.zshrc")
-realize zshrc
+reconcile zshrc

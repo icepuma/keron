@@ -19,11 +19,11 @@ pub struct Program {
 pub enum Item {
     Val(ValDecl),
     Fn(FnDecl),
-    Realize(RealizeDecl),
+    Reconcile(ReconcileDecl),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct RealizeDecl {
+pub struct ReconcileDecl {
     pub expr: Spanned<Expr>,
     pub span: Span,
 }
@@ -200,7 +200,7 @@ pub enum Type {
     /// time: only `String`, `Int`, and `Boolean` are accepted.
     Map(Box<Self>, Box<Self>),
     /// Filesystem symlink. Constructed via the builtin `symlink(...)`
-    /// fn; only enters the apply queue via `realize`.
+    /// fn; only enters the apply queue via `reconcile`.
     Symlink,
     /// File-with-content. Constructed via the builtin `file(...)` fn.
     File,

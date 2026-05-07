@@ -10,7 +10,7 @@ pub(super) type Extra<'src> = extra::Err<Rich<'src, char>>;
 const KEYWORDS: &[&str] = &[
     "val",
     "fn",
-    "realize",
+    "reconcile",
     "if",
     "else",
     "true",

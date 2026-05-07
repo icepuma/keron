@@ -20,7 +20,7 @@ const KEYWORDS: &[&str] = &[
     // Parser-level keywords.
     "val",
     "fn",
-    "realize",
+    "reconcile",
     "true",
     "false",
     "String",
@@ -522,7 +522,7 @@ proptest! {
         );
     }
 
-    // ---------- resources & realize ----------
+    // ---------- resources & reconcile ----------
 
     #[test]
     fn random_symlink_pair_typechecks(
@@ -530,28 +530,28 @@ proptest! {
         to in "[a-zA-Z0-9 _./]{1,32}",
     ) {
         let src = format!(
-            "val s: Symlink = symlink(from = \"{from}\", to = \"{to}\")\nrealize s"
+            "val s: Symlink = symlink(from = \"{from}\", to = \"{to}\")\nreconcile s"
         );
         let prog = parse(&src).expect("parse should succeed");
         prop_assert!(check(&prog).is_ok());
     }
 
     #[test]
-    fn realize_of_int_always_errors(n in (i64::MIN + 1)..=i64::MAX) {
-        let src = format!("realize {n}");
+    fn reconcile_of_int_always_errors(n in (i64::MIN + 1)..=i64::MAX) {
+        let src = format!("reconcile {n}");
         let prog = parse(&src).expect("parse should succeed");
         let errs = check(&prog).expect_err("should fail");
         prop_assert!(
-            errs[0].message.contains("`realize` expects a resource or list of resources"),
+            errs[0].message.contains("`reconcile` expects a resource or list of resources"),
             "got: {}", errs[0].message
         );
     }
 
     #[test]
-    fn realize_of_homogeneous_symlink_list_typechecks(
+    fn reconcile_of_homogeneous_symlink_list_typechecks(
         names in prop::collection::vec("[a-zA-Z0-9_]{1,8}", 0..6),
     ) {
-        // Build a List<Symlink> via repeated calls and realize the whole list.
+        // Build a List<Symlink> via repeated calls and reconcile the whole list.
         // Length 0 stays well-typed because the explicit annotation drives
         // bidirectional inference into the empty literal.
         let body = if names.is_empty() {
@@ -564,7 +564,7 @@ proptest! {
                 .join(", ")
         };
         let src = format!(
-            "val xs: List<Symlink> = [{body}]\nrealize xs"
+            "val xs: List<Symlink> = [{body}]\nreconcile xs"
         );
         let prog = parse(&src).expect("parse should succeed");
         prop_assert!(check(&prog).is_ok());

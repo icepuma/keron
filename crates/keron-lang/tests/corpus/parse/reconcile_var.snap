@@ -63,15 +63,15 @@ Program {
                 span: 0..67,
             },
         ),
-        Realize(
-            RealizeDecl {
+        Reconcile(
+            ReconcileDecl {
                 expr: Spanned {
                     node: Var(
                         "zshrc",
                     ),
-                    span: 75..80,
+                    span: 77..82,
                 },
-                span: 67..81,
+                span: 67..83,
             },
         ),
     ],

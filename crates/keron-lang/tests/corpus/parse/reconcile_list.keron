@@ -1,4 +1,4 @@
-realize [
+reconcile [
   symlink(from = "~/df/zshrc", to = "~/.zshrc"),
   symlink(from = "~/df/vimrc", to = "~/.vimrc"),
 ]

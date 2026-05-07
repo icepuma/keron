@@ -159,10 +159,10 @@ fn if_cond_uses_unknown_var_errors() {
 }
 
 #[test]
-fn realize_if_resource_typechecks() {
+fn reconcile_if_resource_typechecks() {
     let src = r#"
         val use_zsh: Boolean = true
-        realize if use_zsh {
+        reconcile if use_zsh {
             symlink(from = "~/df/zshrc", to = "~/.zshrc")
         } else {
             symlink(from = "~/df/bashrc", to = "~/.bashrc")
@@ -172,12 +172,12 @@ fn realize_if_resource_typechecks() {
 }
 
 #[test]
-fn realize_if_int_errors() {
-    let err = check_src("realize if true { 1 } else { 2 }").expect_err("should fail");
+fn reconcile_if_int_errors() {
+    let err = check_src("reconcile if true { 1 } else { 2 }").expect_err("should fail");
     assert!(
         err[0]
             .message
-            .contains("`realize` expects a resource or list of resources")
+            .contains("`reconcile` expects a resource or list of resources")
     );
     assert!(err[0].message.contains("found `Int`"));
 }

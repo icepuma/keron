@@ -97,7 +97,7 @@ val by_name: Map<String, Int> = {"alice": 1, "bob": 2, "carol": 3}
 val codes: Map<Int, String> = {200: "ok", 404: "missing"}
 val nested_map: Map<String, List<Int>> = {"primes": [2, 3, 5, 7], "evens": [2, 4]}
 
-# --- resources & realize ---
+# --- resources & reconcile ---
 fn link(name: String): Symlink {
   symlink(from = "~/dotfiles/${name}", to = "~/.${name}")
 }
@@ -156,10 +156,10 @@ val rounded: String = if ratio < 1.5 {
   "large"
 }
 
-# `realize` is the only side-effect-bearing form; constructing the
+# `reconcile` is the only side-effect-bearing form; constructing the
 # values above does nothing on its own.
-realize zshrc
-realize gitcfg
-realize xdgcfg
-realize all_links
-realize shellrc
+reconcile zshrc
+reconcile gitcfg
+reconcile xdgcfg
+reconcile all_links
+reconcile shellrc
