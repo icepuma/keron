@@ -1,0 +1,15 @@
+[package]
+name = "keron-apply"
+description = "keron apply pipeline: plan, execute, sentinels, providers"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+keron-lang.workspace = true
+
+[lints]
+workspace = true

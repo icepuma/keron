@@ -1,0 +1,83 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "a",
+                    span: 17..18,
+                },
+                ty: Spanned {
+                    node: Int,
+                    span: 20..23,
+                },
+                value: Spanned {
+                    node: Int(
+                        1,
+                    ),
+                    span: 26..27,
+                },
+                span: 13..27,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "b",
+                    span: 32..33,
+                },
+                ty: Spanned {
+                    node: String,
+                    span: 35..41,
+                },
+                value: Spanned {
+                    node: String(
+                        "x",
+                    ),
+                    span: 44..47,
+                },
+                span: 28..47,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "c",
+                    span: 71..72,
+                },
+                ty: Spanned {
+                    node: Boolean,
+                    span: 74..81,
+                },
+                value: Spanned {
+                    node: Boolean(
+                        false,
+                    ),
+                    span: 84..89,
+                },
+                span: 67..89,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "d",
+                    span: 94..95,
+                },
+                ty: Spanned {
+                    node: Double,
+                    span: 97..103,
+                },
+                value: Spanned {
+                    node: Double(
+                        -0.5,
+                    ),
+                    span: 106..110,
+                },
+                span: 90..110,
+            },
+        ),
+    ],
+}

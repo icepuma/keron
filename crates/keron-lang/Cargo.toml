@@ -1,0 +1,26 @@
+[package]
+name = "keron-lang"
+description = "keron language: lexer, parser, types, evaluator, embedded stdlib"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+chumsky.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+libtest-mimic.workspace = true
+bolero.workspace = true
+proptest.workspace = true
+
+[[test]]
+name = "corpus"
+harness = false
+
+[lints]
+workspace = true

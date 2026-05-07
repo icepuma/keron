@@ -1,0 +1,25 @@
+# cargo-mutants config. Run via `just mutants` (requires
+# `cargo install cargo-mutants`). We mutate library source under
+# `crates/*/src/**` and rely on the unit tests + corpus + properties
+# + fuzz tests to kill mutants.
+
+# Use nextest as the test runner so error output matches CI.
+test_tool = "nextest"
+
+# Skip files where mutations are useless or noisy.
+exclude_globs = [
+    "**/tests/**",
+    "**/benches/**",
+]
+
+# Allow a generous per-mutant timeout; the parser is small but proptest
+# can run a few hundred cases per kill.
+timeout_multiplier = 5.0
+
+# Only run the fast unit + corpus + properties suites when killing
+# mutants — fuzz tests are non-deterministic and would slow the loop.
+additional_cargo_test_args = [
+    "--workspace",
+    "-E",
+    "not test(/fuzz/)",
+]

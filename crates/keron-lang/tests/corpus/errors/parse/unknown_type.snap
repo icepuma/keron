@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: found 'F' expected something else, '#', '"String"', '"Int"', '"Boolean"', or '"Double"'
+  --> 1:8
+  |
+1 | val a: Float = 1.0
+  |        ^

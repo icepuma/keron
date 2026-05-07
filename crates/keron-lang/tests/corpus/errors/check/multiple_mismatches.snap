@@ -1,0 +1,20 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: type mismatch: expected `Int`, found `String`
+  --> 1:14
+  |
+1 | val a: Int = "x"
+  |              ^^^
+
+error: type mismatch: expected `String`, found `Int`
+  --> 2:17
+  |
+2 | val b: String = 2
+  |                 ^
+
+error: type mismatch: expected `Boolean`, found `Double`
+  --> 3:18
+  |
+3 | val c: Boolean = 0.5
+  |                  ^^^

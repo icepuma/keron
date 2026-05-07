@@ -1,0 +1,4 @@
+val name: String = "keron"
+val count: Int = 3
+val ratio: Double = 0.75
+val enabled: Boolean = true

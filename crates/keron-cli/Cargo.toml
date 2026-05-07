@@ -1,0 +1,21 @@
+[package]
+name = "keron-cli"
+description = "keron CLI: orchestrates apply, check, fmt, lsp, init"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "keron"
+path = "src/main.rs"
+
+[dependencies]
+keron-lang.workspace = true
+keron-apply.workspace = true
+keron-lsp.workspace = true
+
+[lints]
+workspace = true
