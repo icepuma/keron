@@ -1,0 +1,1 @@
+val r: Int = if true { 1 } else { 2 }

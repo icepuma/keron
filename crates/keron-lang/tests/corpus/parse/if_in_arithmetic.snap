@@ -1,0 +1,79 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "r",
+                    span: 4..5,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Int,
+                        span: 7..10,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Add,
+                        lhs: Spanned {
+                            node: Literal(
+                                Int(
+                                    10,
+                                ),
+                            ),
+                            span: 13..15,
+                        },
+                        rhs: Spanned {
+                            node: Binary {
+                                op: Mul,
+                                lhs: Spanned {
+                                    node: If {
+                                        cond: Spanned {
+                                            node: Literal(
+                                                Boolean(
+                                                    true,
+                                                ),
+                                            ),
+                                            span: 21..25,
+                                        },
+                                        then_branch: Spanned {
+                                            node: Literal(
+                                                Int(
+                                                    1,
+                                                ),
+                                            ),
+                                            span: 28..29,
+                                        },
+                                        else_branch: Spanned {
+                                            node: Literal(
+                                                Int(
+                                                    2,
+                                                ),
+                                            ),
+                                            span: 39..40,
+                                        },
+                                    },
+                                    span: 18..43,
+                                },
+                                rhs: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            3,
+                                        ),
+                                    ),
+                                    span: 45..46,
+                                },
+                            },
+                            span: 18..46,
+                        },
+                    },
+                    span: 13..46,
+                },
+                span: 0..47,
+            },
+        ),
+    ],
+}

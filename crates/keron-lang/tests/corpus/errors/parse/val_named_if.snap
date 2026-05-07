@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `if` is a reserved keyword
+  --> 1:5
+  |
+1 | val if = 1
+  |     ^

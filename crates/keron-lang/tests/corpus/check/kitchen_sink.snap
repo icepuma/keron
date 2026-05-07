@@ -2661,9 +2661,165 @@ Program {
                             },
                         ],
                     ),
-                    span: 3225..3375,
+                    span: 3225..3291,
                 },
-                span: 3194..3375,
+                span: 3194..3291,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "use_zsh",
+                    span: 3295..3302,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 3304..3311,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        Boolean(
+                            true,
+                        ),
+                    ),
+                    span: 3314..3318,
+                },
+                span: 3291..3425,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "shellrc",
+                    span: 3429..3436,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Symlink,
+                        span: 3438..3445,
+                    },
+                ),
+                value: Spanned {
+                    node: If {
+                        cond: Spanned {
+                            node: Var(
+                                "use_zsh",
+                            ),
+                            span: 3451..3458,
+                        },
+                        then_branch: Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "link",
+                                    span: 3463..3467,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: None,
+                                        value: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "zshrc",
+                                                ),
+                                            ),
+                                            span: 3468..3475,
+                                        },
+                                        span: 3468..3475,
+                                    },
+                                ],
+                            },
+                            span: 3463..3477,
+                        },
+                        else_branch: Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "link",
+                                    span: 3488..3492,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: None,
+                                        value: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "bashrc",
+                                                ),
+                                            ),
+                                            span: 3493..3501,
+                                        },
+                                        span: 3493..3501,
+                                    },
+                                ],
+                            },
+                            span: 3488..3503,
+                        },
+                    },
+                    span: 3448..3568,
+                },
+                span: 3425..3568,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "ratio_label",
+                    span: 3572..3583,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 3585..3591,
+                    },
+                ),
+                value: Spanned {
+                    node: If {
+                        cond: Spanned {
+                            node: Var(
+                                "released",
+                            ),
+                            span: 3597..3605,
+                        },
+                        then_branch: Spanned {
+                            node: Literal(
+                                String(
+                                    "stable",
+                                ),
+                            ),
+                            span: 3610..3618,
+                        },
+                        else_branch: Spanned {
+                            node: If {
+                                cond: Spanned {
+                                    node: Var(
+                                        "warm",
+                                    ),
+                                    span: 3629..3633,
+                                },
+                                then_branch: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "rc",
+                                        ),
+                                    ),
+                                    span: 3638..3642,
+                                },
+                                else_branch: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "wip",
+                                        ),
+                                    ),
+                                    span: 3654..3659,
+                                },
+                            },
+                            span: 3626..3770,
+                        },
+                    },
+                    span: 3594..3770,
+                },
+                span: 3568..3770,
             },
         ),
         Realize(
@@ -2672,9 +2828,9 @@ Program {
                     node: Var(
                         "zshrc",
                     ),
-                    span: 3383..3388,
+                    span: 3778..3783,
                 },
-                span: 3375..3389,
+                span: 3770..3784,
             },
         ),
         Realize(
@@ -2683,9 +2839,9 @@ Program {
                     node: Var(
                         "gitcfg",
                     ),
-                    span: 3397..3403,
+                    span: 3792..3798,
                 },
-                span: 3389..3404,
+                span: 3784..3799,
             },
         ),
         Realize(
@@ -2694,9 +2850,9 @@ Program {
                     node: Var(
                         "xdgcfg",
                     ),
-                    span: 3412..3418,
+                    span: 3807..3813,
                 },
-                span: 3404..3419,
+                span: 3799..3814,
             },
         ),
         Realize(
@@ -2705,9 +2861,20 @@ Program {
                     node: Var(
                         "all_links",
                     ),
-                    span: 3427..3436,
+                    span: 3822..3831,
                 },
-                span: 3419..3437,
+                span: 3814..3832,
+            },
+        ),
+        Realize(
+            RealizeDecl {
+                expr: Spanned {
+                    node: Var(
+                        "shellrc",
+                    ),
+                    span: 3840..3847,
+                },
+                span: 3832..3848,
             },
         ),
     ],

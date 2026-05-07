@@ -1,0 +1,303 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "use_zsh",
+                    span: 4..11,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 13..20,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        Boolean(
+                            true,
+                        ),
+                    ),
+                    span: 23..27,
+                },
+                span: 0..102,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "shellrc",
+                    span: 106..113,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Symlink,
+                        span: 115..122,
+                    },
+                ),
+                value: Spanned {
+                    node: If {
+                        cond: Spanned {
+                            node: Var(
+                                "use_zsh",
+                            ),
+                            span: 128..135,
+                        },
+                        then_branch: Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "symlink",
+                                    span: 140..147,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: Some(
+                                            Spanned {
+                                                node: "from",
+                                                span: 148..152,
+                                            },
+                                        ),
+                                        value: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "~/df/zshrc",
+                                                ),
+                                            ),
+                                            span: 155..167,
+                                        },
+                                        span: 148..167,
+                                    },
+                                    CallArg {
+                                        name: Some(
+                                            Spanned {
+                                                node: "to",
+                                                span: 169..171,
+                                            },
+                                        ),
+                                        value: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "~/.zshrc",
+                                                ),
+                                            ),
+                                            span: 174..184,
+                                        },
+                                        span: 169..184,
+                                    },
+                                ],
+                            },
+                            span: 140..186,
+                        },
+                        else_branch: Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "symlink",
+                                    span: 197..204,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: Some(
+                                            Spanned {
+                                                node: "from",
+                                                span: 205..209,
+                                            },
+                                        ),
+                                        value: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "~/df/bashrc",
+                                                ),
+                                            ),
+                                            span: 212..225,
+                                        },
+                                        span: 205..225,
+                                    },
+                                    CallArg {
+                                        name: Some(
+                                            Spanned {
+                                                node: "to",
+                                                span: 227..229,
+                                            },
+                                        ),
+                                        value: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "~/.bashrc",
+                                                ),
+                                            ),
+                                            span: 232..243,
+                                        },
+                                        span: 227..243,
+                                    },
+                                ],
+                            },
+                            span: 197..245,
+                        },
+                    },
+                    span: 125..288,
+                },
+                span: 102..288,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "grade",
+                    span: 292..297,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 299..305,
+                    },
+                ),
+                value: Spanned {
+                    node: If {
+                        cond: Spanned {
+                            node: Literal(
+                                Boolean(
+                                    true,
+                                ),
+                            ),
+                            span: 311..315,
+                        },
+                        then_branch: Spanned {
+                            node: Literal(
+                                String(
+                                    "A",
+                                ),
+                            ),
+                            span: 320..323,
+                        },
+                        else_branch: Spanned {
+                            node: If {
+                                cond: Spanned {
+                                    node: Literal(
+                                        Boolean(
+                                            false,
+                                        ),
+                                    ),
+                                    span: 334..339,
+                                },
+                                then_branch: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "B",
+                                        ),
+                                    ),
+                                    span: 344..347,
+                                },
+                                else_branch: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "F",
+                                        ),
+                                    ),
+                                    span: 359..362,
+                                },
+                            },
+                            span: 331..402,
+                        },
+                    },
+                    span: 308..402,
+                },
+                span: 288..402,
+            },
+        ),
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "classify",
+                    span: 405..413,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "n",
+                            span: 414..415,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 417..420,
+                        },
+                        default: None,
+                        span: 414..420,
+                    },
+                ],
+                return_type: Spanned {
+                    node: String,
+                    span: 423..429,
+                },
+                body: FnBody {
+                    bindings: [],
+                    result: Spanned {
+                        node: If {
+                            cond: Spanned {
+                                node: Literal(
+                                    Boolean(
+                                        true,
+                                    ),
+                                ),
+                                span: 437..441,
+                            },
+                            then_branch: Spanned {
+                                node: Literal(
+                                    String(
+                                        "positive",
+                                    ),
+                                ),
+                                span: 448..458,
+                            },
+                            else_branch: Spanned {
+                                node: If {
+                                    cond: Spanned {
+                                        node: Literal(
+                                            Boolean(
+                                                false,
+                                            ),
+                                        ),
+                                        span: 471..476,
+                                    },
+                                    then_branch: Spanned {
+                                        node: Literal(
+                                            String(
+                                                "negative",
+                                            ),
+                                        ),
+                                        span: 483..493,
+                                    },
+                                    else_branch: Spanned {
+                                        node: Literal(
+                                            String(
+                                                "zero",
+                                            ),
+                                        ),
+                                        span: 509..515,
+                                    },
+                                },
+                                span: 468..520,
+                            },
+                        },
+                        span: 434..520,
+                    },
+                    span: 434..520,
+                },
+                span: 402..523,
+            },
+        ),
+        Realize(
+            RealizeDecl {
+                expr: Spanned {
+                    node: Var(
+                        "shellrc",
+                    ),
+                    span: 531..538,
+                },
+                span: 523..539,
+            },
+        ),
+    ],
+}

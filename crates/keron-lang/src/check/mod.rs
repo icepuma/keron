@@ -334,6 +334,16 @@ fn check_expr(
             check_expr(rhs, expected, env, fns)?;
             Ok(())
         }
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
+            check_expr(cond, &Type::Boolean, env, fns)?;
+            check_expr(then_branch, expected, env, fns)?;
+            check_expr(else_branch, expected, env, fns)?;
+            Ok(())
+        }
         _ => switch_to_synth(e, expected, env, fns),
     }
 }
@@ -392,6 +402,33 @@ fn expr_type(e: &Spanned<Expr>, env: &Env, fns: &FnEnv) -> Result<Type, Diagnost
         Expr::List(items) => list_type(e.span.clone(), items, env, fns),
         Expr::Map(entries) => map_type(e.span.clone(), entries, env, fns),
         Expr::Call { callee, args } => check_call(e.span.clone(), callee, args, env, fns),
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => if_type(cond, then_branch, else_branch, env, fns),
+    }
+}
+
+fn if_type(
+    cond: &Spanned<Expr>,
+    then_branch: &Spanned<Expr>,
+    else_branch: &Spanned<Expr>,
+    env: &Env,
+    fns: &FnEnv,
+) -> Result<Type, Diagnostic> {
+    check_expr(cond, &Type::Boolean, env, fns)?;
+    let then_ty = expr_type(then_branch, env, fns)?;
+    let else_ty = expr_type(else_branch, env, fns)?;
+    if then_ty == else_ty {
+        Ok(then_ty)
+    } else {
+        Err(Diagnostic::new(
+            else_branch.span.clone(),
+            format!(
+                "`if` branches have mismatched types: `then` is `{then_ty}`, `else` is `{else_ty}`"
+            ),
+        ))
     }
 }
 

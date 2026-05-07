@@ -111,9 +111,30 @@ val all_links: List<Symlink> = [
   link("tmux.conf"),
 ]
 
+# --- conditionals ---
+val use_zsh: Boolean = true
+
+# Pick the right shell config based on a flag. Both branches must have
+# the same type (`Symlink` here).
+val shellrc: Symlink = if use_zsh {
+  link("zshrc")
+} else {
+  link("bashrc")
+}
+
+# Chained else-if folds right; the final `else` is mandatory.
+val ratio_label: String = if released {
+  "stable"
+} else if warm {
+  "rc"
+} else {
+  "wip"
+}
+
 # `realize` is the only side-effect-bearing form; constructing the
 # values above does nothing on its own.
 realize zshrc
 realize gitcfg
 realize xdgcfg
 realize all_links
+realize shellrc

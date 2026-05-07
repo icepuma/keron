@@ -1,6 +1,7 @@
 //! Type checker unit tests, grouped by topic.
 
 mod arithmetic;
+mod conditional;
 mod fns;
 mod lists;
 mod literals;

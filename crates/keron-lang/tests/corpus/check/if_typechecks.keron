@@ -1,0 +1,30 @@
+val use_zsh: Boolean = true
+
+# Each branch produces a Symlink; the resulting if-expr is also Symlink.
+val shellrc: Symlink = if use_zsh {
+  symlink(from = "~/df/zshrc", to = "~/.zshrc")
+} else {
+  symlink(from = "~/df/bashrc", to = "~/.bashrc")
+}
+
+# Else-if chain with a fallback branch.
+val grade: String = if true {
+  "A"
+} else if false {
+  "B"
+} else {
+  "F"
+}
+
+# If-expression as a function body.
+fn classify(n: Int): String {
+  if true {
+    "positive"
+  } else if false {
+    "negative"
+  } else {
+    "zero"
+  }
+}
+
+realize shellrc

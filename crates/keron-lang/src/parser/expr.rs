@@ -33,6 +33,7 @@ pub(super) fn expr<'src>() -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<
             non_string_literal_expr(),
             list_atom(expr.clone()),
             map_atom(expr.clone()),
+            if_atom(expr.clone()),
             var_or_call(expr.clone()),
             expr.clone()
                 .delimited_by(just('(').padded_by(pad()), just(')').padded_by(pad())),
@@ -132,6 +133,40 @@ where
             node: Expr::Map(entries),
             span: span_to_range(e.span()),
         })
+}
+
+/// `if cond { a } else { b }` and `if cond { a } else if cond2 { b }
+/// else { c }` chains. Each branch block contains exactly one
+/// expression; `else` is mandatory because keron is expression-based.
+/// `else if` is parsed right-associatively by recursing into the same
+/// parser for the else branch.
+fn if_atom<'src, P>(expr: P) -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone
+where
+    P: Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone + 'src,
+{
+    let block = expr
+        .clone()
+        .delimited_by(just('{').padded_by(pad()), just('}').padded_by(pad()));
+
+    recursive(|if_chain| {
+        let else_branch = text::keyword("else")
+            .padded_by(pad())
+            .ignore_then(choice((if_chain, block.clone())));
+
+        text::keyword("if")
+            .padded_by(pad())
+            .ignore_then(expr)
+            .then(block)
+            .then(else_branch)
+            .map_with(|((cond, then_branch), else_branch), e| Spanned {
+                node: Expr::If {
+                    cond: Box::new(cond),
+                    then_branch: Box::new(then_branch),
+                    else_branch: Box::new(else_branch),
+                },
+                span: span_to_range(e.span()),
+            })
+    })
 }
 
 /// Combined Var/Call parser: a bare ident is a Var; an ident followed

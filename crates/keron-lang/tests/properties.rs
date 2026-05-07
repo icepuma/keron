@@ -111,7 +111,8 @@ fn eval_simple(e: &Expr) -> Literal {
         | Expr::List(_)
         | Expr::Map(_)
         | Expr::Var(_)
-        | Expr::Call { .. } => {
+        | Expr::Call { .. }
+        | Expr::If { .. } => {
             panic!("eval_simple only supports literals and unary")
         }
     }
@@ -434,6 +435,45 @@ proptest! {
         let src = format!("val {name}: List<{elem_ty}> = []");
         let prog = parse(&src).expect("parse should succeed");
         prop_assert!(check(&prog).is_ok());
+    }
+
+    // ---------- conditionals ----------
+
+    #[test]
+    fn if_with_random_int_branches_typechecks(
+        a in (i64::MIN + 1)..=i64::MAX,
+        b in (i64::MIN + 1)..=i64::MAX,
+        cond in any::<bool>(),
+    ) {
+        let src = format!("val r: Int = if {cond} {{ {a} }} else {{ {b} }}");
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok());
+    }
+
+    #[test]
+    fn if_with_mismatched_branch_types_always_errors(
+        n in (i64::MIN + 1)..=i64::MAX,
+        s in "[a-zA-Z0-9 ]{0,16}",
+    ) {
+        // Int then-branch, String else-branch never share a type.
+        let src = format!("val r = if true {{ {n} }} else {{ \"{s}\" }}");
+        let prog = parse(&src).expect("parse should succeed");
+        let errs = check(&prog).expect_err("should fail");
+        prop_assert!(
+            errs[0].message.contains("mismatched types"),
+            "got: {}", errs[0].message
+        );
+    }
+
+    #[test]
+    fn if_with_non_boolean_cond_always_errors(n in (i64::MIN + 1)..=i64::MAX) {
+        let src = format!("val r: Int = if {n} {{ 1 }} else {{ 2 }}");
+        let prog = parse(&src).expect("parse should succeed");
+        let errs = check(&prog).expect_err("should fail");
+        prop_assert!(
+            errs[0].message.contains("expected `Boolean`"),
+            "got: {}", errs[0].message
+        );
     }
 
     // ---------- resources & realize ----------

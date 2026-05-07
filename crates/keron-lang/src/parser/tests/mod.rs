@@ -2,6 +2,7 @@
 
 mod arithmetic;
 mod calls;
+mod conditional;
 mod decl;
 mod fn_decl;
 mod maps;

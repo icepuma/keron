@@ -11,6 +11,8 @@ const KEYWORDS: &[&str] = &[
     "val",
     "fn",
     "realize",
+    "if",
+    "else",
     "true",
     "false",
     "String",

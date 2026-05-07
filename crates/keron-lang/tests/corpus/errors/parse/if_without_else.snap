@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: found end of input expected any, '#', or '"else"'
+  --> 2:1
+  |
+2 | 
+  | ^

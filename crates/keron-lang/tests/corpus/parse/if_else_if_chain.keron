@@ -1,0 +1,9 @@
+val grade: String = if true {
+  "A"
+} else if false {
+  "B"
+} else if false {
+  "C"
+} else {
+  "F"
+}

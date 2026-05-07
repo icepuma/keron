@@ -1,0 +1,93 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "grade",
+                    span: 4..9,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 11..17,
+                    },
+                ),
+                value: Spanned {
+                    node: If {
+                        cond: Spanned {
+                            node: Literal(
+                                Boolean(
+                                    true,
+                                ),
+                            ),
+                            span: 23..27,
+                        },
+                        then_branch: Spanned {
+                            node: Literal(
+                                String(
+                                    "A",
+                                ),
+                            ),
+                            span: 32..35,
+                        },
+                        else_branch: Spanned {
+                            node: If {
+                                cond: Spanned {
+                                    node: Literal(
+                                        Boolean(
+                                            false,
+                                        ),
+                                    ),
+                                    span: 46..51,
+                                },
+                                then_branch: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "B",
+                                        ),
+                                    ),
+                                    span: 56..59,
+                                },
+                                else_branch: Spanned {
+                                    node: If {
+                                        cond: Spanned {
+                                            node: Literal(
+                                                Boolean(
+                                                    false,
+                                                ),
+                                            ),
+                                            span: 70..75,
+                                        },
+                                        then_branch: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "C",
+                                                ),
+                                            ),
+                                            span: 80..83,
+                                        },
+                                        else_branch: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "F",
+                                                ),
+                                            ),
+                                            span: 95..98,
+                                        },
+                                    },
+                                    span: 67..101,
+                                },
+                            },
+                            span: 43..101,
+                        },
+                    },
+                    span: 20..101,
+                },
+                span: 0..101,
+            },
+        ),
+    ],
+}

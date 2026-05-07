@@ -116,6 +116,14 @@ pub enum Expr {
         callee: Spanned<String>,
         args: Vec<CallArg>,
     },
+    /// `if cond then a else b`. Both branches are required (the
+    /// expression must always have a value). The `cond` must be
+    /// `Boolean`; the two branches must have the same type.
+    If {
+        cond: Box<Spanned<Self>>,
+        then_branch: Box<Spanned<Self>>,
+        else_branch: Box<Spanned<Self>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

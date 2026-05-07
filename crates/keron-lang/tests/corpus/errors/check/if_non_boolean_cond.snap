@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: type mismatch: expected `Boolean`, found `Int`
+  --> 1:17
+  |
+1 | val r: Int = if 1 { 2 } else { 3 }
+  |                 ^
