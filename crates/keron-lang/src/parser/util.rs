@@ -3,11 +3,13 @@
 
 use chumsky::prelude::*;
 
-use crate::ast::{Span, Spanned, Type};
+use crate::ast::{Span, Spanned};
 
 pub(super) type Extra<'src> = extra::Err<Rich<'src, char>>;
 
-const KEYWORDS: &[&str] = &["val", "true", "false", "String", "Int", "Boolean", "Double"];
+const KEYWORDS: &[&str] = &[
+    "val", "true", "false", "String", "Int", "Boolean", "Double", "List",
+];
 
 pub(super) fn ident<'src>() -> impl Parser<'src, &'src str, String, Extra<'src>> + Clone {
     text::ident().try_map(|s: &str, span| {
@@ -17,15 +19,6 @@ pub(super) fn ident<'src>() -> impl Parser<'src, &'src str, String, Extra<'src>>
             Ok(s.to_string())
         }
     })
-}
-
-pub(super) fn type_annotation<'src>() -> impl Parser<'src, &'src str, Type, Extra<'src>> + Clone {
-    choice((
-        text::keyword("String").to(Type::String),
-        text::keyword("Int").to(Type::Int),
-        text::keyword("Boolean").to(Type::Boolean),
-        text::keyword("Double").to(Type::Double),
-    ))
 }
 
 pub(super) fn spanned<'src, T, P>(p: P) -> impl Parser<'src, &'src str, Spanned<T>, Extra<'src>>

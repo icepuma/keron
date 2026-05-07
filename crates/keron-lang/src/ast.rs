@@ -1,6 +1,6 @@
 //! AST nodes for keron source.
 
-use core::ops::Range;
+use core::{fmt, ops::Range};
 
 pub type Span = Range<usize>;
 
@@ -47,6 +47,9 @@ pub enum Expr {
     /// Strings without interpolations are stored as `Literal::String`
     /// instead, so this variant always has at least one [`StringPart::Expr`].
     Interpolation(Vec<StringPart>),
+    /// `[e1, e2, …]`. Empty lists carry no element type and require a
+    /// `List<T>` annotation upstream to be type-checked.
+    List(Vec<Spanned<Self>>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -91,22 +94,23 @@ impl BinOp {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     String,
     Int,
     Boolean,
     Double,
+    List(Box<Self>),
 }
 
-impl Type {
-    #[must_use]
-    pub const fn name(self) -> &'static str {
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::String => "String",
-            Self::Int => "Int",
-            Self::Boolean => "Boolean",
-            Self::Double => "Double",
+            Self::String => f.write_str("String"),
+            Self::Int => f.write_str("Int"),
+            Self::Boolean => f.write_str("Boolean"),
+            Self::Double => f.write_str("Double"),
+            Self::List(inner) => write!(f, "List<{inner}>"),
         }
     }
 }

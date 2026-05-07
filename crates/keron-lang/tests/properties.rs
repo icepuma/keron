@@ -39,7 +39,7 @@ fn numeric_ty_strategy() -> impl Strategy<Value = Type> {
 /// Generate a literal source + the `Type` it will yield. Note: the type
 /// reflects the *literal* itself (always positive); a `-` prefix in
 /// `mismatched_decl_yields_one_error` does not change the type.
-fn literal_source_for(ty: Type) -> BoxedStrategy<(String, Type)> {
+fn literal_source_for(ty: &Type) -> BoxedStrategy<(String, Type)> {
     match ty {
         // i64::MIN's positive form overflows, so trim one off the bottom.
         Type::Int => ((i64::MIN + 1)..=i64::MAX)
@@ -54,6 +54,9 @@ fn literal_source_for(ty: Type) -> BoxedStrategy<(String, Type)> {
         Type::Double => (0i32..1_000_000_i32, 0u32..1_000_000_000u32)
             .prop_map(|(int, frac)| (format!("{int}.{frac:09}"), Type::Double))
             .boxed(),
+        // The property tests only use the four primitive variants;
+        // `List` is exercised via dedicated list properties below.
+        Type::List(_) => unreachable!("list types are not used in literal_source_for"),
     }
 }
 
@@ -79,7 +82,7 @@ fn eval_simple(e: &Expr) -> Literal {
             Literal::Double(f) => Literal::Double(-f),
             other => panic!("cannot negate {other:?}"),
         },
-        Expr::Binary { .. } | Expr::Interpolation(_) => {
+        Expr::Binary { .. } | Expr::Interpolation(_) | Expr::List(_) => {
             panic!("eval_simple only supports literals and unary")
         }
     }
@@ -131,7 +134,7 @@ proptest! {
     #[test]
     fn inferred_decl_always_checks_ok(
         name in ident_strategy(),
-        case in ty_strategy().prop_flat_map(literal_source_for),
+        case in ty_strategy().prop_flat_map(|ty| literal_source_for(&ty)),
     ) {
         let (lit_src, _) = case;
         let src = format!("val {name} = {lit_src}");
@@ -143,11 +146,13 @@ proptest! {
     fn matching_decl_checks_ok(
         name in ident_strategy(),
         case in ty_strategy().prop_flat_map(|ty| {
-            literal_source_for(ty).prop_map(move |(src, lit_ty)| (ty, src, lit_ty))
+            let ty_capture = ty.clone();
+            literal_source_for(&ty)
+                .prop_map(move |(src, lit_ty)| (ty_capture.clone(), src, lit_ty))
         }),
     ) {
         let (ty, lit_src, _) = case;
-        let src = format!("val {name}: {} = {lit_src}", ty.name());
+        let src = format!("val {name}: {ty} = {lit_src}");
         let prog = parse(&src).expect("parse should succeed");
         prop_assert!(check(&prog).is_ok());
     }
@@ -156,11 +161,11 @@ proptest! {
     fn mismatched_decl_yields_one_error(
         name in ident_strategy(),
         annot in ty_strategy(),
-        lit_pair in ty_strategy().prop_flat_map(literal_source_for),
+        lit_pair in ty_strategy().prop_flat_map(|ty| literal_source_for(&ty)),
     ) {
         let (lit_src, lit_ty) = lit_pair;
         prop_assume!(lit_ty != annot);
-        let src = format!("val {name}: {} = {lit_src}", annot.name());
+        let src = format!("val {name}: {annot} = {lit_src}");
         let prog = parse(&src).expect("parse should succeed");
         let errs = check(&prog).expect_err("expected mismatch");
         prop_assert_eq!(errs.len(), 1);
@@ -172,7 +177,7 @@ proptest! {
             (
                 ident_strategy(),
                 ty_strategy(),
-                ty_strategy().prop_flat_map(literal_source_for),
+                ty_strategy().prop_flat_map(|ty| literal_source_for(&ty)),
             ),
             1..6,
         ),
@@ -180,8 +185,7 @@ proptest! {
         let mut src = String::new();
         let mut expected_errs = 0usize;
         for (name, annot, (lit_src, lit_ty)) in &cases {
-            writeln!(src, "val {name}: {} = {lit_src}", annot.name())
-                .expect("write to String");
+            writeln!(src, "val {name}: {annot} = {lit_src}").expect("write to String");
             if lit_ty != annot {
                 expected_errs += 1;
             }
@@ -256,6 +260,39 @@ proptest! {
         prop_assert!(check(&prog).is_ok());
     }
 
+    // ---------- lists ----------
+
+    #[test]
+    fn homogeneous_int_list_typechecks(
+        elems in prop::collection::vec((i64::MIN + 1)..=i64::MAX, 1..8),
+    ) {
+        let body = elems
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        let src = format!("val xs: List<Int> = [{body}]");
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok());
+    }
+
+    #[test]
+    fn empty_list_without_annotation_always_errors(name in ident_strategy()) {
+        let src = format!("val {name} = []");
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_err());
+    }
+
+    #[test]
+    fn empty_list_with_list_annotation_typechecks(
+        elem_ty in ty_strategy(),
+        name in ident_strategy(),
+    ) {
+        let src = format!("val {name}: List<{elem_ty}> = []");
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok());
+    }
+
     #[test]
     fn parens_do_not_change_typing(
         ty in numeric_ty_strategy(),
@@ -268,8 +305,8 @@ proptest! {
             Type::Double => String::from(".0"),
             _ => unreachable!(),
         };
-        let plain = format!("val r: {} = {a}{lit} + {b}{lit} * {c}{lit}", ty.name());
-        let parens = format!("val r: {} = {a}{lit} + ({b}{lit} * {c}{lit})", ty.name());
+        let plain = format!("val r: {ty} = {a}{lit} + {b}{lit} * {c}{lit}");
+        let parens = format!("val r: {ty} = {a}{lit} + ({b}{lit} * {c}{lit})");
         prop_assert!(check(&parse(&plain).unwrap()).is_ok());
         prop_assert!(check(&parse(&parens).unwrap()).is_ok());
     }

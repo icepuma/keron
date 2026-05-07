@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: list element type mismatch: expected `Int`, found `String`
+  --> 1:14
+  |
+1 | val xs = [1, "two", 3]
+  |              ^^^^^

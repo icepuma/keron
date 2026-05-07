@@ -1,0 +1,5 @@
+val ints: List<Int> = [1, 2, 3]
+val inferred = [true, false, true]
+val nested: List<List<Double>> = [[1.0], [2.0, 3.0]]
+val with_exprs: List<Int> = [1 + 2, 3 * 4, -5]
+val empty: List<String> = []

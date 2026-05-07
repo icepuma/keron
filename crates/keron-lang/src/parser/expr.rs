@@ -28,9 +28,21 @@ use super::{
 
 pub(super) fn expr<'src>() -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone {
     recursive(|expr| {
+        let list = expr
+            .clone()
+            .separated_by(just(',').padded_by(pad()))
+            .allow_trailing()
+            .collect::<Vec<_>>()
+            .delimited_by(just('[').padded_by(pad()), just(']').padded_by(pad()))
+            .map_with(|items, e| Spanned {
+                node: Expr::List(items),
+                span: span_to_range(e.span()),
+            });
+
         let atom = choice((
             string_expr(expr.clone()).padded_by(pad()),
             non_string_literal_expr(),
+            list,
             expr.delimited_by(just('(').padded_by(pad()), just(')').padded_by(pad())),
         ));
 

@@ -1,0 +1,77 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "xs",
+                    span: 4..6,
+                },
+                ty: Some(
+                    Spanned {
+                        node: List(
+                            List(
+                                Int,
+                            ),
+                        ),
+                        span: 8..24,
+                    },
+                ),
+                value: Spanned {
+                    node: List(
+                        [
+                            Spanned {
+                                node: List(
+                                    [
+                                        Spanned {
+                                            node: Literal(
+                                                Int(
+                                                    1,
+                                                ),
+                                            ),
+                                            span: 28..29,
+                                        },
+                                        Spanned {
+                                            node: Literal(
+                                                Int(
+                                                    2,
+                                                ),
+                                            ),
+                                            span: 31..32,
+                                        },
+                                    ],
+                                ),
+                                span: 27..33,
+                            },
+                            Spanned {
+                                node: List(
+                                    [
+                                        Spanned {
+                                            node: Literal(
+                                                Int(
+                                                    3,
+                                                ),
+                                            ),
+                                            span: 36..37,
+                                        },
+                                    ],
+                                ),
+                                span: 35..38,
+                            },
+                            Spanned {
+                                node: List(
+                                    [],
+                                ),
+                                span: 40..42,
+                            },
+                        ],
+                    ),
+                    span: 26..44,
+                },
+                span: 0..44,
+            },
+        ),
+    ],
+}

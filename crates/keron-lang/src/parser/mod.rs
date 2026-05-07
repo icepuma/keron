@@ -4,6 +4,7 @@ mod expr;
 mod string;
 #[cfg(test)]
 mod tests;
+mod types;
 mod util;
 
 use chumsky::prelude::*;
@@ -15,7 +16,8 @@ use crate::{
 
 use self::{
     expr::expr,
-    util::{Extra, ident, pad, span_to_range, spanned, type_annotation},
+    types::type_annotation,
+    util::{Extra, ident, pad, span_to_range, spanned},
 };
 
 /// Parse keron source into a [`Program`].
