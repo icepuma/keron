@@ -1,0 +1,118 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "add",
+                    span: 3..6,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "a",
+                            span: 7..8,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 10..13,
+                        },
+                        default: None,
+                        span: 7..13,
+                    },
+                    Param {
+                        name: Spanned {
+                            node: "b",
+                            span: 15..16,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 18..21,
+                        },
+                        default: None,
+                        span: 15..21,
+                    },
+                ],
+                return_type: Spanned {
+                    node: Int,
+                    span: 24..27,
+                },
+                body: FnBody {
+                    bindings: [],
+                    result: Spanned {
+                        node: Binary {
+                            op: Add,
+                            lhs: Spanned {
+                                node: Var(
+                                    "a",
+                                ),
+                                span: 30..31,
+                            },
+                            rhs: Spanned {
+                                node: Var(
+                                    "b",
+                                ),
+                                span: 34..35,
+                            },
+                        },
+                        span: 30..35,
+                    },
+                    span: 30..36,
+                },
+                span: 0..38,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "sum",
+                    span: 42..45,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Int,
+                        span: 47..50,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "add",
+                            span: 53..56,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            1,
+                                        ),
+                                    ),
+                                    span: 57..58,
+                                },
+                                span: 57..58,
+                            },
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            2,
+                                        ),
+                                    ),
+                                    span: 60..61,
+                                },
+                                span: 60..61,
+                            },
+                        ],
+                    },
+                    span: 53..63,
+                },
+                span: 38..63,
+            },
+        ),
+    ],
+}

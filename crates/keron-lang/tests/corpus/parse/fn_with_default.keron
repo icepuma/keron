@@ -1,0 +1,3 @@
+fn pad(s: String, n: Int = 2): String {
+  s
+}

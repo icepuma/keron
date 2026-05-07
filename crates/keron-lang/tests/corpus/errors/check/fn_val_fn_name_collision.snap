@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `foo` is already defined
+  --> 3:4
+  |
+3 | fn foo(): Int {
+  |    ^^^

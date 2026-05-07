@@ -1,0 +1,5 @@
+fn area(w: Int, h: Int): Int {
+  val base = w * h
+  val perim = 2 * (w + h)
+  base + perim
+}

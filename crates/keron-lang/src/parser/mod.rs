@@ -1,6 +1,7 @@
 //! chumsky-based parser for keron source.
 
 mod expr;
+mod fn_decl;
 mod string;
 #[cfg(test)]
 mod tests;
@@ -10,12 +11,13 @@ mod util;
 use chumsky::prelude::*;
 
 use crate::{
-    ast::{Item, Program, ValDecl},
+    ast::{Expr, Item, Program, Spanned, ValDecl},
     diagnostic::Diagnostic,
 };
 
 use self::{
     expr::expr,
+    fn_decl::fn_decl,
     types::type_annotation,
     util::{Extra, ident, pad, span_to_range, spanned},
 };
@@ -50,10 +52,16 @@ fn program<'src>() -> impl Parser<'src, &'src str, Program, Extra<'src>> {
 }
 
 fn item<'src>() -> impl Parser<'src, &'src str, Item, Extra<'src>> {
-    val_decl().map(Item::Val).padded_by(pad())
+    let e = expr();
+    choice((val_decl(e.clone()).map(Item::Val), fn_decl(e).map(Item::Fn))).padded_by(pad())
 }
 
-fn val_decl<'src>() -> impl Parser<'src, &'src str, ValDecl, Extra<'src>> {
+pub(super) fn val_decl<'src, P>(
+    expr: P,
+) -> impl Parser<'src, &'src str, ValDecl, Extra<'src>> + Clone
+where
+    P: Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone + 'src,
+{
     let kw_val = text::keyword("val").padded_by(pad());
     let colon = just(':').padded_by(pad());
     let eq = just('=').padded_by(pad());
@@ -63,7 +71,7 @@ fn val_decl<'src>() -> impl Parser<'src, &'src str, ValDecl, Extra<'src>> {
         .ignore_then(spanned(ident()))
         .then(annotation)
         .then_ignore(eq)
-        .then(expr())
+        .then(expr)
         .map_with(|((name, ty), value), e| ValDecl {
             name,
             ty,

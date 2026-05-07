@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: required parameters must come before defaulted parameters
+  --> 1:18
+  |
+1 | fn f(a: Int = 0, b: Int): Int {
+  |                  ^^^^^^

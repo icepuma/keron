@@ -1,0 +1,2 @@
+fn rgb(r: Int, g: Int = 0, b: Int = 0): Int { r + g + b }
+val color: Int = rgb(255, b = 128)

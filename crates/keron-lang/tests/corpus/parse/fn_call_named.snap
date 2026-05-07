@@ -1,0 +1,128 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "point",
+                    span: 3..8,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "x",
+                            span: 9..10,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 12..15,
+                        },
+                        default: None,
+                        span: 9..15,
+                    },
+                    Param {
+                        name: Spanned {
+                            node: "y",
+                            span: 17..18,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 20..23,
+                        },
+                        default: None,
+                        span: 17..23,
+                    },
+                ],
+                return_type: Spanned {
+                    node: Int,
+                    span: 26..29,
+                },
+                body: FnBody {
+                    bindings: [],
+                    result: Spanned {
+                        node: Binary {
+                            op: Add,
+                            lhs: Spanned {
+                                node: Var(
+                                    "x",
+                                ),
+                                span: 32..33,
+                            },
+                            rhs: Spanned {
+                                node: Var(
+                                    "y",
+                                ),
+                                span: 36..37,
+                            },
+                        },
+                        span: 32..37,
+                    },
+                    span: 32..38,
+                },
+                span: 0..40,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "p",
+                    span: 44..45,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Int,
+                        span: 47..50,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "point",
+                            span: 53..58,
+                        },
+                        args: [
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "x",
+                                        span: 59..60,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            3,
+                                        ),
+                                    ),
+                                    span: 63..64,
+                                },
+                                span: 59..64,
+                            },
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "y",
+                                        span: 66..67,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            4,
+                                        ),
+                                    ),
+                                    span: 70..71,
+                                },
+                                span: 66..71,
+                            },
+                        ],
+                    },
+                    span: 53..73,
+                },
+                span: 40..73,
+            },
+        ),
+    ],
+}

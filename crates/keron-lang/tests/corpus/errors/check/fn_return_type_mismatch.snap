@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: type mismatch: expected `Int`, found `String`
+  --> 2:3
+  |
+2 |   "not an int"
+  |   ^^^^^^^^^^^^

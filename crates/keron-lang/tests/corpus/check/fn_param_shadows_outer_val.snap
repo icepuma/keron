@@ -1,0 +1,126 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "n",
+                    span: 4..5,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Int,
+                        span: 7..10,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        Int(
+                            1,
+                        ),
+                    ),
+                    span: 13..14,
+                },
+                span: 0..16,
+            },
+        ),
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "show",
+                    span: 19..23,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "n",
+                            span: 24..25,
+                        },
+                        ty: Spanned {
+                            node: String,
+                            span: 27..33,
+                        },
+                        default: None,
+                        span: 24..33,
+                    },
+                ],
+                return_type: Spanned {
+                    node: String,
+                    span: 36..42,
+                },
+                body: FnBody {
+                    bindings: [],
+                    result: Spanned {
+                        node: Var(
+                            "n",
+                        ),
+                        span: 47..48,
+                    },
+                    span: 47..49,
+                },
+                span: 16..52,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "outer",
+                    span: 56..61,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Int,
+                        span: 63..66,
+                    },
+                ),
+                value: Spanned {
+                    node: Var(
+                        "n",
+                    ),
+                    span: 69..70,
+                },
+                span: 52..71,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "inner",
+                    span: 75..80,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 82..88,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "show",
+                            span: 91..95,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "hello",
+                                        ),
+                                    ),
+                                    span: 96..103,
+                                },
+                                span: 96..103,
+                            },
+                        ],
+                    },
+                    span: 91..105,
+                },
+                span: 71..105,
+            },
+        ),
+    ],
+}

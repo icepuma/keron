@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: unknown variable `later`
+  --> 2:3
+  |
+2 |   later + 1
+  |   ^^^^^

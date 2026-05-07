@@ -1,0 +1,2 @@
+fn f(a: Int, b: Int): Int { a + b }
+val x: Int = f(a = 1, 2)

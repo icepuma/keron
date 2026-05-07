@@ -1,0 +1,14 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: unknown variable `b`
+  --> 2:11
+  |
+2 |   val a = b + 1
+  |           ^
+
+error: unknown variable `a`
+  --> 4:3
+  |
+4 |   a
+  |   ^

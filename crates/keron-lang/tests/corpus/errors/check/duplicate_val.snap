@@ -1,7 +1,7 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
 ---
-error: `name` is already defined in this scope
+error: `name` is already defined
   --> 2:5
   |
 2 | val name = "other"

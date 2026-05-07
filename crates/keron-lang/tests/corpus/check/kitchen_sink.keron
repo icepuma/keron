@@ -68,3 +68,25 @@ val powers = [2 ** 2, 2 ** 4, 2 ** 8]
 val full_version: String = "${version_major}.${version_minor}"
 val build_id: Int = version_major * 1000 + version_minor * 10 + 7
 val summary: String = app_name + " v" + full_version + " (build ${build_id})"
+
+# --- user-defined functions ---
+fn double(n: Int): Int {
+  n * 2
+}
+
+fn rgb(r: Int, g: Int = 0, b: Int = 0): Int {
+  r + g + b
+}
+
+# Mutual recursion is supported (signatures are hoisted).
+fn even(n: Int): Boolean {
+  odd(n - 1)
+}
+
+fn odd(n: Int): Boolean {
+  even(n - 1)
+}
+
+val cube_8: Int = double(double(2))
+val color: Int = rgb(255, b = 128)
+val parity: Boolean = even(4)

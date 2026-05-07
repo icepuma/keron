@@ -1,0 +1,10 @@
+fn even(n: Int): Boolean {
+  odd(n - 1)
+}
+
+fn odd(n: Int): Boolean {
+  even(n - 1)
+}
+
+val a: Boolean = even(4)
+val b: Boolean = odd(5)

@@ -19,7 +19,7 @@
 
 use chumsky::prelude::*;
 
-use crate::ast::{BinOp, Expr, Literal, Spanned, UnaryOp};
+use crate::ast::{BinOp, CallArg, Expr, Literal, Spanned, UnaryOp};
 
 use super::{
     string::string_expr,
@@ -28,30 +28,13 @@ use super::{
 
 pub(super) fn expr<'src>() -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone {
     recursive(|expr| {
-        let list = expr
-            .clone()
-            .separated_by(just(',').padded_by(pad()))
-            .allow_trailing()
-            .collect::<Vec<_>>()
-            .delimited_by(just('[').padded_by(pad()), just(']').padded_by(pad()))
-            .map_with(|items, e| Spanned {
-                node: Expr::List(items),
-                span: span_to_range(e.span()),
-            });
-
-        let var = ident()
-            .map_with(|name, e| Spanned {
-                node: Expr::Var(name),
-                span: span_to_range(e.span()),
-            })
-            .padded_by(pad());
-
         let atom = choice((
             string_expr(expr.clone()).padded_by(pad()),
             non_string_literal_expr(),
-            list,
-            var,
-            expr.delimited_by(just('(').padded_by(pad()), just(')').padded_by(pad())),
+            list_atom(expr.clone()),
+            var_or_call(expr.clone()),
+            expr.clone()
+                .delimited_by(just('(').padded_by(pad()), just(')').padded_by(pad())),
         ));
 
         // unary and power are mutually recursive: unary's RHS recurses on
@@ -102,6 +85,91 @@ pub(super) fn expr<'src>() -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<
             .then(add_op.then(multiplicative).repeated().collect::<Vec<_>>())
             .map(|(lhs, ops)| ops.into_iter().fold(lhs, fold_left))
     })
+}
+
+fn spanned_ident<'src>() -> impl Parser<'src, &'src str, Spanned<String>, Extra<'src>> + Clone {
+    ident().map_with(|name, e| Spanned {
+        node: name,
+        span: span_to_range(e.span()),
+    })
+}
+
+fn list_atom<'src, P>(expr: P) -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone
+where
+    P: Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone + 'src,
+{
+    expr.separated_by(just(',').padded_by(pad()))
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .delimited_by(just('[').padded_by(pad()), just(']').padded_by(pad()))
+        .map_with(|items, e| Spanned {
+            node: Expr::List(items),
+            span: span_to_range(e.span()),
+        })
+}
+
+/// Combined Var/Call parser: a bare ident is a Var; an ident followed
+/// by `(args)` is a Call. Sharing one parser avoids the consume-then-
+/// fail problem when `(` doesn't follow.
+fn var_or_call<'src, P>(expr: P) -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone
+where
+    P: Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone + 'src,
+{
+    spanned_ident()
+        .then(arg_list(expr).or_not())
+        .map_with(|(callee, maybe_args), e| {
+            let span = span_to_range(e.span());
+            let node = match maybe_args {
+                Some(args) => Expr::Call { callee, args },
+                None => Expr::Var(callee.node),
+            };
+            Spanned { node, span }
+        })
+        .padded_by(pad())
+}
+
+fn arg_list<'src, P>(expr: P) -> impl Parser<'src, &'src str, Vec<CallArg>, Extra<'src>> + Clone
+where
+    P: Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone + 'src,
+{
+    call_arg(expr)
+        .separated_by(just(',').padded_by(pad()))
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .delimited_by(just('(').padded_by(pad()), just(')').padded_by(pad()))
+}
+
+fn call_arg<'src, P>(expr: P) -> impl Parser<'src, &'src str, CallArg, Extra<'src>> + Clone
+where
+    P: Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone + 'src,
+{
+    expr.clone()
+        .then(just('=').padded_by(pad()).ignore_then(expr).or_not())
+        .try_map(|(first, second), span| {
+            if let Some(value) = second {
+                let Expr::Var(name) = first.node else {
+                    return Err(Rich::custom(
+                        span,
+                        "named-argument LHS must be an identifier",
+                    ));
+                };
+                Ok(CallArg {
+                    name: Some(Spanned {
+                        node: name,
+                        span: first.span,
+                    }),
+                    value,
+                    span: span.start()..span.end(),
+                })
+            } else {
+                let arg_span = first.span.clone();
+                Ok(CallArg {
+                    name: None,
+                    value: first,
+                    span: arg_span,
+                })
+            }
+        })
 }
 
 fn non_string_literal_expr<'src>()

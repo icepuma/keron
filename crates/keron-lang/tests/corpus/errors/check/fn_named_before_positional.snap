@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: positional arguments must come before named arguments
+  --> 2:23
+  |
+2 | val x: Int = f(a = 1, 2)
+  |                       ^

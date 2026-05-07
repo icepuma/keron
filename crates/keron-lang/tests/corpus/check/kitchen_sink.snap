@@ -1644,7 +1644,439 @@ Program {
                     },
                     span: 2205..2260,
                 },
-                span: 2183..2261,
+                span: 2183..2295,
+            },
+        ),
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "double",
+                    span: 2298..2304,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "n",
+                            span: 2305..2306,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 2308..2311,
+                        },
+                        default: None,
+                        span: 2305..2311,
+                    },
+                ],
+                return_type: Spanned {
+                    node: Int,
+                    span: 2314..2317,
+                },
+                body: FnBody {
+                    bindings: [],
+                    result: Spanned {
+                        node: Binary {
+                            op: Mul,
+                            lhs: Spanned {
+                                node: Var(
+                                    "n",
+                                ),
+                                span: 2322..2323,
+                            },
+                            rhs: Spanned {
+                                node: Literal(
+                                    Int(
+                                        2,
+                                    ),
+                                ),
+                                span: 2326..2327,
+                            },
+                        },
+                        span: 2322..2327,
+                    },
+                    span: 2322..2328,
+                },
+                span: 2295..2331,
+            },
+        ),
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "rgb",
+                    span: 2334..2337,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "r",
+                            span: 2338..2339,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 2341..2344,
+                        },
+                        default: None,
+                        span: 2338..2344,
+                    },
+                    Param {
+                        name: Spanned {
+                            node: "g",
+                            span: 2346..2347,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 2349..2352,
+                        },
+                        default: Some(
+                            Spanned {
+                                node: Literal(
+                                    Int(
+                                        0,
+                                    ),
+                                ),
+                                span: 2355..2356,
+                            },
+                        ),
+                        span: 2346..2356,
+                    },
+                    Param {
+                        name: Spanned {
+                            node: "b",
+                            span: 2358..2359,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 2361..2364,
+                        },
+                        default: Some(
+                            Spanned {
+                                node: Literal(
+                                    Int(
+                                        0,
+                                    ),
+                                ),
+                                span: 2367..2368,
+                            },
+                        ),
+                        span: 2358..2368,
+                    },
+                ],
+                return_type: Spanned {
+                    node: Int,
+                    span: 2371..2374,
+                },
+                body: FnBody {
+                    bindings: [],
+                    result: Spanned {
+                        node: Binary {
+                            op: Add,
+                            lhs: Spanned {
+                                node: Binary {
+                                    op: Add,
+                                    lhs: Spanned {
+                                        node: Var(
+                                            "r",
+                                        ),
+                                        span: 2379..2380,
+                                    },
+                                    rhs: Spanned {
+                                        node: Var(
+                                            "g",
+                                        ),
+                                        span: 2383..2384,
+                                    },
+                                },
+                                span: 2379..2384,
+                            },
+                            rhs: Spanned {
+                                node: Var(
+                                    "b",
+                                ),
+                                span: 2387..2388,
+                            },
+                        },
+                        span: 2379..2388,
+                    },
+                    span: 2379..2389,
+                },
+                span: 2331..2450,
+            },
+        ),
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "even",
+                    span: 2453..2457,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "n",
+                            span: 2458..2459,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 2461..2464,
+                        },
+                        default: None,
+                        span: 2458..2464,
+                    },
+                ],
+                return_type: Spanned {
+                    node: Boolean,
+                    span: 2467..2474,
+                },
+                body: FnBody {
+                    bindings: [],
+                    result: Spanned {
+                        node: Call {
+                            callee: Spanned {
+                                node: "odd",
+                                span: 2479..2482,
+                            },
+                            args: [
+                                CallArg {
+                                    name: None,
+                                    value: Spanned {
+                                        node: Binary {
+                                            op: Sub,
+                                            lhs: Spanned {
+                                                node: Var(
+                                                    "n",
+                                                ),
+                                                span: 2483..2484,
+                                            },
+                                            rhs: Spanned {
+                                                node: Literal(
+                                                    Int(
+                                                        1,
+                                                    ),
+                                                ),
+                                                span: 2487..2488,
+                                            },
+                                        },
+                                        span: 2483..2488,
+                                    },
+                                    span: 2483..2488,
+                                },
+                            ],
+                        },
+                        span: 2479..2490,
+                    },
+                    span: 2479..2490,
+                },
+                span: 2450..2493,
+            },
+        ),
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "odd",
+                    span: 2496..2499,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "n",
+                            span: 2500..2501,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 2503..2506,
+                        },
+                        default: None,
+                        span: 2500..2506,
+                    },
+                ],
+                return_type: Spanned {
+                    node: Boolean,
+                    span: 2509..2516,
+                },
+                body: FnBody {
+                    bindings: [],
+                    result: Spanned {
+                        node: Call {
+                            callee: Spanned {
+                                node: "even",
+                                span: 2521..2525,
+                            },
+                            args: [
+                                CallArg {
+                                    name: None,
+                                    value: Spanned {
+                                        node: Binary {
+                                            op: Sub,
+                                            lhs: Spanned {
+                                                node: Var(
+                                                    "n",
+                                                ),
+                                                span: 2526..2527,
+                                            },
+                                            rhs: Spanned {
+                                                node: Literal(
+                                                    Int(
+                                                        1,
+                                                    ),
+                                                ),
+                                                span: 2530..2531,
+                                            },
+                                        },
+                                        span: 2526..2531,
+                                    },
+                                    span: 2526..2531,
+                                },
+                            ],
+                        },
+                        span: 2521..2533,
+                    },
+                    span: 2521..2533,
+                },
+                span: 2493..2536,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "cube_8",
+                    span: 2540..2546,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Int,
+                        span: 2548..2551,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "double",
+                            span: 2554..2560,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Call {
+                                        callee: Spanned {
+                                            node: "double",
+                                            span: 2561..2567,
+                                        },
+                                        args: [
+                                            CallArg {
+                                                name: None,
+                                                value: Spanned {
+                                                    node: Literal(
+                                                        Int(
+                                                            2,
+                                                        ),
+                                                    ),
+                                                    span: 2568..2569,
+                                                },
+                                                span: 2568..2569,
+                                            },
+                                        ],
+                                    },
+                                    span: 2561..2570,
+                                },
+                                span: 2561..2570,
+                            },
+                        ],
+                    },
+                    span: 2554..2572,
+                },
+                span: 2536..2572,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "color",
+                    span: 2576..2581,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Int,
+                        span: 2583..2586,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "rgb",
+                            span: 2589..2592,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            255,
+                                        ),
+                                    ),
+                                    span: 2593..2596,
+                                },
+                                span: 2593..2596,
+                            },
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "b",
+                                        span: 2598..2599,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            128,
+                                        ),
+                                    ),
+                                    span: 2602..2605,
+                                },
+                                span: 2598..2605,
+                            },
+                        ],
+                    },
+                    span: 2589..2607,
+                },
+                span: 2572..2607,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "parity",
+                    span: 2611..2617,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 2619..2626,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "even",
+                            span: 2629..2633,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            4,
+                                        ),
+                                    ),
+                                    span: 2634..2635,
+                                },
+                                span: 2634..2635,
+                            },
+                        ],
+                    },
+                    span: 2629..2637,
+                },
+                span: 2607..2637,
             },
         ),
     ],

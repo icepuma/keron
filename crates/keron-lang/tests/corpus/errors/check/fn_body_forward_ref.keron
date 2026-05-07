@@ -1,0 +1,5 @@
+fn f(): Int {
+  val a = b + 1
+  val b = 2
+  a
+}

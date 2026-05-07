@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: duplicate parameter `a`
+  --> 1:14
+  |
+1 | fn f(a: Int, a: Int): Int {
+  |              ^

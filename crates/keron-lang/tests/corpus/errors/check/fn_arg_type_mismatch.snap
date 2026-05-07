@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: type mismatch: expected `Int`, found `String`
+  --> 2:21
+  |
+2 | val x: Int = double("hello")
+  |                     ^^^^^^^

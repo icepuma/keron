@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: named-argument LHS must be an identifier
+  --> 2:16
+  |
+2 | val x: Int = f(1 + 2 = 3)
+  |                ^

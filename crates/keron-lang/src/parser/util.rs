@@ -8,7 +8,7 @@ use crate::ast::{Span, Spanned};
 pub(super) type Extra<'src> = extra::Err<Rich<'src, char>>;
 
 const KEYWORDS: &[&str] = &[
-    "val", "true", "false", "String", "Int", "Boolean", "Double", "List",
+    "val", "fn", "true", "false", "String", "Int", "Boolean", "Double", "List",
 ];
 
 pub(super) fn ident<'src>() -> impl Parser<'src, &'src str, String, Extra<'src>> + Clone {
@@ -21,9 +21,11 @@ pub(super) fn ident<'src>() -> impl Parser<'src, &'src str, String, Extra<'src>>
     })
 }
 
-pub(super) fn spanned<'src, T, P>(p: P) -> impl Parser<'src, &'src str, Spanned<T>, Extra<'src>>
+pub(super) fn spanned<'src, T, P>(
+    p: P,
+) -> impl Parser<'src, &'src str, Spanned<T>, Extra<'src>> + Clone
 where
-    P: Parser<'src, &'src str, T, Extra<'src>>,
+    P: Parser<'src, &'src str, T, Extra<'src>> + Clone,
 {
     p.map_with(|node, e| Spanned {
         node,

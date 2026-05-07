@@ -1,0 +1,2 @@
+fn point(x: Int, y: Int): Int { x + y }
+val p: Int = point(x = 3, y = 4)

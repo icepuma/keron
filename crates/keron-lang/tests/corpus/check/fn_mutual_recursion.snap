@@ -1,0 +1,215 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "even",
+                    span: 3..7,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "n",
+                            span: 8..9,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 11..14,
+                        },
+                        default: None,
+                        span: 8..14,
+                    },
+                ],
+                return_type: Spanned {
+                    node: Boolean,
+                    span: 17..24,
+                },
+                body: FnBody {
+                    bindings: [],
+                    result: Spanned {
+                        node: Call {
+                            callee: Spanned {
+                                node: "odd",
+                                span: 29..32,
+                            },
+                            args: [
+                                CallArg {
+                                    name: None,
+                                    value: Spanned {
+                                        node: Binary {
+                                            op: Sub,
+                                            lhs: Spanned {
+                                                node: Var(
+                                                    "n",
+                                                ),
+                                                span: 33..34,
+                                            },
+                                            rhs: Spanned {
+                                                node: Literal(
+                                                    Int(
+                                                        1,
+                                                    ),
+                                                ),
+                                                span: 37..38,
+                                            },
+                                        },
+                                        span: 33..38,
+                                    },
+                                    span: 33..38,
+                                },
+                            ],
+                        },
+                        span: 29..40,
+                    },
+                    span: 29..40,
+                },
+                span: 0..43,
+            },
+        ),
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "odd",
+                    span: 46..49,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "n",
+                            span: 50..51,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 53..56,
+                        },
+                        default: None,
+                        span: 50..56,
+                    },
+                ],
+                return_type: Spanned {
+                    node: Boolean,
+                    span: 59..66,
+                },
+                body: FnBody {
+                    bindings: [],
+                    result: Spanned {
+                        node: Call {
+                            callee: Spanned {
+                                node: "even",
+                                span: 71..75,
+                            },
+                            args: [
+                                CallArg {
+                                    name: None,
+                                    value: Spanned {
+                                        node: Binary {
+                                            op: Sub,
+                                            lhs: Spanned {
+                                                node: Var(
+                                                    "n",
+                                                ),
+                                                span: 76..77,
+                                            },
+                                            rhs: Spanned {
+                                                node: Literal(
+                                                    Int(
+                                                        1,
+                                                    ),
+                                                ),
+                                                span: 80..81,
+                                            },
+                                        },
+                                        span: 76..81,
+                                    },
+                                    span: 76..81,
+                                },
+                            ],
+                        },
+                        span: 71..83,
+                    },
+                    span: 71..83,
+                },
+                span: 43..86,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "a",
+                    span: 90..91,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 93..100,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "even",
+                            span: 103..107,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            4,
+                                        ),
+                                    ),
+                                    span: 108..109,
+                                },
+                                span: 108..109,
+                            },
+                        ],
+                    },
+                    span: 103..111,
+                },
+                span: 86..111,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "b",
+                    span: 115..116,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 118..125,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "odd",
+                            span: 128..131,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            5,
+                                        ),
+                                    ),
+                                    span: 132..133,
+                                },
+                                span: 132..133,
+                            },
+                        ],
+                    },
+                    span: 128..135,
+                },
+                span: 111..135,
+            },
+        ),
+    ],
+}

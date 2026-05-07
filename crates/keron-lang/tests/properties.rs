@@ -82,7 +82,11 @@ fn eval_simple(e: &Expr) -> Literal {
             Literal::Double(f) => Literal::Double(-f),
             other => panic!("cannot negate {other:?}"),
         },
-        Expr::Binary { .. } | Expr::Interpolation(_) | Expr::List(_) | Expr::Var(_) => {
+        Expr::Binary { .. }
+        | Expr::Interpolation(_)
+        | Expr::List(_)
+        | Expr::Var(_)
+        | Expr::Call { .. } => {
             panic!("eval_simple only supports literals and unary")
         }
     }
@@ -319,6 +323,37 @@ proptest! {
         let src = format!("val {a} = {n}\nval {b}: Int = {a}");
         let prog = parse(&src).expect("parse should succeed");
         prop_assert!(check(&prog).is_ok());
+    }
+
+    #[test]
+    fn random_int_args_call_typechecks(
+        a in (i64::MIN + 1)..=i64::MAX,
+        b in (i64::MIN + 1)..=i64::MAX,
+    ) {
+        let src = format!("fn add(x: Int, y: Int): Int {{ x + y }}\nval r: Int = add({a}, {b})");
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok());
+    }
+
+    #[test]
+    fn default_omitted_typechecks_for_random_ints(n in (i64::MIN + 1)..=i64::MAX) {
+        let src = format!(
+            "fn pad(value: Int, slack: Int = 5): Int {{ value + slack }}\nval r: Int = pad({n})"
+        );
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok());
+    }
+
+    #[test]
+    fn named_args_in_any_order_typecheck(
+        a in (i64::MIN + 1)..=i64::MAX,
+        b in (i64::MIN + 1)..=i64::MAX,
+    ) {
+        // a=A,b=B and b=B,a=A produce the same typecheck outcome.
+        let s1 = format!("fn f(a: Int, b: Int): Int {{ a + b }}\nval r: Int = f(a = {a}, b = {b})");
+        let s2 = format!("fn f(a: Int, b: Int): Int {{ a + b }}\nval r: Int = f(b = {b}, a = {a})");
+        prop_assert!(check(&parse(&s1).unwrap()).is_ok());
+        prop_assert!(check(&parse(&s2).unwrap()).is_ok());
     }
 
     #[test]

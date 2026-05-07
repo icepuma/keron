@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `x` is already defined as a parameter in this scope
+  --> 2:7
+  |
+2 |   val x = 2
+  |       ^

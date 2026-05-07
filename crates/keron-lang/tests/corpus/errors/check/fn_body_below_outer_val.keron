@@ -1,0 +1,5 @@
+fn f(): Int {
+  later + 1
+}
+
+val later: Int = 10

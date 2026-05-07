@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `n` is already defined as a outer `val` in this scope
+  --> 4:7
+  |
+4 |   val n = 2
+  |       ^

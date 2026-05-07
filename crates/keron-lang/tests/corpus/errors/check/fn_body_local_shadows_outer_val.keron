@@ -1,0 +1,6 @@
+val n: Int = 1
+
+fn f(): Int {
+  val n = 2
+  n
+}

@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: unknown function `nope`
+  --> 1:14
+  |
+1 | val x: Int = nope(1, 2)
+  |              ^^^^

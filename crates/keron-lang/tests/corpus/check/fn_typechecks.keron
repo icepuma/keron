@@ -1,0 +1,21 @@
+fn double(n: Int): Int {
+  n * 2
+}
+
+fn add(a: Int, b: Int): Int {
+  a + b
+}
+
+fn sum_squares(n: Int): Int {
+  val sq = n * n
+  sq + sq
+}
+
+fn loop_(n: Int): Int {
+  loop_(n - 1)
+}
+
+val a: Int = double(21)
+val b: Int = add(1, 2)
+val c: Int = sum_squares(5)
+val d: Int = double(double(double(1)))

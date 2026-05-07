@@ -1,0 +1,65 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "pad",
+                    span: 3..6,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "s",
+                            span: 7..8,
+                        },
+                        ty: Spanned {
+                            node: String,
+                            span: 10..16,
+                        },
+                        default: None,
+                        span: 7..16,
+                    },
+                    Param {
+                        name: Spanned {
+                            node: "n",
+                            span: 18..19,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 21..24,
+                        },
+                        default: Some(
+                            Spanned {
+                                node: Literal(
+                                    Int(
+                                        2,
+                                    ),
+                                ),
+                                span: 27..28,
+                            },
+                        ),
+                        span: 18..28,
+                    },
+                ],
+                return_type: Spanned {
+                    node: String,
+                    span: 31..37,
+                },
+                body: FnBody {
+                    bindings: [],
+                    result: Spanned {
+                        node: Var(
+                            "s",
+                        ),
+                        span: 42..43,
+                    },
+                    span: 42..44,
+                },
+                span: 0..46,
+            },
+        ),
+    ],
+}

@@ -18,6 +18,7 @@ pub struct Program {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Item {
     Val(ValDecl),
+    Fn(FnDecl),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -27,6 +28,44 @@ pub struct ValDecl {
     /// `value` (which makes the inferred type trivially correct, so the
     /// checker has nothing to verify).
     pub ty: Option<Spanned<Type>>,
+    pub value: Spanned<Expr>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FnDecl {
+    pub name: Spanned<String>,
+    pub params: Vec<Param>,
+    pub return_type: Spanned<Type>,
+    pub body: FnBody,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Param {
+    pub name: Spanned<String>,
+    pub ty: Spanned<Type>,
+    /// Optional default value. Type-checked left-to-right: each
+    /// default sees prior params as bindings.
+    pub default: Option<Spanned<Expr>>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FnBody {
+    /// Body-local `val`s in source order. Forward references are an
+    /// error (same as top-level).
+    pub bindings: Vec<ValDecl>,
+    /// Required final expression: its type must equal the function's
+    /// declared return type.
+    pub result: Spanned<Expr>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CallArg {
+    /// `Some(name)` for `name = value`; `None` for positional args.
+    pub name: Option<Spanned<String>>,
     pub value: Spanned<Expr>,
     pub span: Span,
 }
@@ -53,6 +92,13 @@ pub enum Expr {
     /// Reference to a previously-declared `val`. Resolved against the
     /// declaration order; forward references are an error.
     Var(String),
+    /// Call to a top-level `fn`. Functions live in their own
+    /// namespace and are not first-class values; the callee is a
+    /// bare identifier rather than an arbitrary expression.
+    Call {
+        callee: Spanned<String>,
+        args: Vec<CallArg>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

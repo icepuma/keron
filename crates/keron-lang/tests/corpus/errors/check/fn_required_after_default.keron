@@ -1,0 +1,3 @@
+fn f(a: Int = 0, b: Int): Int {
+  a + b
+}
