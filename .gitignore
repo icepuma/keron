@@ -1,3 +1,6 @@
 /target
 /mutants.out
 /mutants.out.old
+
+# Zed extension build artifacts
+editor/zed/target/
