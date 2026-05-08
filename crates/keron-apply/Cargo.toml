@@ -11,5 +11,7 @@ authors.workspace = true
 [dependencies]
 keron-lang.workspace = true
 
+anyhow.workspace = true
+
 [lints]
 workspace = true
