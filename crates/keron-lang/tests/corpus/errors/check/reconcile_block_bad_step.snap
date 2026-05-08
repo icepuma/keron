@@ -10,5 +10,5 @@ error: `reconcile` expects a resource or list of resources, found `Int`
 error: `reconcile` expects a resource or list of resources, found `Int`
   --> 6:8
   |
-6 |   a ~> n
+6 |   a -> n
   |        ^

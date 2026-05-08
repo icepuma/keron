@@ -5,13 +5,13 @@
 //! ```text
 //! reconcile_decl  := "reconcile" ( reconcile_block | chain )
 //! reconcile_block := "{" chain ( ";" chain )* ";"? "}"
-//! chain           := expr ( "~>" expr )*
+//! chain           := expr ( "->" expr )*
 //! ```
 //!
 //! The inline form parses a single chain (length 1 = the original
 //! `reconcile <expr>`). The block form groups multiple chains; chains
 //! are separated by `;` (a trailing `;` is permitted) and the visual
-//! "one chain per line" arrangement is convention. The `~>` operator
+//! "one chain per line" arrangement is convention. The `->` operator
 //! only appears in this context — there is no general expression-level
 //! chain operator.
 
@@ -27,7 +27,7 @@ pub(super) fn reconcile_decl<'src, P>(
 where
     P: Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone + 'src,
 {
-    let arrow = just("~>").padded_by(pad());
+    let arrow = just("->").padded_by(pad());
 
     let chain = expr
         .clone()

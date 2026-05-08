@@ -576,7 +576,7 @@ proptest! {
             )
             .expect("write to String");
         }
-        write!(src, "reconcile {}", dedup.join(" ~> ")).expect("write to String");
+        write!(src, "reconcile {}", dedup.join(" -> ")).expect("write to String");
         let prog = parse(&src).expect("parse should succeed");
         prop_assert!(check(&prog).is_ok(), "check failed for: {src}");
     }
@@ -628,7 +628,7 @@ proptest! {
     fn arbitrary_mix_of_resource_kinds_in_chain_typechecks(
         kinds in prop::collection::vec(0u8..3, 1..6),
     ) {
-        // Bind each step as a `Resource` val and chain them with `~>`.
+        // Bind each step as a `Resource` val and chain them with `->`.
         // The chain checker walks each step against `is_reconcilable`,
         // which accepts any specific resource and `Resource` itself.
         let mut decls = String::new();
@@ -643,7 +643,7 @@ proptest! {
             writeln!(decls, "val {name}: Resource = {value}").expect("write to String");
             names.push(name);
         }
-        let src = format!("{decls}reconcile {}", names.join(" ~> "));
+        let src = format!("{decls}reconcile {}", names.join(" -> "));
         let prog = parse(&src).expect("parse should succeed");
         prop_assert!(check(&prog).is_ok(), "check failed for: {src}");
     }
@@ -683,7 +683,7 @@ proptest! {
     ) {
         // A chain mixing a symlink and a non-resource always fails.
         let src = format!(
-            "val {name}: Symlink = symlink(from = \"a\", to = \"b\")\nreconcile {name} ~> {n}"
+            "val {name}: Symlink = symlink(from = \"a\", to = \"b\")\nreconcile {name} -> {n}"
         );
         let prog = parse(&src).expect("parse should succeed");
         let errs = check(&prog).expect_err("should fail");

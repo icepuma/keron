@@ -107,7 +107,7 @@ fn multiple_reconcile_decls_parse() {
     assert_eq!(reconcile_count, 2);
 }
 
-// ---------- inline `~>` chain ----------
+// ---------- inline `->` chain ----------
 
 #[test]
 fn reconcile_chain_two_parses() {
@@ -115,7 +115,7 @@ fn reconcile_chain_two_parses() {
         "
         val a: Symlink = symlink(from = \"x\", to = \"y\")
         val b: Symlink = symlink(from = \"p\", to = \"q\")
-        reconcile a ~> b
+        reconcile a -> b
         ",
     );
     let chain = only_chain(&r);
@@ -131,7 +131,7 @@ fn reconcile_chain_three_parses() {
         val a: Symlink = symlink(from = \"x\", to = \"y\")
         val b: Symlink = symlink(from = \"p\", to = \"q\")
         val c: Symlink = symlink(from = \"u\", to = \"v\")
-        reconcile a ~> b ~> c
+        reconcile a -> b -> c
         ",
     );
     assert_eq!(only_chain(&r).len(), 3);
@@ -139,7 +139,7 @@ fn reconcile_chain_three_parses() {
 
 #[test]
 fn reconcile_chain_with_call_parses() {
-    let src = r#"reconcile symlink(from = "a", to = "b") ~> symlink(from = "c", to = "d")"#;
+    let src = r#"reconcile symlink(from = "a", to = "b") -> symlink(from = "c", to = "d")"#;
     let r = first_reconcile(src);
     let chain = only_chain(&r);
     assert_eq!(chain.len(), 2);
@@ -155,7 +155,7 @@ fn reconcile_chain_with_list_step_parses() {
         val a: Symlink = symlink(from = \"x\", to = \"y\")
         val b: Symlink = symlink(from = \"p\", to = \"q\")
         val c: Symlink = symlink(from = \"u\", to = \"v\")
-        reconcile [a, b] ~> c
+        reconcile [a, b] -> c
         ",
     );
     let chain = only_chain(&r);
@@ -166,17 +166,17 @@ fn reconcile_chain_with_list_step_parses() {
 
 #[test]
 fn rejects_chain_with_trailing_arrow() {
-    assert!(parse("reconcile a ~>").is_err());
+    assert!(parse("reconcile a ->").is_err());
 }
 
 #[test]
 fn rejects_chain_with_missing_head() {
-    assert!(parse("reconcile ~> a").is_err());
+    assert!(parse("reconcile -> a").is_err());
 }
 
 #[test]
 fn rejects_chain_outside_reconcile() {
-    assert!(parse("val x = a ~> b").is_err());
+    assert!(parse("val x = a -> b").is_err());
 }
 
 // ---------- block form ----------
@@ -222,7 +222,7 @@ fn reconcile_block_chain_can_use_arrow_within_step() {
         val c: Symlink = symlink(from = \"u\", to = \"v\")
         reconcile {
           a;
-          b ~> c
+          b -> c
         }
         ",
     );
@@ -310,7 +310,7 @@ fn reconcile_chain_four_parses() {
         val b: Symlink = symlink(from = \"c\", to = \"d\")
         val c: Symlink = symlink(from = \"e\", to = \"f\")
         val d: Symlink = symlink(from = \"g\", to = \"h\")
-        reconcile a ~> b ~> c ~> d
+        reconcile a -> b -> c -> d
         ",
     );
     assert_eq!(only_chain(&r).len(), 4);
@@ -358,7 +358,7 @@ fn block_with_chain_only_step_parses_one_chain() {
         val a: Symlink = symlink(from = \"a\", to = \"b\")
         val b: Symlink = symlink(from = \"c\", to = \"d\")
         val c: Symlink = symlink(from = \"e\", to = \"f\")
-        reconcile { a ~> b ~> c }
+        reconcile { a -> b -> c }
         ",
     );
     assert_eq!(r.chains.len(), 1);

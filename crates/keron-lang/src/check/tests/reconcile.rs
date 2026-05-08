@@ -154,14 +154,14 @@ fn reconcile_arg_type_mismatch_propagates() {
     assert!(err[0].message.contains("found `Int`"));
 }
 
-// ---------- chain (`~>`) and block forms ----------
+// ---------- chain (`->`) and block forms ----------
 
 #[test]
 fn reconcile_chain_of_resources_typechecks() {
     let src = r#"
         val a: Symlink = symlink(from = "x", to = "y")
         val b: File = file(path = "p", content = "c")
-        reconcile a ~> b
+        reconcile a -> b
     "#;
     assert!(check_src(src).is_ok());
 }
@@ -189,7 +189,7 @@ fn reconcile_block_with_chain_steps_typechecks() {
         val c: Symlink = symlink(from = "u", to = "v")
         reconcile {
           a;
-          b ~> c
+          b -> c
         }
     "#;
     assert!(check_src(src).is_ok());
@@ -199,7 +199,7 @@ fn reconcile_block_with_chain_steps_typechecks() {
 fn reconcile_chain_with_non_reconcilable_step_at_head_errors() {
     let src = r#"
         val a: Symlink = symlink(from = "x", to = "y")
-        reconcile 42 ~> a
+        reconcile 42 -> a
     "#;
     let err = check_src(src).expect_err("should fail");
     assert!(err.iter().any(|d| d.message.contains("found `Int`")));
@@ -210,7 +210,7 @@ fn reconcile_chain_with_non_reconcilable_step_in_middle_errors() {
     let src = r#"
         val a: Symlink = symlink(from = "x", to = "y")
         val b: Symlink = symlink(from = "p", to = "q")
-        reconcile a ~> "nope" ~> b
+        reconcile a -> "nope" -> b
     "#;
     let err = check_src(src).expect_err("should fail");
     assert!(err.iter().any(|d| d.message.contains("found `String`")));
@@ -220,7 +220,7 @@ fn reconcile_chain_with_non_reconcilable_step_in_middle_errors() {
 fn reconcile_chain_reports_every_bad_step() {
     let src = r#"
         val a: Symlink = symlink(from = "x", to = "y")
-        reconcile 1 ~> a ~> "two" ~> 3.0
+        reconcile 1 -> a -> "two" -> 3.0
     "#;
     let err = check_src(src).expect_err("should fail");
     assert!(err.iter().any(|d| d.message.contains("found `Int`")));
@@ -262,7 +262,7 @@ fn reconcile_chain_with_resource_step_typechecks() {
         val s: Symlink = symlink(from = "a", to = "b")
         val r: Resource = file(path = "p", content = "c")
         val d: Directory = directory(path = "d")
-        reconcile s ~> r ~> d
+        reconcile s -> r -> d
     "#;
     assert!(check_src(src).is_ok());
 }
@@ -290,7 +290,7 @@ fn reconcile_chain_length_four_typechecks() {
         val b: Symlink = symlink(from = "c", to = "d")
         val c: Symlink = symlink(from = "e", to = "f")
         val d: Symlink = symlink(from = "g", to = "h")
-        reconcile a ~> b ~> c ~> d
+        reconcile a -> b -> c -> d
     "#;
     assert!(check_src(src).is_ok());
 }

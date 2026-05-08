@@ -230,7 +230,7 @@ fn reconcile_chain_mixes_kinds_via_resource() {
         val s: Symlink = symlink(from = "a", to = "b")
         val f: File = file(path = "p", content = "c")
         val d: Directory = directory(path = "d")
-        reconcile s ~> f ~> d
+        reconcile s -> f -> d
     "#;
     assert!(check_src(src).is_ok());
 }

@@ -30,14 +30,14 @@ pub enum Item {
 /// A `reconcile` directive.
 ///
 /// Three surface forms collapse into one shape: the bare single
-/// resource (`reconcile x`), the inline chain (`reconcile a ~> b ~> c`),
+/// resource (`reconcile x`), the inline chain (`reconcile a -> b -> c`),
 /// and the block form (`reconcile { … }`). Each top-level element of
 /// [`Self::chains`] is one logical step, executed in source order;
-/// within a step, the inner `Vec` carries `~>`-chained sub-steps, also
+/// within a step, the inner `Vec` carries `->`-chained sub-steps, also
 /// in source order.
 ///
 /// The two `Vec`s are non-empty by construction: the parser rejects an
-/// empty block and a trailing/missing-head `~>`.
+/// empty block and a trailing/missing-head `->`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReconcileDecl {
     pub chains: Vec<Vec<Spanned<Expr>>>,
