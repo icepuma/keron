@@ -5,18 +5,11 @@
   "license": "MIT OR Apache-2.0",
   "repository": "github:icepuma/keron",
   "main": "bindings/node",
-  "tree-sitter": [
-    {
-      "scope": "source.keron",
-      "file-types": ["keron"],
-      "highlights": "queries/highlights.scm"
-    }
-  ],
+  "devDependencies": {
+    "tree-sitter-cli": "^0.24.0"
+  },
   "scripts": {
     "build": "tree-sitter generate",
     "test": "tree-sitter test"
-  },
-  "devDependencies": {
-    "tree-sitter-cli": "^0.24.0"
   }
 }

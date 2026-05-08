@@ -15,13 +15,6 @@ module.exports = grammar({
     $.line_comment,
   ],
 
-  conflicts: $ => [
-    // `{ a, b: c }` — leading `{` could be a block-typed expression
-    // (function body / if body) or a map literal. Tree-sitter resolves
-    // this with a GLR conflict.
-    [$.block, $.map],
-  ],
-
   rules: {
     program: $ => repeat($._item),
 

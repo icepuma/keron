@@ -2,7 +2,10 @@
 name = "zed-keron-extension"
 description = "Zed extension wiring keron-lsp into Zed."
 version = "0.0.1"
-edition = "2024"
+# 2021 instead of 2024: the Zed extension installer may pick up a
+# stable toolchain older than 1.85 (the edition-2024 floor); 2021
+# works on every rustc Zed could plausibly bundle.
+edition = "2021"
 license = "MIT OR Apache-2.0"
 publish = false
 

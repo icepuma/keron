@@ -7,13 +7,16 @@ authors = ["Stefan Ruzitschka <stefan@icepuma.dev>"]
 repository = "https://github.com/icepuma/keron"
 
 [grammars.keron]
-# Tree-sitter grammar lives in this same repo under
-# `tree-sitter-keron/`. Pin a specific commit when you publish; for
-# day-to-day dev, keep it at the branch tip and reload via
-# `zed: rebuild grammars`.
+# Tree-sitter grammar lives in the same repo under
+# `tree-sitter-keron/`. Zed clones the repo, fetches the named
+# commit, runs `git checkout <commit>`, and then compiles
+# `<grammar_dir>/<path>/src/parser.c` — so `parser.c` MUST be
+# committed (we keep it out of `tree-sitter-keron/.gitignore` for
+# exactly this reason). Pin to `main` so each push to the default
+# branch is what `zed: rebuild grammars` picks up next.
 repository = "https://github.com/icepuma/keron"
 path = "tree-sitter-keron"
-commit = "HEAD"
+commit = "main"
 
 [language_servers.keron-lsp]
 name = "keron-lsp"

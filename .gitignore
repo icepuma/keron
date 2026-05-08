@@ -4,3 +4,7 @@
 
 # Zed extension build artifacts
 editor/zed/target/
+
+# Zed clones the tree-sitter grammar here at install time
+editor/zed/grammars/
+editor/zed/extension.wasm
