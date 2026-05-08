@@ -3624,10 +3624,664 @@ Program {
                                 span: 5600..5641,
                             },
                         ),
-                        span: 5596..5643,
+                        span: 5596..6036,
                     },
                 },
-                span: 5581..5643,
+                span: 5581..6036,
+            },
+        ),
+        Reconcile(
+            ReconcileDecl {
+                chains: [
+                    [
+                        Spanned {
+                            node: Var(
+                                "zshrc",
+                            ),
+                            span: 6046..6051,
+                        },
+                        Spanned {
+                            node: Var(
+                                "gitcfg",
+                            ),
+                            span: 6055..6061,
+                        },
+                        Spanned {
+                            node: Var(
+                                "xdgcfg",
+                            ),
+                            span: 6065..6071,
+                        },
+                    ],
+                ],
+                span: 6036..6073,
+            },
+        ),
+        Reconcile(
+            ReconcileDecl {
+                chains: [
+                    [
+                        Spanned {
+                            node: Var(
+                                "zshrc",
+                            ),
+                            span: 6087..6092,
+                        },
+                    ],
+                    [
+                        Spanned {
+                            node: Var(
+                                "gitcfg",
+                            ),
+                            span: 6096..6102,
+                        },
+                        Spanned {
+                            node: Var(
+                                "xdgcfg",
+                            ),
+                            span: 6106..6112,
+                        },
+                    ],
+                    [
+                        Spanned {
+                            node: Var(
+                                "all_links",
+                            ),
+                            span: 6116..6125,
+                        },
+                    ],
+                ],
+                span: 6073..6484,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "any_resource",
+                    span: 6488..6500,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Resource,
+                        span: 6502..6510,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "link",
+                            span: 6513..6517,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "vimrc",
+                                        ),
+                                    ),
+                                    span: 6518..6525,
+                                },
+                                span: 6518..6525,
+                            },
+                        ],
+                    },
+                    span: 6513..6528,
+                },
+                span: 6484..6528,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "mixed_resources",
+                    span: 6532..6547,
+                },
+                ty: Some(
+                    Spanned {
+                        node: List(
+                            Resource,
+                        ),
+                        span: 6549..6564,
+                    },
+                ),
+                value: Spanned {
+                    node: List(
+                        [
+                            Spanned {
+                                node: Call {
+                                    callee: Spanned {
+                                        node: "link",
+                                        span: 6570..6574,
+                                    },
+                                    args: [
+                                        CallArg {
+                                            name: None,
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "tmux.conf",
+                                                    ),
+                                                ),
+                                                span: 6575..6586,
+                                            },
+                                            span: 6575..6586,
+                                        },
+                                    ],
+                                },
+                                span: 6570..6587,
+                            },
+                            Spanned {
+                                node: Call {
+                                    callee: Spanned {
+                                        node: "file",
+                                        span: 6591..6595,
+                                    },
+                                    args: [
+                                        CallArg {
+                                            name: Some(
+                                                Spanned {
+                                                    node: "path",
+                                                    span: 6596..6600,
+                                                },
+                                            ),
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "/etc/motd",
+                                                    ),
+                                                ),
+                                                span: 6603..6614,
+                                            },
+                                            span: 6596..6614,
+                                        },
+                                        CallArg {
+                                            name: Some(
+                                                Spanned {
+                                                    node: "content",
+                                                    span: 6616..6623,
+                                                },
+                                            ),
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "welcome",
+                                                    ),
+                                                ),
+                                                span: 6626..6635,
+                                            },
+                                            span: 6616..6635,
+                                        },
+                                    ],
+                                },
+                                span: 6591..6636,
+                            },
+                            Spanned {
+                                node: Call {
+                                    callee: Spanned {
+                                        node: "directory",
+                                        span: 6640..6649,
+                                    },
+                                    args: [
+                                        CallArg {
+                                            name: Some(
+                                                Spanned {
+                                                    node: "path",
+                                                    span: 6650..6654,
+                                                },
+                                            ),
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "~/data",
+                                                    ),
+                                                ),
+                                                span: 6657..6665,
+                                            },
+                                            span: 6650..6665,
+                                        },
+                                    ],
+                                },
+                                span: 6640..6666,
+                            },
+                        ],
+                    ),
+                    span: 6566..6742,
+                },
+                span: 6528..6742,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "auto_mix",
+                    span: 6746..6754,
+                },
+                ty: None,
+                value: Spanned {
+                    node: List(
+                        [
+                            Spanned {
+                                node: Call {
+                                    callee: Spanned {
+                                        node: "link",
+                                        span: 6758..6762,
+                                    },
+                                    args: [
+                                        CallArg {
+                                            name: None,
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "alacritty.yml",
+                                                    ),
+                                                ),
+                                                span: 6763..6778,
+                                            },
+                                            span: 6763..6778,
+                                        },
+                                    ],
+                                },
+                                span: 6758..6779,
+                            },
+                            Spanned {
+                                node: Call {
+                                    callee: Spanned {
+                                        node: "file",
+                                        span: 6781..6785,
+                                    },
+                                    args: [
+                                        CallArg {
+                                            name: Some(
+                                                Spanned {
+                                                    node: "path",
+                                                    span: 6786..6790,
+                                                },
+                                            ),
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "/etc/issue",
+                                                    ),
+                                                ),
+                                                span: 6793..6805,
+                                            },
+                                            span: 6786..6805,
+                                        },
+                                        CallArg {
+                                            name: Some(
+                                                Spanned {
+                                                    node: "content",
+                                                    span: 6807..6814,
+                                                },
+                                            ),
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "",
+                                                    ),
+                                                ),
+                                                span: 6817..6819,
+                                            },
+                                            span: 6807..6819,
+                                        },
+                                    ],
+                                },
+                                span: 6781..6820,
+                            },
+                        ],
+                    ),
+                    span: 6757..6941,
+                },
+                span: 6742..6941,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "combined_resources",
+                    span: 6945..6963,
+                },
+                ty: None,
+                value: Spanned {
+                    node: Binary {
+                        op: Concat,
+                        lhs: Spanned {
+                            node: Var(
+                                "all_links",
+                            ),
+                            span: 6966..6975,
+                        },
+                        rhs: Spanned {
+                            node: List(
+                                [
+                                    Spanned {
+                                        node: Var(
+                                            "gitcfg",
+                                        ),
+                                        span: 6980..6986,
+                                    },
+                                    Spanned {
+                                        node: Var(
+                                            "xdgcfg",
+                                        ),
+                                        span: 6988..6994,
+                                    },
+                                ],
+                            ),
+                            span: 6979..7193,
+                        },
+                    },
+                    span: 6966..7193,
+                },
+                span: 6941..7193,
+            },
+        ),
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "pick",
+                    span: 7196..7200,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "name",
+                            span: 7201..7205,
+                        },
+                        ty: Spanned {
+                            node: String,
+                            span: 7207..7213,
+                        },
+                        default: None,
+                        span: 7201..7213,
+                    },
+                    Param {
+                        name: Spanned {
+                            node: "want_file",
+                            span: 7215..7224,
+                        },
+                        ty: Spanned {
+                            node: Boolean,
+                            span: 7226..7233,
+                        },
+                        default: None,
+                        span: 7215..7233,
+                    },
+                ],
+                return_type: Spanned {
+                    node: Resource,
+                    span: 7236..7244,
+                },
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: If {
+                                cond: Spanned {
+                                    node: Var(
+                                        "want_file",
+                                    ),
+                                    span: 7252..7261,
+                                },
+                                then_branch: Block {
+                                    stmts: [],
+                                    trailing: Some(
+                                        Spanned {
+                                            node: Call {
+                                                callee: Spanned {
+                                                    node: "file",
+                                                    span: 7268..7272,
+                                                },
+                                                args: [
+                                                    CallArg {
+                                                        name: Some(
+                                                            Spanned {
+                                                                node: "path",
+                                                                span: 7273..7277,
+                                                            },
+                                                        ),
+                                                        value: Spanned {
+                                                            node: Interpolation(
+                                                                [
+                                                                    Text(
+                                                                        "~/.config/",
+                                                                    ),
+                                                                    Expr(
+                                                                        Spanned {
+                                                                            node: Var(
+                                                                                "name",
+                                                                            ),
+                                                                            span: 7293..7297,
+                                                                        },
+                                                                    ),
+                                                                ],
+                                                            ),
+                                                            span: 7280..7299,
+                                                        },
+                                                        span: 7273..7299,
+                                                    },
+                                                    CallArg {
+                                                        name: Some(
+                                                            Spanned {
+                                                                node: "content",
+                                                                span: 7301..7308,
+                                                            },
+                                                        ),
+                                                        value: Spanned {
+                                                            node: Literal(
+                                                                String(
+                                                                    "",
+                                                                ),
+                                                            ),
+                                                            span: 7311..7313,
+                                                        },
+                                                        span: 7301..7313,
+                                                    },
+                                                ],
+                                            },
+                                            span: 7268..7317,
+                                        },
+                                    ),
+                                    span: 7262..7319,
+                                },
+                                else_branch: Block {
+                                    stmts: [],
+                                    trailing: Some(
+                                        Spanned {
+                                            node: Call {
+                                                callee: Spanned {
+                                                    node: "link",
+                                                    span: 7330..7334,
+                                                },
+                                                args: [
+                                                    CallArg {
+                                                        name: None,
+                                                        value: Spanned {
+                                                            node: Var(
+                                                                "name",
+                                                            ),
+                                                            span: 7335..7339,
+                                                        },
+                                                        span: 7335..7339,
+                                                    },
+                                                ],
+                                            },
+                                            span: 7330..7343,
+                                        },
+                                    ),
+                                    span: 7324..7345,
+                                },
+                            },
+                            span: 7249..7345,
+                        },
+                    ),
+                    span: 7245..7348,
+                },
+                span: 7193..7348,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "chosen",
+                    span: 7352..7358,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Resource,
+                        span: 7360..7368,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "pick",
+                            span: 7371..7375,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "vimrc",
+                                        ),
+                                    ),
+                                    span: 7376..7383,
+                                },
+                                span: 7376..7383,
+                            },
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        Boolean(
+                                            false,
+                                        ),
+                                    ),
+                                    span: 7385..7390,
+                                },
+                                span: 7385..7390,
+                            },
+                        ],
+                    },
+                    span: 7371..7476,
+                },
+                span: 7348..7476,
+            },
+        ),
+        Reconcile(
+            ReconcileDecl {
+                chains: [
+                    [
+                        Spanned {
+                            node: Var(
+                                "any_resource",
+                            ),
+                            span: 7486..7498,
+                        },
+                        Spanned {
+                            node: Var(
+                                "zshrc",
+                            ),
+                            span: 7502..7507,
+                        },
+                        Spanned {
+                            node: Var(
+                                "mixed_resources",
+                            ),
+                            span: 7511..7526,
+                        },
+                    ],
+                ],
+                span: 7476..7606,
+            },
+        ),
+        Reconcile(
+            ReconcileDecl {
+                chains: [
+                    [
+                        Spanned {
+                            node: Var(
+                                "chosen",
+                            ),
+                            span: 7620..7626,
+                        },
+                    ],
+                    [
+                        Spanned {
+                            node: Var(
+                                "combined_resources",
+                            ),
+                            span: 7630..7648,
+                        },
+                    ],
+                    [
+                        Spanned {
+                            node: Var(
+                                "auto_mix",
+                            ),
+                            span: 7652..7660,
+                        },
+                    ],
+                    [
+                        Spanned {
+                            node: Var(
+                                "any_resource",
+                            ),
+                            span: 7664..7676,
+                        },
+                        Spanned {
+                            node: Var(
+                                "zshrc",
+                            ),
+                            span: 7680..7685,
+                        },
+                    ],
+                ],
+                span: 7606..7748,
+            },
+        ),
+        ExprStmt(
+            Spanned {
+                node: For {
+                    pattern: Elem(
+                        Spanned {
+                            node: "r",
+                            span: 7752..7753,
+                        },
+                    ),
+                    iter_expr: Spanned {
+                        node: Var(
+                            "mixed_resources",
+                        ),
+                        span: 7757..7772,
+                    },
+                    body: Block {
+                        stmts: [
+                            Reconcile(
+                                ReconcileDecl {
+                                    chains: [
+                                        [
+                                            Spanned {
+                                                node: Var(
+                                                    "r",
+                                                ),
+                                                span: 7787..7788,
+                                            },
+                                        ],
+                                    ],
+                                    span: 7777..7789,
+                                },
+                            ),
+                        ],
+                        trailing: None,
+                        span: 7773..7791,
+                    },
+                },
+                span: 7748..7791,
             },
         ),
     ],

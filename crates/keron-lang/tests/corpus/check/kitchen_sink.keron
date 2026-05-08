@@ -204,3 +204,73 @@ for (name, priority) in by_name {
 for f in flags {
   if f { reconcile link("alacritty.yml") }
 }
+
+# --- ordered reconciliations: `->` chains and `reconcile { ... }` blocks ---
+#
+# `->` orders steps within a single `reconcile`. The operator only
+# appears in this context — using it in a `val` RHS or in arithmetic
+# is a parse error. A block groups multiple chains, separated by `;`
+# (a trailing `;` is permitted). Both forms collapse to the same flat
+# ordered sequence at apply time.
+
+reconcile zshrc -> gitcfg -> xdgcfg
+
+reconcile {
+  zshrc;
+  gitcfg -> xdgcfg;
+  all_links
+}
+
+# --- `Resource` supertype ---
+#
+# `Resource` is the common supertype of `Symlink`, `File`, and
+# `Directory`. Subtyping is one-way: a specific kind satisfies a
+# `Resource` slot, but `Resource` does not auto-narrow back. Use it
+# when the kind doesn't matter — e.g. to bundle mixed resources or
+# to express dependencies between heterogeneous values.
+
+val any_resource: Resource = link("vimrc")
+
+val mixed_resources: List<Resource> = [
+  link("tmux.conf"),
+  file(path = "/etc/motd", content = "welcome"),
+  directory(path = "~/data"),
+]
+
+# Heterogeneous list literals infer to `List<Resource>` automatically.
+val auto_mix = [link("alacritty.yml"), file(path = "/etc/issue", content = "")]
+
+# `++` mirrors list synthesis: concatenating lists whose element kinds
+# differ lifts the result to `List<Resource>`.
+val combined_resources = all_links ++ [gitcfg, xdgcfg]
+
+# `Resource` flows through fn signatures, including bidirectional
+# checks across `if`/`else` branches that produce different specific
+# kinds — both branches satisfy the `Resource` annotation.
+fn pick(name: String, want_file: Boolean): Resource {
+  if want_file {
+    file(path = "~/.config/${name}", content = "")
+  } else {
+    link(name)
+  }
+}
+
+val chosen: Resource = pick("vimrc", false)
+
+# A chain can mix specific kinds, `Resource`-typed vars, and lists of
+# resources.
+reconcile any_resource -> zshrc -> mixed_resources
+
+# A block can hold any combination of single steps, `->` chains, and
+# lists.
+reconcile {
+  chosen;
+  combined_resources;
+  auto_mix;
+  any_resource -> zshrc
+}
+
+# Iterate any `List<Resource>` and reconcile each element.
+for r in mixed_resources {
+  reconcile r
+}
