@@ -38,13 +38,23 @@ services, no root, no kernel.
 
 ```
 crates/
-  keron-lang/    lexer, parser, types, eval, embedded stdlib  (lib)
-  keron-apply/   plan, execute, sentinels, providers, Tera     (lib)
-  keron-lsp/     LSP server                                    (lib)
-  keron-cli/     thin orchestrator binary                      (bin)
+  keron-lang/         lexer, parser, types, eval, embedded stdlib  (lib)
+  keron-apply/        plan, execute, sentinels, providers, Tera     (lib)
+  keron-lsp/          LSP server                                    (lib)
+  keron-cli/          thin orchestrator binary                      (bin)
+tree-sitter-keron/    tree-sitter grammar (npm package; NOT in cargo workspace)
+editor/zed/           Zed dev extension (cdylib WASM, self-contained workspace)
 ```
 
 Add new crates under `crates/`. Keep each crate single-responsibility.
+
+`tree-sitter-keron/` and `editor/zed/` live in this repo but are excluded from the cargo workspace — the grammar uses `tree-sitter-cli` and the Zed extension targets `wasm32-wasip1`. They build via their own toolchains.
+
+## Editor integration
+
+- The single `keron` binary owns the LSP. `keron lsp` runs the language server over stdio (parse + check, publishing diagnostics on every edit). Editors invoke it directly — no separate `keron-lsp` binary.
+- Zed picks up the language via `editor/zed/`. After `cargo install --path crates/keron-cli`, run `zed: install dev extension` and pick that directory.
+- Syntax highlighting comes from `tree-sitter-keron/`. Run `npm install && npm run build` inside it once before installing the Zed extension; Zed expects `src/parser.c` to be generated. Regenerate after grammar changes.
 
 ## File size & modularization
 

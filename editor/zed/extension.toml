@@ -1,0 +1,21 @@
+id = "keron"
+name = "Keron"
+description = "Keron language support: syntax, file association, and the keron-lsp language server."
+version = "0.0.1"
+schema_version = 1
+authors = ["Stefan Ruzitschka <stefan@icepuma.dev>"]
+repository = "https://github.com/icepuma/keron"
+
+[grammars.keron]
+# Tree-sitter grammar lives in this same repo under
+# `tree-sitter-keron/`. Pin a specific commit when you publish; for
+# day-to-day dev, keep it at the branch tip and reload via
+# `zed: rebuild grammars`.
+repository = "https://github.com/icepuma/keron"
+path = "tree-sitter-keron"
+commit = "HEAD"
+
+[language_servers.keron-lsp]
+name = "keron-lsp"
+language = "Keron"
+languages = ["Keron"]
