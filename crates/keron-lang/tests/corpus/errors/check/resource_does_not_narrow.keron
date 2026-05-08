@@ -1,0 +1,2 @@
+val r: Resource = symlink(from = "a", to = "b")
+val s: Symlink = r

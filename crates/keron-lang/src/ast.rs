@@ -27,9 +27,20 @@ pub enum Item {
     ExprStmt(Spanned<Expr>),
 }
 
+/// A `reconcile` directive.
+///
+/// Three surface forms collapse into one shape: the bare single
+/// resource (`reconcile x`), the inline chain (`reconcile a ~> b ~> c`),
+/// and the block form (`reconcile { … }`). Each top-level element of
+/// [`Self::chains`] is one logical step, executed in source order;
+/// within a step, the inner `Vec` carries `~>`-chained sub-steps, also
+/// in source order.
+///
+/// The two `Vec`s are non-empty by construction: the parser rejects an
+/// empty block and a trailing/missing-head `~>`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReconcileDecl {
-    pub expr: Spanned<Expr>,
+    pub chains: Vec<Vec<Spanned<Expr>>>,
     pub span: Span,
 }
 
@@ -254,6 +265,14 @@ pub enum Type {
     /// Directory ensure-existence. Constructed via the builtin
     /// `directory(...)` fn.
     Directory,
+    /// Common supertype of [`Self::Symlink`], [`Self::File`], and
+    /// [`Self::Directory`]. There is no constructor — the type only
+    /// shows up via annotation (`val r: Resource = symlink(...)`),
+    /// list inference for mixed elements (`[symlink(...), file(...)]`
+    /// has type `List<Resource>`), and `Resource`-typed fn signatures.
+    /// Subtyping is one-way: a specific resource fits a `Resource`
+    /// slot, but `Resource` does not auto-narrow to a specific kind.
+    Resource,
     /// "No value." The type of an empty block, of a `Void`-returning
     /// function's body, and of an `if` expression used as control
     /// flow. Writable in source as the annotation `Void`.
@@ -272,6 +291,7 @@ impl fmt::Display for Type {
             Self::Symlink => f.write_str("Symlink"),
             Self::File => f.write_str("File"),
             Self::Directory => f.write_str("Directory"),
+            Self::Resource => f.write_str("Resource"),
             Self::Void => f.write_str("Void"),
         }
     }

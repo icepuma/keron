@@ -196,12 +196,16 @@ Program {
         ),
         Reconcile(
             ReconcileDecl {
-                expr: Spanned {
-                    node: Var(
-                        "configs",
-                    ),
-                    span: 389..396,
-                },
+                chains: [
+                    [
+                        Spanned {
+                            node: Var(
+                                "configs",
+                            ),
+                            span: 389..396,
+                        },
+                    ],
+                ],
                 span: 379..397,
             },
         ),

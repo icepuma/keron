@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: found '~' expected something else, '#', '(', '*', '/', '+', '-', '=', '!', '<', '>', '"val"', '"fn"', '"reconcile"', '"if"', '"for"', or end of input
+  --> 3:11
+  |
+3 | val c = a ~> b
+  |           ^

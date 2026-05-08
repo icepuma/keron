@@ -352,12 +352,16 @@ Program {
         ),
         Reconcile(
             ReconcileDecl {
-                expr: Spanned {
-                    node: Var(
-                        "shellrc",
-                    ),
-                    span: 533..540,
-                },
+                chains: [
+                    [
+                        Spanned {
+                            node: Var(
+                                "shellrc",
+                            ),
+                            span: 533..540,
+                        },
+                    ],
+                ],
                 span: 523..541,
             },
         ),

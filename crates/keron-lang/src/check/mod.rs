@@ -390,14 +390,16 @@ fn process_block_stmts_strict(
         match stmt {
             Stmt::Val(v) => check_local_val_strict(v, env, fns)?,
             Stmt::Reconcile(r) => {
-                let ty = expr_type(&r.expr, env, fns)?;
-                if !is_reconcilable(&ty) {
-                    return Err(Diagnostic::new(
-                        r.expr.span.clone(),
-                        format!(
-                            "`reconcile` expects a resource or list of resources, found `{ty}`"
-                        ),
-                    ));
+                for step in r.chains.iter().flatten() {
+                    let ty = expr_type(step, env, fns)?;
+                    if !is_reconcilable(&ty) {
+                        return Err(Diagnostic::new(
+                            step.span.clone(),
+                            format!(
+                                "`reconcile` expects a resource or list of resources, found `{ty}`"
+                            ),
+                        ));
+                    }
                 }
             }
         }
@@ -503,7 +505,7 @@ fn switch_to_synth(
     fns: &FnEnv,
 ) -> Result<(), Diagnostic> {
     let got = expr_type(e, env, fns)?;
-    if &got == expected {
+    if is_subtype(&got, expected) {
         Ok(())
     } else {
         Err(Diagnostic::new(
@@ -511,6 +513,33 @@ fn switch_to_synth(
             format!("type mismatch: expected `{expected}`, found `{got}`"),
         ))
     }
+}
+
+/// Subtyping judgment used wherever a synthesised type meets an
+/// expected type. Reflexive on every kind. The only non-trivial rule
+/// is one-way: `Symlink|File|Directory <: Resource`. List subtyping
+/// is covariant in the element type so `List<Symlink> <: List<Resource>`.
+/// `Map` stays invariant — keys and values are matched exactly. There
+/// is **no auto-narrowing** — a `Resource`-typed value does not
+/// satisfy a `Symlink`/`File`/`Directory` slot. Going from `Resource`
+/// back to a specific kind would require an explicit construct
+/// (pattern match or cast); none exists today, by design.
+fn is_subtype(child: &Type, parent: &Type) -> bool {
+    if child == parent {
+        return true;
+    }
+    match (child, parent) {
+        (Type::Symlink | Type::File | Type::Directory, Type::Resource) => true,
+        (Type::List(c), Type::List(p)) => is_subtype(c, p),
+        _ => false,
+    }
+}
+
+const fn is_resource_singleton(ty: &Type) -> bool {
+    matches!(
+        ty,
+        Type::Symlink | Type::File | Type::Directory | Type::Resource
+    )
 }
 
 fn expr_type(e: &Spanned<Expr>, env: &Env, fns: &FnEnv) -> Result<Type, Diagnostic> {
@@ -823,6 +852,7 @@ fn walk_type(ty: &Type, span: &Span, diags: &mut Vec<Diagnostic>) {
         | Type::Symlink
         | Type::File
         | Type::Directory
+        | Type::Resource
         | Type::Void => {}
         Type::List(inner) => walk_type(inner, span, diags),
         Type::Map(k, v) => {
@@ -841,23 +871,30 @@ fn walk_type(ty: &Type, span: &Span, diags: &mut Vec<Diagnostic>) {
 }
 
 fn check_reconcile_decl(r: &ReconcileDecl, env: &Env, fns: &FnEnv, diags: &mut Vec<Diagnostic>) {
-    match expr_type(&r.expr, env, fns) {
-        Ok(ty) => {
-            if !is_reconcilable(&ty) {
-                diags.push(Diagnostic::new(
-                    r.expr.span.clone(),
-                    format!("`reconcile` expects a resource or list of resources, found `{ty}`"),
-                ));
+    for step in r.chains.iter().flatten() {
+        match expr_type(step, env, fns) {
+            Ok(ty) => {
+                if !is_reconcilable(&ty) {
+                    diags.push(Diagnostic::new(
+                        step.span.clone(),
+                        format!(
+                            "`reconcile` expects a resource or list of resources, found `{ty}`"
+                        ),
+                    ));
+                }
             }
+            Err(d) => diags.push(d),
         }
-        Err(d) => diags.push(d),
     }
 }
 
 const fn is_reconcilable(ty: &Type) -> bool {
     match ty {
-        Type::Symlink | Type::File | Type::Directory => true,
-        Type::List(inner) => matches!(**inner, Type::Symlink | Type::File | Type::Directory),
+        Type::Symlink | Type::File | Type::Directory | Type::Resource => true,
+        Type::List(inner) => matches!(
+            **inner,
+            Type::Symlink | Type::File | Type::Directory | Type::Resource
+        ),
         _ => false,
     }
 }
@@ -874,15 +911,22 @@ fn list_type(
             "cannot infer type of empty list; add a `List<T>` annotation",
         ));
     };
-    let elem_ty = expr_type(first, env, fns)?;
+    let mut elem_ty = expr_type(first, env, fns)?;
     for item in rest {
         let ty = expr_type(item, env, fns)?;
-        if ty != elem_ty {
-            return Err(Diagnostic::new(
-                item.span.clone(),
-                format!("list element type mismatch: expected `{elem_ty}`, found `{ty}`"),
-            ));
+        if ty == elem_ty {
+            continue;
         }
+        // Heterogeneous resource elements lift the element type to
+        // `Resource`; that is the only non-equality unification today.
+        if is_resource_singleton(&ty) && is_resource_singleton(&elem_ty) {
+            elem_ty = Type::Resource;
+            continue;
+        }
+        return Err(Diagnostic::new(
+            item.span.clone(),
+            format!("list element type mismatch: expected `{elem_ty}`, found `{ty}`"),
+        ));
     }
     Ok(Type::List(Box::new(elem_ty)))
 }
@@ -913,13 +957,19 @@ const fn numeric_result(lhs: &Type, rhs: &Type) -> Option<Type> {
 }
 
 fn concat_result(lhs: &Type, rhs: &Type) -> Option<Type> {
-    if let (Type::List(a), Type::List(b)) = (lhs, rhs)
-        && a == b
-    {
-        Some(Type::List(a.clone()))
-    } else {
-        None
+    let (Type::List(a), Type::List(b)) = (lhs, rhs) else {
+        return None;
+    };
+    if a == b {
+        return Some(Type::List(a.clone()));
     }
+    // Mirror `list_type`: heterogeneous resource-singleton elements
+    // lift to `List<Resource>`. Without this, `[sym] ++ [file]` would
+    // error in synthesis even though `[sym, file]` infers cleanly.
+    if is_resource_singleton(a) && is_resource_singleton(b) {
+        return Some(Type::List(Box::new(Type::Resource)));
+    }
+    None
 }
 
 const fn is_numeric_pair(lhs: &Type, rhs: &Type) -> bool {

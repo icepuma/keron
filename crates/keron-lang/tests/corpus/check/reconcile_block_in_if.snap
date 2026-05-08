@@ -1,0 +1,203 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "use_zsh",
+                    span: 4..11,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 13..20,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        Boolean(
+                            true,
+                        ),
+                    ),
+                    span: 23..27,
+                },
+                span: 0..28,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "zshrc",
+                    span: 32..37,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Symlink,
+                        span: 39..46,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "symlink",
+                            span: 49..56,
+                        },
+                        args: [
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "from",
+                                        span: 57..61,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "df/zshrc",
+                                        ),
+                                    ),
+                                    span: 64..74,
+                                },
+                                span: 57..74,
+                            },
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "to",
+                                        span: 76..78,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "~/.zshrc",
+                                        ),
+                                    ),
+                                    span: 81..91,
+                                },
+                                span: 76..91,
+                            },
+                        ],
+                    },
+                    span: 49..93,
+                },
+                span: 28..93,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "bashrc",
+                    span: 97..103,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Symlink,
+                        span: 105..112,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "symlink",
+                            span: 115..122,
+                        },
+                        args: [
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "from",
+                                        span: 123..127,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "df/bashrc",
+                                        ),
+                                    ),
+                                    span: 130..141,
+                                },
+                                span: 123..141,
+                            },
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "to",
+                                        span: 143..145,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "~/.bashrc",
+                                        ),
+                                    ),
+                                    span: 148..159,
+                                },
+                                span: 143..159,
+                            },
+                        ],
+                    },
+                    span: 115..162,
+                },
+                span: 93..162,
+            },
+        ),
+        ExprStmt(
+            Spanned {
+                node: If {
+                    cond: Spanned {
+                        node: Var(
+                            "use_zsh",
+                        ),
+                        span: 165..172,
+                    },
+                    then_branch: Block {
+                        stmts: [
+                            Reconcile(
+                                ReconcileDecl {
+                                    chains: [
+                                        [
+                                            Spanned {
+                                                node: Var(
+                                                    "zshrc",
+                                                ),
+                                                span: 193..198,
+                                            },
+                                        ],
+                                        [
+                                            Spanned {
+                                                node: Var(
+                                                    "bashrc",
+                                                ),
+                                                span: 204..210,
+                                            },
+                                            Spanned {
+                                                node: Var(
+                                                    "zshrc",
+                                                ),
+                                                span: 214..219,
+                                            },
+                                        ],
+                                    ],
+                                    span: 177..224,
+                                },
+                            ),
+                        ],
+                        trailing: None,
+                        span: 173..226,
+                    },
+                    else_branch: Block {
+                        stmts: [],
+                        trailing: None,
+                        span: 226..226,
+                    },
+                },
+                span: 162..226,
+            },
+        ),
+    ],
+}

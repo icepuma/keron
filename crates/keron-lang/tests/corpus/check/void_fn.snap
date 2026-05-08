@@ -78,12 +78,16 @@ Program {
                     stmts: [
                         Reconcile(
                             ReconcileDecl {
-                                expr: Spanned {
-                                    node: Var(
-                                        "target",
-                                    ),
-                                    span: 86..92,
-                                },
+                                chains: [
+                                    [
+                                        Spanned {
+                                            node: Var(
+                                                "target",
+                                            ),
+                                            span: 86..92,
+                                        },
+                                    ],
+                                ],
                                 span: 76..93,
                             },
                         ),
@@ -133,12 +137,16 @@ Program {
                                     stmts: [
                                         Reconcile(
                                             ReconcileDecl {
-                                                expr: Spanned {
-                                                    node: Var(
-                                                        "target",
-                                                    ),
-                                                    span: 155..161,
-                                                },
+                                                chains: [
+                                                    [
+                                                        Spanned {
+                                                            node: Var(
+                                                                "target",
+                                                            ),
+                                                            span: 155..161,
+                                                        },
+                                                    ],
+                                                ],
                                                 span: 145..162,
                                             },
                                         ),

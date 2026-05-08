@@ -1,0 +1,9 @@
+val use_zsh: Boolean = true
+
+val r: Resource = if use_zsh {
+  symlink(from = "df/zsh", to = "~/.zshrc")
+} else {
+  file(path = "/etc/motd", content = "welcome")
+}
+
+reconcile r

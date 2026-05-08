@@ -97,12 +97,16 @@ Program {
                             ),
                             Reconcile(
                                 ReconcileDecl {
-                                    expr: Spanned {
-                                        node: Var(
-                                            "doubled",
-                                        ),
-                                        span: 80..87,
-                                    },
+                                    chains: [
+                                        [
+                                            Spanned {
+                                                node: Var(
+                                                    "doubled",
+                                                ),
+                                                span: 80..87,
+                                            },
+                                        ],
+                                    ],
                                     span: 70..88,
                                 },
                             ),

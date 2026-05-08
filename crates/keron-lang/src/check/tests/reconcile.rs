@@ -94,7 +94,14 @@ fn reconcile_list_of_int_errors() {
 
 #[test]
 fn reconcile_map_errors() {
-    let err = check_src(r#"reconcile {"a": 1}"#).expect_err("should fail");
+    // The map-literal form `{...}` after `reconcile` is committed to
+    // the block grammar at parse time, so a map can only reach the
+    // checker via a `val` binding.
+    let src = r#"
+        val m: Map<String, Int> = {"a": 1}
+        reconcile m
+    "#;
+    let err = check_src(src).expect_err("should fail");
     assert!(err[0].message.contains("found `Map<String, Int>`"));
 }
 
@@ -145,4 +152,145 @@ fn reconcile_arg_type_mismatch_propagates() {
     let err = check_src(r#"reconcile symlink(from = 1, to = "b")"#).expect_err("should fail");
     assert!(err[0].message.contains("expected `String`"));
     assert!(err[0].message.contains("found `Int`"));
+}
+
+// ---------- chain (`~>`) and block forms ----------
+
+#[test]
+fn reconcile_chain_of_resources_typechecks() {
+    let src = r#"
+        val a: Symlink = symlink(from = "x", to = "y")
+        val b: File = file(path = "p", content = "c")
+        reconcile a ~> b
+    "#;
+    assert!(check_src(src).is_ok());
+}
+
+#[test]
+fn reconcile_block_of_single_steps_typechecks() {
+    let src = r#"
+        val a: Symlink = symlink(from = "x", to = "y")
+        val b: File = file(path = "p", content = "c")
+        val d: Directory = directory(path = "p")
+        reconcile {
+          a;
+          b;
+          d
+        }
+    "#;
+    assert!(check_src(src).is_ok());
+}
+
+#[test]
+fn reconcile_block_with_chain_steps_typechecks() {
+    let src = r#"
+        val a: Symlink = symlink(from = "x", to = "y")
+        val b: Symlink = symlink(from = "p", to = "q")
+        val c: Symlink = symlink(from = "u", to = "v")
+        reconcile {
+          a;
+          b ~> c
+        }
+    "#;
+    assert!(check_src(src).is_ok());
+}
+
+#[test]
+fn reconcile_chain_with_non_reconcilable_step_at_head_errors() {
+    let src = r#"
+        val a: Symlink = symlink(from = "x", to = "y")
+        reconcile 42 ~> a
+    "#;
+    let err = check_src(src).expect_err("should fail");
+    assert!(err.iter().any(|d| d.message.contains("found `Int`")));
+}
+
+#[test]
+fn reconcile_chain_with_non_reconcilable_step_in_middle_errors() {
+    let src = r#"
+        val a: Symlink = symlink(from = "x", to = "y")
+        val b: Symlink = symlink(from = "p", to = "q")
+        reconcile a ~> "nope" ~> b
+    "#;
+    let err = check_src(src).expect_err("should fail");
+    assert!(err.iter().any(|d| d.message.contains("found `String`")));
+}
+
+#[test]
+fn reconcile_chain_reports_every_bad_step() {
+    let src = r#"
+        val a: Symlink = symlink(from = "x", to = "y")
+        reconcile 1 ~> a ~> "two" ~> 3.0
+    "#;
+    let err = check_src(src).expect_err("should fail");
+    assert!(err.iter().any(|d| d.message.contains("found `Int`")));
+    assert!(err.iter().any(|d| d.message.contains("found `String`")));
+    assert!(err.iter().any(|d| d.message.contains("found `Double`")));
+}
+
+#[test]
+fn reconcile_block_inside_if_typechecks() {
+    let src = r#"
+        val a: Symlink = symlink(from = "x", to = "y")
+        val b: Symlink = symlink(from = "p", to = "q")
+        if true {
+          reconcile {
+            a;
+            b
+          }
+        }
+    "#;
+    assert!(check_src(src).is_ok());
+}
+
+#[test]
+fn reconcile_block_inside_for_typechecks() {
+    let src = r#"
+        val xs: List<Symlink> = [symlink(from = "x", to = "y")]
+        for s in xs {
+          reconcile {
+            s
+          }
+        }
+    "#;
+    assert!(check_src(src).is_ok());
+}
+
+#[test]
+fn reconcile_chain_with_resource_step_typechecks() {
+    let src = r#"
+        val s: Symlink = symlink(from = "a", to = "b")
+        val r: Resource = file(path = "p", content = "c")
+        val d: Directory = directory(path = "d")
+        reconcile s ~> r ~> d
+    "#;
+    assert!(check_src(src).is_ok());
+}
+
+#[test]
+fn reconcile_block_with_resource_step_typechecks() {
+    let src = r#"
+        val r: Resource = symlink(from = "a", to = "b")
+        val rs: List<Resource> = [
+          file(path = "p", content = "c"),
+          directory(path = "d"),
+        ]
+        reconcile {
+          r;
+          rs
+        }
+    "#;
+    assert!(check_src(src).is_ok());
+}
+
+#[test]
+fn reconcile_chain_length_four_typechecks() {
+    let src = r#"
+        val a: Symlink = symlink(from = "a", to = "b")
+        val b: Symlink = symlink(from = "c", to = "d")
+        val c: Symlink = symlink(from = "e", to = "f")
+        val d: Symlink = symlink(from = "g", to = "h")
+        reconcile a ~> b ~> c ~> d
+    "#;
+    assert!(check_src(src).is_ok());
 }

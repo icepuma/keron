@@ -196,37 +196,41 @@ Program {
                         stmts: [
                             Reconcile(
                                 ReconcileDecl {
-                                    expr: Spanned {
-                                        node: Call {
-                                            callee: Spanned {
-                                                node: "write_kv",
-                                                span: 277..285,
+                                    chains: [
+                                        [
+                                            Spanned {
+                                                node: Call {
+                                                    callee: Spanned {
+                                                        node: "write_kv",
+                                                        span: 277..285,
+                                                    },
+                                                    args: [
+                                                        CallArg {
+                                                            name: None,
+                                                            value: Spanned {
+                                                                node: Var(
+                                                                    "name",
+                                                                ),
+                                                                span: 286..290,
+                                                            },
+                                                            span: 286..290,
+                                                        },
+                                                        CallArg {
+                                                            name: None,
+                                                            value: Spanned {
+                                                                node: Var(
+                                                                    "n",
+                                                                ),
+                                                                span: 292..293,
+                                                            },
+                                                            span: 292..293,
+                                                        },
+                                                    ],
+                                                },
+                                                span: 277..295,
                                             },
-                                            args: [
-                                                CallArg {
-                                                    name: None,
-                                                    value: Spanned {
-                                                        node: Var(
-                                                            "name",
-                                                        ),
-                                                        span: 286..290,
-                                                    },
-                                                    span: 286..290,
-                                                },
-                                                CallArg {
-                                                    name: None,
-                                                    value: Spanned {
-                                                        node: Var(
-                                                            "n",
-                                                        ),
-                                                        span: 292..293,
-                                                    },
-                                                    span: 292..293,
-                                                },
-                                            ],
-                                        },
-                                        span: 277..295,
-                                    },
+                                        ],
+                                    ],
                                     span: 267..295,
                                 },
                             ),
@@ -324,59 +328,63 @@ Program {
                         stmts: [
                             Reconcile(
                                 ReconcileDecl {
-                                    expr: Spanned {
-                                        node: Call {
-                                            callee: Spanned {
-                                                node: "file",
-                                                span: 477..481,
-                                            },
-                                            args: [
-                                                CallArg {
-                                                    name: Some(
-                                                        Spanned {
-                                                            node: "path",
-                                                            span: 482..486,
-                                                        },
-                                                    ),
-                                                    value: Spanned {
-                                                        node: Interpolation(
-                                                            [
-                                                                Text(
-                                                                    "/tmp/",
-                                                                ),
-                                                                Expr(
-                                                                    Spanned {
-                                                                        node: Var(
-                                                                            "code",
+                                    chains: [
+                                        [
+                                            Spanned {
+                                                node: Call {
+                                                    callee: Spanned {
+                                                        node: "file",
+                                                        span: 477..481,
+                                                    },
+                                                    args: [
+                                                        CallArg {
+                                                            name: Some(
+                                                                Spanned {
+                                                                    node: "path",
+                                                                    span: 482..486,
+                                                                },
+                                                            ),
+                                                            value: Spanned {
+                                                                node: Interpolation(
+                                                                    [
+                                                                        Text(
+                                                                            "/tmp/",
                                                                         ),
-                                                                        span: 497..501,
-                                                                    },
+                                                                        Expr(
+                                                                            Spanned {
+                                                                                node: Var(
+                                                                                    "code",
+                                                                                ),
+                                                                                span: 497..501,
+                                                                            },
+                                                                        ),
+                                                                    ],
                                                                 ),
-                                                            ],
-                                                        ),
-                                                        span: 489..503,
-                                                    },
-                                                    span: 482..503,
-                                                },
-                                                CallArg {
-                                                    name: Some(
-                                                        Spanned {
-                                                            node: "content",
-                                                            span: 505..512,
+                                                                span: 489..503,
+                                                            },
+                                                            span: 482..503,
                                                         },
-                                                    ),
-                                                    value: Spanned {
-                                                        node: Var(
-                                                            "label",
-                                                        ),
-                                                        span: 515..520,
-                                                    },
-                                                    span: 505..520,
+                                                        CallArg {
+                                                            name: Some(
+                                                                Spanned {
+                                                                    node: "content",
+                                                                    span: 505..512,
+                                                                },
+                                                            ),
+                                                            value: Spanned {
+                                                                node: Var(
+                                                                    "label",
+                                                                ),
+                                                                span: 515..520,
+                                                            },
+                                                            span: 505..520,
+                                                        },
+                                                    ],
                                                 },
-                                            ],
-                                        },
-                                        span: 477..522,
-                                    },
+                                                span: 477..522,
+                                            },
+                                        ],
+                                    ],
                                     span: 467..522,
                                 },
                             ),
@@ -515,59 +523,63 @@ Program {
                             ),
                             Reconcile(
                                 ReconcileDecl {
-                                    expr: Spanned {
-                                        node: Call {
-                                            callee: Spanned {
-                                                node: "file",
-                                                span: 757..761,
-                                            },
-                                            args: [
-                                                CallArg {
-                                                    name: Some(
-                                                        Spanned {
-                                                            node: "path",
-                                                            span: 762..766,
-                                                        },
-                                                    ),
-                                                    value: Spanned {
-                                                        node: Interpolation(
-                                                            [
-                                                                Text(
-                                                                    "/tmp/",
-                                                                ),
-                                                                Expr(
-                                                                    Spanned {
-                                                                        node: Var(
-                                                                            "user",
+                                    chains: [
+                                        [
+                                            Spanned {
+                                                node: Call {
+                                                    callee: Spanned {
+                                                        node: "file",
+                                                        span: 757..761,
+                                                    },
+                                                    args: [
+                                                        CallArg {
+                                                            name: Some(
+                                                                Spanned {
+                                                                    node: "path",
+                                                                    span: 762..766,
+                                                                },
+                                                            ),
+                                                            value: Spanned {
+                                                                node: Interpolation(
+                                                                    [
+                                                                        Text(
+                                                                            "/tmp/",
                                                                         ),
-                                                                        span: 777..781,
-                                                                    },
+                                                                        Expr(
+                                                                            Spanned {
+                                                                                node: Var(
+                                                                                    "user",
+                                                                                ),
+                                                                                span: 777..781,
+                                                                            },
+                                                                        ),
+                                                                    ],
                                                                 ),
-                                                            ],
-                                                        ),
-                                                        span: 769..783,
-                                                    },
-                                                    span: 762..783,
-                                                },
-                                                CallArg {
-                                                    name: Some(
-                                                        Spanned {
-                                                            node: "content",
-                                                            span: 785..792,
+                                                                span: 769..783,
+                                                            },
+                                                            span: 762..783,
                                                         },
-                                                    ),
-                                                    value: Spanned {
-                                                        node: Var(
-                                                            "tag",
-                                                        ),
-                                                        span: 795..798,
-                                                    },
-                                                    span: 785..798,
+                                                        CallArg {
+                                                            name: Some(
+                                                                Spanned {
+                                                                    node: "content",
+                                                                    span: 785..792,
+                                                                },
+                                                            ),
+                                                            value: Spanned {
+                                                                node: Var(
+                                                                    "tag",
+                                                                ),
+                                                                span: 795..798,
+                                                            },
+                                                            span: 785..798,
+                                                        },
+                                                    ],
                                                 },
-                                            ],
-                                        },
-                                        span: 757..800,
-                                    },
+                                                span: 757..800,
+                                            },
+                                        ],
+                                    ],
                                     span: 747..800,
                                 },
                             ),

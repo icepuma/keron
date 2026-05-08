@@ -5,51 +5,55 @@ Program {
     items: [
         Reconcile(
             ReconcileDecl {
-                expr: Spanned {
-                    node: Call {
-                        callee: Spanned {
-                            node: "symlink",
-                            span: 10..17,
+                chains: [
+                    [
+                        Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "symlink",
+                                    span: 10..17,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: Some(
+                                            Spanned {
+                                                node: "from",
+                                                span: 18..22,
+                                            },
+                                        ),
+                                        value: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "a",
+                                                ),
+                                            ),
+                                            span: 25..28,
+                                        },
+                                        span: 18..28,
+                                    },
+                                    CallArg {
+                                        name: Some(
+                                            Spanned {
+                                                node: "to",
+                                                span: 30..32,
+                                            },
+                                        ),
+                                        value: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "b",
+                                                ),
+                                            ),
+                                            span: 35..38,
+                                        },
+                                        span: 30..38,
+                                    },
+                                ],
+                            },
+                            span: 10..40,
                         },
-                        args: [
-                            CallArg {
-                                name: Some(
-                                    Spanned {
-                                        node: "from",
-                                        span: 18..22,
-                                    },
-                                ),
-                                value: Spanned {
-                                    node: Literal(
-                                        String(
-                                            "a",
-                                        ),
-                                    ),
-                                    span: 25..28,
-                                },
-                                span: 18..28,
-                            },
-                            CallArg {
-                                name: Some(
-                                    Spanned {
-                                        node: "to",
-                                        span: 30..32,
-                                    },
-                                ),
-                                value: Spanned {
-                                    node: Literal(
-                                        String(
-                                            "b",
-                                        ),
-                                    ),
-                                    span: 35..38,
-                                },
-                                span: 30..38,
-                            },
-                        ],
-                    },
-                    span: 10..40,
-                },
+                    ],
+                ],
                 span: 0..40,
             },
         ),

@@ -122,12 +122,16 @@ Program {
                                         stmts: [
                                             Reconcile(
                                                 ReconcileDecl {
-                                                    expr: Spanned {
-                                                        node: Var(
-                                                            "v",
-                                                        ),
-                                                        span: 110..111,
-                                                    },
+                                                    chains: [
+                                                        [
+                                                            Spanned {
+                                                                node: Var(
+                                                                    "v",
+                                                                ),
+                                                                span: 110..111,
+                                                            },
+                                                        ],
+                                                    ],
                                                     span: 100..114,
                                                 },
                                             ),

@@ -1,0 +1,9 @@
+val rs: List<Resource> = [
+  symlink(from = "df/zsh", to = "~/.zshrc"),
+  file(path = "/etc/motd", content = "welcome"),
+  directory(path = "~/data"),
+]
+
+for r in rs {
+  reconcile r
+}

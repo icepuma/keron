@@ -1,0 +1,161 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "xs",
+                    span: 4..6,
+                },
+                ty: Some(
+                    Spanned {
+                        node: List(
+                            Symlink,
+                        ),
+                        span: 8..22,
+                    },
+                ),
+                value: Spanned {
+                    node: List(
+                        [
+                            Spanned {
+                                node: Call {
+                                    callee: Spanned {
+                                        node: "symlink",
+                                        span: 28..35,
+                                    },
+                                    args: [
+                                        CallArg {
+                                            name: Some(
+                                                Spanned {
+                                                    node: "from",
+                                                    span: 36..40,
+                                                },
+                                            ),
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "from-a",
+                                                    ),
+                                                ),
+                                                span: 43..51,
+                                            },
+                                            span: 36..51,
+                                        },
+                                        CallArg {
+                                            name: Some(
+                                                Spanned {
+                                                    node: "to",
+                                                    span: 53..55,
+                                                },
+                                            ),
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "to-a",
+                                                    ),
+                                                ),
+                                                span: 58..64,
+                                            },
+                                            span: 53..64,
+                                        },
+                                    ],
+                                },
+                                span: 28..65,
+                            },
+                            Spanned {
+                                node: Call {
+                                    callee: Spanned {
+                                        node: "symlink",
+                                        span: 69..76,
+                                    },
+                                    args: [
+                                        CallArg {
+                                            name: Some(
+                                                Spanned {
+                                                    node: "from",
+                                                    span: 77..81,
+                                                },
+                                            ),
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "from-b",
+                                                    ),
+                                                ),
+                                                span: 84..92,
+                                            },
+                                            span: 77..92,
+                                        },
+                                        CallArg {
+                                            name: Some(
+                                                Spanned {
+                                                    node: "to",
+                                                    span: 94..96,
+                                                },
+                                            ),
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "to-b",
+                                                    ),
+                                                ),
+                                                span: 99..105,
+                                            },
+                                            span: 94..105,
+                                        },
+                                    ],
+                                },
+                                span: 69..106,
+                            },
+                        ],
+                    ),
+                    span: 24..111,
+                },
+                span: 0..111,
+            },
+        ),
+        ExprStmt(
+            Spanned {
+                node: For {
+                    pattern: Elem(
+                        Spanned {
+                            node: "s",
+                            span: 115..116,
+                        },
+                    ),
+                    iter_expr: Spanned {
+                        node: Var(
+                            "xs",
+                        ),
+                        span: 120..122,
+                    },
+                    body: Block {
+                        stmts: [
+                            Reconcile(
+                                ReconcileDecl {
+                                    chains: [
+                                        [
+                                            Spanned {
+                                                node: Var(
+                                                    "s",
+                                                ),
+                                                span: 143..144,
+                                            },
+                                        ],
+                                    ],
+                                    span: 127..149,
+                                },
+                            ),
+                        ],
+                        trailing: None,
+                        span: 123..151,
+                    },
+                },
+                span: 111..151,
+            },
+        ),
+    ],
+}

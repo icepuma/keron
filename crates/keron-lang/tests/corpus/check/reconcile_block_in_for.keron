@@ -1,0 +1,10 @@
+val xs: List<Symlink> = [
+  symlink(from = "from-a", to = "to-a"),
+  symlink(from = "from-b", to = "to-b"),
+]
+
+for s in xs {
+  reconcile {
+    s
+  }
+}

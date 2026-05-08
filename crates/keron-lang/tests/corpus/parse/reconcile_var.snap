@@ -65,12 +65,16 @@ Program {
         ),
         Reconcile(
             ReconcileDecl {
-                expr: Spanned {
-                    node: Var(
-                        "zshrc",
-                    ),
-                    span: 77..82,
-                },
+                chains: [
+                    [
+                        Spanned {
+                            node: Var(
+                                "zshrc",
+                            ),
+                            span: 77..82,
+                        },
+                    ],
+                ],
                 span: 67..83,
             },
         ),

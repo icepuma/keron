@@ -18,6 +18,7 @@ pub(super) fn type_annotation<'src>() -> impl Parser<'src, &'src str, Type, Extr
             text::keyword("Symlink").to(Type::Symlink),
             text::keyword("File").to(Type::File),
             text::keyword("Directory").to(Type::Directory),
+            text::keyword("Resource").to(Type::Resource),
             text::keyword("Void").to(Type::Void),
         ));
         let list = text::keyword("List")

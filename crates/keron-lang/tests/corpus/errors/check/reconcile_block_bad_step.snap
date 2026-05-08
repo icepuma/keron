@@ -1,0 +1,14 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `reconcile` expects a resource or list of resources, found `Int`
+  --> 5:3
+  |
+5 |   n;
+  |   ^
+
+error: `reconcile` expects a resource or list of resources, found `Int`
+  --> 6:8
+  |
+6 |   a ~> n
+  |        ^

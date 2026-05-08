@@ -168,27 +168,31 @@ Program {
                         stmts: [
                             Reconcile(
                                 ReconcileDecl {
-                                    expr: Spanned {
-                                        node: Call {
-                                            callee: Spanned {
-                                                node: "link",
-                                                span: 319..323,
-                                            },
-                                            args: [
-                                                CallArg {
-                                                    name: None,
-                                                    value: Spanned {
-                                                        node: Var(
-                                                            "name",
-                                                        ),
-                                                        span: 324..328,
+                                    chains: [
+                                        [
+                                            Spanned {
+                                                node: Call {
+                                                    callee: Spanned {
+                                                        node: "link",
+                                                        span: 319..323,
                                                     },
-                                                    span: 324..328,
+                                                    args: [
+                                                        CallArg {
+                                                            name: None,
+                                                            value: Spanned {
+                                                                node: Var(
+                                                                    "name",
+                                                                ),
+                                                                span: 324..328,
+                                                            },
+                                                            span: 324..328,
+                                                        },
+                                                    ],
                                                 },
-                                            ],
-                                        },
-                                        span: 319..330,
-                                    },
+                                                span: 319..330,
+                                            },
+                                        ],
+                                    ],
                                     span: 309..330,
                                 },
                             ),
@@ -278,29 +282,33 @@ Program {
                                         stmts: [
                                             Reconcile(
                                                 ReconcileDecl {
-                                                    expr: Spanned {
-                                                        node: Call {
-                                                            callee: Spanned {
-                                                                node: "link",
-                                                                span: 478..482,
-                                                            },
-                                                            args: [
-                                                                CallArg {
-                                                                    name: None,
-                                                                    value: Spanned {
-                                                                        node: Literal(
-                                                                            String(
-                                                                                "bashrc",
-                                                                            ),
-                                                                        ),
-                                                                        span: 483..491,
+                                                    chains: [
+                                                        [
+                                                            Spanned {
+                                                                node: Call {
+                                                                    callee: Spanned {
+                                                                        node: "link",
+                                                                        span: 478..482,
                                                                     },
-                                                                    span: 483..491,
+                                                                    args: [
+                                                                        CallArg {
+                                                                            name: None,
+                                                                            value: Spanned {
+                                                                                node: Literal(
+                                                                                    String(
+                                                                                        "bashrc",
+                                                                                    ),
+                                                                                ),
+                                                                                span: 483..491,
+                                                                            },
+                                                                            span: 483..491,
+                                                                        },
+                                                                    ],
                                                                 },
-                                                            ],
-                                                        },
-                                                        span: 478..493,
-                                                    },
+                                                                span: 478..493,
+                                                            },
+                                                        ],
+                                                    ],
                                                     span: 468..493,
                                                 },
                                             ),
@@ -415,27 +423,31 @@ Program {
                             ),
                             Reconcile(
                                 ReconcileDecl {
-                                    expr: Spanned {
-                                        node: Call {
-                                            callee: Spanned {
-                                                node: "link",
-                                                span: 633..637,
-                                            },
-                                            args: [
-                                                CallArg {
-                                                    name: None,
-                                                    value: Spanned {
-                                                        node: Var(
-                                                            "tag",
-                                                        ),
-                                                        span: 638..641,
+                                    chains: [
+                                        [
+                                            Spanned {
+                                                node: Call {
+                                                    callee: Spanned {
+                                                        node: "link",
+                                                        span: 633..637,
                                                     },
-                                                    span: 638..641,
+                                                    args: [
+                                                        CallArg {
+                                                            name: None,
+                                                            value: Spanned {
+                                                                node: Var(
+                                                                    "tag",
+                                                                ),
+                                                                span: 638..641,
+                                                            },
+                                                            span: 638..641,
+                                                        },
+                                                    ],
                                                 },
-                                            ],
-                                        },
-                                        span: 633..643,
-                                    },
+                                                span: 633..643,
+                                            },
+                                        ],
+                                    ],
                                     span: 623..643,
                                 },
                             ),

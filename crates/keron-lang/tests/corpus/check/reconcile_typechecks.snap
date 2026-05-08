@@ -168,136 +168,152 @@ Program {
         ),
         Reconcile(
             ReconcileDecl {
-                expr: Spanned {
-                    node: Var(
-                        "zshrc",
-                    ),
-                    span: 199..204,
-                },
+                chains: [
+                    [
+                        Spanned {
+                            node: Var(
+                                "zshrc",
+                            ),
+                            span: 199..204,
+                        },
+                    ],
+                ],
                 span: 189..205,
             },
         ),
         Reconcile(
             ReconcileDecl {
-                expr: Spanned {
-                    node: Var(
-                        "gitcfg",
-                    ),
-                    span: 215..221,
-                },
+                chains: [
+                    [
+                        Spanned {
+                            node: Var(
+                                "gitcfg",
+                            ),
+                            span: 215..221,
+                        },
+                    ],
+                ],
                 span: 205..222,
             },
         ),
         Reconcile(
             ReconcileDecl {
-                expr: Spanned {
-                    node: Var(
-                        "xdgcfg",
-                    ),
-                    span: 232..238,
-                },
+                chains: [
+                    [
+                        Spanned {
+                            node: Var(
+                                "xdgcfg",
+                            ),
+                            span: 232..238,
+                        },
+                    ],
+                ],
                 span: 222..240,
             },
         ),
         Reconcile(
             ReconcileDecl {
-                expr: Spanned {
-                    node: List(
-                        [
-                            Spanned {
-                                node: Call {
-                                    callee: Spanned {
-                                        node: "symlink",
-                                        span: 254..261,
+                chains: [
+                    [
+                        Spanned {
+                            node: List(
+                                [
+                                    Spanned {
+                                        node: Call {
+                                            callee: Spanned {
+                                                node: "symlink",
+                                                span: 254..261,
+                                            },
+                                            args: [
+                                                CallArg {
+                                                    name: Some(
+                                                        Spanned {
+                                                            node: "from",
+                                                            span: 262..266,
+                                                        },
+                                                    ),
+                                                    value: Spanned {
+                                                        node: Literal(
+                                                            String(
+                                                                "~/df/vimrc",
+                                                            ),
+                                                        ),
+                                                        span: 269..281,
+                                                    },
+                                                    span: 262..281,
+                                                },
+                                                CallArg {
+                                                    name: Some(
+                                                        Spanned {
+                                                            node: "to",
+                                                            span: 283..285,
+                                                        },
+                                                    ),
+                                                    value: Spanned {
+                                                        node: Literal(
+                                                            String(
+                                                                "~/.vimrc",
+                                                            ),
+                                                        ),
+                                                        span: 288..298,
+                                                    },
+                                                    span: 283..298,
+                                                },
+                                            ],
+                                        },
+                                        span: 254..299,
                                     },
-                                    args: [
-                                        CallArg {
-                                            name: Some(
-                                                Spanned {
-                                                    node: "from",
-                                                    span: 262..266,
-                                                },
-                                            ),
-                                            value: Spanned {
-                                                node: Literal(
-                                                    String(
-                                                        "~/df/vimrc",
-                                                    ),
-                                                ),
-                                                span: 269..281,
+                                    Spanned {
+                                        node: Call {
+                                            callee: Spanned {
+                                                node: "symlink",
+                                                span: 303..310,
                                             },
-                                            span: 262..281,
-                                        },
-                                        CallArg {
-                                            name: Some(
-                                                Spanned {
-                                                    node: "to",
-                                                    span: 283..285,
-                                                },
-                                            ),
-                                            value: Spanned {
-                                                node: Literal(
-                                                    String(
-                                                        "~/.vimrc",
+                                            args: [
+                                                CallArg {
+                                                    name: Some(
+                                                        Spanned {
+                                                            node: "from",
+                                                            span: 311..315,
+                                                        },
                                                     ),
-                                                ),
-                                                span: 288..298,
-                                            },
-                                            span: 283..298,
+                                                    value: Spanned {
+                                                        node: Literal(
+                                                            String(
+                                                                "~/df/tmux.conf",
+                                                            ),
+                                                        ),
+                                                        span: 318..334,
+                                                    },
+                                                    span: 311..334,
+                                                },
+                                                CallArg {
+                                                    name: Some(
+                                                        Spanned {
+                                                            node: "to",
+                                                            span: 336..338,
+                                                        },
+                                                    ),
+                                                    value: Spanned {
+                                                        node: Literal(
+                                                            String(
+                                                                "~/.tmux.conf",
+                                                            ),
+                                                        ),
+                                                        span: 341..355,
+                                                    },
+                                                    span: 336..355,
+                                                },
+                                            ],
                                         },
-                                    ],
-                                },
-                                span: 254..299,
-                            },
-                            Spanned {
-                                node: Call {
-                                    callee: Spanned {
-                                        node: "symlink",
-                                        span: 303..310,
+                                        span: 303..356,
                                     },
-                                    args: [
-                                        CallArg {
-                                            name: Some(
-                                                Spanned {
-                                                    node: "from",
-                                                    span: 311..315,
-                                                },
-                                            ),
-                                            value: Spanned {
-                                                node: Literal(
-                                                    String(
-                                                        "~/df/tmux.conf",
-                                                    ),
-                                                ),
-                                                span: 318..334,
-                                            },
-                                            span: 311..334,
-                                        },
-                                        CallArg {
-                                            name: Some(
-                                                Spanned {
-                                                    node: "to",
-                                                    span: 336..338,
-                                                },
-                                            ),
-                                            value: Spanned {
-                                                node: Literal(
-                                                    String(
-                                                        "~/.tmux.conf",
-                                                    ),
-                                                ),
-                                                span: 341..355,
-                                            },
-                                            span: 336..355,
-                                        },
-                                    ],
-                                },
-                                span: 303..356,
-                            },
-                        ],
-                    ),
-                    span: 250..360,
-                },
+                                ],
+                            ),
+                            span: 250..360,
+                        },
+                    ],
+                ],
                 span: 240..360,
             },
         ),

@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: found '~' expected something else, '#', '{', '-', '"', '"true"', '"false"', int, '[', '"if"', '"for"', identifier, or '('
+  --> 2:11
+  |
+2 | reconcile ~> a
+  |           ^

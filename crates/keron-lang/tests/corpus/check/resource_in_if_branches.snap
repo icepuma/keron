@@ -1,0 +1,173 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "use_zsh",
+                    span: 4..11,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 13..20,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        Boolean(
+                            true,
+                        ),
+                    ),
+                    span: 23..27,
+                },
+                span: 0..29,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "r",
+                    span: 33..34,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Resource,
+                        span: 36..44,
+                    },
+                ),
+                value: Spanned {
+                    node: If {
+                        cond: Spanned {
+                            node: Var(
+                                "use_zsh",
+                            ),
+                            span: 50..57,
+                        },
+                        then_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: Call {
+                                        callee: Spanned {
+                                            node: "symlink",
+                                            span: 62..69,
+                                        },
+                                        args: [
+                                            CallArg {
+                                                name: Some(
+                                                    Spanned {
+                                                        node: "from",
+                                                        span: 70..74,
+                                                    },
+                                                ),
+                                                value: Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "df/zsh",
+                                                        ),
+                                                    ),
+                                                    span: 77..85,
+                                                },
+                                                span: 70..85,
+                                            },
+                                            CallArg {
+                                                name: Some(
+                                                    Spanned {
+                                                        node: "to",
+                                                        span: 87..89,
+                                                    },
+                                                ),
+                                                value: Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "~/.zshrc",
+                                                        ),
+                                                    ),
+                                                    span: 92..102,
+                                                },
+                                                span: 87..102,
+                                            },
+                                        ],
+                                    },
+                                    span: 62..104,
+                                },
+                            ),
+                            span: 58..106,
+                        },
+                        else_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: Call {
+                                        callee: Spanned {
+                                            node: "file",
+                                            span: 115..119,
+                                        },
+                                        args: [
+                                            CallArg {
+                                                name: Some(
+                                                    Spanned {
+                                                        node: "path",
+                                                        span: 120..124,
+                                                    },
+                                                ),
+                                                value: Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "/etc/motd",
+                                                        ),
+                                                    ),
+                                                    span: 127..138,
+                                                },
+                                                span: 120..138,
+                                            },
+                                            CallArg {
+                                                name: Some(
+                                                    Spanned {
+                                                        node: "content",
+                                                        span: 140..147,
+                                                    },
+                                                ),
+                                                value: Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "welcome",
+                                                        ),
+                                                    ),
+                                                    span: 150..159,
+                                                },
+                                                span: 140..159,
+                                            },
+                                        ],
+                                    },
+                                    span: 115..161,
+                                },
+                            ),
+                            span: 111..164,
+                        },
+                    },
+                    span: 47..164,
+                },
+                span: 29..164,
+            },
+        ),
+        Reconcile(
+            ReconcileDecl {
+                chains: [
+                    [
+                        Spanned {
+                            node: Var(
+                                "r",
+                            ),
+                            span: 174..175,
+                        },
+                    ],
+                ],
+                span: 164..176,
+            },
+        ),
+    ],
+}

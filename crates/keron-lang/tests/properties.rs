@@ -21,6 +21,8 @@ const KEYWORDS: &[&str] = &[
     "val",
     "fn",
     "reconcile",
+    "if",
+    "else",
     "for",
     "in",
     "true",
@@ -34,6 +36,8 @@ const KEYWORDS: &[&str] = &[
     "Symlink",
     "File",
     "Directory",
+    "Resource",
+    "Void",
     // Builtin function names — collide with `val`/`fn` declarations
     // even though they aren't parser keywords.
     "symlink",
@@ -85,6 +89,7 @@ fn literal_source_for(ty: &Type) -> BoxedStrategy<(String, Type)> {
         | Type::Symlink
         | Type::File
         | Type::Directory
+        | Type::Resource
         | Type::Void => {
             unreachable!("structured/resource/void types are not used in literal_source_for")
         }
@@ -552,6 +557,139 @@ proptest! {
         prop_assert!(
             errs[0].message.contains("`reconcile` expects a resource or list of resources"),
             "got: {}", errs[0].message
+        );
+    }
+
+    #[test]
+    fn reconcile_chain_of_symlink_vars_typechecks(
+        names in prop::collection::vec(ident_strategy(), 1..6),
+    ) {
+        // De-duplicate names so the val declarations don't collide.
+        let mut seen = std::collections::HashSet::new();
+        let dedup: Vec<_> = names.into_iter().filter(|n| seen.insert(n.clone())).collect();
+        prop_assume!(!dedup.is_empty());
+        let mut src = String::new();
+        for (i, name) in dedup.iter().enumerate() {
+            writeln!(
+                src,
+                "val {name}: Symlink = symlink(from = \"~/from-{i}\", to = \"~/to-{i}\")"
+            )
+            .expect("write to String");
+        }
+        write!(src, "reconcile {}", dedup.join(" ~> ")).expect("write to String");
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok(), "check failed for: {src}");
+    }
+
+    #[test]
+    fn reconcile_block_of_symlinks_matches_consecutive_reconciles(
+        names in prop::collection::vec(ident_strategy(), 1..5),
+    ) {
+        // The block form should be semantically equivalent to N
+        // consecutive bare `reconcile` statements: both must check
+        // with no diagnostics.
+        let mut seen = std::collections::HashSet::new();
+        let dedup: Vec<_> = names.into_iter().filter(|n| seen.insert(n.clone())).collect();
+        prop_assume!(!dedup.is_empty());
+
+        let mut decls = String::new();
+        for (i, name) in dedup.iter().enumerate() {
+            writeln!(
+                decls,
+                "val {name}: Symlink = symlink(from = \"~/from-{i}\", to = \"~/to-{i}\")"
+            )
+            .expect("write to String");
+        }
+
+        let block_src = format!(
+            "{decls}reconcile {{\n{}\n}}\n",
+            dedup
+                .iter()
+                .map(|n| format!("  {n}"))
+                .collect::<Vec<_>>()
+                .join(";\n"),
+        );
+        let mut separate_src = decls.clone();
+        for n in &dedup {
+            writeln!(separate_src, "reconcile {n}").expect("write to String");
+        }
+
+        prop_assert!(
+            check(&parse(&block_src).expect("block parses")).is_ok(),
+            "block form failed: {block_src}"
+        );
+        prop_assert!(
+            check(&parse(&separate_src).expect("separate parses")).is_ok(),
+            "separate form failed: {separate_src}"
+        );
+    }
+
+    #[test]
+    fn arbitrary_mix_of_resource_kinds_in_chain_typechecks(
+        kinds in prop::collection::vec(0u8..3, 1..6),
+    ) {
+        // Bind each step as a `Resource` val and chain them with `~>`.
+        // The chain checker walks each step against `is_reconcilable`,
+        // which accepts any specific resource and `Resource` itself.
+        let mut decls = String::new();
+        let mut names = Vec::new();
+        for (i, k) in kinds.iter().enumerate() {
+            let name = format!("r{i}");
+            let value = match k {
+                0 => format!("symlink(from = \"a{i}\", to = \"b{i}\")"),
+                1 => format!("file(path = \"p{i}\", content = \"c{i}\")"),
+                _ => format!("directory(path = \"d{i}\")"),
+            };
+            writeln!(decls, "val {name}: Resource = {value}").expect("write to String");
+            names.push(name);
+        }
+        let src = format!("{decls}reconcile {}", names.join(" ~> "));
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok(), "check failed for: {src}");
+    }
+
+    #[test]
+    fn arbitrary_mix_of_resource_kinds_infers_list_of_resource(
+        kinds in prop::collection::vec(0u8..3, 2..6),
+    ) {
+        // Build a list literal with elements drawn from the three
+        // resource kinds. As long as at least two kinds appear, the
+        // inferred element type must be `Resource` and the list must
+        // satisfy a `List<Resource>` annotation. Homogeneous draws are
+        // skipped because they synthesize the specific kind, not
+        // `Resource`, and only the `List<<specific>> <: List<Resource>`
+        // path is exercised.
+        let distinct: std::collections::HashSet<u8> = kinds.iter().copied().collect();
+        prop_assume!(distinct.len() >= 2);
+        let mut entries = String::new();
+        for (i, k) in kinds.iter().enumerate() {
+            let frag = match k {
+                0 => format!("symlink(from = \"a{i}\", to = \"b{i}\")"),
+                1 => format!("file(path = \"p{i}\", content = \"c{i}\")"),
+                _ => format!("directory(path = \"d{i}\")"),
+            };
+            entries.push_str(&frag);
+            entries.push_str(", ");
+        }
+        let src = format!("val xs: List<Resource> = [{entries}]\nreconcile xs");
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok(), "check failed for: {src}");
+    }
+
+    #[test]
+    fn reconcile_chain_with_int_step_always_errors(
+        n in (i64::MIN + 1)..=i64::MAX,
+        name in ident_strategy(),
+    ) {
+        // A chain mixing a symlink and a non-resource always fails.
+        let src = format!(
+            "val {name}: Symlink = symlink(from = \"a\", to = \"b\")\nreconcile {name} ~> {n}"
+        );
+        let prog = parse(&src).expect("parse should succeed");
+        let errs = check(&prog).expect_err("should fail");
+        prop_assert!(
+            errs.iter().any(|d| d.message.contains("found `Int`")),
+            "got: {errs:?}"
         );
     }
 

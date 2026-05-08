@@ -1,0 +1,5 @@
+val zshrc: Symlink = symlink(from = "df/zshrc", to = "~/.zshrc")
+val motd: File = file(path = "/etc/motd", content = "welcome")
+val data: Directory = directory(path = "~/data")
+
+reconcile data ~> motd ~> zshrc

@@ -1,0 +1,7 @@
+val xs = [
+  symlink(from = "df/zsh", to = "~/.zshrc"),
+  file(path = "/etc/motd", content = "welcome"),
+  directory(path = "~/data"),
+]
+
+reconcile xs

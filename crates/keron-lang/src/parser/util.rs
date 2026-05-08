@@ -26,6 +26,7 @@ const KEYWORDS: &[&str] = &[
     "Symlink",
     "File",
     "Directory",
+    "Resource",
     "Void",
 ];
 

@@ -434,45 +434,61 @@ Program {
         ),
         Reconcile(
             ReconcileDecl {
-                expr: Spanned {
-                    node: Var(
-                        "home_dirs",
-                    ),
-                    span: 863..872,
-                },
+                chains: [
+                    [
+                        Spanned {
+                            node: Var(
+                                "home_dirs",
+                            ),
+                            span: 863..872,
+                        },
+                    ],
+                ],
                 span: 853..873,
             },
         ),
         Reconcile(
             ReconcileDecl {
-                expr: Spanned {
-                    node: Var(
-                        "shell_links",
-                    ),
-                    span: 883..894,
-                },
+                chains: [
+                    [
+                        Spanned {
+                            node: Var(
+                                "shell_links",
+                            ),
+                            span: 883..894,
+                        },
+                    ],
+                ],
                 span: 873..895,
             },
         ),
         Reconcile(
             ReconcileDecl {
-                expr: Spanned {
-                    node: Var(
-                        "editor_links",
-                    ),
-                    span: 905..917,
-                },
+                chains: [
+                    [
+                        Spanned {
+                            node: Var(
+                                "editor_links",
+                            ),
+                            span: 905..917,
+                        },
+                    ],
+                ],
                 span: 895..918,
             },
         ),
         Reconcile(
             ReconcileDecl {
-                expr: Spanned {
-                    node: Var(
-                        "gitconfig",
-                    ),
-                    span: 928..937,
-                },
+                chains: [
+                    [
+                        Spanned {
+                            node: Var(
+                                "gitconfig",
+                            ),
+                            span: 928..937,
+                        },
+                    ],
+                ],
                 span: 918..938,
             },
         ),

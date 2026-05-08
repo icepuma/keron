@@ -1,0 +1,7 @@
+val syms: List<Symlink> = [symlink(from = "df/zsh", to = "~/.zshrc")]
+val files: List<File> = [file(path = "/etc/motd", content = "welcome")]
+
+# Inferred type: List<Resource>.
+val all = syms ++ files
+
+reconcile all

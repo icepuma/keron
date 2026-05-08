@@ -3222,12 +3222,16 @@ Program {
                     stmts: [
                         Reconcile(
                             ReconcileDecl {
-                                expr: Spanned {
-                                    node: Var(
-                                        "xdgcfg",
-                                    ),
-                                    span: 4302..4308,
-                                },
+                                chains: [
+                                    [
+                                        Spanned {
+                                            node: Var(
+                                                "xdgcfg",
+                                            ),
+                                            span: 4302..4308,
+                                        },
+                                    ],
+                                ],
                                 span: 4292..4309,
                             },
                         ),
@@ -3277,12 +3281,16 @@ Program {
                                     stmts: [
                                         Reconcile(
                                             ReconcileDecl {
-                                                expr: Spanned {
-                                                    node: Var(
-                                                        "all_links",
-                                                    ),
-                                                    span: 4576..4585,
-                                                },
+                                                chains: [
+                                                    [
+                                                        Spanned {
+                                                            node: Var(
+                                                                "all_links",
+                                                            ),
+                                                            span: 4576..4585,
+                                                        },
+                                                    ],
+                                                ],
                                                 span: 4566..4586,
                                             },
                                         ),
@@ -3306,45 +3314,61 @@ Program {
         ),
         Reconcile(
             ReconcileDecl {
-                expr: Spanned {
-                    node: Var(
-                        "zshrc",
-                    ),
-                    span: 4710..4715,
-                },
+                chains: [
+                    [
+                        Spanned {
+                            node: Var(
+                                "zshrc",
+                            ),
+                            span: 4710..4715,
+                        },
+                    ],
+                ],
                 span: 4700..4716,
             },
         ),
         Reconcile(
             ReconcileDecl {
-                expr: Spanned {
-                    node: Var(
-                        "gitcfg",
-                    ),
-                    span: 4726..4732,
-                },
+                chains: [
+                    [
+                        Spanned {
+                            node: Var(
+                                "gitcfg",
+                            ),
+                            span: 4726..4732,
+                        },
+                    ],
+                ],
                 span: 4716..4733,
             },
         ),
         Reconcile(
             ReconcileDecl {
-                expr: Spanned {
-                    node: Var(
-                        "xdgcfg",
-                    ),
-                    span: 4743..4749,
-                },
+                chains: [
+                    [
+                        Spanned {
+                            node: Var(
+                                "xdgcfg",
+                            ),
+                            span: 4743..4749,
+                        },
+                    ],
+                ],
                 span: 4733..4750,
             },
         ),
         Reconcile(
             ReconcileDecl {
-                expr: Spanned {
-                    node: Var(
-                        "shellrc",
-                    ),
-                    span: 4760..4767,
-                },
+                chains: [
+                    [
+                        Spanned {
+                            node: Var(
+                                "shellrc",
+                            ),
+                            span: 4760..4767,
+                        },
+                    ],
+                ],
                 span: 4750..4902,
             },
         ),
@@ -3361,12 +3385,16 @@ Program {
                         stmts: [
                             Reconcile(
                                 ReconcileDecl {
-                                    expr: Spanned {
-                                        node: Var(
-                                            "all_links",
-                                        ),
-                                        span: 4925..4934,
-                                    },
+                                    chains: [
+                                        [
+                                            Spanned {
+                                                node: Var(
+                                                    "all_links",
+                                                ),
+                                                span: 4925..4934,
+                                            },
+                                        ],
+                                    ],
                                     span: 4915..4935,
                                 },
                             ),
@@ -3402,12 +3430,16 @@ Program {
                         stmts: [
                             Reconcile(
                                 ReconcileDecl {
-                                    expr: Spanned {
-                                        node: Var(
-                                            "one_link",
-                                        ),
-                                        span: 5322..5330,
-                                    },
+                                    chains: [
+                                        [
+                                            Spanned {
+                                                node: Var(
+                                                    "one_link",
+                                                ),
+                                                span: 5322..5330,
+                                            },
+                                        ],
+                                    ],
                                     span: 5312..5331,
                                 },
                             ),
@@ -3442,68 +3474,72 @@ Program {
                         stmts: [
                             Reconcile(
                                 ReconcileDecl {
-                                    expr: Spanned {
-                                        node: Call {
-                                            callee: Spanned {
-                                                node: "file",
-                                                span: 5447..5451,
+                                    chains: [
+                                        [
+                                            Spanned {
+                                                node: Call {
+                                                    callee: Spanned {
+                                                        node: "file",
+                                                        span: 5447..5451,
+                                                    },
+                                                    args: [
+                                                        CallArg {
+                                                            name: Some(
+                                                                Spanned {
+                                                                    node: "path",
+                                                                    span: 5452..5456,
+                                                                },
+                                                            ),
+                                                            value: Spanned {
+                                                                node: Interpolation(
+                                                                    [
+                                                                        Text(
+                                                                            "~/.priority/",
+                                                                        ),
+                                                                        Expr(
+                                                                            Spanned {
+                                                                                node: Var(
+                                                                                    "name",
+                                                                                ),
+                                                                                span: 5474..5478,
+                                                                            },
+                                                                        ),
+                                                                    ],
+                                                                ),
+                                                                span: 5459..5480,
+                                                            },
+                                                            span: 5452..5480,
+                                                        },
+                                                        CallArg {
+                                                            name: Some(
+                                                                Spanned {
+                                                                    node: "content",
+                                                                    span: 5482..5489,
+                                                                },
+                                                            ),
+                                                            value: Spanned {
+                                                                node: Interpolation(
+                                                                    [
+                                                                        Expr(
+                                                                            Spanned {
+                                                                                node: Var(
+                                                                                    "priority",
+                                                                                ),
+                                                                                span: 5495..5503,
+                                                                            },
+                                                                        ),
+                                                                    ],
+                                                                ),
+                                                                span: 5492..5505,
+                                                            },
+                                                            span: 5482..5505,
+                                                        },
+                                                    ],
+                                                },
+                                                span: 5447..5507,
                                             },
-                                            args: [
-                                                CallArg {
-                                                    name: Some(
-                                                        Spanned {
-                                                            node: "path",
-                                                            span: 5452..5456,
-                                                        },
-                                                    ),
-                                                    value: Spanned {
-                                                        node: Interpolation(
-                                                            [
-                                                                Text(
-                                                                    "~/.priority/",
-                                                                ),
-                                                                Expr(
-                                                                    Spanned {
-                                                                        node: Var(
-                                                                            "name",
-                                                                        ),
-                                                                        span: 5474..5478,
-                                                                    },
-                                                                ),
-                                                            ],
-                                                        ),
-                                                        span: 5459..5480,
-                                                    },
-                                                    span: 5452..5480,
-                                                },
-                                                CallArg {
-                                                    name: Some(
-                                                        Spanned {
-                                                            node: "content",
-                                                            span: 5482..5489,
-                                                        },
-                                                    ),
-                                                    value: Spanned {
-                                                        node: Interpolation(
-                                                            [
-                                                                Expr(
-                                                                    Spanned {
-                                                                        node: Var(
-                                                                            "priority",
-                                                                        ),
-                                                                        span: 5495..5503,
-                                                                    },
-                                                                ),
-                                                            ],
-                                                        ),
-                                                        span: 5492..5505,
-                                                    },
-                                                    span: 5482..5505,
-                                                },
-                                            ],
-                                        },
-                                        span: 5447..5507,
-                                    },
+                                        ],
+                                    ],
                                     span: 5437..5507,
                                 },
                             ),
@@ -3545,29 +3581,33 @@ Program {
                                         stmts: [
                                             Reconcile(
                                                 ReconcileDecl {
-                                                    expr: Spanned {
-                                                        node: Call {
-                                                            callee: Spanned {
-                                                                node: "link",
-                                                                span: 5617..5621,
-                                                            },
-                                                            args: [
-                                                                CallArg {
-                                                                    name: None,
-                                                                    value: Spanned {
-                                                                        node: Literal(
-                                                                            String(
-                                                                                "alacritty.yml",
-                                                                            ),
-                                                                        ),
-                                                                        span: 5622..5637,
+                                                    chains: [
+                                                        [
+                                                            Spanned {
+                                                                node: Call {
+                                                                    callee: Spanned {
+                                                                        node: "link",
+                                                                        span: 5617..5621,
                                                                     },
-                                                                    span: 5622..5637,
+                                                                    args: [
+                                                                        CallArg {
+                                                                            name: None,
+                                                                            value: Spanned {
+                                                                                node: Literal(
+                                                                                    String(
+                                                                                        "alacritty.yml",
+                                                                                    ),
+                                                                                ),
+                                                                                span: 5622..5637,
+                                                                            },
+                                                                            span: 5622..5637,
+                                                                        },
+                                                                    ],
                                                                 },
-                                                            ],
-                                                        },
-                                                        span: 5617..5639,
-                                                    },
+                                                                span: 5617..5639,
+                                                            },
+                                                        ],
+                                                    ],
                                                     span: 5607..5639,
                                                 },
                                             ),

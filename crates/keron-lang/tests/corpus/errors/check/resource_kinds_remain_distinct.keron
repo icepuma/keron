@@ -1,0 +1,2 @@
+val s: Symlink = symlink(from = "a", to = "b")
+val f: File = s

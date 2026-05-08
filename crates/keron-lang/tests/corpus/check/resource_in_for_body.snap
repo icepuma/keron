@@ -1,0 +1,189 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "rs",
+                    span: 4..6,
+                },
+                ty: Some(
+                    Spanned {
+                        node: List(
+                            Resource,
+                        ),
+                        span: 8..23,
+                    },
+                ),
+                value: Spanned {
+                    node: List(
+                        [
+                            Spanned {
+                                node: Call {
+                                    callee: Spanned {
+                                        node: "symlink",
+                                        span: 29..36,
+                                    },
+                                    args: [
+                                        CallArg {
+                                            name: Some(
+                                                Spanned {
+                                                    node: "from",
+                                                    span: 37..41,
+                                                },
+                                            ),
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "df/zsh",
+                                                    ),
+                                                ),
+                                                span: 44..52,
+                                            },
+                                            span: 37..52,
+                                        },
+                                        CallArg {
+                                            name: Some(
+                                                Spanned {
+                                                    node: "to",
+                                                    span: 54..56,
+                                                },
+                                            ),
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "~/.zshrc",
+                                                    ),
+                                                ),
+                                                span: 59..69,
+                                            },
+                                            span: 54..69,
+                                        },
+                                    ],
+                                },
+                                span: 29..70,
+                            },
+                            Spanned {
+                                node: Call {
+                                    callee: Spanned {
+                                        node: "file",
+                                        span: 74..78,
+                                    },
+                                    args: [
+                                        CallArg {
+                                            name: Some(
+                                                Spanned {
+                                                    node: "path",
+                                                    span: 79..83,
+                                                },
+                                            ),
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "/etc/motd",
+                                                    ),
+                                                ),
+                                                span: 86..97,
+                                            },
+                                            span: 79..97,
+                                        },
+                                        CallArg {
+                                            name: Some(
+                                                Spanned {
+                                                    node: "content",
+                                                    span: 99..106,
+                                                },
+                                            ),
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "welcome",
+                                                    ),
+                                                ),
+                                                span: 109..118,
+                                            },
+                                            span: 99..118,
+                                        },
+                                    ],
+                                },
+                                span: 74..119,
+                            },
+                            Spanned {
+                                node: Call {
+                                    callee: Spanned {
+                                        node: "directory",
+                                        span: 123..132,
+                                    },
+                                    args: [
+                                        CallArg {
+                                            name: Some(
+                                                Spanned {
+                                                    node: "path",
+                                                    span: 133..137,
+                                                },
+                                            ),
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "~/data",
+                                                    ),
+                                                ),
+                                                span: 140..148,
+                                            },
+                                            span: 133..148,
+                                        },
+                                    ],
+                                },
+                                span: 123..149,
+                            },
+                        ],
+                    ),
+                    span: 25..154,
+                },
+                span: 0..154,
+            },
+        ),
+        ExprStmt(
+            Spanned {
+                node: For {
+                    pattern: Elem(
+                        Spanned {
+                            node: "r",
+                            span: 158..159,
+                        },
+                    ),
+                    iter_expr: Spanned {
+                        node: Var(
+                            "rs",
+                        ),
+                        span: 163..165,
+                    },
+                    body: Block {
+                        stmts: [
+                            Reconcile(
+                                ReconcileDecl {
+                                    chains: [
+                                        [
+                                            Spanned {
+                                                node: Var(
+                                                    "r",
+                                                ),
+                                                span: 180..181,
+                                            },
+                                        ],
+                                    ],
+                                    span: 170..182,
+                                },
+                            ),
+                        ],
+                        trailing: None,
+                        span: 166..184,
+                    },
+                },
+                span: 154..184,
+            },
+        ),
+    ],
+}

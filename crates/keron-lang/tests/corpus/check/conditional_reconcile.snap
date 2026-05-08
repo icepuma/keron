@@ -159,12 +159,16 @@ Program {
                         stmts: [
                             Reconcile(
                                 ReconcileDecl {
-                                    expr: Spanned {
-                                        node: Var(
-                                            "zshrc",
-                                        ),
-                                        span: 189..194,
-                                    },
+                                    chains: [
+                                        [
+                                            Spanned {
+                                                node: Var(
+                                                    "zshrc",
+                                                ),
+                                                span: 189..194,
+                                            },
+                                        ],
+                                    ],
                                     span: 179..195,
                                 },
                             ),
@@ -194,12 +198,16 @@ Program {
                         stmts: [
                             Reconcile(
                                 ReconcileDecl {
-                                    expr: Spanned {
-                                        node: Var(
-                                            "zshrc",
-                                        ),
-                                        span: 220..225,
-                                    },
+                                    chains: [
+                                        [
+                                            Spanned {
+                                                node: Var(
+                                                    "zshrc",
+                                                ),
+                                                span: 220..225,
+                                            },
+                                        ],
+                                    ],
                                     span: 210..226,
                                 },
                             ),
@@ -211,12 +219,16 @@ Program {
                         stmts: [
                             Reconcile(
                                 ReconcileDecl {
-                                    expr: Spanned {
-                                        node: Var(
-                                            "bashrc",
-                                        ),
-                                        span: 245..251,
-                                    },
+                                    chains: [
+                                        [
+                                            Spanned {
+                                                node: Var(
+                                                    "bashrc",
+                                                ),
+                                                span: 245..251,
+                                            },
+                                        ],
+                                    ],
                                     span: 235..252,
                                 },
                             ),
