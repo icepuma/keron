@@ -9,20 +9,26 @@
 //!
 //! - `textDocument/didOpen` / `didChange` / `didClose` (full sync)
 //! - `textDocument/publishDiagnostics`
+//! - `textDocument/completion` (flat list: keywords, primitives,
+//!   stdlib symbols, document-local fns/vals, and imported names)
 //!
-//! Anything else replies `MethodNotFound`. Hover, completion, and
-//! goto-definition are deliberately out of scope until the parse +
-//! check loop is solid in editors. Cross-module diagnostics for
-//! imported files are dropped today; a follow-up will publish those
-//! to their own URIs.
+//! Anything else replies `MethodNotFound`. Hover and goto-definition
+//! are still out of scope, and completion is intentionally
+//! position-agnostic — the client filters by the user's prefix.
+//! Cross-module diagnostics for imported files are dropped today;
+//! a follow-up will publish those to their own URIs.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use keron_modules::{EntrySource, ModuleId, ResolveError, resolve};
-use lsp_server::{Connection, ExtractError, Message, Notification, Response, ResponseError};
+use keron_lang::{Item, parse};
+use keron_modules::{EntrySource, ModuleId, ResolveError, resolve, stdlib};
+use lsp_server::{
+    Connection, ExtractError, Message, Notification, Request, Response, ResponseError,
+};
 use lsp_types::{
+    CompletionItem, CompletionItemKind, CompletionOptions, CompletionParams, CompletionResponse,
     Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
     DidOpenTextDocumentParams, PublishDiagnosticsParams, ServerCapabilities,
     TextDocumentSyncCapability, TextDocumentSyncKind, Uri,
@@ -30,6 +36,7 @@ use lsp_types::{
         DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument, Notification as _,
         PublishDiagnostics,
     },
+    request::{Completion, Request as _},
 };
 
 mod span;
@@ -59,6 +66,15 @@ pub fn run() -> Result<()> {
 fn server_capabilities() -> ServerCapabilities {
     ServerCapabilities {
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
+        // `trigger_characters` is intentionally left at the
+        // `Default::default()` value (`None`) — Zed and most LSP
+        // clients already auto-trigger on identifier characters,
+        // and writing it explicitly would be a no-op the mutation
+        // tester can't observe.
+        completion_provider: Some(CompletionOptions {
+            resolve_provider: Some(false),
+            ..Default::default()
+        }),
         ..Default::default()
     }
 }
@@ -74,15 +90,7 @@ fn main_loop(connection: &Connection) -> Result<()> {
                 if connection.handle_shutdown(&req)? {
                     return Ok(());
                 }
-                let resp = Response {
-                    id: req.id,
-                    result: None,
-                    error: Some(ResponseError {
-                        code: lsp_server::ErrorCode::MethodNotFound as i32,
-                        message: format!("method `{}` not implemented", req.method),
-                        data: None,
-                    }),
-                };
+                let resp = handle_request(req, &docs);
                 connection.sender.send(Message::Response(resp))?;
             }
             Message::Notification(notif) => {
@@ -92,6 +100,44 @@ fn main_loop(connection: &Connection) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn handle_request(req: Request, docs: &HashMap<String, String>) -> Response {
+    match req.method.as_str() {
+        Completion::METHOD => {
+            match serde_json::from_value::<CompletionParams>(req.params.clone()) {
+                Ok(params) => {
+                    let uri = params.text_document_position.text_document.uri;
+                    let text = docs.get(uri.as_str()).cloned().unwrap_or_default();
+                    let items = compute_completions(&text);
+                    let payload = CompletionResponse::Array(items);
+                    Response {
+                        id: req.id,
+                        result: serde_json::to_value(payload).ok(),
+                        error: None,
+                    }
+                }
+                Err(err) => Response {
+                    id: req.id,
+                    result: None,
+                    error: Some(ResponseError {
+                        code: lsp_server::ErrorCode::InvalidParams as i32,
+                        message: format!("invalid `{}` params: {err}", Completion::METHOD),
+                        data: None,
+                    }),
+                },
+            }
+        }
+        method => Response {
+            id: req.id,
+            result: None,
+            error: Some(ResponseError {
+                code: lsp_server::ErrorCode::MethodNotFound as i32,
+                message: format!("method `{method}` not implemented"),
+                data: None,
+            }),
+        },
+    }
 }
 
 fn handle_notification(
@@ -249,6 +295,142 @@ fn extract_err(err: ExtractError<Notification>) -> anyhow::Error {
         }
         ExtractError::MethodMismatch(notif) => {
             anyhow::anyhow!("method mismatch: got `{}`", notif.method)
+        }
+    }
+}
+
+/// Build a flat completion list for the document at `text`.
+///
+/// V1 is position-agnostic: every keyword, primitive, stdlib symbol,
+/// import, and document-local fn/val is emitted on every request.
+/// The client filters by what the user has typed. Cursor-aware scope
+/// (params, block-locals) is left for a follow-up.
+fn compute_completions(text: &str) -> Vec<CompletionItem> {
+    let mut out = Vec::new();
+    push_keywords(&mut out);
+    push_primitive_types(&mut out);
+    push_stdlib(&mut out);
+    push_document_symbols(text, &mut out);
+    out
+}
+
+const KEYWORDS: &[&str] = &[
+    "val",
+    "fn",
+    "reconcile",
+    "if",
+    "else",
+    "for",
+    "in",
+    "from",
+    "use",
+    "true",
+    "false",
+];
+
+fn push_keywords(out: &mut Vec<CompletionItem>) {
+    for kw in KEYWORDS {
+        out.push(CompletionItem {
+            label: (*kw).to_string(),
+            kind: Some(CompletionItemKind::KEYWORD),
+            ..Default::default()
+        });
+    }
+}
+
+const PRIMITIVE_TYPES: &[&str] = &["String", "Int", "Boolean", "Double", "List", "Map", "Void"];
+
+fn push_primitive_types(out: &mut Vec<CompletionItem>) {
+    for ty in PRIMITIVE_TYPES {
+        out.push(CompletionItem {
+            label: (*ty).to_string(),
+            kind: Some(CompletionItemKind::CLASS),
+            detail: Some("primitive".into()),
+            ..Default::default()
+        });
+    }
+}
+
+fn push_stdlib(out: &mut Vec<CompletionItem>) {
+    for (mod_name, stdmod) in stdlib::registry() {
+        let detail = format!("std:{mod_name}");
+        for (name, decl) in &stdmod.fns {
+            let sig = format!(
+                "({}) -> {}",
+                decl.params
+                    .iter()
+                    .map(|p| format!("{}: {}", p.name.node, p.ty.node))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                decl.return_type.node,
+            );
+            out.push(CompletionItem {
+                label: name.clone(),
+                kind: Some(CompletionItemKind::FUNCTION),
+                detail: Some(format!("{detail} {sig}")),
+                ..Default::default()
+            });
+        }
+        for (name, ty) in &stdmod.types {
+            out.push(CompletionItem {
+                label: name.clone(),
+                kind: Some(CompletionItemKind::CLASS),
+                detail: Some(format!("{detail} ({ty})")),
+                ..Default::default()
+            });
+        }
+    }
+}
+
+fn push_document_symbols(text: &str, out: &mut Vec<CompletionItem>) {
+    // Best-effort: completions stay useful even when the document is
+    // mid-edit and the parser fails. Just skip the document portion
+    // in that case.
+    let Ok(prog) = parse(text) else {
+        return;
+    };
+    for item in &prog.items {
+        match item {
+            Item::Val(v) => {
+                let detail =
+                    v.ty.as_ref()
+                        .map_or_else(|| "val".into(), |t| t.node.to_string());
+                out.push(CompletionItem {
+                    label: v.name.node.clone(),
+                    kind: Some(CompletionItemKind::VARIABLE),
+                    detail: Some(detail),
+                    ..Default::default()
+                });
+            }
+            Item::Fn(f) => {
+                let sig = format!(
+                    "({}) -> {}",
+                    f.params
+                        .iter()
+                        .map(|p| format!("{}: {}", p.name.node, p.ty.node))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    f.return_type.node,
+                );
+                out.push(CompletionItem {
+                    label: f.name.node.clone(),
+                    kind: Some(CompletionItemKind::FUNCTION),
+                    detail: Some(sig),
+                    ..Default::default()
+                });
+            }
+            Item::Use(u) => {
+                let from = format!("from {}", u.source.node);
+                for name in &u.names {
+                    out.push(CompletionItem {
+                        label: name.node.clone(),
+                        kind: Some(CompletionItemKind::REFERENCE),
+                        detail: Some(from.clone()),
+                        ..Default::default()
+                    });
+                }
+            }
+            Item::Reconcile(_) | Item::ExprStmt(_) => {}
         }
     }
 }
@@ -497,5 +679,187 @@ mod tests {
             pubs.iter().any(|n| n.method == PublishDiagnostics::METHOD),
             "didOpen must publish diagnostics"
         );
+    }
+
+    fn labels(items: &[CompletionItem]) -> Vec<&str> {
+        items.iter().map(|i| i.label.as_str()).collect()
+    }
+
+    fn req(id: i32, method: &str, params: serde_json::Value) -> Request {
+        Request {
+            id: id.into(),
+            method: method.to_string(),
+            params,
+        }
+    }
+
+    fn completion_params(uri: &Uri) -> serde_json::Value {
+        serde_json::json!({
+            "textDocument": { "uri": uri.as_str() },
+            "position": { "line": 0, "character": 0 },
+        })
+    }
+
+    fn find<'a>(items: &'a [CompletionItem], label: &str) -> &'a CompletionItem {
+        items
+            .iter()
+            .find(|i| i.label == label)
+            .unwrap_or_else(|| panic!("missing completion `{label}`"))
+    }
+
+    #[test]
+    fn server_capabilities_advertises_completion() {
+        let caps = server_capabilities();
+        let opts = caps
+            .completion_provider
+            .expect("completion_provider must be advertised");
+        // Pin each `CompletionOptions` field — mutants drop them
+        // individually, and clients read each.
+        assert_eq!(opts.trigger_characters, None);
+        assert_eq!(opts.resolve_provider, Some(false));
+    }
+
+    #[test]
+    fn compute_completions_includes_keywords_with_keyword_kind() {
+        let items = compute_completions("");
+        for kw in KEYWORDS {
+            let item = find(&items, kw);
+            assert_eq!(
+                item.kind,
+                Some(CompletionItemKind::KEYWORD),
+                "keyword `{kw}` should be tagged KEYWORD",
+            );
+        }
+    }
+
+    #[test]
+    fn compute_completions_includes_primitives_with_class_kind_and_detail() {
+        let items = compute_completions("");
+        for ty in PRIMITIVE_TYPES {
+            let item = find(&items, ty);
+            assert_eq!(
+                item.kind,
+                Some(CompletionItemKind::CLASS),
+                "primitive `{ty}` should be tagged CLASS",
+            );
+            assert_eq!(item.detail.as_deref(), Some("primitive"));
+        }
+    }
+
+    #[test]
+    fn compute_completions_tags_stdlib_fns_and_types() {
+        let items = compute_completions("");
+        let symlink = find(&items, "symlink");
+        assert_eq!(symlink.kind, Some(CompletionItemKind::FUNCTION));
+        let detail = symlink.detail.as_deref().unwrap_or("");
+        assert!(
+            detail.starts_with("std:fs"),
+            "expected std:fs prefix: {detail}"
+        );
+        assert!(detail.contains("from: String"), "missing param: {detail}");
+        assert!(detail.contains("-> Symlink"), "missing return: {detail}");
+
+        let symlink_ty = find(&items, "Symlink");
+        assert_eq!(symlink_ty.kind, Some(CompletionItemKind::CLASS));
+        let ty_detail = symlink_ty.detail.as_deref().unwrap_or("");
+        assert!(ty_detail.starts_with("std:fs"));
+        assert!(ty_detail.contains("Symlink"));
+    }
+
+    #[test]
+    fn compute_completions_picks_up_document_vals_with_type_detail() {
+        let items = compute_completions("val greeting: String = \"hi\"\n");
+        let v = find(&items, "greeting");
+        assert_eq!(v.kind, Some(CompletionItemKind::VARIABLE));
+        assert_eq!(v.detail.as_deref(), Some("String"));
+    }
+
+    #[test]
+    fn compute_completions_picks_up_unannotated_vals_with_fallback_detail() {
+        let items = compute_completions("val mystery = 1\n");
+        let v = find(&items, "mystery");
+        assert_eq!(v.kind, Some(CompletionItemKind::VARIABLE));
+        assert_eq!(v.detail.as_deref(), Some("val"));
+    }
+
+    #[test]
+    fn compute_completions_picks_up_document_fns_with_signature() {
+        let items = compute_completions("fn add(a: Int, b: Int): Int { a + b }\n");
+        let f = find(&items, "add");
+        assert_eq!(f.kind, Some(CompletionItemKind::FUNCTION));
+        let detail = f.detail.as_deref().unwrap_or("");
+        assert!(detail.contains("a: Int"), "got detail: {detail}");
+        assert!(detail.contains("b: Int"), "got detail: {detail}");
+        assert!(detail.contains("-> Int"), "got detail: {detail}");
+    }
+
+    #[test]
+    fn compute_completions_picks_up_use_imports_with_origin_detail() {
+        let items = compute_completions("from \"std:fs\" use file\n");
+        // Stdlib registry also emits a `file` entry, so locate the
+        // import-shaped one (REFERENCE kind, "from ..." detail) by
+        // those two fields together.
+        let import_item = items
+            .iter()
+            .find(|i| {
+                i.label == "file"
+                    && i.kind == Some(CompletionItemKind::REFERENCE)
+                    && i.detail.as_deref().is_some_and(|d| d.starts_with("from "))
+            })
+            .expect("import-shaped completion present");
+        assert!(
+            import_item
+                .detail
+                .as_deref()
+                .is_some_and(|d| d.contains("std:fs")),
+            "import detail should name source",
+        );
+    }
+
+    #[test]
+    fn compute_completions_falls_back_when_parse_fails() {
+        // A truncated source that fails to parse must still yield
+        // keywords/primitives/stdlib so the user sees suggestions
+        // mid-edit.
+        let items = compute_completions("val ");
+        let ls = labels(&items);
+        assert!(ls.contains(&"val"), "keywords still expected: {ls:?}");
+        assert!(ls.contains(&"symlink"), "stdlib still expected: {ls:?}");
+    }
+
+    #[test]
+    fn handle_request_completion_returns_array_response() {
+        let mut docs: HashMap<String, String> = HashMap::new();
+        let uri = untitled_uri("a");
+        docs.insert(uri.as_str().to_string(), "val x: Int = 1\n".into());
+        let resp = handle_request(req(1, Completion::METHOD, completion_params(&uri)), &docs);
+        assert!(resp.error.is_none(), "got error: {:?}", resp.error);
+        let value = resp.result.expect("result present");
+        let parsed: CompletionResponse =
+            serde_json::from_value(value).expect("result is a CompletionResponse");
+        let CompletionResponse::Array(items) = parsed else {
+            panic!("expected Array response, got List");
+        };
+        let ls = labels(&items);
+        assert!(ls.contains(&"x"), "doc-local val present: {ls:?}");
+    }
+
+    #[test]
+    fn handle_request_unknown_method_returns_method_not_found() {
+        let docs: HashMap<String, String> = HashMap::new();
+        let resp = handle_request(req(2, "textDocument/hover", serde_json::json!({})), &docs);
+        let err = resp.error.expect("error present");
+        assert_eq!(err.code, lsp_server::ErrorCode::MethodNotFound as i32);
+    }
+
+    #[test]
+    fn handle_request_completion_invalid_params_returns_invalid_params_error() {
+        let docs: HashMap<String, String> = HashMap::new();
+        let resp = handle_request(
+            req(3, Completion::METHOD, serde_json::json!({"bogus": true})),
+            &docs,
+        );
+        let err = resp.error.expect("error present");
+        assert_eq!(err.code, lsp_server::ErrorCode::InvalidParams as i32);
     }
 }
