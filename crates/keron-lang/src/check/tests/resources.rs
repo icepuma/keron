@@ -175,25 +175,49 @@ fn symlink_assigned_to_int_errors() {
 #[test]
 fn user_fn_collides_with_symlink_builtin() {
     let err = check_src(r"fn symlink(): Int { 1 }").expect_err("should fail");
-    assert!(err[0].message.contains("`symlink` is already defined"));
+    assert!(
+        err[0]
+            .message
+            .contains("`symlink` is a builtin and cannot be redefined"),
+        "got: {}",
+        err[0].message,
+    );
 }
 
 #[test]
 fn user_val_collides_with_symlink_builtin() {
     let err = check_src(r"val symlink = 1").expect_err("should fail");
-    assert!(err[0].message.contains("`symlink` is already defined"));
+    assert!(
+        err[0]
+            .message
+            .contains("`symlink` is a builtin and cannot be redefined"),
+        "got: {}",
+        err[0].message,
+    );
 }
 
 #[test]
 fn user_val_collides_with_file_builtin() {
     let err = check_src(r"val file = 1").expect_err("should fail");
-    assert!(err[0].message.contains("`file` is already defined"));
+    assert!(
+        err[0]
+            .message
+            .contains("`file` is a builtin and cannot be redefined"),
+        "got: {}",
+        err[0].message,
+    );
 }
 
 #[test]
 fn user_val_collides_with_directory_builtin() {
     let err = check_src(r"val directory = 1").expect_err("should fail");
-    assert!(err[0].message.contains("`directory` is already defined"));
+    assert!(
+        err[0]
+            .message
+            .contains("`directory` is a builtin and cannot be redefined"),
+        "got: {}",
+        err[0].message,
+    );
 }
 
 // ---------- Resource supertype ----------

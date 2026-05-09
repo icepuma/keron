@@ -2,7 +2,7 @@
 source: crates/keron-lang/tests/harness/mod.rs
 ---
 error: type mismatch: expected `File`, found `Symlink`
-  --> 4:15
+  --> 3:15
   |
-4 | val f: File = s
+3 | val f: File = s
   |               ^

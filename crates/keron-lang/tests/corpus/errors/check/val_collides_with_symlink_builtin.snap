@@ -1,7 +1,7 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
 ---
-error: `symlink` is already defined
+error: `symlink` is a builtin and cannot be redefined
   --> 1:5
   |
 1 | val symlink = 1

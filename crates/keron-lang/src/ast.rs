@@ -34,9 +34,10 @@ pub enum Item {
 /// `from "<path>" use name1, name2, …`.
 ///
 /// The path is a literal string with no interpolation. Permitted
-/// shapes: `"std:<name>"` (virtual stdlib module, resolved by the Rust
-/// registry), `"./...", "../...", "/..."` (filesystem paths to other
-/// `.keron` files, resolved relative to the importing module).
+/// shapes: `"./..."`, `"../..."`, `"/..."` — filesystem paths to other
+/// `.keron` files, resolved relative to the importing module. Stdlib
+/// items are exposed as builtins by the resolver and don't go through
+/// this declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UseDecl {
     pub source: Spanned<String>,
@@ -314,10 +315,10 @@ pub enum Type {
     /// resolution. The parser produces this for any capitalized
     /// identifier in type position that isn't a primitive keyword
     /// (`String`/`Int`/`Boolean`/`Double`/`Void`/`List`/`Map`); the
-    /// module loader rewrites it to the canonical variant the name
-    /// resolves to (`Symlink`/`File`/`Directory`/`Resource` from
-    /// `std:fs`). After loading, this variant should never appear —
-    /// the type checker treats any leftover `Named` as an error.
+    /// module loader rewrites it to the canonical variant via the
+    /// builtin registry (`Symlink`/`File`/`Directory`/`Resource`).
+    /// After loading, this variant should never appear — the type
+    /// checker treats any leftover `Named` as an error.
     Named(String),
 }
 

@@ -6,24 +6,24 @@ Program {
         Use(
             UseDecl {
                 source: Spanned {
-                    node: "std:fs",
-                    span: 5..13,
+                    node: "./helpers.keron",
+                    span: 5..22,
                 },
                 names: [
                     Spanned {
-                        node: "symlink",
-                        span: 18..25,
+                        node: "foo",
+                        span: 27..30,
                     },
                     Spanned {
-                        node: "file",
-                        span: 27..31,
+                        node: "bar",
+                        span: 32..35,
                     },
                     Spanned {
-                        node: "directory",
-                        span: 33..42,
+                        node: "baz",
+                        span: 37..40,
                     },
                 ],
-                span: 0..42,
+                span: 0..40,
             },
         ),
     ],

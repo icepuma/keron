@@ -1,4 +1,3 @@
-from "std:fs" use symlink, Symlink
 
 # `for x in xs` over a `List<T>` binds `x: T` in body scope.
 

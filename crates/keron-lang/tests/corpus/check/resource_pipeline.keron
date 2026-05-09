@@ -1,4 +1,3 @@
-from "std:fs" use symlink, Symlink
 
 # A function builds Symlinks; multiple are gathered into a List, then
 # the entire list is reconciled in one shot. Demonstrates that resource

@@ -1,4 +1,3 @@
-from "std:fs" use symlink, file, directory
 
 val xs = [
   symlink(from = "df/zsh", to = "~/.zshrc"),

@@ -2,7 +2,7 @@
 source: crates/keron-lang/tests/harness/mod.rs
 ---
 error: `++` requires matching `List<T>` operands, found `List<Symlink>` and `List<Int>`
-  --> 5:11
+  --> 4:11
   |
-5 | val all = syms ++ ns
+4 | val all = syms ++ ns
   |           ^^^^^^^^^^

@@ -8,12 +8,11 @@ use keron_lang::{
 
 use super::render;
 
-/// Pre-resolved imported symbols mirroring what `from "std:fs" use
-/// symlink, file, directory` brings in. Fixtures may include the
-/// `use` line for fidelity with real source (the parser accepts it,
-/// the checker treats it as inert), but the harness independently
-/// seeds these signatures so checking proceeds without going through
-/// the full module resolver.
+/// Pre-resolved imported symbols mirroring the implicit stdlib
+/// builtins (`symlink`, `file`, `directory`, plus the resource type
+/// names). Mirrors `keron-modules::stdlib::fs` by hand because this
+/// harness lives in `keron-lang` and can't depend on
+/// `keron-modules`. Keep in sync if the registry grows.
 fn fs_imports() -> ImportedSymbols {
     let mut imp = ImportedSymbols::default();
     imp.fns.insert(
@@ -34,6 +33,7 @@ fn fs_imports() -> ImportedSymbols {
             return_type: Type::Symlink,
         },
     );
+    imp.builtins.insert("symlink".into());
     imp.fns.insert(
         "file".into(),
         FnSig {
@@ -52,6 +52,7 @@ fn fs_imports() -> ImportedSymbols {
             return_type: Type::File,
         },
     );
+    imp.builtins.insert("file".into());
     imp.fns.insert(
         "directory".into(),
         FnSig {
@@ -63,10 +64,16 @@ fn fs_imports() -> ImportedSymbols {
             return_type: Type::Directory,
         },
     );
-    imp.types.insert("Symlink".into(), Type::Symlink);
-    imp.types.insert("File".into(), Type::File);
-    imp.types.insert("Directory".into(), Type::Directory);
-    imp.types.insert("Resource".into(), Type::Resource);
+    imp.builtins.insert("directory".into());
+    for (name, ty) in [
+        ("Symlink", Type::Symlink),
+        ("File", Type::File),
+        ("Directory", Type::Directory),
+        ("Resource", Type::Resource),
+    ] {
+        imp.types.insert(name.into(), ty);
+        imp.builtins.insert(name.into());
+    }
     imp
 }
 

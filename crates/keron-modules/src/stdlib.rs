@@ -1,11 +1,13 @@
 //! Rust-level stdlib registry.
 //!
-//! Stdlib modules are not authored as `.keron` source — they are
-//! synthesized at runtime from data in this module. Each entry
-//! produces a [`StdModule`] carrying `FnDecl`s that the type checker
-//! sees as ordinary functions (with signatures only) and that the
-//! evaluator dispatches via the [`IntrinsicId`] tag rather than by
-//! name.
+//! Stdlib items are not authored as `.keron` source — they live in
+//! this module as Rust data. The resolver injects every entry into
+//! every user module's [`ImportedSymbols`] as a builtin (no `from
+//! "std:..."` import line required); the type checker sees the
+//! `FnDecl`s as ordinary functions (with signatures only), and the
+//! evaluator dispatches them via the [`IntrinsicId`] tag.
+//!
+//! [`ImportedSymbols`]: keron_lang::ImportedSymbols
 
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
@@ -18,10 +20,10 @@ pub struct StdModule {
     /// deterministic, alphabetically-ordered `Program` without needing
     /// an explicit sort step.
     pub fns: BTreeMap<String, FnDecl>,
-    /// Named types this module exports. Importers reference these via
-    /// `from "std:..." use TypeName` and the module loader rewrites
-    /// `Type::Named(name)` in importer source to the canonical
-    /// [`Type`] variant stored here.
+    /// Named types this module exports. The resolver makes these
+    /// implicitly available as builtins; user code references them
+    /// directly (e.g. `val s: Symlink = ...`) and the module loader
+    /// rewrites `Type::Named(name)` to the canonical [`Type`] variant.
     pub types: BTreeMap<String, Type>,
 }
 
@@ -36,9 +38,9 @@ impl StdModule {
     }
 }
 
-/// Process-wide stdlib registry. Modules are keyed by the substring
-/// after `std:` in import paths (so `from "std:fs" use ...` looks up
-/// `"fs"`).
+/// Process-wide stdlib registry. Each entry's items are injected as
+/// builtins into every user module's `ImportedSymbols`. The map key
+/// is purely organizational — users never name modules directly.
 #[must_use]
 pub fn registry() -> &'static BTreeMap<&'static str, StdModule> {
     static REG: OnceLock<BTreeMap<&'static str, StdModule>> = OnceLock::new();

@@ -3,11 +3,16 @@
 //! `keron-lang` parses and type-checks one module's AST. This crate
 //! sits one layer above: it discovers the transitively-reachable
 //! modules of an entry program, resolves `use` items against the
-//! Rust-level stdlib registry (for `std:...` paths) or the filesystem
-//! (for `./` / `../` / `/` paths), runs the type checker over each
-//! module with its imported symbols pre-resolved, and produces a
-//! [`ModuleGraph`] that downstream consumers (the apply evaluator,
-//! the LSP) walk to evaluate or surface diagnostics.
+//! filesystem (`./` / `../` / `/` paths), runs the type checker over
+//! each module with its imported symbols pre-resolved, and produces a
+//! [`ModuleGraph`] that downstream consumers (the apply evaluator)
+//! walk to evaluate or surface diagnostics.
+//!
+//! Stdlib items live in the [`stdlib`] registry as Rust data; they are
+//! exposed to every user module as **builtins** — implicitly in scope,
+//! no import line required. The legacy `from "std:..."` form is
+//! rejected by the resolver with a clear "stdlib items are builtins"
+//! diagnostic.
 
 pub mod stdlib;
 
@@ -20,12 +25,11 @@ use keron_lang::{
     parse, resolve_type_names,
 };
 
-/// Identifies a module in the graph. Stdlib modules are virtual
-/// (resolved by the Rust registry); user modules are keyed by their
-/// canonicalized filesystem path.
+/// Identifies a module in the graph. Modules are keyed by their
+/// canonicalized filesystem path; stdlib items are exposed as
+/// builtins and don't participate in the graph.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ModuleId {
-    Std(String),
     File(PathBuf),
 }
 
@@ -33,7 +37,6 @@ impl ModuleId {
     #[must_use]
     pub fn display(&self) -> String {
         match self {
-            Self::Std(name) => format!("std:{name}"),
             Self::File(p) => p.display().to_string(),
         }
     }
@@ -51,7 +54,6 @@ pub struct ResolvedUse {
 #[derive(Debug)]
 pub struct CheckedModule {
     pub id: ModuleId,
-    /// Source text. Empty for stdlib modules (synthesized).
     pub source: String,
     pub program: Program,
     /// Local-name → origin mapping for every `use` item in this module.
@@ -61,8 +63,8 @@ pub struct CheckedModule {
     /// Top-level val names this module makes available to importers.
     pub exported_vals: HashSet<String>,
     /// Named types this module makes available to importers. User
-    /// modules currently can't declare types, so this is non-empty
-    /// only for stdlib modules.
+    /// modules can't declare types yet, so this is always empty;
+    /// stdlib types are exposed as builtins, not via the module graph.
     pub exported_types: HashMap<String, Type>,
 }
 
@@ -91,9 +93,8 @@ pub struct ResolveError {
 ///
 /// The renderer (in `keron-apply`) feeds [`Self::sources`] into
 /// `ariadne::sources(...)` and looks up each error's module by id.
-/// Stdlib modules synthesize their AST without source text and may
-/// be absent here — the renderer falls back to a byte-offset header
-/// for those.
+/// A module whose source isn't in the map (or is empty) falls back to
+/// a byte-offset header in the renderer.
 #[derive(Debug)]
 pub struct ResolveErrors {
     pub errors: Vec<ResolveError>,
@@ -184,32 +185,7 @@ impl ResolveState {
             .map(|m| m.base_dir.clone())
             .unwrap_or_default();
         match resolve_path(&u.source.node, &importer_dir) {
-            Ok(ResolvedPath::Std(name)) => {
-                let id = ModuleId::Std(name.clone());
-                if self.raw.contains_key(&id) {
-                    return;
-                }
-                let Some(stdmod) = stdlib::registry().get(name.as_str()) else {
-                    self.errors.push(ResolveError {
-                        module: importer.clone(),
-                        diagnostics: vec![Diagnostic::new(
-                            u.source.span.clone(),
-                            format!("unknown stdlib module `std:{name}`"),
-                        )],
-                    });
-                    return;
-                };
-                let prog = stdmod.synth_program();
-                self.raw.insert(
-                    id,
-                    RawModule {
-                        source: String::new(),
-                        program: prog,
-                        base_dir: PathBuf::new(),
-                    },
-                );
-            }
-            Ok(ResolvedPath::File(path)) => {
+            Ok(path) => {
                 let id = ModuleId::File(path.clone());
                 if self.raw.contains_key(&id) {
                     return;
@@ -306,21 +282,9 @@ impl ResolveState {
                 }
             }
             let (exported_fns, exported_vals) = collect_exports(&program);
-            // Stdlib modules expose types via the Rust registry; user
-            // modules don't have a way to declare types yet, so this
-            // is empty for them.
-            let exported_types = match id {
-                ModuleId::Std(name) => stdlib::registry()
-                    .get(name.as_str())
-                    .map(|m| {
-                        m.types
-                            .iter()
-                            .map(|(k, v)| (k.clone(), v.clone()))
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-                ModuleId::File(_) => HashMap::new(),
-            };
+            // User modules can't declare types yet; stdlib types are
+            // exposed as builtins, not via the module graph.
+            let exported_types: HashMap<String, Type> = HashMap::new();
             modules.insert(
                 id.clone(),
                 CheckedModule {
@@ -355,12 +319,9 @@ impl ResolveState {
             let mut deps = Vec::new();
             for item in &raw.program.items {
                 if let Item::Use(u) = item
-                    && let Ok(p) = resolve_path(&u.source.node, &raw.base_dir)
+                    && let Ok(path) = resolve_path(&u.source.node, &raw.base_dir)
                 {
-                    let dep_id = match p {
-                        ResolvedPath::Std(name) => ModuleId::Std(name),
-                        ResolvedPath::File(path) => ModuleId::File(path),
-                    };
+                    let dep_id = ModuleId::File(path);
                     if self.raw.contains_key(&dep_id) {
                         deps.push(dep_id);
                     }
@@ -382,8 +343,7 @@ impl ResolveState {
         for item in &program.items {
             let Item::Use(u) = item else { continue };
             let dep_id = match resolve_path(&u.source.node, base_dir) {
-                Ok(ResolvedPath::Std(name)) => ModuleId::Std(name),
-                Ok(ResolvedPath::File(path)) => ModuleId::File(path),
+                Ok(path) => ModuleId::File(path),
                 Err(_) => continue, // already reported during queue_dep
             };
             for name in &u.names {
@@ -424,18 +384,11 @@ impl ResolveState {
     }
 }
 
-#[derive(Debug)]
-enum ResolvedPath {
-    Std(String),
-    File(PathBuf),
-}
-
-fn resolve_path(raw: &str, base_dir: &Path) -> Result<ResolvedPath, String> {
-    if let Some(rest) = raw.strip_prefix("std:") {
-        if rest.is_empty() {
-            return Err("stdlib path is missing a module name".into());
-        }
-        return Ok(ResolvedPath::Std(rest.to_string()));
+fn resolve_path(raw: &str, base_dir: &Path) -> Result<PathBuf, String> {
+    if raw.starts_with("std:") {
+        return Err(format!(
+            "stdlib items are now builtins; remove `from \"{raw}\" use ...`"
+        ));
     }
     if raw.starts_with("./") || raw.starts_with("../") || raw.starts_with('/') {
         let joined = base_dir.join(raw);
@@ -444,10 +397,10 @@ fn resolve_path(raw: &str, base_dir: &Path) -> Result<ResolvedPath, String> {
         if canonical.extension().and_then(|e| e.to_str()) != Some("keron") {
             return Err(format!("`{raw}` is not a `.keron` file"));
         }
-        return Ok(ResolvedPath::File(canonical));
+        return Ok(canonical);
     }
     Err(format!(
-        "import path must start with `std:`, `./`, `../`, or `/`, found `{raw}`"
+        "import path must start with `./`, `../`, or `/`, found `{raw}`"
     ))
 }
 
@@ -510,6 +463,21 @@ fn build_imported_symbols(
     modules: &HashMap<ModuleId, CheckedModule>,
 ) -> ImportedSymbols {
     let mut out = ImportedSymbols::default();
+    // Seed every stdlib item as a builtin: implicitly in scope in
+    // every user module, no `from … use …` required. Tracked in
+    // `out.builtins` so the duplicate-name diagnostic can distinguish
+    // "user-imported" from "builtin".
+    for stdmod in stdlib::registry().values() {
+        for (name, decl) in &stdmod.fns {
+            out.fns.insert(name.clone(), sig_from_fn_decl(decl));
+            out.builtins.insert(name.clone());
+        }
+        for (name, ty) in &stdmod.types {
+            out.types.insert(name.clone(), ty.clone());
+            out.builtins.insert(name.clone());
+        }
+    }
+    // User-file `from … use …` items merge on top.
     for (local, (origin_id, orig_name)) in imports {
         let Some(origin) = modules.get(origin_id) else {
             continue;
@@ -599,11 +567,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn module_id_display_std_includes_scheme() {
-        assert_eq!(ModuleId::Std("fs".into()).display(), "std:fs");
-    }
-
-    #[test]
     fn module_id_display_file_uses_path() {
         assert_eq!(
             ModuleId::File(PathBuf::from("/abs/x.keron")).display(),
@@ -612,15 +575,9 @@ mod tests {
     }
 
     #[test]
-    fn resolve_path_std_strips_scheme() {
-        let got = resolve_path("std:fs", Path::new("/anywhere")).unwrap();
-        assert!(matches!(got, ResolvedPath::Std(ref s) if s == "fs"));
-    }
-
-    #[test]
-    fn resolve_path_std_empty_module_errors() {
-        let err = resolve_path("std:", Path::new("/anywhere")).unwrap_err();
-        assert!(err.contains("missing a module name"), "got: {err}");
+    fn resolve_path_std_scheme_rejected_with_builtins_hint() {
+        let err = resolve_path("std:fs", Path::new("/anywhere")).unwrap_err();
+        assert!(err.contains("stdlib items are now builtins"), "got: {err}");
     }
 
     #[test]
@@ -643,7 +600,7 @@ mod tests {
         fs::write(&target, "").unwrap();
         let got = resolve_path("./hi.keron", &dir).unwrap();
         let canonical = fs::canonicalize(&target).unwrap();
-        assert!(matches!(got, ResolvedPath::File(ref p) if p == &canonical));
+        assert_eq!(got, canonical);
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -656,7 +613,7 @@ mod tests {
         let canonical = fs::canonicalize(&target).unwrap();
         let abs_str = canonical.to_string_lossy().into_owned();
         let got = resolve_path(&abs_str, Path::new("/")).unwrap();
-        assert!(matches!(got, ResolvedPath::File(ref p) if p == &canonical));
+        assert_eq!(got, canonical);
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -669,7 +626,7 @@ mod tests {
         fs::write(&target, "").unwrap();
         let got = resolve_path("../hi.keron", &child).unwrap();
         let canonical = fs::canonicalize(&target).unwrap();
-        assert!(matches!(got, ResolvedPath::File(ref p) if p == &canonical));
+        assert_eq!(got, canonical);
         let _ = fs::remove_dir_all(&parent);
     }
 
@@ -686,8 +643,8 @@ mod tests {
 
     #[test]
     fn topo_sort_orders_dependencies_first() {
-        let a = ModuleId::Std("a".into());
-        let b = ModuleId::Std("b".into());
+        let a = ModuleId::File(PathBuf::from("/topo-a.keron"));
+        let b = ModuleId::File(PathBuf::from("/topo-b.keron"));
         let mut edges: HashMap<ModuleId, Vec<ModuleId>> = HashMap::new();
         edges.insert(a.clone(), vec![b.clone()]);
         edges.insert(b.clone(), vec![]);
@@ -702,8 +659,8 @@ mod tests {
 
     #[test]
     fn topo_sort_reports_cycle_path() {
-        let a = ModuleId::Std("a".into());
-        let b = ModuleId::Std("b".into());
+        let a = ModuleId::File(PathBuf::from("/topo-cycle-a.keron"));
+        let b = ModuleId::File(PathBuf::from("/topo-cycle-b.keron"));
         let mut edges: HashMap<ModuleId, Vec<ModuleId>> = HashMap::new();
         edges.insert(a.clone(), vec![b.clone()]);
         edges.insert(b.clone(), vec![a.clone()]);
@@ -730,7 +687,7 @@ mod tests {
         let prog = parse("val s: String = \"hi\"\nval n: Int = 0\n").unwrap();
         let (fns, vals) = collect_exports(&prog);
         let module = CheckedModule {
-            id: ModuleId::Std("test".into()),
+            id: ModuleId::File(PathBuf::from("/val-type-for-test.keron")),
             source: String::new(),
             program: prog,
             imports: HashMap::new(),
@@ -748,7 +705,7 @@ mod tests {
         let prog = parse("val v = 5\n").unwrap();
         let (fns, vals) = collect_exports(&prog);
         let module = CheckedModule {
-            id: ModuleId::Std("test".into()),
+            id: ModuleId::File(PathBuf::from("/val-type-for-test.keron")),
             source: String::new(),
             program: prog,
             imports: HashMap::new(),

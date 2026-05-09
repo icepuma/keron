@@ -1,4 +1,3 @@
-from "std:fs" use symlink, file, directory, Symlink, File, Directory
 
 # Realistic dotfile workflow: declare configs, packages-style file
 # placements, and ensure-existence directories. All values are built

@@ -1,4 +1,3 @@
-from "std:fs" use symlink, Symlink
 
 val xs: List<Symlink> = [
   symlink(from = "from-a", to = "to-a"),

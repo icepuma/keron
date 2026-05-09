@@ -186,12 +186,8 @@ mod tests {
         let file = dir.join("entry.keron");
         fs::write(&file, "").unwrap();
         let got = entry_module_id(&file).unwrap();
-        match got {
-            ModuleId::File(p) => {
-                assert_eq!(p, fs::canonicalize(&file).unwrap());
-            }
-            ModuleId::Std(_) => panic!("entry should be a File ModuleId"),
-        }
+        let ModuleId::File(p) = got;
+        assert_eq!(p, fs::canonicalize(&file).unwrap());
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -231,8 +227,7 @@ mod tests {
         let proj = TempProject::new("not-execute");
         let entry = proj.write(
             "entry.keron",
-            "from \"std:fs\" use file\n\
-             reconcile file(path = \"/x\", content = \"y\")\n",
+            "reconcile file(path = \"/x\", content = \"y\")\n",
         );
         let (res, out) = drive(&entry, false, "");
         res.unwrap();
@@ -257,8 +252,7 @@ mod tests {
         let proj = TempProject::new("empty-plan");
         let entry = proj.write(
             "entry.keron",
-            "from \"std:fs\" use file, File\n\
-             val f: File = file(path = \"/x\", content = \"\")\n",
+            "val f: File = file(path = \"/x\", content = \"\")\n",
         );
         let (res, out) = drive(&entry, true, "");
         res.unwrap();
@@ -282,8 +276,7 @@ mod tests {
         let proj = TempProject::new("no-approval");
         let entry = proj.write(
             "entry.keron",
-            "from \"std:fs\" use file\n\
-             reconcile file(path = \"/x\", content = \"y\")\n",
+            "reconcile file(path = \"/x\", content = \"y\")\n",
         );
         let (res, out) = drive(&entry, true, "no\n");
         res.unwrap();
@@ -303,8 +296,7 @@ mod tests {
         let proj = TempProject::new("yes-approval");
         let entry = proj.write(
             "entry.keron",
-            "from \"std:fs\" use file\n\
-             reconcile file(path = \"/x\", content = \"y\")\n",
+            "reconcile file(path = \"/x\", content = \"y\")\n",
         );
         let (res, out) = drive(&entry, true, "yes\n");
         let err = res.unwrap_err();

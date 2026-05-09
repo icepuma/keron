@@ -58,23 +58,25 @@ impl Drop for TempProject {
 }
 
 #[test]
-fn resolves_std_fs_import() {
-    let proj = TempProject::new("std-fs");
-    let src = "from \"std:fs\" use symlink, Symlink\n\
-               val s: Symlink = symlink(from = \"a\", to = \"b\")\n\
+fn builtins_are_implicitly_in_scope() {
+    // No `from "std:..."` line — `symlink` and `Symlink` resolve via
+    // the builtin registry. Single-module graph: just the entry.
+    let proj = TempProject::new("builtins-implicit");
+    let src = "val s: Symlink = symlink(from = \"a\", to = \"b\")\n\
                reconcile s\n";
     let entry = proj.write("entry.keron", src);
     let graph = resolve(TempProject::entry_source(&entry, src)).expect("resolve ok");
     let entry_id = ModuleId::File(fs::canonicalize(&entry).unwrap());
     assert_eq!(graph.entry, entry_id);
-    assert!(graph.modules.contains_key(&ModuleId::Std("fs".into())));
+    assert_eq!(graph.modules.len(), 1, "stdlib does not enter the graph");
 }
 
 #[test]
-fn missing_std_module_errors() {
-    let proj = TempProject::new("missing-std");
-    let src = "from \"std:zzz\" use foo\n\
-               val n: Int = foo()\n";
+fn legacy_std_import_is_rejected_with_helpful_hint() {
+    let proj = TempProject::new("legacy-std-import");
+    let src = "from \"std:fs\" use symlink, Symlink\n\
+               val s: Symlink = symlink(from = \"a\", to = \"b\")\n\
+               reconcile s\n";
     let entry = proj.write("entry.keron", src);
     let bundle = resolve(TempProject::entry_source(&entry, src)).expect_err("should fail");
     assert!(
@@ -82,7 +84,14 @@ fn missing_std_module_errors() {
             .errors
             .iter()
             .flat_map(|e| &e.diagnostics)
-            .any(|d| d.message.contains("unknown stdlib module"))
+            .any(|d| d.message.contains("stdlib items are now builtins")),
+        "expected builtins-hint error, got: {:?}",
+        bundle
+            .errors
+            .iter()
+            .flat_map(|e| &e.diagnostics)
+            .map(|d| &d.message)
+            .collect::<Vec<_>>(),
     );
 }
 
@@ -104,18 +113,17 @@ fn invalid_path_prefix_errors() {
 #[test]
 fn cross_file_import_resolves() {
     let proj = TempProject::new("cross-file");
-    let helpers_src = "from \"std:fs\" use symlink, Symlink\n\
-                       fn link(name: String): Symlink {\n\
+    let helpers_src = "fn link(name: String): Symlink {\n\
                        \tsymlink(from = name, to = name)\n\
                        }\n";
     proj.write("helpers.keron", helpers_src);
     let entry_src = "from \"./helpers.keron\" use link\n\
-                     from \"std:fs\" use Symlink\n\
                      val s: Symlink = link(\"x\")\n\
                      reconcile s\n";
     let entry = proj.write("entry.keron", entry_src);
     let graph = resolve(TempProject::entry_source(&entry, entry_src)).expect("resolve ok");
-    assert_eq!(graph.modules.len(), 3); // entry + helpers + std:fs
+    // entry + helpers — stdlib does not enter the graph.
+    assert_eq!(graph.modules.len(), 2);
 }
 
 #[test]
@@ -160,20 +168,55 @@ fn cycle_errors() {
 }
 
 #[test]
-fn duplicate_local_collides_with_import() {
-    let proj = TempProject::new("dup");
-    let src = "from \"std:fs\" use symlink, Symlink\n\
-               fn symlink(from: String, to: String): Symlink {\n\
+fn user_fn_collides_with_builtin() {
+    // A user `fn symlink(...)` shadowing a builtin should report the
+    // dedicated "builtin and cannot be redefined" diagnostic, not the
+    // generic "already defined" message used for user-vs-user collisions.
+    let proj = TempProject::new("dup-builtin");
+    let src = "fn symlink(from: String, to: String): Symlink {\n\
                \tsymlink(from = from, to = to)\n\
                }\n";
     let entry = proj.write("entry.keron", src);
     let bundle = resolve(TempProject::entry_source(&entry, src)).expect_err("should fail");
     assert!(
+        bundle.errors.iter().flat_map(|e| &e.diagnostics).any(|d| d
+            .message
+            .contains("`symlink` is a builtin and cannot be redefined")),
+        "got: {:?}",
         bundle
             .errors
             .iter()
             .flat_map(|e| &e.diagnostics)
-            .any(|d| d.message.contains("`symlink` is already defined"))
+            .map(|d| &d.message)
+            .collect::<Vec<_>>(),
+    );
+}
+
+#[test]
+fn user_fn_collides_with_user_import_uses_generic_message() {
+    // Cross-check: the "is already defined" generic message survives
+    // for user-vs-user collisions (so we know the new builtin message
+    // didn't subsume that path).
+    let proj = TempProject::new("dup-user");
+    let helpers_src = "fn helper(): Int { 1 }\n";
+    proj.write("helpers.keron", helpers_src);
+    let entry_src = "from \"./helpers.keron\" use helper\n\
+                     fn helper(): Int { 2 }\n";
+    let entry = proj.write("entry.keron", entry_src);
+    let bundle = resolve(TempProject::entry_source(&entry, entry_src)).expect_err("should fail");
+    assert!(
+        bundle
+            .errors
+            .iter()
+            .flat_map(|e| &e.diagnostics)
+            .any(|d| d.message.contains("`helper` is already defined")),
+        "got: {:?}",
+        bundle
+            .errors
+            .iter()
+            .flat_map(|e| &e.diagnostics)
+            .map(|d| &d.message)
+            .collect::<Vec<_>>(),
     );
 }
 
@@ -195,32 +238,6 @@ fn imported_val_with_annotation_resolves() {
     assert_eq!(original, "greeting");
     let helpers_id = ModuleId::File(fs::canonicalize(proj.root.join("helpers.keron")).unwrap());
     assert_eq!(origin, &helpers_id);
-}
-
-#[test]
-fn unresolved_type_skips_subsequent_check_pass() {
-    // Importing the constructor fn but not its return type leaves a
-    // `Type::Named("Symlink")` placeholder in the program. The loader
-    // must report that exactly once and skip type-checking — otherwise
-    // the checker re-reports the same name and emits cascading bogus
-    // diagnostics like "expected `Symlink`, found `Symlink`".
-    let proj = TempProject::new("unresolved-type");
-    let src = "from \"std:fs\" use symlink\n\
-               val s: Symlink = symlink(from = \"a\", to = \"b\")\n\
-               reconcile s\n";
-    let entry = proj.write("entry.keron", src);
-    let bundle = resolve(TempProject::entry_source(&entry, src)).expect_err("should fail");
-    let messages: Vec<&str> = bundle
-        .errors
-        .iter()
-        .flat_map(|e| &e.diagnostics)
-        .map(|d| d.message.as_str())
-        .collect();
-    assert_eq!(
-        messages,
-        vec!["unknown type `Symlink`"],
-        "expected exactly one diagnostic, got {messages:?}"
-    );
 }
 
 #[test]

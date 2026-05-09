@@ -1,3 +1,2 @@
-from "std:fs" use symlink, Symlink
 
 val s: Symlink = symlink(from = "a")

@@ -85,10 +85,10 @@ pub type FnEnv = HashMap<String, FnSig>;
 
 /// Symbols imported into a module from elsewhere.
 ///
-/// Resolved by the module loader (other `.keron` files or the stdlib
-/// registry) before the checker runs and merged into the module's
-/// own scope; collisions with local declarations surface as ordinary
-/// duplicate-name errors.
+/// Resolved by the module loader (user `from … use …` items plus the
+/// always-implicit stdlib registry) before the checker runs and merged
+/// into the module's own scope; collisions with local declarations
+/// surface as ordinary duplicate-name errors.
 #[derive(Debug, Default, Clone)]
 pub struct ImportedSymbols {
     pub fns: FnEnv,
@@ -98,6 +98,12 @@ pub struct ImportedSymbols {
     /// every `Type::Named(name)` in the program against this map
     /// before invoking the checker.
     pub types: HashMap<String, Type>,
+    /// Subset of [`Self::fns`] / [`Self::types`] keys that come from
+    /// the implicit stdlib registry rather than a user `from … use …`
+    /// item. The duplicate-name check uses this to emit a clearer
+    /// "is a builtin and cannot be redefined" diagnostic when a user
+    /// declaration shadows a stdlib name.
+    pub builtins: HashSet<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -265,7 +271,7 @@ pub fn check_module(program: &Program, imported: &ImportedSymbols) -> Result<(),
                 if top_names.contains_key(&v.name.node) {
                     diags.push(Diagnostic::new(
                         v.name.span.clone(),
-                        format!("`{}` is already defined", v.name.node),
+                        redefine_message(&v.name.node, imported),
                     ));
                 } else {
                     top_names.insert(v.name.node.clone(), ItemKind::Val);
@@ -275,7 +281,7 @@ pub fn check_module(program: &Program, imported: &ImportedSymbols) -> Result<(),
                 if top_names.contains_key(&f.name.node) {
                     diags.push(Diagnostic::new(
                         f.name.span.clone(),
-                        format!("`{}` is already defined", f.name.node),
+                        redefine_message(&f.name.node, imported),
                     ));
                     continue;
                 }
@@ -305,6 +311,14 @@ pub fn check_module(program: &Program, imported: &ImportedSymbols) -> Result<(),
     }
 
     if diags.is_empty() { Ok(()) } else { Err(diags) }
+}
+
+fn redefine_message(name: &str, imported: &ImportedSymbols) -> String {
+    if imported.builtins.contains(name) {
+        format!("`{name}` is a builtin and cannot be redefined")
+    } else {
+        format!("`{name}` is already defined")
+    }
 }
 
 fn build_sig(f: &FnDecl, diags: &mut Vec<Diagnostic>) -> Option<FnSig> {

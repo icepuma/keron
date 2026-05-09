@@ -238,8 +238,7 @@ mod tests {
         let dir = env::temp_dir().join(format!("keron-build-plan-{}-{n}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let entry = dir.join("entry.keron");
-        let src = "from \"std:fs\" use file\n\
-                   reconcile file(path = \"/a\", content = \"\")\n\
+        let src = "reconcile file(path = \"/a\", content = \"\")\n\
                    reconcile file(path = \"/b\", content = \"\")\n";
         fs::write(&entry, src).unwrap();
         let canonical = fs::canonicalize(&entry).unwrap();

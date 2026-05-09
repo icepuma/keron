@@ -1,10 +1,10 @@
 //! Render module-resolution diagnostics with line/column-aware
 //! ariadne reports against each owning module's source text.
 //!
-//! Stdlib modules synthesize their AST without source text and have
-//! no `(line, col)` to point at — those diagnostics fall back to a
-//! plain `[<module-id>] <message>` line, kept inline with the
-//! rendered file reports for consistency.
+//! When a diagnostic's owning module isn't in the source map (or the
+//! source is empty), there's no `(line, col)` to point at — those
+//! fall back to a plain `[<module-id>] <message>` line, kept inline
+//! with the rendered file reports for consistency.
 
 use std::io::Cursor;
 
@@ -31,9 +31,9 @@ fn render_one(
 ) {
     let header = module.display();
     let Some(src) = src_by_id.get(module).filter(|s| !s.is_empty()) else {
-        // Synthesized module (stdlib) or one whose source we don't
-        // have. Ariadne needs a non-empty buffer to compute line/col,
-        // so emit a minimal one-liner instead.
+        // Module whose source we don't have, or which has empty
+        // source. Ariadne needs a non-empty buffer to compute
+        // line/col, so emit a minimal one-liner instead.
         let _ = std::io::Write::write_fmt(out, format_args!("[{header}] {}\n", d.message));
         return;
     };
@@ -111,15 +111,16 @@ mod tests {
 
     #[test]
     fn render_falls_back_for_module_without_source() {
-        // Stdlib modules carry an empty source string. Rendering must
-        // not crash and must still surface the message.
+        // A module whose source string is empty (or absent from the
+        // map) takes the fallback path. Rendering must not crash and
+        // must still surface the module id and message.
         let bundle = bundle_with(
-            ModuleId::Std("fs".into()),
+            ModuleId::File("/synth.keron".into()),
             "",
             vec![Diagnostic::new(0..0, "synthesized error")],
         );
         let out = render(&bundle, false);
-        assert!(out.contains("std:fs"), "missing module header: {out}");
+        assert!(out.contains("/synth.keron"), "missing module header: {out}");
         assert!(out.contains("synthesized error"), "missing message: {out}");
     }
 

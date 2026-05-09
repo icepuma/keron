@@ -1,4 +1,3 @@
-from "std:fs" use symlink, file, Resource
 
 val use_zsh: Boolean = true
 

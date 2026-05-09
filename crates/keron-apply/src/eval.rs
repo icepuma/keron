@@ -31,7 +31,7 @@ use keron_lang::{
     BinOp, Block, CallArg, Expr, FnDecl, ForPattern, IntrinsicId, Item, Literal, MapEntry, Spanned,
     Stmt, StringPart, UnaryOp,
 };
-use keron_modules::{ModuleGraph, ModuleId};
+use keron_modules::{ModuleGraph, ModuleId, stdlib};
 
 use crate::plan::ResourceState;
 
@@ -513,9 +513,10 @@ fn stringify(v: &Value, out: &mut String) -> Result<()> {
     Ok(())
 }
 
-/// Resolve a callee through (1) the current module's imports, then
-/// (2) the current module's own fns, and dispatch. Intrinsic fns
-/// (carried via [`FnDecl::intrinsic`]) bypass body evaluation.
+/// Resolve a callee through (1) the current module's `from … use …`
+/// imports, (2) the current module's own fns, and (3) the implicit
+/// stdlib builtin registry, then dispatch. Intrinsic fns (carried via
+/// [`FnDecl::intrinsic`]) bypass body evaluation.
 fn eval_call(name: &str, args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     let module = env.current_module();
     let (origin_id, fn_decl): (ModuleId, &FnDecl) =
@@ -535,6 +536,12 @@ fn eval_call(name: &str, args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
             (origin.clone(), decl)
         } else if let Some(decl) = module.fns.get(name) {
             (env.current.clone(), *decl)
+        } else if let Some(decl) = builtin_fn(name) {
+            // Builtins are always intrinsic-tagged, so the body path is
+            // never taken; the "origin" we return is irrelevant but
+            // must be a real module in the graph for `Env::new` to
+            // succeed if the body path were ever reached.
+            (env.current.clone(), decl)
         } else {
             return Err(anyhow!("unknown function `{name}`"));
         };
@@ -550,6 +557,12 @@ fn eval_call(name: &str, args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     let mut sink = Vec::new();
     let v = eval_block_value(&fn_decl.body, &call_env, &mut sink)?;
     Ok(v)
+}
+
+fn builtin_fn(name: &str) -> Option<&'static FnDecl> {
+    stdlib::registry()
+        .values()
+        .find_map(|stdmod| stdmod.fns.get(name))
 }
 
 fn dispatch_intrinsic(id: IntrinsicId, args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
@@ -938,8 +951,7 @@ mod tests {
 
     #[test]
     fn eval_graph_emits_resources_for_reconciles() {
-        let states = run("from \"std:fs\" use file\n\
-             reconcile file(path = \"/x\", content = \"y\")\n");
+        let states = run("reconcile file(path = \"/x\", content = \"y\")\n");
         assert_eq!(states.len(), 1);
         assert_eq!(first_file_path(&states), &PathBuf::from("/x"));
         assert_eq!(first_file_content(&states), "y");
@@ -947,17 +959,17 @@ mod tests {
 
     #[test]
     fn eval_graph_returns_empty_when_no_reconciles() {
-        let states = run("from \"std:fs\" use file, File\n\
-             val f: File = file(path = \"/x\", content = \"y\")\n");
+        let states = run("val f: File = file(path = \"/x\", content = \"y\")\n");
         assert!(states.is_empty());
     }
 
     #[test]
     fn push_resources_unwraps_lists() {
-        let states = run("from \"std:fs\" use file, File\n\
-             val xs: List<File> = [file(path = \"/a\", content = \"\"), \
+        let states = run(
+            "val xs: List<File> = [file(path = \"/a\", content = \"\"), \
                                     file(path = \"/b\", content = \"\")]\n\
-             reconcile xs\n");
+             reconcile xs\n",
+        );
         let paths: Vec<&PathBuf> = states
             .iter()
             .map(|s| match s {
@@ -970,16 +982,14 @@ mod tests {
 
     #[test]
     fn exec_void_expr_handles_top_level_if() {
-        let states = run("from \"std:fs\" use file\n\
-             if true { reconcile file(path = \"/yes\", content = \"\") }\n");
+        let states = run("if true { reconcile file(path = \"/yes\", content = \"\") }\n");
         assert_eq!(states.len(), 1);
         assert_eq!(first_file_path(&states), &PathBuf::from("/yes"));
     }
 
     #[test]
     fn exec_void_expr_skips_else_branch_when_true() {
-        let states = run("from \"std:fs\" use file\n\
-             if true {\n\
+        let states = run("if true {\n\
              \treconcile file(path = \"/yes\", content = \"\")\n\
              } else {\n\
              \treconcile file(path = \"/no\", content = \"\")\n\
@@ -990,8 +1000,7 @@ mod tests {
 
     #[test]
     fn exec_void_expr_handles_top_level_for() {
-        let states = run("from \"std:fs\" use file\n\
-             for n in [1, 2, 3] {\n\
+        let states = run("for n in [1, 2, 3] {\n\
              \treconcile file(path = \"/${n}\", content = \"\")\n\
              }\n");
         assert_eq!(states.len(), 3);
@@ -1003,8 +1012,7 @@ mod tests {
         // Local val is referenced by a later reconcile; both run via
         // `exec_void_block`. Mutating that to `Ok(())` would skip the
         // reconcile and produce an empty plan.
-        let states = run("from \"std:fs\" use file\n\
-             if true {\n\
+        let states = run("if true {\n\
              \tval base: String = \"/v\"\n\
              \treconcile file(path = base, content = \"\")\n\
              }\n");
@@ -1014,8 +1022,7 @@ mod tests {
 
     #[test]
     fn iterate_runs_body_per_map_entry() {
-        let states = run("from \"std:fs\" use file\n\
-             for (k, v) in {\"a\": 1, \"b\": 2} {\n\
+        let states = run("for (k, v) in {\"a\": 1, \"b\": 2} {\n\
              \treconcile file(path = \"/${k}\", content = \"${v}\")\n\
              }\n");
         assert_eq!(states.len(), 2);
@@ -1035,15 +1042,15 @@ mod tests {
     fn arithmetic_in_interpolation_round_trips() {
         // Encodes binop results in the file path so any drift in
         // eval_binop arithmetic is observable end-to-end.
-        let states = run("from \"std:fs\" use file\n\
-             reconcile file(path = \"/${2 + 3}-${10 - 4}-${2 * 3}-${10 / 2}-${2 ** 8}\", content = \"\")\n");
+        let states = run(
+            "reconcile file(path = \"/${2 + 3}-${10 - 4}-${2 * 3}-${10 / 2}-${2 ** 8}\", content = \"\")\n",
+        );
         assert_eq!(first_file_path(&states), &PathBuf::from("/5-6-6-5-256"));
     }
 
     #[test]
     fn double_arithmetic_in_interpolation_round_trips() {
-        let states = run("from \"std:fs\" use file\n\
-             val sum: Double = 1.5 + 2.0\n\
+        let states = run("val sum: Double = 1.5 + 2.0\n\
              val diff: Double = 5.5 - 2.0\n\
              val prod: Double = 2.0 * 3.0\n\
              val quot: Double = 10.0 / 4.0\n\
@@ -1053,8 +1060,7 @@ mod tests {
 
     #[test]
     fn mixed_int_double_arithmetic_round_trips() {
-        let states = run("from \"std:fs\" use file\n\
-             val a: Double = 1 + 2.5\n\
+        let states = run("val a: Double = 1 + 2.5\n\
              val b: Double = 5 - 1.5\n\
              val c: Double = 2 * 2.5\n\
              val d: Double = 1.5 * 2\n\
@@ -1064,8 +1070,7 @@ mod tests {
 
     #[test]
     fn unary_neg_in_interpolation_round_trips() {
-        let states = run("from \"std:fs\" use file\n\
-             val x: Int = -7\n\
+        let states = run("val x: Int = -7\n\
              val y: Double = -2.5\n\
              reconcile file(path = \"/${x}\", content = \"${y}\")\n");
         assert_eq!(first_file_path(&states), &PathBuf::from("/-7"));
@@ -1074,8 +1079,7 @@ mod tests {
 
     #[test]
     fn equality_observable_via_branching() {
-        let states = run("from \"std:fs\" use file\n\
-             val same: Boolean = 1 == 1\n\
+        let states = run("val same: Boolean = 1 == 1\n\
              val diff: Boolean = 1 == 2\n\
              reconcile file(path = if same { \"/yes\" } else { \"/no\" }, content = \"\")\n\
              reconcile file(path = if diff { \"/yes\" } else { \"/no\" }, content = \"\")\n");
@@ -1091,11 +1095,12 @@ mod tests {
 
     #[test]
     fn comparison_operators_observable_via_branching() {
-        let states = run("from \"std:fs\" use file\n\
-             reconcile file(path = if 1 < 2 { \"/lt\" } else { \"/ge\" }, content = \"\")\n\
+        let states = run(
+            "reconcile file(path = if 1 < 2 { \"/lt\" } else { \"/ge\" }, content = \"\")\n\
              reconcile file(path = if 2 <= 2 { \"/le\" } else { \"/gt\" }, content = \"\")\n\
              reconcile file(path = if 3 > 2 { \"/gt\" } else { \"/le\" }, content = \"\")\n\
-             reconcile file(path = if 2 >= 2 { \"/ge\" } else { \"/lt\" }, content = \"\")\n");
+             reconcile file(path = if 2 >= 2 { \"/ge\" } else { \"/lt\" }, content = \"\")\n",
+        );
         let paths: Vec<_> = states
             .iter()
             .map(|s| match s {
@@ -1116,9 +1121,10 @@ mod tests {
 
     #[test]
     fn string_equality_distinguishes_distinct_values() {
-        let states = run("from \"std:fs\" use file\n\
-             reconcile file(path = if \"a\" == \"a\" { \"/eq\" } else { \"/ne\" }, content = \"\")\n\
-             reconcile file(path = if \"a\" == \"b\" { \"/eq\" } else { \"/ne\" }, content = \"\")\n");
+        let states = run(
+            "reconcile file(path = if \"a\" == \"a\" { \"/eq\" } else { \"/ne\" }, content = \"\")\n\
+             reconcile file(path = if \"a\" == \"b\" { \"/eq\" } else { \"/ne\" }, content = \"\")\n",
+        );
         let paths: Vec<_> = states
             .iter()
             .map(|s| match s {
@@ -1131,9 +1137,10 @@ mod tests {
 
     #[test]
     fn boolean_equality_distinguishes_distinct_values() {
-        let states = run("from \"std:fs\" use file\n\
-             reconcile file(path = if true == true { \"/eq\" } else { \"/ne\" }, content = \"\")\n\
-             reconcile file(path = if true == false { \"/eq\" } else { \"/ne\" }, content = \"\")\n");
+        let states = run(
+            "reconcile file(path = if true == true { \"/eq\" } else { \"/ne\" }, content = \"\")\n\
+             reconcile file(path = if true == false { \"/eq\" } else { \"/ne\" }, content = \"\")\n",
+        );
         let paths: Vec<_> = states
             .iter()
             .map(|s| match s {
@@ -1146,9 +1153,10 @@ mod tests {
 
     #[test]
     fn cross_type_equality_via_int_double_promotion() {
-        let states = run("from \"std:fs\" use file\n\
-             reconcile file(path = if 2 == 2.0 { \"/eq\" } else { \"/ne\" }, content = \"\")\n\
-             reconcile file(path = if 2 == 2.5 { \"/eq\" } else { \"/ne\" }, content = \"\")\n");
+        let states = run(
+            "reconcile file(path = if 2 == 2.0 { \"/eq\" } else { \"/ne\" }, content = \"\")\n\
+             reconcile file(path = if 2 == 2.5 { \"/eq\" } else { \"/ne\" }, content = \"\")\n",
+        );
         let paths: Vec<_> = states
             .iter()
             .map(|s| match s {
@@ -1173,8 +1181,7 @@ mod tests {
         let states = run("fn pair(left: String, right: String): String {\n\
              \tleft + \"|\" + right\n\
              }\n\
-             from \"std:fs\" use file\n\
-             reconcile file(path = pair(right = \"R\", left = \"L\"), content = \"\")\n");
+reconcile file(path = pair(right = \"R\", left = \"L\"), content = \"\")\n");
         assert_eq!(states.len(), 1);
         // With `==` correct, left=L, right=R, output = "L|R".
         // With `==` mutated to `!=`, args swap, output = "R|L".
@@ -1187,8 +1194,7 @@ mod tests {
             "fn pick(prefix: String, suffix: String = \"-default\"): String {\n\
              \tprefix + suffix\n\
              }\n\
-             from \"std:fs\" use file\n\
-             reconcile file(path = pick(\"a\"), content = \"\")\n",
+reconcile file(path = pick(\"a\"), content = \"\")\n",
         );
         assert_eq!(first_file_path(&states), &PathBuf::from("a-default"));
     }
@@ -1196,8 +1202,7 @@ mod tests {
     #[test]
     fn call_string_falls_back_to_positional() {
         // `path` resolved positionally (first non-named arg).
-        let states = run("from \"std:fs\" use file\n\
-             reconcile file(\"/positional\", \"body\")\n");
+        let states = run("reconcile file(\"/positional\", \"body\")\n");
         assert_eq!(first_file_path(&states), &PathBuf::from("/positional"));
         assert_eq!(first_file_content(&states), "body");
     }
@@ -1212,8 +1217,7 @@ mod tests {
         // eval. This test exercises a plain val reference: it must
         // succeed, which is only possible when the cycle guard is
         // intact.
-        let states = run("from \"std:fs\" use file\n\
-             val tag: String = \"ok\"\n\
+        let states = run("val tag: String = \"ok\"\n\
              reconcile file(path = \"/${tag}\", content = \"\")\n");
         assert_eq!(first_file_path(&states), &PathBuf::from("/ok"));
     }

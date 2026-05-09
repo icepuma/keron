@@ -3,50 +3,31 @@ source: crates/keron-lang/tests/harness/mod.rs
 ---
 Program {
     items: [
-        Use(
-            UseDecl {
-                source: Spanned {
-                    node: "std:fs",
-                    span: 5..13,
-                },
-                names: [
-                    Spanned {
-                        node: "symlink",
-                        span: 18..25,
-                    },
-                    Spanned {
-                        node: "Symlink",
-                        span: 27..34,
-                    },
-                ],
-                span: 0..34,
-            },
-        ),
         Fn(
             FnDecl {
                 name: Spanned {
                     node: "link",
-                    span: 39..43,
+                    span: 4..8,
                 },
                 params: [
                     Param {
                         name: Spanned {
                             node: "name",
-                            span: 44..48,
+                            span: 9..13,
                         },
                         ty: Spanned {
                             node: String,
-                            span: 50..56,
+                            span: 15..21,
                         },
                         default: None,
-                        span: 44..56,
+                        span: 9..21,
                     },
                 ],
                 return_type: Spanned {
                     node: Named(
                         "Symlink",
                     ),
-                    span: 59..66,
+                    span: 24..31,
                 },
                 body: Block {
                     stmts: [],
@@ -55,14 +36,14 @@ Program {
                             node: Call {
                                 callee: Spanned {
                                     node: "symlink",
-                                    span: 71..78,
+                                    span: 36..43,
                                 },
                                 args: [
                                     CallArg {
                                         name: Some(
                                             Spanned {
                                                 node: "from",
-                                                span: 79..83,
+                                                span: 44..48,
                                             },
                                         ),
                                         value: Spanned {
@@ -76,20 +57,20 @@ Program {
                                                             node: Var(
                                                                 "name",
                                                             ),
-                                                            span: 100..104,
+                                                            span: 65..69,
                                                         },
                                                     ),
                                                 ],
                                             ),
-                                            span: 86..106,
+                                            span: 51..71,
                                         },
-                                        span: 79..106,
+                                        span: 44..71,
                                     },
                                     CallArg {
                                         name: Some(
                                             Spanned {
                                                 node: "to",
-                                                span: 108..110,
+                                                span: 73..75,
                                             },
                                         ),
                                         value: Spanned {
@@ -103,23 +84,23 @@ Program {
                                                             node: Var(
                                                                 "name",
                                                             ),
-                                                            span: 119..123,
+                                                            span: 84..88,
                                                         },
                                                     ),
                                                 ],
                                             ),
-                                            span: 113..125,
+                                            span: 78..90,
                                         },
-                                        span: 108..125,
+                                        span: 73..90,
                                     },
                                 ],
                             },
-                            span: 71..127,
+                            span: 36..92,
                         },
                     ),
-                    span: 67..130,
+                    span: 32..95,
                 },
-                span: 36..130,
+                span: 1..95,
                 intrinsic: None,
             },
         ),
@@ -127,21 +108,21 @@ Program {
             ValDecl {
                 name: Spanned {
                     node: "zshrc",
-                    span: 134..139,
+                    span: 99..104,
                 },
                 ty: Some(
                     Spanned {
                         node: Named(
                             "Symlink",
                         ),
-                        span: 141..148,
+                        span: 106..113,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "link",
-                            span: 151..155,
+                            span: 116..120,
                         },
                         args: [
                             CallArg {
@@ -152,15 +133,15 @@ Program {
                                             "zshrc",
                                         ),
                                     ),
-                                    span: 156..163,
+                                    span: 121..128,
                                 },
-                                span: 156..163,
+                                span: 121..128,
                             },
                         ],
                     },
-                    span: 151..165,
+                    span: 116..130,
                 },
-                span: 130..165,
+                span: 95..130,
             },
         ),
     ],

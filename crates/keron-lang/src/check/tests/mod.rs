@@ -19,13 +19,12 @@ use crate::{
     parser::parse,
 };
 
-/// Type-check a snippet with the `std:fs` resource constructors and
+/// Type-check a snippet with the stdlib resource constructors and
 /// types (`symlink`/`file`/`directory` plus
-/// `Symlink`/`File`/`Directory`/`Resource`) pre-imported. Unit tests
-/// in this module exercise checker behavior, not the import system,
-/// so we inject these signatures rather than threading them through
-/// every source string. The corpus tests verify the explicit-import
-/// requirement at the language-integration level.
+/// `Symlink`/`File`/`Directory`/`Resource`) pre-seeded as builtins.
+/// Mirrors what the resolver injects into every user module — these
+/// unit tests exercise checker behavior in isolation, so they hand-
+/// seed rather than going through the resolver.
 pub(super) fn check_src(src: &str) -> Result<(), Vec<Diagnostic>> {
     let mut prog = parse(src).expect("parse should succeed");
     let imp = fs_imports();
@@ -86,5 +85,16 @@ fn fs_imports() -> ImportedSymbols {
     imp.types.insert("File".into(), Type::File);
     imp.types.insert("Directory".into(), Type::Directory);
     imp.types.insert("Resource".into(), Type::Resource);
+    for name in [
+        "symlink",
+        "file",
+        "directory",
+        "Symlink",
+        "File",
+        "Directory",
+        "Resource",
+    ] {
+        imp.builtins.insert(name.into());
+    }
     imp
 }

@@ -1,8 +1,8 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
 ---
-error: `symlink` is already defined
-  --> 3:4
+error: `symlink` is a builtin and cannot be redefined
+  --> 2:4
   |
-3 | fn symlink(): Int { 1 }
+2 | fn symlink(): Int { 1 }
   |    ^^^^^^^

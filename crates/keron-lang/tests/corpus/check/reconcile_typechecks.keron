@@ -1,4 +1,3 @@
-from "std:fs" use symlink, file, directory, Symlink, File, Directory
 
 val zshrc: Symlink = symlink(from = "~/df/zshrc", to = "~/.zshrc")
 val gitcfg: File = file(path = "~/.gitconfig", content = "[user]")
