@@ -18,10 +18,6 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    /// Run the keron language server over stdio. Editors invoke this
-    /// to drive parse and type-check feedback.
-    Lsp,
-
     /// Plan changes for a keron program, and optionally apply them.
     ///
     /// Without `--execute`, prints an OpenTofu-style diff and exits.
@@ -40,7 +36,6 @@ enum Command {
 
 fn main() -> anyhow::Result<()> {
     match Cli::parse().command {
-        Command::Lsp => keron_lsp::run(),
         Command::Apply { path, execute } => keron_apply::run(&path, execute),
     }
 }
