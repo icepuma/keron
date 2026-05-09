@@ -96,7 +96,12 @@ module.exports = grammar({
     // Capitalized identifier in type position; resolved against
     // imported types by the keron module loader (e.g. `Symlink` from
     // `std:fs`).
-    named_type: _ => /[A-Z][a-zA-Z0-9_]*/,
+    //
+    // The `token(prec(-1, ...))` wrapper drops this token's lexer
+    // priority below the literal type keywords (`'List'`, `'Map'`,
+    // `'String'`, etc.) so `Map<...>` continues to match `map_type`
+    // even though `Map` also fits this regex.
+    named_type: _ => token(prec(-1, /[A-Z][a-zA-Z0-9_]*/)),
 
     list_type: $ => seq('List', '<', $._type, '>'),
     map_type: $ => seq('Map', '<', $._type, ',', $._type, '>'),

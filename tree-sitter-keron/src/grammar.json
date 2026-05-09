@@ -438,8 +438,15 @@
       ]
     },
     "named_type": {
-      "type": "PATTERN",
-      "value": "[A-Z][a-zA-Z0-9_]*"
+      "type": "TOKEN",
+      "content": {
+        "type": "PREC",
+        "value": -1,
+        "content": {
+          "type": "PATTERN",
+          "value": "[A-Z][a-zA-Z0-9_]*"
+        }
+      }
     },
     "list_type": {
       "type": "SEQ",
