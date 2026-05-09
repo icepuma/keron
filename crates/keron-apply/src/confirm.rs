@@ -2,14 +2,9 @@
 //! Mirrors `OpenTofu`: `Only 'yes' will be accepted to approve.` so a
 //! quick `y` or accidental Enter cannot trigger an apply.
 
-#![allow(clippy::redundant_pub_crate)]
-
 use std::io::{self, BufRead, Write};
 
-pub(crate) fn prompt_yes_no<R: BufRead, W: Write>(
-    stdin: &mut R,
-    stdout: &mut W,
-) -> io::Result<bool> {
+pub fn prompt_yes_no<R: BufRead, W: Write>(stdin: &mut R, stdout: &mut W) -> io::Result<bool> {
     writeln!(stdout)?;
     writeln!(stdout, "Do you want to perform these actions?")?;
     writeln!(stdout, "  Only 'yes' will be accepted to approve.")?;

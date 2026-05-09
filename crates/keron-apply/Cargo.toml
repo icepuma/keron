@@ -13,6 +13,7 @@ keron-lang.workspace = true
 keron-modules.workspace = true
 
 anyhow.workspace = true
+ariadne.workspace = true
 
 [lints]
 workspace = true

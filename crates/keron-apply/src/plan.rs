@@ -7,7 +7,7 @@
 //! by `Plan::sample()` under `cfg(test)`, so the non-test build sees
 //! them as unconstructed today.
 
-#![allow(dead_code, clippy::redundant_pub_crate)]
+#![allow(dead_code)]
 
 use std::path::PathBuf;
 
@@ -16,7 +16,7 @@ use anyhow::Result;
 use crate::eval;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Action {
+pub enum Action {
     Create,
     Update,
     Destroy,
@@ -24,14 +24,14 @@ pub(crate) enum Action {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ResourceKind {
+pub enum ResourceKind {
     File,
     Directory,
     Symlink,
 }
 
 impl ResourceKind {
-    pub(crate) const fn label(self) -> &'static str {
+    pub const fn label(self) -> &'static str {
         match self {
             Self::File => "file",
             Self::Directory => "directory",
@@ -41,35 +41,35 @@ impl ResourceKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ResourceState {
+pub enum ResourceState {
     File { path: PathBuf, content: String },
     Directory { path: PathBuf },
     Symlink { from: PathBuf, to: PathBuf },
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ResourceChange {
-    pub(crate) address: String,
-    pub(crate) kind: ResourceKind,
-    pub(crate) action: Action,
-    pub(crate) before: Option<ResourceState>,
-    pub(crate) after: Option<ResourceState>,
+pub struct ResourceChange {
+    pub address: String,
+    pub kind: ResourceKind,
+    pub action: Action,
+    pub before: Option<ResourceState>,
+    pub after: Option<ResourceState>,
 }
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct Plan {
-    pub(crate) changes: Vec<ResourceChange>,
+pub struct Plan {
+    pub changes: Vec<ResourceChange>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub(crate) struct PlanSummary {
-    pub(crate) add: usize,
-    pub(crate) change: usize,
-    pub(crate) destroy: usize,
+pub struct PlanSummary {
+    pub add: usize,
+    pub change: usize,
+    pub destroy: usize,
 }
 
 impl Plan {
-    pub(crate) fn summary(&self) -> PlanSummary {
+    pub fn summary(&self) -> PlanSummary {
         let mut s = PlanSummary::default();
         for c in &self.changes {
             match c.action {
@@ -82,7 +82,7 @@ impl Plan {
         s
     }
 
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.changes
             .iter()
             .all(|c| matches!(c.action, Action::NoOp))
@@ -94,7 +94,7 @@ impl Plan {
 /// Today every resource is reported as `Action::Create`. Diffing
 /// against live filesystem state — to refine into Update/NoOp/Destroy
 /// — lands in a follow-up.
-pub(crate) fn build_plan(graph: &keron_modules::ModuleGraph) -> Result<Plan> {
+pub fn build_plan(graph: &keron_modules::ModuleGraph) -> Result<Plan> {
     let resources = eval::eval_graph(graph)?;
     let changes = resources
         .into_iter()
@@ -128,7 +128,7 @@ const fn kind_for(state: &ResourceState) -> ResourceKind {
 
 #[cfg(test)]
 impl Plan {
-    pub(crate) fn sample() -> Self {
+    pub fn sample() -> Self {
         Self {
             changes: vec![
                 ResourceChange {

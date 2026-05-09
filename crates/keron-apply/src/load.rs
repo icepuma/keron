@@ -2,21 +2,19 @@
 //! buffer for the parser. Directory loading concatenates files in
 //! sorted order (matches Terraform/OpenTofu module semantics).
 
-#![allow(clippy::redundant_pub_crate)]
-
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
 #[derive(Debug)]
-pub(crate) struct LoadedSource {
-    pub(crate) text: String,
+pub struct LoadedSource {
+    pub text: String,
     #[allow(dead_code)] // surfaced once we map errors back to per-file spans
-    pub(crate) files: Vec<PathBuf>,
+    pub files: Vec<PathBuf>,
 }
 
-pub(crate) fn load(path: &Path) -> Result<LoadedSource> {
+pub fn load(path: &Path) -> Result<LoadedSource> {
     let meta = fs::metadata(path).with_context(|| format!("reading `{}`", path.display()))?;
 
     if meta.is_file() {

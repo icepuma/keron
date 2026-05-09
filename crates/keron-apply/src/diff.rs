@@ -6,8 +6,6 @@
 //! crate to keep the dep surface small. Color is opt-in per call —
 //! the caller decides based on `IsTerminal`.
 
-#![allow(clippy::redundant_pub_crate)]
-
 use std::io::{self, Write};
 
 use crate::plan::{Action, Plan, ResourceChange, ResourceState};
@@ -19,15 +17,11 @@ const RED: &str = "\x1b[31m";
 const DIM: &str = "\x1b[2m";
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct RenderOptions {
-    pub(crate) color: bool,
+pub struct RenderOptions {
+    pub color: bool,
 }
 
-pub(crate) fn render_plan<W: Write>(
-    out: &mut W,
-    plan: &Plan,
-    opts: RenderOptions,
-) -> io::Result<()> {
+pub fn render_plan<W: Write>(out: &mut W, plan: &Plan, opts: RenderOptions) -> io::Result<()> {
     if plan.is_empty() {
         writeln!(
             out,

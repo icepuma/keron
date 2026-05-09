@@ -76,9 +76,10 @@ fn missing_std_module_errors() {
     let src = "from \"std:zzz\" use foo\n\
                val n: Int = foo()\n";
     let entry = proj.write("entry.keron", src);
-    let errors = resolve(TempProject::entry_source(&entry, src)).expect_err("should fail");
+    let bundle = resolve(TempProject::entry_source(&entry, src)).expect_err("should fail");
     assert!(
-        errors
+        bundle
+            .errors
             .iter()
             .flat_map(|e| &e.diagnostics)
             .any(|d| d.message.contains("unknown stdlib module"))
@@ -90,9 +91,10 @@ fn invalid_path_prefix_errors() {
     let proj = TempProject::new("bad-prefix");
     let src = "from \"helpers.keron\" use foo\n";
     let entry = proj.write("entry.keron", src);
-    let errors = resolve(TempProject::entry_source(&entry, src)).expect_err("should fail");
+    let bundle = resolve(TempProject::entry_source(&entry, src)).expect_err("should fail");
     assert!(
-        errors
+        bundle
+            .errors
             .iter()
             .flat_map(|e| &e.diagnostics)
             .any(|d| d.message.contains("must start with"))
@@ -124,9 +126,10 @@ fn missing_export_errors() {
     let entry_src = "from \"./helpers.keron\" use missing\n\
                      val n: Int = missing()\n";
     let entry = proj.write("entry.keron", entry_src);
-    let errors = resolve(TempProject::entry_source(&entry, entry_src)).expect_err("should fail");
+    let bundle = resolve(TempProject::entry_source(&entry, entry_src)).expect_err("should fail");
     assert!(
-        errors
+        bundle
+            .errors
             .iter()
             .flat_map(|e| &e.diagnostics)
             .any(|d| d.message.contains("does not export `missing`"))
@@ -146,9 +149,10 @@ fn cycle_errors() {
     );
     let entry_src = "from \"./a.keron\" use foo\nval n: Int = foo()\n";
     let entry = proj.write("entry.keron", entry_src);
-    let errors = resolve(TempProject::entry_source(&entry, entry_src)).expect_err("should fail");
+    let bundle = resolve(TempProject::entry_source(&entry, entry_src)).expect_err("should fail");
     assert!(
-        errors
+        bundle
+            .errors
             .iter()
             .flat_map(|e| &e.diagnostics)
             .any(|d| d.message.contains("module cycle"))
@@ -163,9 +167,10 @@ fn duplicate_local_collides_with_import() {
                \tsymlink(from = from, to = to)\n\
                }\n";
     let entry = proj.write("entry.keron", src);
-    let errors = resolve(TempProject::entry_source(&entry, src)).expect_err("should fail");
+    let bundle = resolve(TempProject::entry_source(&entry, src)).expect_err("should fail");
     assert!(
-        errors
+        bundle
+            .errors
             .iter()
             .flat_map(|e| &e.diagnostics)
             .any(|d| d.message.contains("`symlink` is already defined"))
@@ -193,6 +198,32 @@ fn imported_val_with_annotation_resolves() {
 }
 
 #[test]
+fn unresolved_type_skips_subsequent_check_pass() {
+    // Importing the constructor fn but not its return type leaves a
+    // `Type::Named("Symlink")` placeholder in the program. The loader
+    // must report that exactly once and skip type-checking — otherwise
+    // the checker re-reports the same name and emits cascading bogus
+    // diagnostics like "expected `Symlink`, found `Symlink`".
+    let proj = TempProject::new("unresolved-type");
+    let src = "from \"std:fs\" use symlink\n\
+               val s: Symlink = symlink(from = \"a\", to = \"b\")\n\
+               reconcile s\n";
+    let entry = proj.write("entry.keron", src);
+    let bundle = resolve(TempProject::entry_source(&entry, src)).expect_err("should fail");
+    let messages: Vec<&str> = bundle
+        .errors
+        .iter()
+        .flat_map(|e| &e.diagnostics)
+        .map(|d| d.message.as_str())
+        .collect();
+    assert_eq!(
+        messages,
+        vec!["unknown type `Symlink`"],
+        "expected exactly one diagnostic, got {messages:?}"
+    );
+}
+
+#[test]
 fn cycle_path_starts_and_ends_at_same_module() {
     let proj = TempProject::new("cycle-path");
     proj.write(
@@ -205,8 +236,9 @@ fn cycle_path_starts_and_ends_at_same_module() {
     );
     let entry_src = "from \"./a.keron\" use foo\nval n: Int = foo()\n";
     let entry = proj.write("entry.keron", entry_src);
-    let errors = resolve(TempProject::entry_source(&entry, entry_src)).expect_err("should fail");
-    let cycle_msg = errors
+    let bundle = resolve(TempProject::entry_source(&entry, entry_src)).expect_err("should fail");
+    let cycle_msg = bundle
+        .errors
         .iter()
         .flat_map(|e| &e.diagnostics)
         .find(|d| d.message.contains("module cycle"))

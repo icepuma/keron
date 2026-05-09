@@ -16,14 +16,14 @@ mod eval;
 mod execute;
 mod load;
 mod plan;
+mod report;
 
-use std::fmt::Write as _;
 use std::fs;
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use keron_modules::{EntrySource, ModuleId, ResolveError, resolve};
+use keron_modules::{EntrySource, ModuleId, resolve};
 
 use crate::diff::RenderOptions;
 
@@ -65,10 +65,10 @@ where
         base_dir,
         id: entry_id,
     })
-    .map_err(|errs| {
+    .map_err(|bundle| {
         anyhow::anyhow!(
             "module resolution failed:\n{}",
-            render_resolve_errors(&errs)
+            report::render(&bundle, color)
         )
     })?;
 
@@ -95,24 +95,6 @@ where
     Ok(())
 }
 
-fn render_resolve_errors(errs: &[ResolveError]) -> String {
-    let mut out = String::new();
-    for err in errs {
-        let header = err.module.display();
-        for d in &err.diagnostics {
-            // Without the per-module source we can only render the byte
-            // offset for now; a follow-up will plumb each module's
-            // source through for line/column rendering.
-            let _ = writeln!(
-                out,
-                "  [{header} @{}..{}] {}",
-                d.span.start, d.span.end, d.message
-            );
-        }
-    }
-    out
-}
-
 fn entry_module_id(path: &Path) -> Result<ModuleId> {
     let canonical = fs::canonicalize(path)
         .with_context(|| format!("canonicalizing entry `{}`", path.display()))?;
@@ -132,7 +114,6 @@ fn entry_base_dir(path: &Path) -> Result<std::path::PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use keron_lang::Diagnostic;
     use std::env;
     use std::io::Cursor;
     use std::path::PathBuf;
@@ -174,36 +155,6 @@ mod tests {
         let mut sout: Vec<u8> = Vec::new();
         let res = run_with_io(path, execute, &mut sin, &mut sout, false);
         (res, String::from_utf8(sout).unwrap())
-    }
-
-    #[test]
-    fn render_resolve_errors_returns_empty_for_empty_input() {
-        assert_eq!(render_resolve_errors(&[]), "");
-    }
-
-    #[test]
-    fn render_resolve_errors_includes_module_header_and_message() {
-        let errs = vec![ResolveError {
-            module: ModuleId::Std("fs".into()),
-            diagnostics: vec![Diagnostic::new(3..7, "boom")],
-        }];
-        let out = render_resolve_errors(&errs);
-        assert!(out.contains("std:fs"), "module header missing: {out}");
-        assert!(out.contains("@3..7"), "byte span missing: {out}");
-        assert!(out.contains("boom"), "message missing: {out}");
-    }
-
-    #[test]
-    fn render_resolve_errors_iterates_each_diagnostic() {
-        let errs = vec![ResolveError {
-            module: ModuleId::Std("fs".into()),
-            diagnostics: vec![
-                Diagnostic::new(0..1, "first"),
-                Diagnostic::new(2..3, "second"),
-            ],
-        }];
-        let out = render_resolve_errors(&errs);
-        assert!(out.contains("first") && out.contains("second"));
     }
 
     #[test]

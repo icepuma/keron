@@ -22,8 +22,6 @@
 //! kept as `bail!` rather than `unreachable!` to fail loudly if AST
 //! invariants ever drift.
 
-#![allow(clippy::redundant_pub_crate)]
-
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -150,7 +148,7 @@ impl<'a, 'p> Env<'a, 'p> {
     }
 }
 
-pub(crate) fn eval_graph(graph: &ModuleGraph) -> Result<Vec<ResourceState>> {
+pub fn eval_graph(graph: &ModuleGraph) -> Result<Vec<ResourceState>> {
     let mut graph_top = GraphTop {
         modules: HashMap::new(),
     };

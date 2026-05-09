@@ -9,8 +9,6 @@
 //! [`ModuleGraph`] that downstream consumers (the apply evaluator,
 //! the LSP) walk to evaluate or surface diagnostics.
 
-#![allow(clippy::redundant_pub_crate)]
-
 pub mod stdlib;
 
 use std::collections::{HashMap, HashSet};
@@ -88,6 +86,20 @@ pub struct ResolveError {
     pub diagnostics: Vec<Diagnostic>,
 }
 
+/// Failure-side wrapper bundling the per-module errors with the
+/// source text needed to render line/column-aware reports.
+///
+/// The renderer (in `keron-apply`) feeds [`Self::sources`] into
+/// `ariadne::sources(...)` and looks up each error's module by id.
+/// Stdlib modules synthesize their AST without source text and may
+/// be absent here — the renderer falls back to a byte-offset header
+/// for those.
+#[derive(Debug)]
+pub struct ResolveErrors {
+    pub errors: Vec<ResolveError>,
+    pub sources: HashMap<ModuleId, String>,
+}
+
 /// Configuration for one resolution.
 #[derive(Debug)]
 pub struct EntrySource {
@@ -106,10 +118,11 @@ pub struct EntrySource {
 /// Load + parse + check the entry and all its transitive dependencies.
 ///
 /// # Errors
-/// Returns one [`ResolveError`] per failing module — parse errors,
-/// import-resolution errors, and type-check errors all funnel through
-/// the same shape.
-pub fn resolve(entry: EntrySource) -> Result<ModuleGraph, Vec<ResolveError>> {
+/// Returns a [`ResolveErrors`] aggregate carrying one [`ResolveError`]
+/// per failing module — parse errors, import-resolution errors, and
+/// type-check errors all funnel through the same shape — plus a
+/// `sources` map suitable for ariadne-style rendering.
+pub fn resolve(entry: EntrySource) -> Result<ModuleGraph, ResolveErrors> {
     let mut state = ResolveState::default();
     let entry_id = entry.id.clone();
     state.load_module(entry.id, entry.text, &entry.base_dir);
@@ -226,7 +239,16 @@ impl ResolveState {
         }
     }
 
-    fn into_graph(mut self, entry: ModuleId) -> Result<ModuleGraph, Vec<ResolveError>> {
+    fn into_graph(mut self, entry: ModuleId) -> Result<ModuleGraph, ResolveErrors> {
+        // Snapshot every loaded module's source so the failure path
+        // can hand them to the renderer. `raw` entries are drained
+        // below as the modules become `CheckedModule`s, so we have to
+        // capture the text up front.
+        let sources: HashMap<ModuleId, String> = self
+            .raw
+            .iter()
+            .map(|(id, raw)| (id.clone(), raw.source.clone()))
+            .collect();
         // Build the dependency edges from each module's `use` items
         // pointing at dependencies (so topo order = deps first).
         let edges = self.compute_edges();
@@ -247,7 +269,10 @@ impl ResolveState {
                         ),
                     )],
                 });
-                return Err(self.errors);
+                return Err(ResolveErrors {
+                    errors: self.errors,
+                    sources,
+                });
             }
         };
 
@@ -259,17 +284,26 @@ impl ResolveState {
             let imports = self.resolve_uses(id, &raw.program, &raw.base_dir, &modules);
             let imported = build_imported_symbols(&imports, &modules);
             let mut program = raw.program;
-            if let Err(diags) = resolve_type_names(&mut program, &imported) {
-                self.errors.push(ResolveError {
-                    module: id.clone(),
-                    diagnostics: diags,
-                });
-            }
-            if let Err(diags) = check_module(&program, &imported) {
-                self.errors.push(ResolveError {
-                    module: id.clone(),
-                    diagnostics: diags,
-                });
+            // Type-name resolution must succeed before the checker runs:
+            // any surviving `Type::Named` placeholder triggers spurious
+            // cascades like duplicate "unknown type" reports and bogus
+            // "expected `X`, found `X`" mismatches (where one side is the
+            // unresolved name and the other the canonical variant).
+            match resolve_type_names(&mut program, &imported) {
+                Ok(()) => {
+                    if let Err(diags) = check_module(&program, &imported) {
+                        self.errors.push(ResolveError {
+                            module: id.clone(),
+                            diagnostics: diags,
+                        });
+                    }
+                }
+                Err(diags) => {
+                    self.errors.push(ResolveError {
+                        module: id.clone(),
+                        diagnostics: diags,
+                    });
+                }
             }
             let (exported_fns, exported_vals) = collect_exports(&program);
             // Stdlib modules expose types via the Rust registry; user
@@ -308,7 +342,10 @@ impl ResolveState {
                 topo_order: topo,
             })
         } else {
-            Err(self.errors)
+            Err(ResolveErrors {
+                errors: self.errors,
+                sources,
+            })
         }
     }
 
