@@ -1,1 +1,3 @@
+from "std:fs" use Symlink
+
 val m: Map<Symlink, Int> = {}

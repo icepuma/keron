@@ -5,4 +5,4 @@ error: missing required argument `to` for `symlink`
   --> 3:18
   |
 3 | val s: Symlink = symlink(from = "a")
-  |                  ^^^^^^^^^^^^^^^^^^^
+  |                  ^^^^^^^^^^^^^^^^^^^^

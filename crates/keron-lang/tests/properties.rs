@@ -15,12 +15,15 @@ use std::fmt::Write as _;
 
 use keron_lang::{
     Diagnostic, Expr, FnSig, ImportedSymbols, Item, Literal, ParamSig, Program, Spanned, Type,
-    UnaryOp, check_module, parse,
+    UnaryOp, check_module, parse, resolve_type_names,
 };
 use proptest::prelude::*;
 
 fn check(program: &Program) -> Result<(), Vec<Diagnostic>> {
-    check_module(program, &fs_imports())
+    let mut prog = program.clone();
+    let imp = fs_imports();
+    resolve_type_names(&mut prog, &imp)?;
+    check_module(&prog, &imp)
 }
 
 fn fs_imports() -> ImportedSymbols {
@@ -72,6 +75,10 @@ fn fs_imports() -> ImportedSymbols {
             return_type: Type::Directory,
         },
     );
+    imp.types.insert("Symlink".into(), Type::Symlink);
+    imp.types.insert("File".into(), Type::File);
+    imp.types.insert("Directory".into(), Type::Directory);
+    imp.types.insert("Resource".into(), Type::Resource);
     imp
 }
 
@@ -149,7 +156,8 @@ fn literal_source_for(ty: &Type) -> BoxedStrategy<(String, Type)> {
         | Type::File
         | Type::Directory
         | Type::Resource
-        | Type::Void => {
+        | Type::Void
+        | Type::Named(_) => {
             unreachable!("structured/resource/void types are not used in literal_source_for")
         }
     }

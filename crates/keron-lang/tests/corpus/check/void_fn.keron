@@ -1,4 +1,4 @@
-from "std:fs" use symlink
+from "std:fs" use symlink, Symlink
 
 val target: Symlink = symlink(from = "a", to = "b")
 

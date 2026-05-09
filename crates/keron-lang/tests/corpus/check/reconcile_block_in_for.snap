@@ -14,22 +14,26 @@ Program {
                         node: "symlink",
                         span: 18..25,
                     },
+                    Spanned {
+                        node: "Symlink",
+                        span: 27..34,
+                    },
                 ],
-                span: 0..25,
+                span: 0..34,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "xs",
-                    span: 31..33,
+                    span: 40..42,
                 },
                 ty: Some(
                     Spanned {
                         node: List(
                             Symlink,
                         ),
-                        span: 35..49,
+                        span: 44..58,
                     },
                 ),
                 value: Spanned {
@@ -39,14 +43,14 @@ Program {
                                 node: Call {
                                     callee: Spanned {
                                         node: "symlink",
-                                        span: 55..62,
+                                        span: 64..71,
                                     },
                                     args: [
                                         CallArg {
                                             name: Some(
                                                 Spanned {
                                                     node: "from",
-                                                    span: 63..67,
+                                                    span: 72..76,
                                                 },
                                             ),
                                             value: Spanned {
@@ -55,15 +59,15 @@ Program {
                                                         "from-a",
                                                     ),
                                                 ),
-                                                span: 70..78,
+                                                span: 79..87,
                                             },
-                                            span: 63..78,
+                                            span: 72..87,
                                         },
                                         CallArg {
                                             name: Some(
                                                 Spanned {
                                                     node: "to",
-                                                    span: 80..82,
+                                                    span: 89..91,
                                                 },
                                             ),
                                             value: Spanned {
@@ -72,26 +76,26 @@ Program {
                                                         "to-a",
                                                     ),
                                                 ),
-                                                span: 85..91,
+                                                span: 94..100,
                                             },
-                                            span: 80..91,
+                                            span: 89..100,
                                         },
                                     ],
                                 },
-                                span: 55..92,
+                                span: 64..101,
                             },
                             Spanned {
                                 node: Call {
                                     callee: Spanned {
                                         node: "symlink",
-                                        span: 96..103,
+                                        span: 105..112,
                                     },
                                     args: [
                                         CallArg {
                                             name: Some(
                                                 Spanned {
                                                     node: "from",
-                                                    span: 104..108,
+                                                    span: 113..117,
                                                 },
                                             ),
                                             value: Spanned {
@@ -100,15 +104,15 @@ Program {
                                                         "from-b",
                                                     ),
                                                 ),
-                                                span: 111..119,
+                                                span: 120..128,
                                             },
-                                            span: 104..119,
+                                            span: 113..128,
                                         },
                                         CallArg {
                                             name: Some(
                                                 Spanned {
                                                     node: "to",
-                                                    span: 121..123,
+                                                    span: 130..132,
                                                 },
                                             ),
                                             value: Spanned {
@@ -117,19 +121,19 @@ Program {
                                                         "to-b",
                                                     ),
                                                 ),
-                                                span: 126..132,
+                                                span: 135..141,
                                             },
-                                            span: 121..132,
+                                            span: 130..141,
                                         },
                                     ],
                                 },
-                                span: 96..133,
+                                span: 105..142,
                             },
                         ],
                     ),
-                    span: 51..138,
+                    span: 60..147,
                 },
-                span: 27..138,
+                span: 36..147,
             },
         ),
         ExprStmt(
@@ -138,14 +142,14 @@ Program {
                     pattern: Elem(
                         Spanned {
                             node: "s",
-                            span: 142..143,
+                            span: 151..152,
                         },
                     ),
                     iter_expr: Spanned {
                         node: Var(
                             "xs",
                         ),
-                        span: 147..149,
+                        span: 156..158,
                     },
                     body: Block {
                         stmts: [
@@ -157,19 +161,19 @@ Program {
                                                 node: Var(
                                                     "s",
                                                 ),
-                                                span: 170..171,
+                                                span: 179..180,
                                             },
                                         ],
                                     ],
-                                    span: 154..176,
+                                    span: 163..185,
                                 },
                             ),
                         ],
                         trailing: None,
-                        span: 150..177,
+                        span: 159..187,
                     },
                 },
-                span: 138..177,
+                span: 147..187,
             },
         ),
     ],

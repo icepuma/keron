@@ -1,4 +1,4 @@
-from "std:fs" use symlink
+from "std:fs" use symlink, Symlink
 
 val use_zsh: Boolean = true
 val zshrc: Symlink = symlink(from = "df/zshrc", to = "~/.zshrc")

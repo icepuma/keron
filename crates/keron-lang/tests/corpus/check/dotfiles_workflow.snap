@@ -22,33 +22,45 @@ Program {
                         node: "directory",
                         span: 33..42,
                     },
+                    Spanned {
+                        node: "Symlink",
+                        span: 44..51,
+                    },
+                    Spanned {
+                        node: "File",
+                        span: 53..57,
+                    },
+                    Spanned {
+                        node: "Directory",
+                        span: 59..68,
+                    },
                 ],
-                span: 0..42,
+                span: 0..68,
             },
         ),
         Fn(
             FnDecl {
                 name: Spanned {
                     node: "link",
-                    span: 267..271,
+                    span: 293..297,
                 },
                 params: [
                     Param {
                         name: Spanned {
                             node: "name",
-                            span: 272..276,
+                            span: 298..302,
                         },
                         ty: Spanned {
                             node: String,
-                            span: 278..284,
+                            span: 304..310,
                         },
                         default: None,
-                        span: 272..284,
+                        span: 298..310,
                     },
                 ],
                 return_type: Spanned {
                     node: Symlink,
-                    span: 287..294,
+                    span: 313..320,
                 },
                 body: Block {
                     stmts: [],
@@ -57,14 +69,14 @@ Program {
                             node: Call {
                                 callee: Spanned {
                                     node: "symlink",
-                                    span: 299..306,
+                                    span: 325..332,
                                 },
                                 args: [
                                     CallArg {
                                         name: Some(
                                             Spanned {
                                                 node: "from",
-                                                span: 307..311,
+                                                span: 333..337,
                                             },
                                         ),
                                         value: Spanned {
@@ -78,20 +90,20 @@ Program {
                                                             node: Var(
                                                                 "name",
                                                             ),
-                                                            span: 328..332,
+                                                            span: 354..358,
                                                         },
                                                     ),
                                                 ],
                                             ),
-                                            span: 314..334,
+                                            span: 340..360,
                                         },
-                                        span: 307..334,
+                                        span: 333..360,
                                     },
                                     CallArg {
                                         name: Some(
                                             Spanned {
                                                 node: "to",
-                                                span: 336..338,
+                                                span: 362..364,
                                             },
                                         ),
                                         value: Spanned {
@@ -105,23 +117,23 @@ Program {
                                                             node: Var(
                                                                 "name",
                                                             ),
-                                                            span: 347..351,
+                                                            span: 373..377,
                                                         },
                                                     ),
                                                 ],
                                             ),
-                                            span: 341..353,
+                                            span: 367..379,
                                         },
-                                        span: 336..353,
+                                        span: 362..379,
                                     },
                                 ],
                             },
-                            span: 299..355,
+                            span: 325..381,
                         },
                     ),
-                    span: 295..358,
+                    span: 321..384,
                 },
-                span: 264..358,
+                span: 290..384,
                 intrinsic: None,
             },
         ),
@@ -129,14 +141,14 @@ Program {
             ValDecl {
                 name: Spanned {
                     node: "home_dirs",
-                    span: 362..371,
+                    span: 388..397,
                 },
                 ty: Some(
                     Spanned {
                         node: List(
                             Directory,
                         ),
-                        span: 373..389,
+                        span: 399..415,
                     },
                 ),
                 value: Spanned {
@@ -146,14 +158,14 @@ Program {
                                 node: Call {
                                     callee: Spanned {
                                         node: "directory",
-                                        span: 395..404,
+                                        span: 421..430,
                                     },
                                     args: [
                                         CallArg {
                                             name: Some(
                                                 Spanned {
                                                     node: "path",
-                                                    span: 405..409,
+                                                    span: 431..435,
                                                 },
                                             ),
                                             value: Spanned {
@@ -162,26 +174,26 @@ Program {
                                                         "~/.config",
                                                     ),
                                                 ),
-                                                span: 412..423,
+                                                span: 438..449,
                                             },
-                                            span: 405..423,
+                                            span: 431..449,
                                         },
                                     ],
                                 },
-                                span: 395..424,
+                                span: 421..450,
                             },
                             Spanned {
                                 node: Call {
                                     callee: Spanned {
                                         node: "directory",
-                                        span: 428..437,
+                                        span: 454..463,
                                     },
                                     args: [
                                         CallArg {
                                             name: Some(
                                                 Spanned {
                                                     node: "path",
-                                                    span: 438..442,
+                                                    span: 464..468,
                                                 },
                                             ),
                                             value: Spanned {
@@ -190,26 +202,26 @@ Program {
                                                         "~/.local/bin",
                                                     ),
                                                 ),
-                                                span: 445..459,
+                                                span: 471..485,
                                             },
-                                            span: 438..459,
+                                            span: 464..485,
                                         },
                                     ],
                                 },
-                                span: 428..460,
+                                span: 454..486,
                             },
                             Spanned {
                                 node: Call {
                                     callee: Spanned {
                                         node: "directory",
-                                        span: 464..473,
+                                        span: 490..499,
                                     },
                                     args: [
                                         CallArg {
                                             name: Some(
                                                 Spanned {
                                                     node: "path",
-                                                    span: 474..478,
+                                                    span: 500..504,
                                                 },
                                             ),
                                             value: Spanned {
@@ -218,33 +230,33 @@ Program {
                                                         "~/.local/share",
                                                     ),
                                                 ),
-                                                span: 481..497,
+                                                span: 507..523,
                                             },
-                                            span: 474..497,
+                                            span: 500..523,
                                         },
                                     ],
                                 },
-                                span: 464..498,
+                                span: 490..524,
                             },
                         ],
                     ),
-                    span: 391..503,
+                    span: 417..529,
                 },
-                span: 358..503,
+                span: 384..529,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "shell_links",
-                    span: 507..518,
+                    span: 533..544,
                 },
                 ty: Some(
                     Spanned {
                         node: List(
                             Symlink,
                         ),
-                        span: 520..534,
+                        span: 546..560,
                     },
                 ),
                 value: Spanned {
@@ -254,7 +266,7 @@ Program {
                                 node: Call {
                                     callee: Spanned {
                                         node: "link",
-                                        span: 540..544,
+                                        span: 566..570,
                                     },
                                     args: [
                                         CallArg {
@@ -265,19 +277,19 @@ Program {
                                                         "zshrc",
                                                     ),
                                                 ),
-                                                span: 545..552,
+                                                span: 571..578,
                                             },
-                                            span: 545..552,
+                                            span: 571..578,
                                         },
                                     ],
                                 },
-                                span: 540..553,
+                                span: 566..579,
                             },
                             Spanned {
                                 node: Call {
                                     callee: Spanned {
                                         node: "link",
-                                        span: 557..561,
+                                        span: 583..587,
                                     },
                                     args: [
                                         CallArg {
@@ -288,19 +300,19 @@ Program {
                                                         "zsh_history",
                                                     ),
                                                 ),
-                                                span: 562..575,
+                                                span: 588..601,
                                             },
-                                            span: 562..575,
+                                            span: 588..601,
                                         },
                                     ],
                                 },
-                                span: 557..576,
+                                span: 583..602,
                             },
                             Spanned {
                                 node: Call {
                                     callee: Spanned {
                                         node: "link",
-                                        span: 580..584,
+                                        span: 606..610,
                                     },
                                     args: [
                                         CallArg {
@@ -311,33 +323,33 @@ Program {
                                                         "p10k.zsh",
                                                     ),
                                                 ),
-                                                span: 585..595,
+                                                span: 611..621,
                                             },
-                                            span: 585..595,
+                                            span: 611..621,
                                         },
                                     ],
                                 },
-                                span: 580..596,
+                                span: 606..622,
                             },
                         ],
                     ),
-                    span: 536..601,
+                    span: 562..627,
                 },
-                span: 503..601,
+                span: 529..627,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "editor_links",
-                    span: 605..617,
+                    span: 631..643,
                 },
                 ty: Some(
                     Spanned {
                         node: List(
                             Symlink,
                         ),
-                        span: 619..633,
+                        span: 645..659,
                     },
                 ),
                 value: Spanned {
@@ -347,7 +359,7 @@ Program {
                                 node: Call {
                                     callee: Spanned {
                                         node: "link",
-                                        span: 639..643,
+                                        span: 665..669,
                                     },
                                     args: [
                                         CallArg {
@@ -358,19 +370,19 @@ Program {
                                                         "vimrc",
                                                     ),
                                                 ),
-                                                span: 644..651,
+                                                span: 670..677,
                                             },
-                                            span: 644..651,
+                                            span: 670..677,
                                         },
                                     ],
                                 },
-                                span: 639..652,
+                                span: 665..678,
                             },
                             Spanned {
                                 node: Call {
                                     callee: Spanned {
                                         node: "link",
-                                        span: 656..660,
+                                        span: 682..686,
                                     },
                                     args: [
                                         CallArg {
@@ -381,45 +393,45 @@ Program {
                                                         "ideavimrc",
                                                     ),
                                                 ),
-                                                span: 661..672,
+                                                span: 687..698,
                                             },
-                                            span: 661..672,
+                                            span: 687..698,
                                         },
                                     ],
                                 },
-                                span: 656..673,
+                                span: 682..699,
                             },
                         ],
                     ),
-                    span: 635..678,
+                    span: 661..704,
                 },
-                span: 601..678,
+                span: 627..704,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "gitconfig",
-                    span: 682..691,
+                    span: 708..717,
                 },
                 ty: Some(
                     Spanned {
                         node: File,
-                        span: 693..697,
+                        span: 719..723,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "file",
-                            span: 700..704,
+                            span: 726..730,
                         },
                         args: [
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "path",
-                                        span: 708..712,
+                                        span: 734..738,
                                     },
                                 ),
                                 value: Spanned {
@@ -428,15 +440,15 @@ Program {
                                             "~/.gitconfig",
                                         ),
                                     ),
-                                    span: 715..729,
+                                    span: 741..755,
                                 },
-                                span: 708..729,
+                                span: 734..755,
                             },
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "content",
-                                        span: 733..740,
+                                        span: 759..766,
                                     },
                                 ),
                                 value: Spanned {
@@ -445,15 +457,15 @@ Program {
                                             "[user]\n  email = me@example.com\n  name = Me",
                                         ),
                                     ),
-                                    span: 743..790,
+                                    span: 769..816,
                                 },
-                                span: 733..790,
+                                span: 759..816,
                             },
                         ],
                     },
-                    span: 700..897,
+                    span: 726..923,
                 },
-                span: 678..897,
+                span: 704..923,
             },
         ),
         Reconcile(
@@ -464,11 +476,11 @@ Program {
                             node: Var(
                                 "home_dirs",
                             ),
-                            span: 907..916,
+                            span: 933..942,
                         },
                     ],
                 ],
-                span: 897..917,
+                span: 923..943,
             },
         ),
         Reconcile(
@@ -479,11 +491,11 @@ Program {
                             node: Var(
                                 "shell_links",
                             ),
-                            span: 927..938,
+                            span: 953..964,
                         },
                     ],
                 ],
-                span: 917..939,
+                span: 943..965,
             },
         ),
         Reconcile(
@@ -494,11 +506,11 @@ Program {
                             node: Var(
                                 "editor_links",
                             ),
-                            span: 949..961,
+                            span: 975..987,
                         },
                     ],
                 ],
-                span: 939..962,
+                span: 965..988,
             },
         ),
         Reconcile(
@@ -509,11 +521,11 @@ Program {
                             node: Var(
                                 "gitconfig",
                             ),
-                            span: 972..981,
+                            span: 998..1007,
                         },
                     ],
                 ],
-                span: 962..981,
+                span: 988..1008,
             },
         ),
     ],

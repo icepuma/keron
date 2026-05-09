@@ -14,20 +14,23 @@ mod vars;
 
 use crate::{
     ast::Type,
-    check::{FnSig, ImportedSymbols, ParamSig, check_module},
+    check::{FnSig, ImportedSymbols, ParamSig, check_module, resolve_type_names},
     diagnostic::Diagnostic,
     parser::parse,
 };
 
-/// Type-check a snippet with the `std:fs` resource constructors
-/// (`symlink`, `file`, `directory`) pre-imported. Unit tests in this
-/// module exercise checker behavior, not the import system, so we
-/// inject these signatures rather than threading them through every
-/// source string. The corpus tests verify the explicit-import
+/// Type-check a snippet with the `std:fs` resource constructors and
+/// types (`symlink`/`file`/`directory` plus
+/// `Symlink`/`File`/`Directory`/`Resource`) pre-imported. Unit tests
+/// in this module exercise checker behavior, not the import system,
+/// so we inject these signatures rather than threading them through
+/// every source string. The corpus tests verify the explicit-import
 /// requirement at the language-integration level.
 pub(super) fn check_src(src: &str) -> Result<(), Vec<Diagnostic>> {
-    let prog = parse(src).expect("parse should succeed");
-    check_module(&prog, &fs_imports())
+    let mut prog = parse(src).expect("parse should succeed");
+    let imp = fs_imports();
+    resolve_type_names(&mut prog, &imp)?;
+    check_module(&prog, &imp)
 }
 
 fn fs_imports() -> ImportedSymbols {
@@ -79,5 +82,9 @@ fn fs_imports() -> ImportedSymbols {
             return_type: Type::Directory,
         },
     );
+    imp.types.insert("Symlink".into(), Type::Symlink);
+    imp.types.insert("File".into(), Type::File);
+    imp.types.insert("Directory".into(), Type::Directory);
+    imp.types.insert("Resource".into(), Type::Resource);
     imp
 }

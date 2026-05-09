@@ -99,8 +99,16 @@ fn rejects_keyword_as_name() {
 }
 
 #[test]
-fn rejects_unknown_type() {
-    assert!(parse("val a: Float = 1.0").is_err());
+fn unknown_type_parses_as_named() {
+    // Capitalized identifiers in type position now parse as
+    // `Type::Named` placeholders — the module loader is responsible
+    // for rejecting them as unresolved.
+    let prog = ok("val a: Float = 1.0");
+    let v = first_val(&prog);
+    assert_eq!(
+        v.ty.as_ref().expect("annotation").node,
+        Type::Named("Float".into()),
+    );
 }
 
 #[test]
@@ -123,21 +131,30 @@ fn span_covers_full_decl() {
 fn val_symlink_annotation_parses() {
     let prog = ok(r#"val s: Symlink = symlink(from = "a", to = "b")"#);
     let v = first_val(&prog);
-    assert_eq!(v.ty.as_ref().expect("annotation").node, Type::Symlink);
+    assert_eq!(
+        v.ty.as_ref().expect("annotation").node,
+        Type::Named("Symlink".into()),
+    );
 }
 
 #[test]
 fn val_file_annotation_parses() {
     let prog = ok(r#"val f: File = file(path = "p", content = "c")"#);
     let v = first_val(&prog);
-    assert_eq!(v.ty.as_ref().expect("annotation").node, Type::File);
+    assert_eq!(
+        v.ty.as_ref().expect("annotation").node,
+        Type::Named("File".into()),
+    );
 }
 
 #[test]
 fn val_directory_annotation_parses() {
     let prog = ok(r#"val d: Directory = directory(path = "p")"#);
     let v = first_val(&prog);
-    assert_eq!(v.ty.as_ref().expect("annotation").node, Type::Directory);
+    assert_eq!(
+        v.ty.as_ref().expect("annotation").node,
+        Type::Named("Directory".into()),
+    );
 }
 
 #[test]
@@ -146,7 +163,7 @@ fn val_list_of_resources_parses() {
     let v = first_val(&prog);
     assert_eq!(
         v.ty.as_ref().expect("annotation").node,
-        Type::List(Box::new(Type::File))
+        Type::List(Box::new(Type::Named("File".into()))),
     );
 }
 

@@ -1,6 +1,7 @@
 //! Type-annotation parser. Supports the four value primitives, the
-//! resource types, `Void`, and the generic constructors `List<T>` and
-//! `Map<K, V>` (recursively nestable).
+//! generic constructors `List<T>` and `Map<K, V>`, `Void`, and a
+//! `Named` fallback for capitalized identifiers (e.g. `Symlink`)
+//! that the module loader resolves against imported types.
 
 use chumsky::prelude::*;
 
@@ -15,10 +16,6 @@ pub(super) fn type_annotation<'src>() -> impl Parser<'src, &'src str, Type, Extr
             text::keyword("Int").to(Type::Int),
             text::keyword("Boolean").to(Type::Boolean),
             text::keyword("Double").to(Type::Double),
-            text::keyword("Symlink").to(Type::Symlink),
-            text::keyword("File").to(Type::File),
-            text::keyword("Directory").to(Type::Directory),
-            text::keyword("Resource").to(Type::Resource),
             text::keyword("Void").to(Type::Void),
         ));
         let list = text::keyword("List")
@@ -33,6 +30,15 @@ pub(super) fn type_annotation<'src>() -> impl Parser<'src, &'src str, Type, Extr
             .then(ty)
             .then_ignore(just('>').padded_by(pad()))
             .map(|(k, v)| Type::Map(Box::new(k), Box::new(v)));
-        choice((list, map, primitive))
+        // Any other identifier in type position is a `Named` placeholder;
+        // the module loader replaces it with the canonical type the name
+        // resolves to (e.g. `Symlink` from `std:fs`). The leading-uppercase
+        // restriction keeps lowercase names — which are conventionally
+        // values/fns — out of type position so the error reads cleanly
+        // ("unknown type") rather than "expected `<`".
+        let named = text::ident()
+            .filter(|s: &&str| s.chars().next().is_some_and(|c| c.is_ascii_uppercase()))
+            .map(|s: &str| Type::Named(s.to_string()));
+        choice((list, map, primitive, named))
     })
 }

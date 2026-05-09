@@ -949,14 +949,14 @@ mod tests {
 
     #[test]
     fn eval_graph_returns_empty_when_no_reconciles() {
-        let states = run("from \"std:fs\" use file\n\
+        let states = run("from \"std:fs\" use file, File\n\
              val f: File = file(path = \"/x\", content = \"y\")\n");
         assert!(states.is_empty());
     }
 
     #[test]
     fn push_resources_unwraps_lists() {
-        let states = run("from \"std:fs\" use file\n\
+        let states = run("from \"std:fs\" use file, File\n\
              val xs: List<File> = [file(path = \"/a\", content = \"\"), \
                                     file(path = \"/b\", content = \"\")]\n\
              reconcile xs\n");

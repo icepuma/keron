@@ -93,12 +93,122 @@ pub type FnEnv = HashMap<String, FnSig>;
 pub struct ImportedSymbols {
     pub fns: FnEnv,
     pub vals: HashMap<String, Type>,
+    /// Named types in scope. Maps the imported name (e.g. `Symlink`)
+    /// to the canonical [`Type`] variant. The module loader rewrites
+    /// every `Type::Named(name)` in the program against this map
+    /// before invoking the checker.
+    pub types: HashMap<String, Type>,
 }
 
 #[derive(Clone, Copy)]
 enum ItemKind {
     Val,
     Fn,
+}
+
+/// Rewrite every `Type::Named(name)` in `program` to its canonical
+/// variant using `imported.types`, in place.
+///
+/// # Errors
+/// Returns one [`Diagnostic`] per unresolved type name. The program
+/// is left in a partially-resolved state on error — callers should
+/// not run further passes against it.
+pub fn resolve_type_names(
+    program: &mut Program,
+    imported: &ImportedSymbols,
+) -> Result<(), Vec<Diagnostic>> {
+    let mut diags = Vec::new();
+    for item in &mut program.items {
+        match item {
+            Item::Val(v) => {
+                if let Some(annot) = &mut v.ty {
+                    resolve_type_in_place(&mut annot.node, &annot.span, imported, &mut diags);
+                }
+            }
+            Item::Fn(f) => {
+                for p in &mut f.params {
+                    resolve_type_in_place(&mut p.ty.node, &p.ty.span, imported, &mut diags);
+                }
+                resolve_type_in_place(
+                    &mut f.return_type.node,
+                    &f.return_type.span,
+                    imported,
+                    &mut diags,
+                );
+                resolve_block_types(&mut f.body, imported, &mut diags);
+            }
+            Item::Reconcile(_) | Item::Use(_) | Item::ExprStmt(_) => {}
+        }
+    }
+    if diags.is_empty() { Ok(()) } else { Err(diags) }
+}
+
+fn resolve_block_types(block: &mut Block, imported: &ImportedSymbols, diags: &mut Vec<Diagnostic>) {
+    for stmt in &mut block.stmts {
+        if let Stmt::Val(v) = stmt
+            && let Some(annot) = &mut v.ty
+        {
+            resolve_type_in_place(&mut annot.node, &annot.span, imported, diags);
+        }
+    }
+    if let Some(trailing) = &mut block.trailing {
+        resolve_expr_types(&mut trailing.node, imported, diags);
+    }
+}
+
+fn resolve_expr_types(expr: &mut Expr, imported: &ImportedSymbols, diags: &mut Vec<Diagnostic>) {
+    match expr {
+        Expr::If {
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            resolve_block_types(then_branch, imported, diags);
+            resolve_block_types(else_branch, imported, diags);
+        }
+        Expr::For { body, .. } => {
+            resolve_block_types(body, imported, diags);
+        }
+        Expr::Literal(_)
+        | Expr::Unary { .. }
+        | Expr::Binary { .. }
+        | Expr::Interpolation(_)
+        | Expr::List(_)
+        | Expr::Map(_)
+        | Expr::Var(_)
+        | Expr::Call { .. } => {}
+    }
+}
+
+fn resolve_type_in_place(
+    ty: &mut Type,
+    span: &Span,
+    imported: &ImportedSymbols,
+    diags: &mut Vec<Diagnostic>,
+) {
+    match ty {
+        Type::Named(name) => match imported.types.get(name) {
+            Some(canonical) => *ty = canonical.clone(),
+            None => diags.push(Diagnostic::new(
+                span.clone(),
+                format!("unknown type `{name}`"),
+            )),
+        },
+        Type::List(inner) => resolve_type_in_place(inner, span, imported, diags),
+        Type::Map(k, v) => {
+            resolve_type_in_place(k, span, imported, diags);
+            resolve_type_in_place(v, span, imported, diags);
+        }
+        Type::String
+        | Type::Int
+        | Type::Boolean
+        | Type::Double
+        | Type::Symlink
+        | Type::File
+        | Type::Directory
+        | Type::Resource
+        | Type::Void => {}
+    }
 }
 
 /// Type-check a program with no imported symbols.
@@ -927,6 +1037,13 @@ fn walk_type(ty: &Type, span: &Span, diags: &mut Vec<Diagnostic>) {
             walk_type(k, span, diags);
             walk_type(v, span, diags);
         }
+        // `Named` should be resolved away by [`resolve_type_names`]
+        // before the checker runs; if one slips through, surface it
+        // rather than silently accepting an opaque type.
+        Type::Named(name) => diags.push(Diagnostic::new(
+            span.clone(),
+            format!("unknown type `{name}`"),
+        )),
     }
 }
 

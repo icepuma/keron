@@ -14,34 +14,38 @@ Program {
                         node: "symlink",
                         span: 18..25,
                     },
+                    Spanned {
+                        node: "Symlink",
+                        span: 27..34,
+                    },
                 ],
-                span: 0..25,
+                span: 0..34,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "a",
-                    span: 31..32,
+                    span: 40..41,
                 },
                 ty: Some(
                     Spanned {
                         node: Symlink,
-                        span: 34..41,
+                        span: 43..50,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "symlink",
-                            span: 44..51,
+                            span: 53..60,
                         },
                         args: [
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "from",
-                                        span: 52..56,
+                                        span: 61..65,
                                     },
                                 ),
                                 value: Spanned {
@@ -50,15 +54,15 @@ Program {
                                             "df/a",
                                         ),
                                     ),
-                                    span: 59..65,
+                                    span: 68..74,
                                 },
-                                span: 52..65,
+                                span: 61..74,
                             },
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "to",
-                                        span: 67..69,
+                                        span: 76..78,
                                     },
                                 ),
                                 value: Spanned {
@@ -67,41 +71,41 @@ Program {
                                             "~/.a",
                                         ),
                                     ),
-                                    span: 72..78,
+                                    span: 81..87,
                                 },
-                                span: 67..78,
+                                span: 76..87,
                             },
                         ],
                     },
-                    span: 44..80,
+                    span: 53..89,
                 },
-                span: 27..80,
+                span: 36..89,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "b",
-                    span: 84..85,
+                    span: 93..94,
                 },
                 ty: Some(
                     Spanned {
                         node: Symlink,
-                        span: 87..94,
+                        span: 96..103,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "symlink",
-                            span: 97..104,
+                            span: 106..113,
                         },
                         args: [
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "from",
-                                        span: 105..109,
+                                        span: 114..118,
                                     },
                                 ),
                                 value: Spanned {
@@ -110,15 +114,15 @@ Program {
                                             "df/b",
                                         ),
                                     ),
-                                    span: 112..118,
+                                    span: 121..127,
                                 },
-                                span: 105..118,
+                                span: 114..127,
                             },
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "to",
-                                        span: 120..122,
+                                        span: 129..131,
                                     },
                                 ),
                                 value: Spanned {
@@ -127,41 +131,41 @@ Program {
                                             "~/.b",
                                         ),
                                     ),
-                                    span: 125..131,
+                                    span: 134..140,
                                 },
-                                span: 120..131,
+                                span: 129..140,
                             },
                         ],
                     },
-                    span: 97..133,
+                    span: 106..142,
                 },
-                span: 80..133,
+                span: 89..142,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "c",
-                    span: 137..138,
+                    span: 146..147,
                 },
                 ty: Some(
                     Spanned {
                         node: Symlink,
-                        span: 140..147,
+                        span: 149..156,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "symlink",
-                            span: 150..157,
+                            span: 159..166,
                         },
                         args: [
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "from",
-                                        span: 158..162,
+                                        span: 167..171,
                                     },
                                 ),
                                 value: Spanned {
@@ -170,15 +174,15 @@ Program {
                                             "df/c",
                                         ),
                                     ),
-                                    span: 165..171,
+                                    span: 174..180,
                                 },
-                                span: 158..171,
+                                span: 167..180,
                             },
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "to",
-                                        span: 173..175,
+                                        span: 182..184,
                                     },
                                 ),
                                 value: Spanned {
@@ -187,29 +191,29 @@ Program {
                                             "~/.c",
                                         ),
                                     ),
-                                    span: 178..184,
+                                    span: 187..193,
                                 },
-                                span: 173..184,
+                                span: 182..193,
                             },
                         ],
                     },
-                    span: 150..187,
+                    span: 159..196,
                 },
-                span: 133..187,
+                span: 142..196,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "shells",
-                    span: 191..197,
+                    span: 200..206,
                 },
                 ty: Some(
                     Spanned {
                         node: List(
                             Symlink,
                         ),
-                        span: 199..213,
+                        span: 208..222,
                     },
                 ),
                 value: Spanned {
@@ -219,14 +223,14 @@ Program {
                                 node: Call {
                                     callee: Spanned {
                                         node: "symlink",
-                                        span: 219..226,
+                                        span: 228..235,
                                     },
                                     args: [
                                         CallArg {
                                             name: Some(
                                                 Spanned {
                                                     node: "from",
-                                                    span: 227..231,
+                                                    span: 236..240,
                                                 },
                                             ),
                                             value: Spanned {
@@ -235,15 +239,15 @@ Program {
                                                         "df/zsh",
                                                     ),
                                                 ),
-                                                span: 234..242,
+                                                span: 243..251,
                                             },
-                                            span: 227..242,
+                                            span: 236..251,
                                         },
                                         CallArg {
                                             name: Some(
                                                 Spanned {
                                                     node: "to",
-                                                    span: 244..246,
+                                                    span: 253..255,
                                                 },
                                             ),
                                             value: Spanned {
@@ -252,26 +256,26 @@ Program {
                                                         "~/.zshrc",
                                                     ),
                                                 ),
-                                                span: 249..259,
+                                                span: 258..268,
                                             },
-                                            span: 244..259,
+                                            span: 253..268,
                                         },
                                     ],
                                 },
-                                span: 219..260,
+                                span: 228..269,
                             },
                             Spanned {
                                 node: Call {
                                     callee: Spanned {
                                         node: "symlink",
-                                        span: 264..271,
+                                        span: 273..280,
                                     },
                                     args: [
                                         CallArg {
                                             name: Some(
                                                 Spanned {
                                                     node: "from",
-                                                    span: 272..276,
+                                                    span: 281..285,
                                                 },
                                             ),
                                             value: Spanned {
@@ -280,15 +284,15 @@ Program {
                                                         "df/bash",
                                                     ),
                                                 ),
-                                                span: 279..288,
+                                                span: 288..297,
                                             },
-                                            span: 272..288,
+                                            span: 281..297,
                                         },
                                         CallArg {
                                             name: Some(
                                                 Spanned {
                                                     node: "to",
-                                                    span: 290..292,
+                                                    span: 299..301,
                                                 },
                                             ),
                                             value: Spanned {
@@ -297,19 +301,19 @@ Program {
                                                         "~/.bashrc",
                                                     ),
                                                 ),
-                                                span: 295..306,
+                                                span: 304..315,
                                             },
-                                            span: 290..306,
+                                            span: 299..315,
                                         },
                                     ],
                                 },
-                                span: 264..307,
+                                span: 273..316,
                             },
                         ],
                     ),
-                    span: 215..312,
+                    span: 224..321,
                 },
-                span: 187..312,
+                span: 196..321,
             },
         ),
         Reconcile(
@@ -323,17 +327,17 @@ Program {
                                         node: Var(
                                             "a",
                                         ),
-                                        span: 327..328,
+                                        span: 336..337,
                                     },
                                     Spanned {
                                         node: Var(
                                             "b",
                                         ),
-                                        span: 330..331,
+                                        span: 339..340,
                                     },
                                 ],
                             ),
-                            span: 326..332,
+                            span: 335..341,
                         },
                     ],
                     [
@@ -341,7 +345,7 @@ Program {
                             node: Var(
                                 "shells",
                             ),
-                            span: 336..342,
+                            span: 345..351,
                         },
                     ],
                     [
@@ -349,11 +353,11 @@ Program {
                             node: Var(
                                 "c",
                             ),
-                            span: 346..347,
+                            span: 355..356,
                         },
                     ],
                 ],
-                span: 312..349,
+                span: 321..359,
             },
         ),
     ],

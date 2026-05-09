@@ -18,7 +18,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use keron_lang::{
-    Diagnostic, FnDecl, ImportedSymbols, Item, Program, Type, UseDecl, ValDecl, check_module, parse,
+    Diagnostic, FnDecl, ImportedSymbols, Item, Program, Type, UseDecl, ValDecl, check_module,
+    parse, resolve_type_names,
 };
 
 /// Identifies a module in the graph. Stdlib modules are virtual
@@ -61,6 +62,10 @@ pub struct CheckedModule {
     pub exported_fns: HashSet<String>,
     /// Top-level val names this module makes available to importers.
     pub exported_vals: HashSet<String>,
+    /// Named types this module makes available to importers. User
+    /// modules currently can't declare types, so this is non-empty
+    /// only for stdlib modules.
+    pub exported_types: HashMap<String, Type>,
 }
 
 /// All modules reachable from the entry, indexed for evaluation.
@@ -253,22 +258,45 @@ impl ResolveState {
             };
             let imports = self.resolve_uses(id, &raw.program, &raw.base_dir, &modules);
             let imported = build_imported_symbols(&imports, &modules);
-            if let Err(diags) = check_module(&raw.program, &imported) {
+            let mut program = raw.program;
+            if let Err(diags) = resolve_type_names(&mut program, &imported) {
                 self.errors.push(ResolveError {
                     module: id.clone(),
                     diagnostics: diags,
                 });
             }
-            let (exported_fns, exported_vals) = collect_exports(&raw.program);
+            if let Err(diags) = check_module(&program, &imported) {
+                self.errors.push(ResolveError {
+                    module: id.clone(),
+                    diagnostics: diags,
+                });
+            }
+            let (exported_fns, exported_vals) = collect_exports(&program);
+            // Stdlib modules expose types via the Rust registry; user
+            // modules don't have a way to declare types yet, so this
+            // is empty for them.
+            let exported_types = match id {
+                ModuleId::Std(name) => stdlib::registry()
+                    .get(name.as_str())
+                    .map(|m| {
+                        m.types
+                            .iter()
+                            .map(|(k, v)| (k.clone(), v.clone()))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                ModuleId::File(_) => HashMap::new(),
+            };
             modules.insert(
                 id.clone(),
                 CheckedModule {
                     id: id.clone(),
                     source: raw.source,
-                    program: raw.program,
+                    program,
                     imports,
                     exported_fns,
                     exported_vals,
+                    exported_types,
                 },
             );
         }
@@ -323,7 +351,9 @@ impl ResolveState {
             };
             for name in &u.names {
                 let exported = modules.get(&dep_id).is_some_and(|m| {
-                    m.exported_fns.contains(&name.node) || m.exported_vals.contains(&name.node)
+                    m.exported_fns.contains(&name.node)
+                        || m.exported_vals.contains(&name.node)
+                        || m.exported_types.contains_key(&name.node)
                 });
                 if !exported {
                     self.errors.push(ResolveError {
@@ -451,6 +481,8 @@ fn build_imported_symbols(
             out.fns.insert(local.clone(), sig);
         } else if let Some(ty) = val_type_for(origin, orig_name) {
             out.vals.insert(local.clone(), ty);
+        } else if let Some(ty) = origin.exported_types.get(orig_name) {
+            out.types.insert(local.clone(), ty.clone());
         }
     }
     out
@@ -667,6 +699,7 @@ mod tests {
             imports: HashMap::new(),
             exported_fns: fns,
             exported_vals: vals,
+            exported_types: HashMap::new(),
         };
         assert_eq!(val_type_for(&module, "s"), Some(Type::String));
         assert_eq!(val_type_for(&module, "n"), Some(Type::Int));
@@ -684,6 +717,7 @@ mod tests {
             imports: HashMap::new(),
             exported_fns: fns,
             exported_vals: vals,
+            exported_types: HashMap::new(),
         };
         // `val_type_for` requires an explicit annotation today.
         assert_eq!(val_type_for(&module, "v"), None);

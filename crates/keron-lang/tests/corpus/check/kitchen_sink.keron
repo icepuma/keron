@@ -1,4 +1,4 @@
-from "std:fs" use symlink, file, directory
+from "std:fs" use symlink, file, directory, Symlink, File, Directory, Resource
 
 # Kitchen-sink example: every language feature shipped so far in one
 # file. The corpus harness verifies that this parses *and* typechecks.

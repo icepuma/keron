@@ -14,34 +14,40 @@ Program {
                         node: "symlink",
                         span: 18..25,
                     },
+                    Spanned {
+                        node: "Symlink",
+                        span: 27..34,
+                    },
                 ],
-                span: 0..25,
+                span: 0..34,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "zshrc",
-                    span: 31..36,
+                    span: 40..45,
                 },
                 ty: Some(
                     Spanned {
-                        node: Symlink,
-                        span: 38..45,
+                        node: Named(
+                            "Symlink",
+                        ),
+                        span: 47..54,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "symlink",
-                            span: 48..55,
+                            span: 57..64,
                         },
                         args: [
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "from",
-                                        span: 56..60,
+                                        span: 65..69,
                                     },
                                 ),
                                 value: Spanned {
@@ -50,15 +56,15 @@ Program {
                                             "~/df/zshrc",
                                         ),
                                     ),
-                                    span: 63..75,
+                                    span: 72..84,
                                 },
-                                span: 56..75,
+                                span: 65..84,
                             },
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "to",
-                                        span: 77..79,
+                                        span: 86..88,
                                     },
                                 ),
                                 value: Spanned {
@@ -67,15 +73,15 @@ Program {
                                             "~/.zshrc",
                                         ),
                                     ),
-                                    span: 82..92,
+                                    span: 91..101,
                                 },
-                                span: 77..92,
+                                span: 86..101,
                             },
                         ],
                     },
-                    span: 48..94,
+                    span: 57..103,
                 },
-                span: 27..94,
+                span: 36..103,
             },
         ),
         Reconcile(
@@ -86,11 +92,11 @@ Program {
                             node: Var(
                                 "zshrc",
                             ),
-                            span: 104..109,
+                            span: 113..118,
                         },
                     ],
                 ],
-                span: 94..109,
+                span: 103..119,
             },
         ),
     ],

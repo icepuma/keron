@@ -2,7 +2,9 @@
 
 use std::path::Path;
 
-use keron_lang::{Diagnostic, FnSig, ImportedSymbols, ParamSig, Type, check_module, parse};
+use keron_lang::{
+    Diagnostic, FnSig, ImportedSymbols, ParamSig, Type, check_module, parse, resolve_type_names,
+};
 
 use super::render;
 
@@ -61,6 +63,10 @@ fn fs_imports() -> ImportedSymbols {
             return_type: Type::Directory,
         },
     );
+    imp.types.insert("Symlink".into(), Type::Symlink);
+    imp.types.insert("File".into(), Type::File);
+    imp.types.insert("Directory".into(), Type::Directory);
+    imp.types.insert("Resource".into(), Type::Resource);
     imp
 }
 
@@ -100,10 +106,21 @@ impl Stage {
                 Err(errs) => panic!("expected parse to succeed; got:\n{}", join(&errs, src)),
             },
             Self::Check => match parse(src) {
-                Ok(prog) => match check_module(&prog, &fs_imports()) {
-                    Ok(()) => format!("{prog:#?}\n"),
-                    Err(errs) => panic!("expected check to succeed; got:\n{}", join(&errs, src)),
-                },
+                Ok(mut prog) => {
+                    let imp = fs_imports();
+                    if let Err(errs) = resolve_type_names(&mut prog, &imp) {
+                        panic!(
+                            "expected type resolution to succeed; got:\n{}",
+                            join(&errs, src)
+                        );
+                    }
+                    match check_module(&prog, &imp) {
+                        Ok(()) => format!("{prog:#?}\n"),
+                        Err(errs) => {
+                            panic!("expected check to succeed; got:\n{}", join(&errs, src))
+                        }
+                    }
+                }
                 Err(errs) => panic!("expected parse to succeed; got:\n{}", join(&errs, src)),
             },
             Self::ErrorParse => match parse(src) {
@@ -111,10 +128,18 @@ impl Stage {
                 Err(errs) => render::diagnostics(src, &errs),
             },
             Self::ErrorCheck => {
-                let prog = parse(src).unwrap_or_else(|errs| {
+                let mut prog = parse(src).unwrap_or_else(|errs| {
                     panic!("expected parse to succeed; got:\n{}", join(&errs, src))
                 });
-                match check_module(&prog, &fs_imports()) {
+                let imp = fs_imports();
+                // Type-resolution errors (`unknown type Foo`) are
+                // surfaced through the same diagnostic channel as
+                // checker errors; the corpus treats both as expected
+                // failures of the "check" stage.
+                if let Err(errs) = resolve_type_names(&mut prog, &imp) {
+                    return render::diagnostics(src, &errs);
+                }
+                match check_module(&prog, &imp) {
                     Ok(()) => panic!("expected check to fail; got Ok"),
                     Err(errs) => render::diagnostics(src, &errs),
                 }

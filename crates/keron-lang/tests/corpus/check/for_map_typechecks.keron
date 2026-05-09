@@ -1,4 +1,4 @@
-from "std:fs" use file
+from "std:fs" use file, File
 
 # `for (k, v) in m` over a `Map<K, V>` binds `k: K` and `v: V` in
 # body scope.

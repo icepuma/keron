@@ -306,7 +306,7 @@ mod tests {
         let proj = TempProject::new("empty-plan");
         let entry = proj.write(
             "entry.keron",
-            "from \"std:fs\" use file\n\
+            "from \"std:fs\" use file, File\n\
              val f: File = file(path = \"/x\", content = \"\")\n",
         );
         let (res, out) = drive(&entry, true, "");

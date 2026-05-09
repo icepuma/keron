@@ -1,4 +1,4 @@
-from "std:fs" use symlink, file
+from "std:fs" use symlink, file, Symlink, File, Resource
 
 val syms: List<Symlink> = [symlink(from = "df/zsh", to = "~/.zshrc")]
 val files: List<File> = [file(path = "/etc/motd", content = "welcome")]

@@ -78,17 +78,12 @@ fn rejects_fn_named_reconcile() {
     assert!(parse("fn reconcile(): Int { 1 }").is_err());
 }
 
-#[test]
-fn rejects_val_named_capitalized_type() {
-    assert!(parse("val Symlink = 1").is_err());
-    assert!(parse("val File = 1").is_err());
-    assert!(parse("val Directory = 1").is_err());
-}
-
-#[test]
-fn rejects_fn_named_capitalized_type() {
-    assert!(parse("fn Symlink(): Int { 1 }").is_err());
-}
+// Resource type names (`Symlink`, `File`, `Directory`, `Resource`)
+// are no longer reserved at the parser level — they're imported from
+// `std:fs` like ordinary names. Tests that asserted parser-level
+// rejection have been removed; the corresponding "shadowing" cases
+// are instead validated at module-load time when the import would
+// collide with a local declaration of the same name.
 
 #[test]
 fn multiple_reconcile_decls_parse() {

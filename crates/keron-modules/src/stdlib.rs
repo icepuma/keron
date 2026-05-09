@@ -18,6 +18,11 @@ pub struct StdModule {
     /// deterministic, alphabetically-ordered `Program` without needing
     /// an explicit sort step.
     pub fns: BTreeMap<String, FnDecl>,
+    /// Named types this module exports. Importers reference these via
+    /// `from "std:..." use TypeName` and the module loader rewrites
+    /// `Type::Named(name)` in importer source to the canonical
+    /// [`Type`] variant stored here.
+    pub types: BTreeMap<String, Type>,
 }
 
 impl StdModule {
@@ -75,7 +80,12 @@ fn build_fs() -> StdModule {
             IntrinsicId::Directory,
         ),
     );
-    StdModule { fns }
+    let mut types = BTreeMap::new();
+    types.insert("Symlink".into(), Type::Symlink);
+    types.insert("File".into(), Type::File);
+    types.insert("Directory".into(), Type::Directory);
+    types.insert("Resource".into(), Type::Resource);
+    StdModule { fns, types }
 }
 
 fn intrinsic_fn(

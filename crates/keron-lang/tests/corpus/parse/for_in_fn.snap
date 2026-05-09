@@ -3,31 +3,48 @@ source: crates/keron-lang/tests/harness/mod.rs
 ---
 Program {
     items: [
+        Use(
+            UseDecl {
+                source: Spanned {
+                    node: "std:fs",
+                    span: 5..13,
+                },
+                names: [
+                    Spanned {
+                        node: "Symlink",
+                        span: 18..25,
+                    },
+                ],
+                span: 0..25,
+            },
+        ),
         Fn(
             FnDecl {
                 name: Spanned {
                     node: "ensure",
-                    span: 3..9,
+                    span: 30..36,
                 },
                 params: [
                     Param {
                         name: Spanned {
                             node: "xs",
-                            span: 10..12,
+                            span: 37..39,
                         },
                         ty: Spanned {
                             node: List(
-                                Symlink,
+                                Named(
+                                    "Symlink",
+                                ),
                             ),
-                            span: 14..27,
+                            span: 41..54,
                         },
                         default: None,
-                        span: 10..27,
+                        span: 37..54,
                     },
                 ],
                 return_type: Spanned {
                     node: Void,
-                    span: 30..34,
+                    span: 57..61,
                 },
                 body: Block {
                     stmts: [],
@@ -37,14 +54,14 @@ Program {
                                 pattern: Elem(
                                     Spanned {
                                         node: "s",
-                                        span: 43..44,
+                                        span: 70..71,
                                     },
                                 ),
                                 iter_expr: Spanned {
                                     node: Var(
                                         "xs",
                                     ),
-                                    span: 48..50,
+                                    span: 75..77,
                                 },
                                 body: Block {
                                     stmts: [
@@ -56,24 +73,24 @@ Program {
                                                             node: Var(
                                                                 "s",
                                                             ),
-                                                            span: 63..64,
+                                                            span: 90..91,
                                                         },
                                                     ],
                                                 ],
-                                                span: 53..65,
+                                                span: 80..92,
                                             },
                                         ),
                                     ],
                                     trailing: None,
-                                    span: 51..67,
+                                    span: 78..94,
                                 },
                             },
-                            span: 39..67,
+                            span: 66..94,
                         },
                     ),
-                    span: 35..69,
+                    span: 62..95,
                 },
-                span: 0..69,
+                span: 27..95,
                 intrinsic: None,
             },
         ),

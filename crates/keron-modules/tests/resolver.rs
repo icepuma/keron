@@ -60,7 +60,7 @@ impl Drop for TempProject {
 #[test]
 fn resolves_std_fs_import() {
     let proj = TempProject::new("std-fs");
-    let src = "from \"std:fs\" use symlink\n\
+    let src = "from \"std:fs\" use symlink, Symlink\n\
                val s: Symlink = symlink(from = \"a\", to = \"b\")\n\
                reconcile s\n";
     let entry = proj.write("entry.keron", src);
@@ -102,12 +102,13 @@ fn invalid_path_prefix_errors() {
 #[test]
 fn cross_file_import_resolves() {
     let proj = TempProject::new("cross-file");
-    let helpers_src = "from \"std:fs\" use symlink\n\
+    let helpers_src = "from \"std:fs\" use symlink, Symlink\n\
                        fn link(name: String): Symlink {\n\
                        \tsymlink(from = name, to = name)\n\
                        }\n";
     proj.write("helpers.keron", helpers_src);
     let entry_src = "from \"./helpers.keron\" use link\n\
+                     from \"std:fs\" use Symlink\n\
                      val s: Symlink = link(\"x\")\n\
                      reconcile s\n";
     let entry = proj.write("entry.keron", entry_src);
@@ -157,7 +158,7 @@ fn cycle_errors() {
 #[test]
 fn duplicate_local_collides_with_import() {
     let proj = TempProject::new("dup");
-    let src = "from \"std:fs\" use symlink\n\
+    let src = "from \"std:fs\" use symlink, Symlink\n\
                fn symlink(from: String, to: String): Symlink {\n\
                \tsymlink(from = from, to = to)\n\
                }\n";

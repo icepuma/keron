@@ -18,22 +18,34 @@ Program {
                         node: "file",
                         span: 27..31,
                     },
+                    Spanned {
+                        node: "Symlink",
+                        span: 33..40,
+                    },
+                    Spanned {
+                        node: "File",
+                        span: 42..46,
+                    },
+                    Spanned {
+                        node: "Resource",
+                        span: 48..56,
+                    },
                 ],
-                span: 0..31,
+                span: 0..56,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "syms",
-                    span: 37..41,
+                    span: 62..66,
                 },
                 ty: Some(
                     Spanned {
                         node: List(
                             Symlink,
                         ),
-                        span: 43..57,
+                        span: 68..82,
                     },
                 ),
                 value: Spanned {
@@ -43,14 +55,14 @@ Program {
                                 node: Call {
                                     callee: Spanned {
                                         node: "symlink",
-                                        span: 60..67,
+                                        span: 85..92,
                                     },
                                     args: [
                                         CallArg {
                                             name: Some(
                                                 Spanned {
                                                     node: "from",
-                                                    span: 68..72,
+                                                    span: 93..97,
                                                 },
                                             ),
                                             value: Spanned {
@@ -59,15 +71,15 @@ Program {
                                                         "df/zsh",
                                                     ),
                                                 ),
-                                                span: 75..83,
+                                                span: 100..108,
                                             },
-                                            span: 68..83,
+                                            span: 93..108,
                                         },
                                         CallArg {
                                             name: Some(
                                                 Spanned {
                                                     node: "to",
-                                                    span: 85..87,
+                                                    span: 110..112,
                                                 },
                                             ),
                                             value: Spanned {
@@ -76,33 +88,33 @@ Program {
                                                         "~/.zshrc",
                                                     ),
                                                 ),
-                                                span: 90..100,
+                                                span: 115..125,
                                             },
-                                            span: 85..100,
+                                            span: 110..125,
                                         },
                                     ],
                                 },
-                                span: 60..101,
+                                span: 85..126,
                             },
                         ],
                     ),
-                    span: 59..103,
+                    span: 84..128,
                 },
-                span: 33..103,
+                span: 58..128,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "files",
-                    span: 107..112,
+                    span: 132..137,
                 },
                 ty: Some(
                     Spanned {
                         node: List(
                             File,
                         ),
-                        span: 114..125,
+                        span: 139..150,
                     },
                 ),
                 value: Spanned {
@@ -112,14 +124,14 @@ Program {
                                 node: Call {
                                     callee: Spanned {
                                         node: "file",
-                                        span: 128..132,
+                                        span: 153..157,
                                     },
                                     args: [
                                         CallArg {
                                             name: Some(
                                                 Spanned {
                                                     node: "path",
-                                                    span: 133..137,
+                                                    span: 158..162,
                                                 },
                                             ),
                                             value: Spanned {
@@ -128,15 +140,15 @@ Program {
                                                         "/etc/motd",
                                                     ),
                                                 ),
-                                                span: 140..151,
+                                                span: 165..176,
                                             },
-                                            span: 133..151,
+                                            span: 158..176,
                                         },
                                         CallArg {
                                             name: Some(
                                                 Spanned {
                                                     node: "content",
-                                                    span: 153..160,
+                                                    span: 178..185,
                                                 },
                                             ),
                                             value: Spanned {
@@ -145,26 +157,26 @@ Program {
                                                         "welcome",
                                                     ),
                                                 ),
-                                                span: 163..172,
+                                                span: 188..197,
                                             },
-                                            span: 153..172,
+                                            span: 178..197,
                                         },
                                     ],
                                 },
-                                span: 128..173,
+                                span: 153..198,
                             },
                         ],
                     ),
-                    span: 127..209,
+                    span: 152..234,
                 },
-                span: 103..209,
+                span: 128..234,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "all",
-                    span: 213..216,
+                    span: 238..241,
                 },
                 ty: None,
                 value: Spanned {
@@ -174,18 +186,18 @@ Program {
                             node: Var(
                                 "syms",
                             ),
-                            span: 219..223,
+                            span: 244..248,
                         },
                         rhs: Spanned {
                             node: Var(
                                 "files",
                             ),
-                            span: 227..232,
+                            span: 252..257,
                         },
                     },
-                    span: 219..232,
+                    span: 244..257,
                 },
-                span: 209..234,
+                span: 234..259,
             },
         ),
         Reconcile(
@@ -196,11 +208,11 @@ Program {
                             node: Var(
                                 "all",
                             ),
-                            span: 244..247,
+                            span: 269..272,
                         },
                     ],
                 ],
-                span: 234..247,
+                span: 259..273,
             },
         ),
     ],

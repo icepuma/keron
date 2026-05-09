@@ -310,6 +310,15 @@ pub enum Type {
     /// function's body, and of an `if` expression used as control
     /// flow. Writable in source as the annotation `Void`.
     Void,
+    /// A type referenced by name in source, awaiting import
+    /// resolution. The parser produces this for any capitalized
+    /// identifier in type position that isn't a primitive keyword
+    /// (`String`/`Int`/`Boolean`/`Double`/`Void`/`List`/`Map`); the
+    /// module loader rewrites it to the canonical variant the name
+    /// resolves to (`Symlink`/`File`/`Directory`/`Resource` from
+    /// `std:fs`). After loading, this variant should never appear —
+    /// the type checker treats any leftover `Named` as an error.
+    Named(String),
 }
 
 impl fmt::Display for Type {
@@ -326,6 +335,7 @@ impl fmt::Display for Type {
             Self::Directory => f.write_str("Directory"),
             Self::Resource => f.write_str("Resource"),
             Self::Void => f.write_str("Void"),
+            Self::Named(name) => f.write_str(name),
         }
     }
 }

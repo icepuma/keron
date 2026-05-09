@@ -376,6 +376,10 @@
             "named": true
           },
           {
+            "type": "named_type",
+            "named": true
+          },
+          {
             "type": "primitive_type",
             "named": true
           }
@@ -702,6 +706,10 @@
           "named": true
         },
         {
+          "type": "named_type",
+          "named": true
+        },
+        {
           "type": "primitive_type",
           "named": true
         }
@@ -854,6 +862,10 @@
           "named": true
         },
         {
+          "type": "named_type",
+          "named": true
+        },
+        {
           "type": "primitive_type",
           "named": true
         }
@@ -938,6 +950,10 @@
           },
           {
             "type": "map_type",
+            "named": true
+          },
+          {
+            "type": "named_type",
             "named": true
           },
           {
@@ -1221,6 +1237,10 @@
             "named": true
           },
           {
+            "type": "named_type",
+            "named": true
+          },
+          {
             "type": "primitive_type",
             "named": true
           }
@@ -1386,15 +1406,7 @@
     "named": false
   },
   {
-    "type": "Directory",
-    "named": false
-  },
-  {
     "type": "Double",
-    "named": false
-  },
-  {
-    "type": "File",
     "named": false
   },
   {
@@ -1410,15 +1422,7 @@
     "named": false
   },
   {
-    "type": "Resource",
-    "named": false
-  },
-  {
     "type": "String",
-    "named": false
-  },
-  {
-    "type": "Symlink",
     "named": false
   },
   {
@@ -1471,6 +1475,10 @@
   },
   {
     "type": "line_comment",
+    "named": true
+  },
+  {
+    "type": "named_type",
     "named": true
   },
   {

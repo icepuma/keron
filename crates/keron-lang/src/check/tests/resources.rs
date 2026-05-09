@@ -25,6 +25,62 @@ fn symlink_inferred_to_symlink_type() {
 }
 
 #[test]
+fn resource_type_inside_fn_body_resolves() {
+    // Pin `resolve_block_types`: a local `val` annotation with a
+    // resource type lives inside the fn body's `Block`. Without
+    // recursing into the body, the `Named("File")` placeholder
+    // would survive and the checker would error with "unknown type".
+    assert!(
+        check_src(
+            r#"fn make(): Symlink {
+                val tmp: File = file(path = "/p", content = "")
+                symlink(from = "a", to = "b")
+            }"#
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn resource_type_inside_if_branch_resolves() {
+    // Pin `resolve_expr_types`: type annotations inside an `if`'s
+    // branch blocks reach `resolve_block_types` only via the
+    // expression walker. A no-op `resolve_expr_types` would skip
+    // resolution for these branches.
+    assert!(
+        check_src(
+            r#"fn make(flag: Boolean): Symlink {
+                if flag {
+                    val a: File = file(path = "/a", content = "")
+                    symlink(from = "x", to = "y")
+                } else {
+                    val b: Directory = directory(path = "/b")
+                    symlink(from = "u", to = "v")
+                }
+            }"#
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn resource_type_inside_for_body_resolves() {
+    // Similar to the `if` case — a `for` body block must also have
+    // its inner annotations resolved.
+    assert!(
+        check_src(
+            r#"fn pulse(): Void {
+                for n in [1, 2] {
+                    val placeholder: File = file(path = "/x", content = "y")
+                    reconcile placeholder
+                }
+            }"#
+        )
+        .is_ok()
+    );
+}
+
+#[test]
 fn named_args_reorder_for_symlink() {
     assert!(check_src(r#"val s: Symlink = symlink(to = "b", from = "a")"#).is_ok());
 }

@@ -86,12 +86,17 @@ module.exports = grammar({
       $.primitive_type,
       $.list_type,
       $.map_type,
+      $.named_type,
     ),
 
     primitive_type: _ => choice(
-      'String', 'Int', 'Boolean', 'Double',
-      'Symlink', 'File', 'Directory', 'Resource', 'Void',
+      'String', 'Int', 'Boolean', 'Double', 'Void',
     ),
+
+    // Capitalized identifier in type position; resolved against
+    // imported types by the keron module loader (e.g. `Symlink` from
+    // `std:fs`).
+    named_type: _ => /[A-Z][a-zA-Z0-9_]*/,
 
     list_type: $ => seq('List', '<', $._type, '>'),
     map_type: $ => seq('Map', '<', $._type, ',', $._type, '>'),

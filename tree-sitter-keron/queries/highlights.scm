@@ -20,6 +20,7 @@
 (primitive_type) @type
 (list_type "List" @type)
 (map_type "Map" @type)
+(named_type) @type
 
 ; ---------- literals ----------
 

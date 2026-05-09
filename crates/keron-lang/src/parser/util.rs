@@ -12,6 +12,12 @@ pub(super) type Extra<'src> = extra::Err<Rich<'src, char>>;
 // allowing them as ordinary identifiers means resource constructors
 // can keep parameter names like `from` (as in `symlink(from = ...)`)
 // without conflict.
+//
+// The resource-type names (`Symlink`, `File`, `Directory`,
+// `Resource`) are also intentionally NOT reserved: they are imported
+// from `std:fs` like ordinary names. The parser produces
+// `Type::Named(...)` for capitalized identifiers in type position
+// and the module loader resolves them against imported types.
 const KEYWORDS: &[&str] = &[
     "val",
     "fn",
@@ -28,10 +34,6 @@ const KEYWORDS: &[&str] = &[
     "Double",
     "List",
     "Map",
-    "Symlink",
-    "File",
-    "Directory",
-    "Resource",
     "Void",
 ];
 
