@@ -41,12 +41,9 @@ crates/
   keron-lang/         lexer, parser, types, eval, embedded stdlib  (lib)
   keron-apply/        plan, execute, sentinels, providers, Tera     (lib)
   keron-cli/          thin orchestrator binary                      (bin)
-tree-sitter-keron/    tree-sitter grammar (npm package; NOT in cargo workspace)
 ```
 
 Add new crates under `crates/`. Keep each crate single-responsibility.
-
-`tree-sitter-keron/` lives in this repo but is excluded from the cargo workspace — the grammar uses `tree-sitter-cli` and builds via its own toolchain.
 
 ## File size & modularization
 
