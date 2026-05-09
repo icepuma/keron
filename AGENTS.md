@@ -79,13 +79,18 @@ Two layered checks:
   Run this before every commit. If `just` is green, syntax/type/test
   invariants hold and the branch is ship-ready for routine changes.
 
-- **`just qualitygate`** — `default` plus `cargo mutants` (mutation
-  testing). Run this after **any large language addition or change**:
-  new syntax form, new parser pass, new typing rule, evaluator change,
-  IR or AST refactor, error-path rework. Mutation testing exposes
-  test-suite gaps: a surviving mutant means the tests don't actually
-  pin the behavior. Treat surviving mutants as merge blockers — add a
-  test that kills each one before landing the change.
+- **`just qualitygate`** — `default` plus `cargo mutants --in-diff`
+  (mutation testing scoped to lines changed against `origin/main`).
+  Run this after **any large language addition or change**: new syntax
+  form, new parser pass, new typing rule, evaluator change, IR or AST
+  refactor, error-path rework. Mutation testing exposes test-suite
+  gaps: a surviving mutant means the tests don't actually pin the
+  behavior. Treat surviving mutants as merge blockers — add a test
+  that kills each one before landing the change. On a clean `main`
+  with no branch changes, mutants generates zero mutants and exits
+  immediately; that's expected. Override the base with
+  `just mutants HEAD~1` (or any ref) when you want a different
+  comparison.
 
 Don't add more recipes; fold extra checks into one of these two.
 
