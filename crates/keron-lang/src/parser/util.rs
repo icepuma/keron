@@ -7,6 +7,11 @@ use crate::ast::{Span, Spanned};
 
 pub(super) type Extra<'src> = extra::Err<Rich<'src, char>>;
 
+// `from` and `use` are intentionally NOT reserved here. They are
+// contextual keywords used only in `from "..." use ...` import items;
+// allowing them as ordinary identifiers means resource constructors
+// can keep parameter names like `from` (as in `symlink(from = ...)`)
+// without conflict.
 const KEYWORDS: &[&str] = &[
     "val",
     "fn",

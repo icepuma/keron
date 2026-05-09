@@ -54,6 +54,7 @@ Program {
                     span: 23..35,
                 },
                 span: 0..35,
+                intrinsic: None,
             },
         ),
     ],

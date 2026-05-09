@@ -8,6 +8,7 @@ mod string;
 #[cfg(test)]
 mod tests;
 mod types;
+mod use_decl;
 mod util;
 
 use chumsky::prelude::*;
@@ -22,6 +23,7 @@ use self::{
     fn_decl::fn_decl,
     reconcile::reconcile_decl,
     types::type_annotation,
+    use_decl::use_decl,
     util::{Extra, ident, pad, span_to_range, spanned},
 };
 
@@ -70,6 +72,7 @@ fn item<'src>() -> impl Parser<'src, &'src str, Item, Extra<'src>> {
     .ignore_then(e.clone())
     .map(Item::ExprStmt);
     choice((
+        use_decl().map(Item::Use),
         val_decl(e.clone()).map(Item::Val),
         fn_decl(e.clone()).map(Item::Fn),
         reconcile_decl(e).map(Item::Reconcile),

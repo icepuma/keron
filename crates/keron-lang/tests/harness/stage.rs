@@ -2,9 +2,67 @@
 
 use std::path::Path;
 
-use keron_lang::{Diagnostic, check, parse};
+use keron_lang::{Diagnostic, FnSig, ImportedSymbols, ParamSig, Type, check_module, parse};
 
 use super::render;
+
+/// Pre-resolved imported symbols mirroring what `from "std:fs" use
+/// symlink, file, directory` brings in. Fixtures may include the
+/// `use` line for fidelity with real source (the parser accepts it,
+/// the checker treats it as inert), but the harness independently
+/// seeds these signatures so checking proceeds without going through
+/// the full module resolver.
+fn fs_imports() -> ImportedSymbols {
+    let mut imp = ImportedSymbols::default();
+    imp.fns.insert(
+        "symlink".into(),
+        FnSig {
+            params: vec![
+                ParamSig {
+                    name: "from".into(),
+                    ty: Type::String,
+                    has_default: false,
+                },
+                ParamSig {
+                    name: "to".into(),
+                    ty: Type::String,
+                    has_default: false,
+                },
+            ],
+            return_type: Type::Symlink,
+        },
+    );
+    imp.fns.insert(
+        "file".into(),
+        FnSig {
+            params: vec![
+                ParamSig {
+                    name: "path".into(),
+                    ty: Type::String,
+                    has_default: false,
+                },
+                ParamSig {
+                    name: "content".into(),
+                    ty: Type::String,
+                    has_default: false,
+                },
+            ],
+            return_type: Type::File,
+        },
+    );
+    imp.fns.insert(
+        "directory".into(),
+        FnSig {
+            params: vec![ParamSig {
+                name: "path".into(),
+                ty: Type::String,
+                has_default: false,
+            }],
+            return_type: Type::Directory,
+        },
+    );
+    imp
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum Stage {
@@ -42,7 +100,7 @@ impl Stage {
                 Err(errs) => panic!("expected parse to succeed; got:\n{}", join(&errs, src)),
             },
             Self::Check => match parse(src) {
-                Ok(prog) => match check(&prog) {
+                Ok(prog) => match check_module(&prog, &fs_imports()) {
                     Ok(()) => format!("{prog:#?}\n"),
                     Err(errs) => panic!("expected check to succeed; got:\n{}", join(&errs, src)),
                 },
@@ -56,7 +114,7 @@ impl Stage {
                 let prog = parse(src).unwrap_or_else(|errs| {
                     panic!("expected parse to succeed; got:\n{}", join(&errs, src))
                 });
-                match check(&prog) {
+                match check_module(&prog, &fs_imports()) {
                     Ok(()) => panic!("expected check to fail; got Ok"),
                     Err(errs) => render::diagnostics(src, &errs),
                 }

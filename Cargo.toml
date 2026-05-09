@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/keron-lang",
+    "crates/keron-modules",
     "crates/keron-apply",
     "crates/keron-lsp",
     "crates/keron-cli",
@@ -22,6 +23,7 @@ authors = ["Stefan Ruzitschka <stefan@icepuma.dev>"]
 
 [workspace.dependencies]
 keron-lang = { path = "crates/keron-lang", version = "=0.0.0" }
+keron-modules = { path = "crates/keron-modules", version = "=0.0.0" }
 keron-apply = { path = "crates/keron-apply", version = "=0.0.0" }
 keron-lsp = { path = "crates/keron-lsp", version = "=0.0.0" }
 

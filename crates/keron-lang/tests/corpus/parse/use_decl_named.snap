@@ -1,0 +1,30 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Use(
+            UseDecl {
+                source: Spanned {
+                    node: "std:fs",
+                    span: 5..13,
+                },
+                names: [
+                    Spanned {
+                        node: "symlink",
+                        span: 18..25,
+                    },
+                    Spanned {
+                        node: "file",
+                        span: 27..31,
+                    },
+                    Spanned {
+                        node: "directory",
+                        span: 33..42,
+                    },
+                ],
+                span: 0..42,
+            },
+        ),
+    ],
+}

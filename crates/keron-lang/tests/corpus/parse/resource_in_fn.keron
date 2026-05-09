@@ -1,3 +1,5 @@
+from "std:fs" use symlink
+
 fn link(name: String): Symlink {
   symlink(from = "~/dotfiles/${name}", to = "~/.${name}")
 }

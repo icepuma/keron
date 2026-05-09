@@ -1,3 +1,5 @@
+from "std:fs" use symlink, file, directory
+
 # Kitchen-sink example: every language feature shipped so far in one
 # file. The corpus harness verifies that this parses *and* typechecks.
 

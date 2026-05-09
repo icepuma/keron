@@ -15,6 +15,10 @@
       "members": [
         {
           "type": "SYMBOL",
+          "name": "use_decl"
+        },
+        {
+          "type": "SYMBOL",
           "name": "val_decl"
         },
         {
@@ -32,6 +36,68 @@
         {
           "type": "SYMBOL",
           "name": "for_expr"
+        }
+      ]
+    },
+    "use_decl": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "from"
+        },
+        {
+          "type": "FIELD",
+          "name": "source",
+          "content": {
+            "type": "SYMBOL",
+            "name": "string"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": "use"
+        },
+        {
+          "type": "FIELD",
+          "name": "names",
+          "content": {
+            "type": "SEQ",
+            "members": [
+              {
+                "type": "SYMBOL",
+                "name": "identifier"
+              },
+              {
+                "type": "REPEAT",
+                "content": {
+                  "type": "SEQ",
+                  "members": [
+                    {
+                      "type": "STRING",
+                      "value": ","
+                    },
+                    {
+                      "type": "SYMBOL",
+                      "name": "identifier"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "CHOICE",
+                "members": [
+                  {
+                    "type": "STRING",
+                    "value": ","
+                  },
+                  {
+                    "type": "BLANK"
+                  }
+                ]
+              }
+            ]
+          }
         }
       ]
     },

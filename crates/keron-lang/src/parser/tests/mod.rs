@@ -22,7 +22,7 @@ fn ok(src: &str) -> Program {
 fn first_val(prog: &Program) -> &ValDecl {
     match prog.items.first().expect("at least one item") {
         Item::Val(v) => v,
-        Item::Fn(_) | Item::Reconcile(_) | Item::ExprStmt(_) => {
+        Item::Use(_) | Item::Fn(_) | Item::Reconcile(_) | Item::ExprStmt(_) => {
             panic!("expected a val item")
         }
     }

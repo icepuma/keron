@@ -6,9 +6,9 @@ pub mod diagnostic;
 pub mod parser;
 
 pub use ast::{
-    BinOp, Block, CallArg, Expr, FnDecl, ForPattern, Item, Literal, MapEntry, Param, Program,
-    ReconcileDecl, Span, Spanned, Stmt, StringPart, Type, UnaryOp, ValDecl,
+    BinOp, Block, CallArg, Expr, FnDecl, ForPattern, IntrinsicId, Item, Literal, MapEntry, Param,
+    Program, ReconcileDecl, Span, Spanned, Stmt, StringPart, Type, UnaryOp, UseDecl, ValDecl,
 };
-pub use check::check;
+pub use check::{FnEnv, FnSig, ImportedSymbols, ParamSig, check, check_module};
 pub use diagnostic::Diagnostic;
 pub use parser::parse;

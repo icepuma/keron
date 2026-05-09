@@ -16,6 +16,6 @@ mutants:
     # that previously passed start failing after `just mutants`
     # because `cargo nextest` reuses a stale rmeta produced from
     # mutated source.
-    env -u CARGO_TARGET_DIR cargo mutants -j8
+    env -u CARGO_TARGET_DIR cargo mutants -j4
 
 qualitygate: default mutants

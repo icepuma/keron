@@ -3,30 +3,45 @@ source: crates/keron-lang/tests/harness/mod.rs
 ---
 Program {
     items: [
+        Use(
+            UseDecl {
+                source: Spanned {
+                    node: "std:fs",
+                    span: 5..13,
+                },
+                names: [
+                    Spanned {
+                        node: "symlink",
+                        span: 18..25,
+                    },
+                ],
+                span: 0..25,
+            },
+        ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "target",
-                    span: 4..10,
+                    span: 31..37,
                 },
                 ty: Some(
                     Spanned {
                         node: Symlink,
-                        span: 12..19,
+                        span: 39..46,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "symlink",
-                            span: 22..29,
+                            span: 49..56,
                         },
                         args: [
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "from",
-                                        span: 30..34,
+                                        span: 57..61,
                                     },
                                 ),
                                 value: Spanned {
@@ -35,15 +50,15 @@ Program {
                                             "a",
                                         ),
                                     ),
-                                    span: 37..40,
+                                    span: 64..67,
                                 },
-                                span: 30..40,
+                                span: 57..67,
                             },
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "to",
-                                        span: 42..44,
+                                        span: 69..71,
                                     },
                                 ),
                                 value: Spanned {
@@ -52,27 +67,27 @@ Program {
                                             "b",
                                         ),
                                     ),
-                                    span: 47..50,
+                                    span: 74..77,
                                 },
-                                span: 42..50,
+                                span: 69..77,
                             },
                         ],
                     },
-                    span: 22..53,
+                    span: 49..80,
                 },
-                span: 0..53,
+                span: 27..80,
             },
         ),
         Fn(
             FnDecl {
                 name: Spanned {
                     node: "install",
-                    span: 56..63,
+                    span: 83..90,
                 },
                 params: [],
                 return_type: Spanned {
                     node: Void,
-                    span: 67..71,
+                    span: 94..98,
                 },
                 body: Block {
                     stmts: [
@@ -84,43 +99,44 @@ Program {
                                             node: Var(
                                                 "target",
                                             ),
-                                            span: 86..92,
+                                            span: 113..119,
                                         },
                                     ],
                                 ],
-                                span: 76..93,
+                                span: 103..120,
                             },
                         ),
                     ],
                     trailing: None,
-                    span: 72..96,
+                    span: 99..123,
                 },
-                span: 53..96,
+                span: 80..123,
+                intrinsic: None,
             },
         ),
         Fn(
             FnDecl {
                 name: Spanned {
                     node: "install_if",
-                    span: 99..109,
+                    span: 126..136,
                 },
                 params: [
                     Param {
                         name: Spanned {
                             node: "flag",
-                            span: 110..114,
+                            span: 137..141,
                         },
                         ty: Spanned {
                             node: Boolean,
-                            span: 116..123,
+                            span: 143..150,
                         },
                         default: None,
-                        span: 110..123,
+                        span: 137..150,
                     },
                 ],
                 return_type: Spanned {
                     node: Void,
-                    span: 126..130,
+                    span: 153..157,
                 },
                 body: Block {
                     stmts: [],
@@ -131,7 +147,7 @@ Program {
                                     node: Var(
                                         "flag",
                                     ),
-                                    span: 138..142,
+                                    span: 165..169,
                                 },
                                 then_branch: Block {
                                     stmts: [
@@ -143,29 +159,30 @@ Program {
                                                             node: Var(
                                                                 "target",
                                                             ),
-                                                            span: 155..161,
+                                                            span: 182..188,
                                                         },
                                                     ],
                                                 ],
-                                                span: 145..162,
+                                                span: 172..189,
                                             },
                                         ),
                                     ],
                                     trailing: None,
-                                    span: 143..164,
+                                    span: 170..191,
                                 },
                                 else_branch: Block {
                                     stmts: [],
                                     trailing: None,
-                                    span: 164..164,
+                                    span: 191..191,
                                 },
                             },
-                            span: 135..164,
+                            span: 162..191,
                         },
                     ),
-                    span: 131..166,
+                    span: 158..192,
                 },
-                span: 96..166,
+                span: 123..192,
+                intrinsic: None,
             },
         ),
     ],

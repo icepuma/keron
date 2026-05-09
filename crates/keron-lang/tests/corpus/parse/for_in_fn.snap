@@ -74,6 +74,7 @@ Program {
                     span: 35..69,
                 },
                 span: 0..69,
+                intrinsic: None,
             },
         ),
     ],

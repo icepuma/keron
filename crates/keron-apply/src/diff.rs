@@ -128,11 +128,7 @@ fn render_state_lines<W: Write>(
     match state {
         ResourceState::File { path, content } => {
             writeln!(out, "      {s} path    = \"{}\"", path.display())?;
-            writeln!(
-                out,
-                "      {s} content = \"{}\"",
-                escape_inline(content)
-            )?;
+            writeln!(out, "      {s} content = \"{}\"", escape_inline(content))?;
         }
         ResourceState::Directory { path } => {
             writeln!(out, "      {s} path = \"{}\"", path.display())?;
@@ -180,10 +176,7 @@ fn render_diff_lines<W: Write>(
                 )?;
             }
         }
-        (
-            ResourceState::Directory { path: bp },
-            ResourceState::Directory { path: ap },
-        ) => {
+        (ResourceState::Directory { path: bp }, ResourceState::Directory { path: ap }) => {
             if bp != ap {
                 writeln!(
                     out,
@@ -259,6 +252,8 @@ fn escape_inline(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plan::ResourceKind;
+    use std::path::PathBuf;
 
     fn render(plan: &Plan) -> String {
         let mut buf = Vec::new();
@@ -297,5 +292,290 @@ mod tests {
         render_plan(&mut buf, &Plan::sample(), RenderOptions { color: true }).unwrap();
         let out = String::from_utf8(buf).unwrap();
         assert!(out.contains('\x1b'));
+    }
+
+    #[test]
+    fn create_renders_path_and_content_lines() {
+        // Pin the body produced by `render_state_lines` for a Create
+        // action — without each line, a `Ok(())` mutation would still
+        // pass the action-header assertions in `sample_renders_each_action`.
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/etc/x".into(),
+                kind: ResourceKind::File,
+                action: Action::Create,
+                before: None,
+                after: Some(ResourceState::File {
+                    path: PathBuf::from("/etc/x"),
+                    content: "hi".into(),
+                }),
+            }],
+        };
+        let out = render(&plan);
+        assert!(
+            out.contains("+ path    = \"/etc/x\""),
+            "missing path line: {out}"
+        );
+        assert!(
+            out.contains("+ content = \"hi\""),
+            "missing content line: {out}"
+        );
+    }
+
+    #[test]
+    fn create_directory_renders_single_path_line() {
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/d".into(),
+                kind: ResourceKind::Directory,
+                action: Action::Create,
+                before: None,
+                after: Some(ResourceState::Directory {
+                    path: PathBuf::from("/d"),
+                }),
+            }],
+        };
+        let out = render(&plan);
+        assert!(out.contains("+ path = \"/d\""), "missing path line: {out}");
+    }
+
+    #[test]
+    fn create_symlink_renders_from_and_to_lines() {
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/a".into(),
+                kind: ResourceKind::Symlink,
+                action: Action::Create,
+                before: None,
+                after: Some(ResourceState::Symlink {
+                    from: PathBuf::from("/a"),
+                    to: PathBuf::from("/b"),
+                }),
+            }],
+        };
+        let out = render(&plan);
+        assert!(out.contains("+ from = \"/a\""), "missing from line: {out}");
+        assert!(out.contains("+ to   = \"/b\""), "missing to line: {out}");
+    }
+
+    #[test]
+    fn destroy_renders_with_minus_sign() {
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/d".into(),
+                kind: ResourceKind::Directory,
+                action: Action::Destroy,
+                before: Some(ResourceState::Directory {
+                    path: PathBuf::from("/d"),
+                }),
+                after: None,
+            }],
+        };
+        let out = render(&plan);
+        assert!(
+            out.contains("- path = \"/d\""),
+            "missing destroy body: {out}"
+        );
+    }
+
+    #[test]
+    fn update_file_renders_only_changed_fields() {
+        // Path same, content different: only the `content` line
+        // should appear. `!= → ==` would invert that.
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/x".into(),
+                kind: ResourceKind::File,
+                action: Action::Update,
+                before: Some(ResourceState::File {
+                    path: PathBuf::from("/x"),
+                    content: "old".into(),
+                }),
+                after: Some(ResourceState::File {
+                    path: PathBuf::from("/x"),
+                    content: "new".into(),
+                }),
+            }],
+        };
+        let out = render(&plan);
+        assert!(out.contains("~ content = \"old\" -> \"new\""), "got: {out}");
+        assert!(!out.contains("~ path"), "path should be unchanged: {out}");
+    }
+
+    #[test]
+    fn update_file_renders_only_path_when_content_unchanged() {
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/old".into(),
+                kind: ResourceKind::File,
+                action: Action::Update,
+                before: Some(ResourceState::File {
+                    path: PathBuf::from("/old"),
+                    content: "same".into(),
+                }),
+                after: Some(ResourceState::File {
+                    path: PathBuf::from("/new"),
+                    content: "same".into(),
+                }),
+            }],
+        };
+        let out = render(&plan);
+        assert!(
+            out.contains("~ path    = \"/old\" -> \"/new\""),
+            "got: {out}"
+        );
+        assert!(
+            !out.contains("~ content"),
+            "content should be unchanged: {out}"
+        );
+    }
+
+    #[test]
+    fn update_directory_renders_path_change() {
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/old".into(),
+                kind: ResourceKind::Directory,
+                action: Action::Update,
+                before: Some(ResourceState::Directory {
+                    path: PathBuf::from("/old"),
+                }),
+                after: Some(ResourceState::Directory {
+                    path: PathBuf::from("/new"),
+                }),
+            }],
+        };
+        let out = render(&plan);
+        assert!(out.contains("~ path = \"/old\" -> \"/new\""), "got: {out}");
+    }
+
+    #[test]
+    fn update_directory_with_unchanged_path_renders_no_path_line() {
+        // When the path is identical, the `bp != ap` guard suppresses
+        // the path line. `!= → ==` would emit a stale (or empty)
+        // diff line.
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/d".into(),
+                kind: ResourceKind::Directory,
+                action: Action::Update,
+                before: Some(ResourceState::Directory {
+                    path: PathBuf::from("/d"),
+                }),
+                after: Some(ResourceState::Directory {
+                    path: PathBuf::from("/d"),
+                }),
+            }],
+        };
+        let out = render(&plan);
+        assert!(!out.contains("~ path"), "should be no path diff: {out}");
+    }
+
+    #[test]
+    fn update_symlink_renders_only_changed_field() {
+        // `from` same, `to` different — only the `to` line should appear.
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/s".into(),
+                kind: ResourceKind::Symlink,
+                action: Action::Update,
+                before: Some(ResourceState::Symlink {
+                    from: PathBuf::from("/s"),
+                    to: PathBuf::from("/t1"),
+                }),
+                after: Some(ResourceState::Symlink {
+                    from: PathBuf::from("/s"),
+                    to: PathBuf::from("/t2"),
+                }),
+            }],
+        };
+        let out = render(&plan);
+        assert!(out.contains("~ to   = \"/t1\" -> \"/t2\""), "got: {out}");
+        assert!(!out.contains("~ from"), "from should be unchanged: {out}");
+    }
+
+    #[test]
+    fn update_kind_change_renders_destroy_then_create() {
+        // Heterogeneous before/after falls through to the `_` arm and
+        // emits both a `-` and a `+` block. Pins that fallback path.
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/x".into(),
+                kind: ResourceKind::File,
+                action: Action::Update,
+                before: Some(ResourceState::File {
+                    path: PathBuf::from("/x"),
+                    content: "old".into(),
+                }),
+                after: Some(ResourceState::Directory {
+                    path: PathBuf::from("/x"),
+                }),
+            }],
+        };
+        let out = render(&plan);
+        assert!(
+            out.contains("- path    = \"/x\""),
+            "missing destroy half: {out}"
+        );
+        assert!(
+            out.contains("+ path = \"/x\""),
+            "missing create half: {out}"
+        );
+    }
+
+    #[test]
+    fn action_color_uses_distinct_codes() {
+        assert_eq!(action_color(Action::Create), GREEN);
+        assert_eq!(action_color(Action::Update), YELLOW);
+        assert_eq!(action_color(Action::Destroy), RED);
+        assert_eq!(action_color(Action::NoOp), RESET);
+    }
+
+    #[test]
+    fn color_output_uses_action_specific_code_for_each_action() {
+        // Construct a plan with one of each non-NoOp action, render
+        // with color, and assert the expected ANSI code appears for
+        // each action's symbol. Mutating `action_color` to "" would
+        // strip the codes.
+        let mut buf = Vec::new();
+        render_plan(&mut buf, &Plan::sample(), RenderOptions { color: true }).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(out.contains(GREEN), "create should be green: {out}");
+        assert!(out.contains(YELLOW), "update should be yellow: {out}");
+        assert!(out.contains(RED), "destroy should be red: {out}");
+    }
+
+    #[test]
+    fn escape_inline_handles_each_special_char() {
+        assert_eq!(escape_inline("a\\b"), "a\\\\b");
+        assert_eq!(escape_inline("\"quoted\""), "\\\"quoted\\\"");
+        assert_eq!(escape_inline("line1\nline2"), "line1\\nline2");
+        assert_eq!(escape_inline("col1\tcol2"), "col1\\tcol2");
+    }
+
+    #[test]
+    fn escape_inline_passes_plain_text_unchanged() {
+        assert_eq!(escape_inline("hello world"), "hello world");
+    }
+
+    #[test]
+    fn create_with_special_chars_in_content_escapes_them() {
+        // End-to-end: render a File with a tab/newline content and
+        // verify `escape_inline` actually fires in the diff output.
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/x".into(),
+                kind: ResourceKind::File,
+                action: Action::Create,
+                before: None,
+                after: Some(ResourceState::File {
+                    path: PathBuf::from("/x"),
+                    content: "a\tb\n".into(),
+                }),
+            }],
+        };
+        let out = render(&plan);
+        assert!(out.contains("\\t"), "tab not escaped: {out}");
+        assert!(out.contains("\\n"), "newline not escaped: {out}");
     }
 }

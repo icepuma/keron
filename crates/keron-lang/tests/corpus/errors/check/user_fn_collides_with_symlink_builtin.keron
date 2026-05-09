@@ -1,1 +1,3 @@
+from "std:fs" use symlink
+
 fn symlink(): Int { 1 }

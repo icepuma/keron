@@ -18,3 +18,14 @@ pub(crate) struct ExecuteSummary {
 pub(crate) fn execute(_plan: &Plan) -> Result<ExecuteSummary> {
     bail!("executor not yet implemented")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn execute_returns_not_implemented_error() {
+        let err = execute(&Plan::default()).unwrap_err();
+        assert!(err.to_string().contains("not yet implemented"));
+    }
+}

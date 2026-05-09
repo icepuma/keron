@@ -1,3 +1,5 @@
+from "std:fs" use symlink, file, directory
+
 # Realistic dotfile workflow: declare configs, packages-style file
 # placements, and ensure-existence directories. All values are built
 # purely first; the trailing `reconcile` directives are the only acts of

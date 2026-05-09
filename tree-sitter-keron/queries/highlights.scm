@@ -11,6 +11,8 @@
   "else"
   "for"
   "in"
+  "from"
+  "use"
 ] @keyword
 
 ; ---------- types ----------
@@ -36,6 +38,9 @@
 (val_decl name: (identifier) @variable)
 (fn_decl name: (identifier) @function)
 (param name: (identifier) @variable.parameter)
+(use_decl
+  source: (string) @string.special.path
+  names: (identifier) @function.import)
 
 ; ---------- calls ----------
 

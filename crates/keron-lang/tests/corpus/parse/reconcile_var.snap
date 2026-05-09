@@ -3,30 +3,45 @@ source: crates/keron-lang/tests/harness/mod.rs
 ---
 Program {
     items: [
+        Use(
+            UseDecl {
+                source: Spanned {
+                    node: "std:fs",
+                    span: 5..13,
+                },
+                names: [
+                    Spanned {
+                        node: "symlink",
+                        span: 18..25,
+                    },
+                ],
+                span: 0..25,
+            },
+        ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "zshrc",
-                    span: 4..9,
+                    span: 31..36,
                 },
                 ty: Some(
                     Spanned {
                         node: Symlink,
-                        span: 11..18,
+                        span: 38..45,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "symlink",
-                            span: 21..28,
+                            span: 48..55,
                         },
                         args: [
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "from",
-                                        span: 29..33,
+                                        span: 56..60,
                                     },
                                 ),
                                 value: Spanned {
@@ -35,15 +50,15 @@ Program {
                                             "~/df/zshrc",
                                         ),
                                     ),
-                                    span: 36..48,
+                                    span: 63..75,
                                 },
-                                span: 29..48,
+                                span: 56..75,
                             },
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "to",
-                                        span: 50..52,
+                                        span: 77..79,
                                     },
                                 ),
                                 value: Spanned {
@@ -52,15 +67,15 @@ Program {
                                             "~/.zshrc",
                                         ),
                                     ),
-                                    span: 55..65,
+                                    span: 82..92,
                                 },
-                                span: 50..65,
+                                span: 77..92,
                             },
                         ],
                     },
-                    span: 21..67,
+                    span: 48..94,
                 },
-                span: 0..67,
+                span: 27..94,
             },
         ),
         Reconcile(
@@ -71,11 +86,11 @@ Program {
                             node: Var(
                                 "zshrc",
                             ),
-                            span: 77..82,
+                            span: 104..109,
                         },
                     ],
                 ],
-                span: 67..83,
+                span: 94..109,
             },
         ),
     ],

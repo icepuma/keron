@@ -1,0 +1,22 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Use(
+            UseDecl {
+                source: Spanned {
+                    node: "./helpers.keron",
+                    span: 5..22,
+                },
+                names: [
+                    Spanned {
+                        node: "link",
+                        span: 27..31,
+                    },
+                ],
+                span: 0..31,
+            },
+        ),
+    ],
+}

@@ -473,6 +473,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "keron-lang",
+ "keron-modules",
 ]
 
 [[package]]
@@ -506,9 +507,18 @@ dependencies = [
  "anyhow",
  "crossbeam-channel",
  "keron-lang",
+ "keron-modules",
  "lsp-server",
  "lsp-types",
  "serde_json",
+]
+
+[[package]]
+name = "keron-modules"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "keron-lang",
 ]
 
 [[package]]

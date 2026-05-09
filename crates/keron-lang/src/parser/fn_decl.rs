@@ -52,6 +52,7 @@ where
             return_type,
             body,
             span: span_to_range(e.span()),
+            intrinsic: None,
         })
 }
 

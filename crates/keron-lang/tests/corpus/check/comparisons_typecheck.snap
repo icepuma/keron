@@ -317,6 +317,7 @@ Program {
                     span: 203..298,
                 },
                 span: 175..298,
+                intrinsic: None,
             },
         ),
         Val(

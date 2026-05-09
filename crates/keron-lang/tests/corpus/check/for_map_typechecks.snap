@@ -3,41 +3,56 @@ source: crates/keron-lang/tests/harness/mod.rs
 ---
 Program {
     items: [
+        Use(
+            UseDecl {
+                source: Spanned {
+                    node: "std:fs",
+                    span: 5..13,
+                },
+                names: [
+                    Spanned {
+                        node: "file",
+                        span: 18..22,
+                    },
+                ],
+                span: 0..22,
+            },
+        ),
         Fn(
             FnDecl {
                 name: Spanned {
                     node: "write_kv",
-                    span: 84..92,
+                    span: 108..116,
                 },
                 params: [
                     Param {
                         name: Spanned {
                             node: "key",
-                            span: 93..96,
+                            span: 117..120,
                         },
                         ty: Spanned {
                             node: String,
-                            span: 98..104,
+                            span: 122..128,
                         },
                         default: None,
-                        span: 93..104,
+                        span: 117..128,
                     },
                     Param {
                         name: Spanned {
                             node: "count",
-                            span: 106..111,
+                            span: 130..135,
                         },
                         ty: Spanned {
                             node: Int,
-                            span: 113..116,
+                            span: 137..140,
                         },
                         default: None,
-                        span: 106..116,
+                        span: 130..140,
                     },
                 ],
                 return_type: Spanned {
                     node: File,
-                    span: 119..123,
+                    span: 143..147,
                 },
                 body: Block {
                     stmts: [],
@@ -46,14 +61,14 @@ Program {
                             node: Call {
                                 callee: Spanned {
                                     node: "file",
-                                    span: 128..132,
+                                    span: 152..156,
                                 },
                                 args: [
                                     CallArg {
                                         name: Some(
                                             Spanned {
                                                 node: "path",
-                                                span: 133..137,
+                                                span: 157..161,
                                             },
                                         ),
                                         value: Spanned {
@@ -67,20 +82,20 @@ Program {
                                                             node: Var(
                                                                 "key",
                                                             ),
-                                                            span: 151..154,
+                                                            span: 175..178,
                                                         },
                                                     ),
                                                 ],
                                             ),
-                                            span: 140..156,
+                                            span: 164..180,
                                         },
-                                        span: 133..156,
+                                        span: 157..180,
                                     },
                                     CallArg {
                                         name: Some(
                                             Spanned {
                                                 node: "content",
-                                                span: 158..165,
+                                                span: 182..189,
                                             },
                                         ),
                                         value: Spanned {
@@ -91,30 +106,31 @@ Program {
                                                             node: Var(
                                                                 "count",
                                                             ),
-                                                            span: 171..176,
+                                                            span: 195..200,
                                                         },
                                                     ),
                                                 ],
                                             ),
-                                            span: 168..178,
+                                            span: 192..202,
                                         },
-                                        span: 158..178,
+                                        span: 182..202,
                                     },
                                 ],
                             },
-                            span: 128..180,
+                            span: 152..204,
                         },
                     ),
-                    span: 124..183,
+                    span: 148..207,
                 },
-                span: 81..183,
+                span: 105..207,
+                intrinsic: None,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "counts",
-                    span: 187..193,
+                    span: 211..217,
                 },
                 ty: Some(
                     Spanned {
@@ -122,7 +138,7 @@ Program {
                             String,
                             Int,
                         ),
-                        span: 195..212,
+                        span: 219..236,
                     },
                 ),
                 value: Spanned {
@@ -135,7 +151,7 @@ Program {
                                             "alpha",
                                         ),
                                     ),
-                                    span: 215..222,
+                                    span: 239..246,
                                 },
                                 value: Spanned {
                                     node: Literal(
@@ -143,9 +159,9 @@ Program {
                                             1,
                                         ),
                                     ),
-                                    span: 224..225,
+                                    span: 248..249,
                                 },
-                                span: 215..225,
+                                span: 239..249,
                             },
                             MapEntry {
                                 key: Spanned {
@@ -154,7 +170,7 @@ Program {
                                             "beta",
                                         ),
                                     ),
-                                    span: 227..233,
+                                    span: 251..257,
                                 },
                                 value: Spanned {
                                     node: Literal(
@@ -162,15 +178,15 @@ Program {
                                             2,
                                         ),
                                     ),
-                                    span: 235..236,
+                                    span: 259..260,
                                 },
-                                span: 227..236,
+                                span: 251..260,
                             },
                         ],
                     ),
-                    span: 214..239,
+                    span: 238..263,
                 },
-                span: 183..239,
+                span: 207..263,
             },
         ),
         ExprStmt(
@@ -179,18 +195,18 @@ Program {
                     pattern: Entry {
                         key: Spanned {
                             node: "name",
-                            span: 244..248,
+                            span: 268..272,
                         },
                         value: Spanned {
                             node: "n",
-                            span: 250..251,
+                            span: 274..275,
                         },
                     },
                     iter_expr: Spanned {
                         node: Var(
                             "counts",
                         ),
-                        span: 256..262,
+                        span: 280..286,
                     },
                     body: Block {
                         stmts: [
@@ -202,7 +218,7 @@ Program {
                                                 node: Call {
                                                     callee: Spanned {
                                                         node: "write_kv",
-                                                        span: 277..285,
+                                                        span: 301..309,
                                                     },
                                                     args: [
                                                         CallArg {
@@ -211,9 +227,9 @@ Program {
                                                                 node: Var(
                                                                     "name",
                                                                 ),
-                                                                span: 286..290,
+                                                                span: 310..314,
                                                             },
-                                                            span: 286..290,
+                                                            span: 310..314,
                                                         },
                                                         CallArg {
                                                             name: None,
@@ -221,32 +237,32 @@ Program {
                                                                 node: Var(
                                                                     "n",
                                                                 ),
-                                                                span: 292..293,
+                                                                span: 316..317,
                                                             },
-                                                            span: 292..293,
+                                                            span: 316..317,
                                                         },
                                                     ],
                                                 },
-                                                span: 277..295,
+                                                span: 301..319,
                                             },
                                         ],
                                     ],
-                                    span: 267..295,
+                                    span: 291..319,
                                 },
                             ),
                         ],
                         trailing: None,
-                        span: 263..378,
+                        span: 287..402,
                     },
                 },
-                span: 239..378,
+                span: 263..402,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "codes",
-                    span: 382..387,
+                    span: 406..411,
                 },
                 ty: Some(
                     Spanned {
@@ -254,7 +270,7 @@ Program {
                             Int,
                             String,
                         ),
-                        span: 389..406,
+                        span: 413..430,
                     },
                 ),
                 value: Spanned {
@@ -267,7 +283,7 @@ Program {
                                             200,
                                         ),
                                     ),
-                                    span: 409..412,
+                                    span: 433..436,
                                 },
                                 value: Spanned {
                                     node: Literal(
@@ -275,9 +291,9 @@ Program {
                                             "ok",
                                         ),
                                     ),
-                                    span: 414..418,
+                                    span: 438..442,
                                 },
-                                span: 409..418,
+                                span: 433..442,
                             },
                             MapEntry {
                                 key: Spanned {
@@ -286,7 +302,7 @@ Program {
                                             404,
                                         ),
                                     ),
-                                    span: 420..423,
+                                    span: 444..447,
                                 },
                                 value: Spanned {
                                     node: Literal(
@@ -294,15 +310,15 @@ Program {
                                             "missing",
                                         ),
                                     ),
-                                    span: 425..434,
+                                    span: 449..458,
                                 },
-                                span: 420..434,
+                                span: 444..458,
                             },
                         ],
                     ),
-                    span: 408..436,
+                    span: 432..460,
                 },
-                span: 378..436,
+                span: 402..460,
             },
         ),
         ExprStmt(
@@ -311,18 +327,18 @@ Program {
                     pattern: Entry {
                         key: Spanned {
                             node: "code",
-                            span: 441..445,
+                            span: 465..469,
                         },
                         value: Spanned {
                             node: "label",
-                            span: 447..452,
+                            span: 471..476,
                         },
                     },
                     iter_expr: Spanned {
                         node: Var(
                             "codes",
                         ),
-                        span: 457..462,
+                        span: 481..486,
                     },
                     body: Block {
                         stmts: [
@@ -334,14 +350,14 @@ Program {
                                                 node: Call {
                                                     callee: Spanned {
                                                         node: "file",
-                                                        span: 477..481,
+                                                        span: 501..505,
                                                     },
                                                     args: [
                                                         CallArg {
                                                             name: Some(
                                                                 Spanned {
                                                                     node: "path",
-                                                                    span: 482..486,
+                                                                    span: 506..510,
                                                                 },
                                                             ),
                                                             value: Spanned {
@@ -355,52 +371,52 @@ Program {
                                                                                 node: Var(
                                                                                     "code",
                                                                                 ),
-                                                                                span: 497..501,
+                                                                                span: 521..525,
                                                                             },
                                                                         ),
                                                                     ],
                                                                 ),
-                                                                span: 489..503,
+                                                                span: 513..527,
                                                             },
-                                                            span: 482..503,
+                                                            span: 506..527,
                                                         },
                                                         CallArg {
                                                             name: Some(
                                                                 Spanned {
                                                                     node: "content",
-                                                                    span: 505..512,
+                                                                    span: 529..536,
                                                                 },
                                                             ),
                                                             value: Spanned {
                                                                 node: Var(
                                                                     "label",
                                                                 ),
-                                                                span: 515..520,
+                                                                span: 539..544,
                                                             },
-                                                            span: 505..520,
+                                                            span: 529..544,
                                                         },
                                                     ],
                                                 },
-                                                span: 477..522,
+                                                span: 501..546,
                                             },
                                         ],
                                     ],
-                                    span: 467..522,
+                                    span: 491..546,
                                 },
                             ),
                         ],
                         trailing: None,
-                        span: 463..605,
+                        span: 487..629,
                     },
                 },
-                span: 436..605,
+                span: 460..629,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "by_user",
-                    span: 609..616,
+                    span: 633..640,
                 },
                 ty: Some(
                     Spanned {
@@ -408,7 +424,7 @@ Program {
                             String,
                             Boolean,
                         ),
-                        span: 618..639,
+                        span: 642..663,
                     },
                 ),
                 value: Spanned {
@@ -421,7 +437,7 @@ Program {
                                             "alice",
                                         ),
                                     ),
-                                    span: 642..649,
+                                    span: 666..673,
                                 },
                                 value: Spanned {
                                     node: Literal(
@@ -429,9 +445,9 @@ Program {
                                             true,
                                         ),
                                     ),
-                                    span: 651..655,
+                                    span: 675..679,
                                 },
-                                span: 642..655,
+                                span: 666..679,
                             },
                             MapEntry {
                                 key: Spanned {
@@ -440,7 +456,7 @@ Program {
                                             "bob",
                                         ),
                                     ),
-                                    span: 657..662,
+                                    span: 681..686,
                                 },
                                 value: Spanned {
                                     node: Literal(
@@ -448,15 +464,15 @@ Program {
                                             false,
                                         ),
                                     ),
-                                    span: 664..669,
+                                    span: 688..693,
                                 },
-                                span: 657..669,
+                                span: 681..693,
                             },
                         ],
                     ),
-                    span: 641..671,
+                    span: 665..695,
                 },
-                span: 605..671,
+                span: 629..695,
             },
         ),
         ExprStmt(
@@ -465,18 +481,18 @@ Program {
                     pattern: Entry {
                         key: Spanned {
                             node: "user",
-                            span: 676..680,
+                            span: 700..704,
                         },
                         value: Spanned {
                             node: "enabled",
-                            span: 682..689,
+                            span: 706..713,
                         },
                     },
                     iter_expr: Spanned {
                         node: Var(
                             "by_user",
                         ),
-                        span: 694..701,
+                        span: 718..725,
                     },
                     body: Block {
                         stmts: [
@@ -484,12 +500,12 @@ Program {
                                 ValDecl {
                                     name: Spanned {
                                         node: "tag",
-                                        span: 710..713,
+                                        span: 734..737,
                                     },
                                     ty: Some(
                                         Spanned {
                                             node: String,
-                                            span: 715..721,
+                                            span: 739..745,
                                         },
                                     ),
                                     value: Spanned {
@@ -500,7 +516,7 @@ Program {
                                                         node: Var(
                                                             "user",
                                                         ),
-                                                        span: 727..731,
+                                                        span: 751..755,
                                                     },
                                                 ),
                                                 Text(
@@ -511,14 +527,14 @@ Program {
                                                         node: Var(
                                                             "enabled",
                                                         ),
-                                                        span: 735..742,
+                                                        span: 759..766,
                                                     },
                                                 ),
                                             ],
                                         ),
-                                        span: 724..744,
+                                        span: 748..768,
                                     },
-                                    span: 706..747,
+                                    span: 730..771,
                                 },
                             ),
                             Reconcile(
@@ -529,14 +545,14 @@ Program {
                                                 node: Call {
                                                     callee: Spanned {
                                                         node: "file",
-                                                        span: 757..761,
+                                                        span: 781..785,
                                                     },
                                                     args: [
                                                         CallArg {
                                                             name: Some(
                                                                 Spanned {
                                                                     node: "path",
-                                                                    span: 762..766,
+                                                                    span: 786..790,
                                                                 },
                                                             ),
                                                             value: Spanned {
@@ -550,45 +566,45 @@ Program {
                                                                                 node: Var(
                                                                                     "user",
                                                                                 ),
-                                                                                span: 777..781,
+                                                                                span: 801..805,
                                                                             },
                                                                         ),
                                                                     ],
                                                                 ),
-                                                                span: 769..783,
+                                                                span: 793..807,
                                                             },
-                                                            span: 762..783,
+                                                            span: 786..807,
                                                         },
                                                         CallArg {
                                                             name: Some(
                                                                 Spanned {
                                                                     node: "content",
-                                                                    span: 785..792,
+                                                                    span: 809..816,
                                                                 },
                                                             ),
                                                             value: Spanned {
                                                                 node: Var(
                                                                     "tag",
                                                                 ),
-                                                                span: 795..798,
+                                                                span: 819..822,
                                                             },
-                                                            span: 785..798,
+                                                            span: 809..822,
                                                         },
                                                     ],
                                                 },
-                                                span: 757..800,
+                                                span: 781..824,
                                             },
                                         ],
                                     ],
-                                    span: 747..800,
+                                    span: 771..824,
                                 },
                             ),
                         ],
                         trailing: None,
-                        span: 702..802,
+                        span: 726..825,
                     },
                 },
-                span: 671..802,
+                span: 695..825,
             },
         ),
     ],

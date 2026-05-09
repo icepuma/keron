@@ -3,6 +3,21 @@ source: crates/keron-lang/tests/harness/mod.rs
 ---
 Program {
     items: [
+        Use(
+            UseDecl {
+                source: Spanned {
+                    node: "std:fs",
+                    span: 5..13,
+                },
+                names: [
+                    Spanned {
+                        node: "symlink",
+                        span: 18..25,
+                    },
+                ],
+                span: 0..25,
+            },
+        ),
         Reconcile(
             ReconcileDecl {
                 chains: [
@@ -11,14 +26,14 @@ Program {
                             node: Call {
                                 callee: Spanned {
                                     node: "symlink",
-                                    span: 10..17,
+                                    span: 37..44,
                                 },
                                 args: [
                                     CallArg {
                                         name: Some(
                                             Spanned {
                                                 node: "from",
-                                                span: 18..22,
+                                                span: 45..49,
                                             },
                                         ),
                                         value: Spanned {
@@ -27,15 +42,15 @@ Program {
                                                     "a",
                                                 ),
                                             ),
-                                            span: 25..28,
+                                            span: 52..55,
                                         },
-                                        span: 18..28,
+                                        span: 45..55,
                                     },
                                     CallArg {
                                         name: Some(
                                             Spanned {
                                                 node: "to",
-                                                span: 30..32,
+                                                span: 57..59,
                                             },
                                         ),
                                         value: Spanned {
@@ -44,17 +59,17 @@ Program {
                                                     "b",
                                                 ),
                                             ),
-                                            span: 35..38,
+                                            span: 62..65,
                                         },
-                                        span: 30..38,
+                                        span: 57..65,
                                     },
                                 ],
                             },
-                            span: 10..40,
+                            span: 37..66,
                         },
                     ],
                 ],
-                span: 0..40,
+                span: 27..66,
             },
         ),
     ],

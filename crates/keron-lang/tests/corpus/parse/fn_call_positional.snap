@@ -64,6 +64,7 @@ Program {
                     span: 28..38,
                 },
                 span: 0..38,
+                intrinsic: None,
             },
         ),
         Val(

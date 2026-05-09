@@ -89,13 +89,13 @@ impl Plan {
     }
 }
 
-/// Build a `Plan` from a parsed and type-checked program.
+/// Build a `Plan` from a checked module graph.
 ///
 /// Today every resource is reported as `Action::Create`. Diffing
 /// against live filesystem state — to refine into Update/NoOp/Destroy
 /// — lands in a follow-up.
-pub(crate) fn build_plan(program: &keron_lang::Program) -> Result<Plan> {
-    let resources = eval::eval_program(program)?;
+pub(crate) fn build_plan(graph: &keron_modules::ModuleGraph) -> Result<Plan> {
+    let resources = eval::eval_graph(graph)?;
     let changes = resources
         .into_iter()
         .map(|state| ResourceChange {
@@ -195,5 +195,69 @@ mod tests {
         };
         assert!(only_noop.is_empty());
         assert!(!Plan::sample().is_empty());
+    }
+
+    #[test]
+    fn address_for_file_uses_path() {
+        let s = ResourceState::File {
+            path: PathBuf::from("/etc/x"),
+            content: "y".into(),
+        };
+        assert_eq!(address_for(&s), "/etc/x");
+    }
+
+    #[test]
+    fn address_for_directory_uses_path() {
+        let s = ResourceState::Directory {
+            path: PathBuf::from("/d"),
+        };
+        assert_eq!(address_for(&s), "/d");
+    }
+
+    #[test]
+    fn address_for_symlink_uses_from() {
+        let s = ResourceState::Symlink {
+            from: PathBuf::from("/a"),
+            to: PathBuf::from("/b"),
+        };
+        assert_eq!(address_for(&s), "/a");
+    }
+
+    #[test]
+    fn build_plan_emits_one_change_per_resource() {
+        // End-to-end: build a graph from source, run build_plan, and
+        // verify the resulting Plan reflects the resources produced
+        // by the evaluator. Mutating build_plan to Ok(Default) would
+        // produce an empty Plan, breaking every assertion below.
+        use keron_modules::{EntrySource, ModuleId, resolve};
+        use std::env;
+        use std::fs;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static SEQ: AtomicUsize = AtomicUsize::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let dir = env::temp_dir().join(format!("keron-build-plan-{}-{n}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let entry = dir.join("entry.keron");
+        let src = "from \"std:fs\" use file\n\
+                   reconcile file(path = \"/a\", content = \"\")\n\
+                   reconcile file(path = \"/b\", content = \"\")\n";
+        fs::write(&entry, src).unwrap();
+        let canonical = fs::canonicalize(&entry).unwrap();
+        let graph = resolve(EntrySource {
+            text: src.into(),
+            base_dir: canonical.parent().unwrap().to_path_buf(),
+            id: ModuleId::File(canonical),
+        })
+        .unwrap();
+        let plan = build_plan(&graph).unwrap();
+        assert_eq!(plan.changes.len(), 2);
+        assert!(
+            plan.changes
+                .iter()
+                .all(|c| matches!(c.action, Action::Create))
+        );
+        let addrs: Vec<&str> = plan.changes.iter().map(|c| c.address.as_str()).collect();
+        assert_eq!(addrs, vec!["/a", "/b"]);
+        let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -19,6 +19,7 @@ module.exports = grammar({
     program: $ => repeat($._item),
 
     _item: $ => choice(
+      $.use_decl,
       $.val_decl,
       $.fn_decl,
       $.reconcile_decl,
@@ -27,6 +28,13 @@ module.exports = grammar({
     ),
 
     // ---------- declarations ----------
+
+    use_decl: $ => seq(
+      'from',
+      field('source', $.string),
+      'use',
+      field('names', commaSep1($.identifier)),
+    ),
 
     val_decl: $ => seq(
       'val',

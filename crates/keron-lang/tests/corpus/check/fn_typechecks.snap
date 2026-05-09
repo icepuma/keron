@@ -54,6 +54,7 @@ Program {
                     span: 23..36,
                 },
                 span: 0..36,
+                intrinsic: None,
             },
         ),
         Fn(
@@ -117,6 +118,7 @@ Program {
                     span: 64..77,
                 },
                 span: 36..77,
+                intrinsic: None,
             },
         ),
         Fn(
@@ -197,6 +199,7 @@ Program {
                     span: 105..137,
                 },
                 span: 77..137,
+                intrinsic: None,
             },
         ),
         Fn(
@@ -265,6 +268,7 @@ Program {
                     span: 159..179,
                 },
                 span: 137..179,
+                intrinsic: None,
             },
         ),
         Val(

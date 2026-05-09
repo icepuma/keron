@@ -1,1 +1,3 @@
+from "std:fs" use symlink
+
 reconcile symlink(from = "from-a", to = "to-a") -> symlink(from = "from-b", to = "to-b")

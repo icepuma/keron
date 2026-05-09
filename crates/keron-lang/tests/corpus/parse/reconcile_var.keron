@@ -1,2 +1,4 @@
+from "std:fs" use symlink
+
 val zshrc: Symlink = symlink(from = "~/df/zshrc", to = "~/.zshrc")
 reconcile zshrc

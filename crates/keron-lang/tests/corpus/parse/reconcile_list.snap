@@ -3,6 +3,21 @@ source: crates/keron-lang/tests/harness/mod.rs
 ---
 Program {
     items: [
+        Use(
+            UseDecl {
+                source: Spanned {
+                    node: "std:fs",
+                    span: 5..13,
+                },
+                names: [
+                    Spanned {
+                        node: "symlink",
+                        span: 18..25,
+                    },
+                ],
+                span: 0..25,
+            },
+        ),
         Reconcile(
             ReconcileDecl {
                 chains: [
@@ -14,14 +29,14 @@ Program {
                                         node: Call {
                                             callee: Spanned {
                                                 node: "symlink",
-                                                span: 14..21,
+                                                span: 41..48,
                                             },
                                             args: [
                                                 CallArg {
                                                     name: Some(
                                                         Spanned {
                                                             node: "from",
-                                                            span: 22..26,
+                                                            span: 49..53,
                                                         },
                                                     ),
                                                     value: Spanned {
@@ -30,15 +45,15 @@ Program {
                                                                 "~/df/zshrc",
                                                             ),
                                                         ),
-                                                        span: 29..41,
+                                                        span: 56..68,
                                                     },
-                                                    span: 22..41,
+                                                    span: 49..68,
                                                 },
                                                 CallArg {
                                                     name: Some(
                                                         Spanned {
                                                             node: "to",
-                                                            span: 43..45,
+                                                            span: 70..72,
                                                         },
                                                     ),
                                                     value: Spanned {
@@ -47,26 +62,26 @@ Program {
                                                                 "~/.zshrc",
                                                             ),
                                                         ),
-                                                        span: 48..58,
+                                                        span: 75..85,
                                                     },
-                                                    span: 43..58,
+                                                    span: 70..85,
                                                 },
                                             ],
                                         },
-                                        span: 14..59,
+                                        span: 41..86,
                                     },
                                     Spanned {
                                         node: Call {
                                             callee: Spanned {
                                                 node: "symlink",
-                                                span: 63..70,
+                                                span: 90..97,
                                             },
                                             args: [
                                                 CallArg {
                                                     name: Some(
                                                         Spanned {
                                                             node: "from",
-                                                            span: 71..75,
+                                                            span: 98..102,
                                                         },
                                                     ),
                                                     value: Spanned {
@@ -75,15 +90,15 @@ Program {
                                                                 "~/df/vimrc",
                                                             ),
                                                         ),
-                                                        span: 78..90,
+                                                        span: 105..117,
                                                     },
-                                                    span: 71..90,
+                                                    span: 98..117,
                                                 },
                                                 CallArg {
                                                     name: Some(
                                                         Spanned {
                                                             node: "to",
-                                                            span: 92..94,
+                                                            span: 119..121,
                                                         },
                                                     ),
                                                     value: Spanned {
@@ -92,21 +107,21 @@ Program {
                                                                 "~/.vimrc",
                                                             ),
                                                         ),
-                                                        span: 97..107,
+                                                        span: 124..134,
                                                     },
-                                                    span: 92..107,
+                                                    span: 119..134,
                                                 },
                                             ],
                                         },
-                                        span: 63..108,
+                                        span: 90..135,
                                     },
                                 ],
                             ),
-                            span: 10..112,
+                            span: 37..138,
                         },
                     ],
                 ],
-                span: 0..112,
+                span: 27..138,
             },
         ),
     ],

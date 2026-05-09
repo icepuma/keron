@@ -1,3 +1,5 @@
+from "std:fs" use symlink
+
 val syms: List<Symlink> = [symlink(from = "a", to = "b")]
 val ns: List<Int> = [1, 2]
 val all = syms ++ ns

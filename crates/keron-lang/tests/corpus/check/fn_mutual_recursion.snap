@@ -69,6 +69,7 @@ Program {
                     span: 25..43,
                 },
                 span: 0..43,
+                intrinsic: None,
             },
         ),
         Fn(
@@ -137,6 +138,7 @@ Program {
                     span: 67..86,
                 },
                 span: 43..86,
+                intrinsic: None,
             },
         ),
         Val(

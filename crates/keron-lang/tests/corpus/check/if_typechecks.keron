@@ -1,3 +1,5 @@
+from "std:fs" use symlink
+
 val use_zsh: Boolean = true
 
 # Each branch produces a Symlink; the resulting if-expr is also Symlink.

@@ -24,8 +24,13 @@
 //! the fn's source position, then params, then body-local `val`s.
 //! Mixed shadowing: params may shadow outer vals; body-locals may not
 //! shadow anything (param, outer val, or earlier body-local).
-
-mod builtins;
+//!
+//! **Imports** are pre-resolved by the module loader (`keron-modules`)
+//! and arrive as [`ImportedSymbols`]: a flat namespace of imported
+//! function signatures and val types that participates in pass 1's
+//! duplicate-name check exactly like a local declaration. The checker
+//! itself is module-agnostic — it only sees the local AST plus this
+//! imported symbol set.
 
 use std::collections::{HashMap, HashSet};
 
@@ -64,19 +69,31 @@ impl Env {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct ParamSig {
-    pub(super) name: String,
-    pub(super) ty: Type,
-    pub(super) has_default: bool,
+pub struct ParamSig {
+    pub name: String,
+    pub ty: Type,
+    pub has_default: bool,
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct FnSig {
-    pub(super) params: Vec<ParamSig>,
-    pub(super) return_type: Type,
+pub struct FnSig {
+    pub params: Vec<ParamSig>,
+    pub return_type: Type,
 }
 
-pub(super) type FnEnv = HashMap<String, FnSig>;
+pub type FnEnv = HashMap<String, FnSig>;
+
+/// Symbols imported into a module from elsewhere.
+///
+/// Resolved by the module loader (other `.keron` files or the stdlib
+/// registry) before the checker runs and merged into the module's
+/// own scope; collisions with local declarations surface as ordinary
+/// duplicate-name errors.
+#[derive(Debug, Default, Clone)]
+pub struct ImportedSymbols {
+    pub fns: FnEnv,
+    pub vals: HashMap<String, Type>,
+}
 
 #[derive(Clone, Copy)]
 enum ItemKind {
@@ -84,21 +101,53 @@ enum ItemKind {
     Fn,
 }
 
-/// Type-check an entire program.
+/// Type-check a program with no imported symbols.
+///
+/// Convenience wrapper around [`check_module`]; useful for
+/// parser/checker unit tests where no module loader is involved.
+/// Programs that contain `use` items will fail with "unknown
+/// function/name" errors when called through this entry point —
+/// production callers should go through the module loader and use
+/// [`check_module`] instead.
 ///
 /// # Errors
 /// Returns one [`Diagnostic`] per type problem; a sub-expression
 /// error short-circuits the rest of *that* declaration but sibling
 /// items are still checked.
 pub fn check(program: &Program) -> Result<(), Vec<Diagnostic>> {
+    check_module(program, &ImportedSymbols::default())
+}
+
+/// Type-check a single module against pre-resolved imported symbols.
+///
+/// The loader populates `imported` from this module's `use` items;
+/// the checker does not look at `Item::Use` itself beyond skipping
+/// it in both passes.
+///
+/// # Errors
+/// See [`check`].
+pub fn check_module(program: &Program, imported: &ImportedSymbols) -> Result<(), Vec<Diagnostic>> {
     let mut diags = Vec::new();
 
-    // Pass 1: collect every top-level name; reject duplicates across
-    // val/fn namespaces (including builtin fns); validate fn signatures.
+    // Pass 1: seed names from imports, then collect every local
+    // top-level name; reject duplicates across val/fn namespaces and
+    // against imports; validate fn signatures.
     let mut top_names: HashMap<String, ItemKind> = HashMap::new();
-    let mut fn_env: FnEnv = builtins::builtin_fn_env();
+    let mut fn_env: FnEnv = imported.fns.clone();
     for name in fn_env.keys() {
         top_names.insert(name.clone(), ItemKind::Fn);
+    }
+    for name in imported.vals.keys() {
+        // Imported vals collide with imported fns of the same name.
+        // The loader can also detect this earlier, but the checker
+        // remains correct standalone.
+        if top_names.contains_key(name) {
+            // Best-effort: no span available here. Report against the
+            // first local item that collides, or skip — keep silent
+            // and rely on local collision below.
+            continue;
+        }
+        top_names.insert(name.clone(), ItemKind::Val);
     }
     for item in &program.items {
         match item {
@@ -125,14 +174,19 @@ pub fn check(program: &Program) -> Result<(), Vec<Diagnostic>> {
                     fn_env.insert(f.name.node.clone(), sig);
                 }
             }
-            Item::Reconcile(_) | Item::ExprStmt(_) => {}
+            Item::Use(_) | Item::Reconcile(_) | Item::ExprStmt(_) => {}
         }
     }
 
-    // Pass 2: check items in source order.
+    // Pass 2: check items in source order, with imported vals seeded
+    // into the val scope so callees can reference them.
     let mut val_env = Env::default();
+    for (name, ty) in &imported.vals {
+        val_env.bind(name.clone(), ty.clone(), BindingKind::OuterVal);
+    }
     for item in &program.items {
         match item {
+            Item::Use(_) => {}
             Item::Val(v) => check_val_decl(v, &mut val_env, &fn_env, &mut diags),
             Item::Fn(f) => check_fn_decl(f, &val_env, &fn_env, &mut diags),
             Item::Reconcile(r) => check_reconcile_decl(r, &val_env, &fn_env, &mut diags),
@@ -210,6 +264,12 @@ fn check_val_decl(v: &ValDecl, env: &mut Env, fns: &FnEnv, diags: &mut Vec<Diagn
 }
 
 fn check_fn_decl(f: &FnDecl, outer_env: &Env, fns: &FnEnv, diags: &mut Vec<Diagnostic>) {
+    // Intrinsics have no body — their signature was validated in
+    // pass 1 and the evaluator dispatches on the intrinsic tag, so
+    // there's nothing further to check here.
+    if f.intrinsic.is_some() {
+        return;
+    }
     // Build the param scope: start from outer vals (re-tagged as
     // OuterVal in case the caller passed something with mixed kinds),
     // then check each default in left-to-right order before binding

@@ -135,6 +135,7 @@ Program {
                     span: 29..93,
                 },
                 span: 0..93,
+                intrinsic: None,
             },
         ),
     ],

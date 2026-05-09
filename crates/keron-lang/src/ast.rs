@@ -17,6 +17,10 @@ pub struct Program {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Item {
+    /// `from "<path>" use a, b, c` — bring named functions/vals from
+    /// another module into this module's flat namespace. The imported
+    /// names share scope with locals; a collision is an error.
+    Use(UseDecl),
     Val(ValDecl),
     Fn(FnDecl),
     Reconcile(ReconcileDecl),
@@ -25,6 +29,19 @@ pub enum Item {
     /// `Void`; the type checker rejects anything else, which is how
     /// keron prevents pointless top-level computations.
     ExprStmt(Spanned<Expr>),
+}
+
+/// `from "<path>" use name1, name2, …`.
+///
+/// The path is a literal string with no interpolation. Permitted
+/// shapes: `"std:<name>"` (virtual stdlib module, resolved by the Rust
+/// registry), `"./...", "../...", "/..."` (filesystem paths to other
+/// `.keron` files, resolved relative to the importing module).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UseDecl {
+    pub source: Spanned<String>,
+    pub names: Vec<Spanned<String>>,
+    pub span: Span,
 }
 
 /// A `reconcile` directive.
@@ -62,6 +79,22 @@ pub struct FnDecl {
     pub return_type: Spanned<Type>,
     pub body: Block,
     pub span: Span,
+    /// Set only by the stdlib registry — never produced by the parser.
+    /// The evaluator dispatches on this tag instead of `body`, so the
+    /// `body` field is an unused empty block for intrinsic decls.
+    pub intrinsic: Option<IntrinsicId>,
+}
+
+/// Tag identifying a stdlib intrinsic.
+///
+/// The evaluator's special case for resource constructors keys on
+/// this rather than the function name, so aliasing via `use foo as
+/// bar` (when added later) keeps working without further changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntrinsicId {
+    Symlink,
+    File,
+    Directory,
 }
 
 #[derive(Debug, Clone, PartialEq)]

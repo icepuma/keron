@@ -13,8 +13,67 @@
 
 use std::fmt::Write as _;
 
-use keron_lang::{Expr, Item, Literal, Spanned, Type, UnaryOp, check, parse};
+use keron_lang::{
+    Diagnostic, Expr, FnSig, ImportedSymbols, Item, Literal, ParamSig, Program, Spanned, Type,
+    UnaryOp, check_module, parse,
+};
 use proptest::prelude::*;
+
+fn check(program: &Program) -> Result<(), Vec<Diagnostic>> {
+    check_module(program, &fs_imports())
+}
+
+fn fs_imports() -> ImportedSymbols {
+    let mut imp = ImportedSymbols::default();
+    imp.fns.insert(
+        "symlink".into(),
+        FnSig {
+            params: vec![
+                ParamSig {
+                    name: "from".into(),
+                    ty: Type::String,
+                    has_default: false,
+                },
+                ParamSig {
+                    name: "to".into(),
+                    ty: Type::String,
+                    has_default: false,
+                },
+            ],
+            return_type: Type::Symlink,
+        },
+    );
+    imp.fns.insert(
+        "file".into(),
+        FnSig {
+            params: vec![
+                ParamSig {
+                    name: "path".into(),
+                    ty: Type::String,
+                    has_default: false,
+                },
+                ParamSig {
+                    name: "content".into(),
+                    ty: Type::String,
+                    has_default: false,
+                },
+            ],
+            return_type: Type::File,
+        },
+    );
+    imp.fns.insert(
+        "directory".into(),
+        FnSig {
+            params: vec![ParamSig {
+                name: "path".into(),
+                ty: Type::String,
+                has_default: false,
+            }],
+            return_type: Type::Directory,
+        },
+    );
+    imp
+}
 
 const KEYWORDS: &[&str] = &[
     // Parser-level keywords.

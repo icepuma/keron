@@ -1038,6 +1038,10 @@
           "named": true
         },
         {
+          "type": "use_decl",
+          "named": true
+        },
+        {
           "type": "val_decl",
           "named": true
         }
@@ -1158,6 +1162,36 @@
           "named": true
         }
       ]
+    }
+  },
+  {
+    "type": "use_decl",
+    "named": true,
+    "fields": {
+      "names": {
+        "multiple": true,
+        "required": true,
+        "types": [
+          {
+            "type": ",",
+            "named": false
+          },
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "source": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "string",
+            "named": true
+          }
+        ]
+      }
     }
   },
   {
@@ -1420,6 +1454,10 @@
     "named": false
   },
   {
+    "type": "from",
+    "named": false
+  },
+  {
     "type": "identifier",
     "named": true
   },
@@ -1449,6 +1487,10 @@
   },
   {
     "type": "true",
+    "named": false
+  },
+  {
+    "type": "use",
     "named": false
   },
   {
