@@ -36,11 +36,14 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     ast::{
-        BinOp, Block, CallArg, Expr, FnDecl, ForPattern, Item, MapEntry, Param, Program,
-        ReconcileDecl, Span, Spanned, Stmt, StringPart, Type, UnaryOp, ValDecl,
+        BinOp, Block, CallArg, Expr, FnDecl, ForPattern, Item, Literal, MapEntry, Param, Program,
+        ReconcileDecl, Span, Spanned, Stmt, StringPart, StructDecl, Type, TypeAliasDecl, UnaryOp,
+        ValDecl,
     },
     diagnostic::Diagnostic,
 };
+
+mod match_check;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BindingKind {
@@ -83,6 +86,15 @@ pub struct FnSig {
 
 pub type FnEnv = HashMap<String, FnSig>;
 
+#[derive(Debug, Clone)]
+pub struct StructSig {
+    /// Field name and type, in declaration order. Order matters
+    /// because struct construction accepts positional args.
+    pub fields: Vec<(String, Type)>,
+}
+
+pub type StructEnv = HashMap<String, StructSig>;
+
 /// Symbols imported into a module from elsewhere.
 ///
 /// Resolved by the module loader (user `from … use …` items plus the
@@ -113,7 +125,12 @@ enum ItemKind {
 }
 
 /// Rewrite every `Type::Named(name)` in `program` to its canonical
-/// variant using `imported.types`, in place.
+/// variant, in place.
+///
+/// Resolution sees both `imported.types` and the program's own
+/// `struct` / `type` declarations; locally-declared names take
+/// precedence in case of a shadowing collision (the duplicate-name
+/// check in pass 1 will reject the shadow separately).
 ///
 /// # Errors
 /// Returns one [`Diagnostic`] per unresolved type name. The program
@@ -124,56 +141,136 @@ pub fn resolve_type_names(
     imported: &ImportedSymbols,
 ) -> Result<(), Vec<Diagnostic>> {
     let mut diags = Vec::new();
+    let local_types = collect_local_types(program);
+    let scope = TypeResolutionScope {
+        local: &local_types,
+        imported,
+    };
     for item in &mut program.items {
         match item {
             Item::Val(v) => {
                 if let Some(annot) = &mut v.ty {
-                    resolve_type_in_place(&mut annot.node, &annot.span, imported, &mut diags);
+                    resolve_type_in_place(&mut annot.node, &annot.span, &scope, &mut diags);
                 }
             }
             Item::Fn(f) => {
                 for p in &mut f.params {
-                    resolve_type_in_place(&mut p.ty.node, &p.ty.span, imported, &mut diags);
+                    resolve_type_in_place(&mut p.ty.node, &p.ty.span, &scope, &mut diags);
                 }
                 resolve_type_in_place(
                     &mut f.return_type.node,
                     &f.return_type.span,
-                    imported,
+                    &scope,
                     &mut diags,
                 );
-                resolve_block_types(&mut f.body, imported, &mut diags);
+                resolve_block_types(&mut f.body, &scope, &mut diags);
             }
-            Item::Reconcile(_) | Item::Use(_) | Item::ExprStmt(_) => {}
+            Item::Struct(s) => {
+                for field in &mut s.fields {
+                    resolve_type_in_place(&mut field.ty.node, &field.ty.span, &scope, &mut diags);
+                }
+            }
+            Item::TypeAlias(_) | Item::Reconcile(_) | Item::Use(_) | Item::ExprStmt(_) => {}
         }
     }
     if diags.is_empty() { Ok(()) } else { Err(diags) }
 }
 
-fn resolve_block_types(block: &mut Block, imported: &ImportedSymbols, diags: &mut Vec<Diagnostic>) {
+/// Locally-declared type names from `program.items`. Used during
+/// type-name resolution alongside [`ImportedSymbols::types`].
+fn collect_local_types(program: &Program) -> HashMap<String, Type> {
+    let mut out: HashMap<String, Type> = HashMap::new();
+    for item in &program.items {
+        match item {
+            Item::Struct(s) => {
+                let fields = s
+                    .fields
+                    .iter()
+                    .map(|f| (f.name.node.clone(), f.ty.node.clone()))
+                    .collect();
+                out.insert(
+                    s.name.node.clone(),
+                    Type::Struct {
+                        name: s.name.node.clone(),
+                        fields,
+                    },
+                );
+            }
+            Item::TypeAlias(t) => {
+                let variants = t.variants.iter().map(|v| v.node.clone()).collect();
+                out.insert(
+                    t.name.node.clone(),
+                    Type::StringUnion {
+                        name: t.name.node.clone(),
+                        variants,
+                    },
+                );
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+struct TypeResolutionScope<'a> {
+    local: &'a HashMap<String, Type>,
+    imported: &'a ImportedSymbols,
+}
+
+impl TypeResolutionScope<'_> {
+    fn lookup(&self, name: &str) -> Option<&Type> {
+        // Locals take precedence: when a user shadows an imported
+        // name, the duplicate-name check in pass 1 reports it; here
+        // we still resolve to the local definition to keep the rest
+        // of the diagnostics coherent.
+        self.local
+            .get(name)
+            .or_else(|| self.imported.types.get(name))
+    }
+}
+
+fn resolve_block_types(
+    block: &mut Block,
+    scope: &TypeResolutionScope<'_>,
+    diags: &mut Vec<Diagnostic>,
+) {
     for stmt in &mut block.stmts {
         if let Stmt::Val(v) = stmt
             && let Some(annot) = &mut v.ty
         {
-            resolve_type_in_place(&mut annot.node, &annot.span, imported, diags);
+            resolve_type_in_place(&mut annot.node, &annot.span, scope, diags);
         }
     }
     if let Some(trailing) = &mut block.trailing {
-        resolve_expr_types(&mut trailing.node, imported, diags);
+        resolve_expr_types(&mut trailing.node, scope, diags);
     }
 }
 
-fn resolve_expr_types(expr: &mut Expr, imported: &ImportedSymbols, diags: &mut Vec<Diagnostic>) {
+fn resolve_expr_types(
+    expr: &mut Expr,
+    scope: &TypeResolutionScope<'_>,
+    diags: &mut Vec<Diagnostic>,
+) {
     match expr {
         Expr::If {
             then_branch,
             else_branch,
             ..
         } => {
-            resolve_block_types(then_branch, imported, diags);
-            resolve_block_types(else_branch, imported, diags);
+            resolve_block_types(then_branch, scope, diags);
+            resolve_block_types(else_branch, scope, diags);
         }
         Expr::For { body, .. } => {
-            resolve_block_types(body, imported, diags);
+            resolve_block_types(body, scope, diags);
+        }
+        Expr::Field { receiver, .. } => {
+            resolve_expr_types(&mut receiver.node, scope, diags);
+        }
+        Expr::Match { scrutinee, arms } => {
+            resolve_expr_types(&mut scrutinee.node, scope, diags);
+            for arm in arms {
+                resolve_expr_types(&mut arm.body.node, scope, diags);
+            }
         }
         Expr::Literal(_)
         | Expr::Unary { .. }
@@ -189,23 +286,39 @@ fn resolve_expr_types(expr: &mut Expr, imported: &ImportedSymbols, diags: &mut V
 fn resolve_type_in_place(
     ty: &mut Type,
     span: &Span,
-    imported: &ImportedSymbols,
+    scope: &TypeResolutionScope<'_>,
     diags: &mut Vec<Diagnostic>,
 ) {
     match ty {
-        Type::Named(name) => match imported.types.get(name) {
-            Some(canonical) => *ty = canonical.clone(),
+        Type::Named(name) => match scope.lookup(name) {
+            Some(canonical) => {
+                // Replace, then recurse: a struct payload pulled from
+                // `local_types` may carry `Type::Named` placeholders
+                // inside its field types (the local-type map is built
+                // from the raw AST before we've walked anything).
+                // Resolving those eagerly here keeps the val
+                // annotation's payload structurally identical to the
+                // one synthesised for the struct's constructor.
+                *ty = canonical.clone();
+                resolve_type_in_place(ty, span, scope, diags);
+            }
             None => diags.push(Diagnostic::new(
                 span.clone(),
                 format!("unknown type `{name}`"),
             )),
         },
-        Type::List(inner) => resolve_type_in_place(inner, span, imported, diags),
+        Type::List(inner) => resolve_type_in_place(inner, span, scope, diags),
         Type::Map(k, v) => {
-            resolve_type_in_place(k, span, imported, diags);
-            resolve_type_in_place(v, span, imported, diags);
+            resolve_type_in_place(k, span, scope, diags);
+            resolve_type_in_place(v, span, scope, diags);
         }
-        Type::String
+        Type::Struct { fields, .. } => {
+            for (_, fty) in fields {
+                resolve_type_in_place(fty, span, scope, diags);
+            }
+        }
+        Type::StringUnion { .. }
+        | Type::String
         | Type::Int
         | Type::Boolean
         | Type::Double
@@ -290,6 +403,30 @@ pub fn check_module(program: &Program, imported: &ImportedSymbols) -> Result<(),
                     fn_env.insert(f.name.node.clone(), sig);
                 }
             }
+            Item::Struct(s) => {
+                if top_names.contains_key(&s.name.node) {
+                    diags.push(Diagnostic::new(
+                        s.name.span.clone(),
+                        redefine_message(&s.name.node, imported),
+                    ));
+                    continue;
+                }
+                if let Some(sig) = build_struct_sig(s, &mut diags) {
+                    top_names.insert(s.name.node.clone(), ItemKind::Fn);
+                    fn_env.insert(s.name.node.clone(), sig);
+                }
+            }
+            Item::TypeAlias(t) => {
+                if top_names.contains_key(&t.name.node) {
+                    diags.push(Diagnostic::new(
+                        t.name.span.clone(),
+                        redefine_message(&t.name.node, imported),
+                    ));
+                    continue;
+                }
+                validate_type_alias(t, &mut diags);
+                top_names.insert(t.name.node.clone(), ItemKind::Val);
+            }
             Item::Use(_) | Item::Reconcile(_) | Item::ExprStmt(_) => {}
         }
     }
@@ -302,7 +439,7 @@ pub fn check_module(program: &Program, imported: &ImportedSymbols) -> Result<(),
     }
     for item in &program.items {
         match item {
-            Item::Use(_) => {}
+            Item::Use(_) | Item::Struct(_) | Item::TypeAlias(_) => {}
             Item::Val(v) => check_val_decl(v, &mut val_env, &fn_env, &mut diags),
             Item::Fn(f) => check_fn_decl(f, &val_env, &fn_env, &mut diags),
             Item::Reconcile(r) => check_reconcile_decl(r, &val_env, &fn_env, &mut diags),
@@ -318,6 +455,69 @@ fn redefine_message(name: &str, imported: &ImportedSymbols) -> String {
         format!("`{name}` is a builtin and cannot be redefined")
     } else {
         format!("`{name}` is already defined")
+    }
+}
+
+/// Synthesise a [`FnSig`] for a struct's implicit constructor: each
+/// field becomes a positional parameter (no defaults) in declared
+/// order, returning `Type::Struct{...}`. Returns `None` when the
+/// struct has duplicate field names — that's reported via `diags`.
+fn build_struct_sig(s: &StructDecl, diags: &mut Vec<Diagnostic>) -> Option<FnSig> {
+    let mut params = Vec::with_capacity(s.fields.len());
+    let mut field_pairs: Vec<(String, Type)> = Vec::with_capacity(s.fields.len());
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut ok = true;
+    for field in &s.fields {
+        validate_type_annotation(&field.ty, diags);
+        if !seen.insert(field.name.node.clone()) {
+            diags.push(Diagnostic::new(
+                field.name.span.clone(),
+                format!("duplicate field `{}`", field.name.node),
+            ));
+            ok = false;
+        }
+        params.push(ParamSig {
+            name: field.name.node.clone(),
+            ty: field.ty.node.clone(),
+            has_default: false,
+        });
+        field_pairs.push((field.name.node.clone(), field.ty.node.clone()));
+    }
+    if ok {
+        Some(FnSig {
+            params,
+            return_type: Type::Struct {
+                name: s.name.node.clone(),
+                fields: field_pairs,
+            },
+        })
+    } else {
+        None
+    }
+}
+
+/// Reject a string-union alias that has no variants or carries
+/// duplicates. Empty / duplicate variants would silently accept any /
+/// fewer strings than the user intended.
+fn validate_type_alias(t: &TypeAliasDecl, diags: &mut Vec<Diagnostic>) {
+    if t.variants.is_empty() {
+        diags.push(Diagnostic::new(
+            t.span.clone(),
+            format!(
+                "type alias `{}` must have at least one variant",
+                t.name.node
+            ),
+        ));
+        return;
+    }
+    let mut seen: HashSet<&str> = HashSet::new();
+    for v in &t.variants {
+        if !seen.insert(v.node.as_str()) {
+            diags.push(Diagnostic::new(
+                v.span.clone(),
+                format!("duplicate variant `\"{}\"`", v.node),
+            ));
+        }
     }
 }
 
@@ -631,6 +831,30 @@ fn check_expr(
     env: &Env,
     fns: &FnEnv,
 ) -> Result<(), Diagnostic> {
+    // String literal targeted at a `StringUnion` slot: admit only
+    // when the literal is in the variant set. The reverse — assigning
+    // a `String`-typed variable to a union slot — is rejected by
+    // `is_subtype` (no auto-narrowing).
+    if let (
+        Expr::Literal(Literal::String(s)),
+        Type::StringUnion {
+            name: union_name,
+            variants,
+        },
+    ) = (&e.node, expected)
+    {
+        return if variants.iter().any(|v| v == s) {
+            Ok(())
+        } else {
+            Err(Diagnostic::new(
+                e.span.clone(),
+                format!(
+                    "`\"{s}\"` is not a variant of `{union_name}` (expected one of {})",
+                    format_variants(variants)
+                ),
+            ))
+        };
+    }
     match &e.node {
         Expr::List(items) => match expected {
             Type::List(elem_ty) => {
@@ -713,7 +937,14 @@ fn is_subtype(child: &Type, parent: &Type) -> bool {
         return true;
     }
     match (child, parent) {
-        (Type::Symlink | Type::File | Type::Directory, Type::Resource) => true,
+        // Resource singletons widen to `Resource`. String-union
+        // literal sets are themselves nominal subsets of `String`.
+        // The reverse direction (auto-narrowing `String` to a union
+        // slot) is intentionally not allowed; assignments from a
+        // string literal are admitted in `check_expr` only when the
+        // literal is in the variant set.
+        (Type::Symlink | Type::File | Type::Directory, Type::Resource)
+        | (Type::StringUnion { .. }, Type::String) => true,
         (Type::List(c), Type::List(p)) => is_subtype(c, p),
         _ => false,
     }
@@ -773,7 +1004,53 @@ fn expr_type(e: &Spanned<Expr>, env: &Env, fns: &FnEnv) -> Result<Type, Diagnost
             iter_expr,
             body,
         } => for_type(pattern, iter_expr, body, env, fns),
+        Expr::Field { receiver, field } => field_type(receiver, field, env, fns),
+        Expr::Match { scrutinee, arms } => match_check::match_type(scrutinee, arms, env, fns),
     }
+}
+
+/// Field-access typing: the receiver must synthesise a struct type
+/// and the named field must exist on it.
+fn field_type(
+    receiver: &Spanned<Expr>,
+    field: &Spanned<String>,
+    env: &Env,
+    fns: &FnEnv,
+) -> Result<Type, Diagnostic> {
+    let recv_ty = expr_type(receiver, env, fns)?;
+    match &recv_ty {
+        Type::Struct {
+            name: struct_name,
+            fields,
+        } => fields
+            .iter()
+            .find(|(n, _)| n == &field.node)
+            .map(|(_, t)| t.clone())
+            .ok_or_else(|| {
+                Diagnostic::new(
+                    field.span.clone(),
+                    format!("unknown field `{}` on struct `{struct_name}`", field.node),
+                )
+            }),
+        _ => Err(Diagnostic::new(
+            field.span.clone(),
+            format!(
+                "field access requires a struct, found `{recv_ty}` for `.{}`",
+                field.node
+            ),
+        )),
+    }
+}
+
+/// Render a `StringUnion`'s variants as a backticked, comma-separated
+/// list (`` `"a"`, `"b"`, `"c"` ``). Used in diagnostics that point
+/// at a literal that doesn't match the variant set.
+fn format_variants(variants: &[String]) -> String {
+    variants
+        .iter()
+        .map(|v| format!("`\"{v}\"`"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// Type-check a `for` expression. Always synthesises [`Type::Void`].
@@ -1037,7 +1314,8 @@ fn walk_type(ty: &Type, span: &Span, diags: &mut Vec<Diagnostic>) {
         | Type::File
         | Type::Directory
         | Type::Resource
-        | Type::Void => {}
+        | Type::Void
+        | Type::StringUnion { .. } => {}
         Type::List(inner) => walk_type(inner, span, diags),
         Type::Map(k, v) => {
             if !is_valid_map_key(k) {
@@ -1050,6 +1328,15 @@ fn walk_type(ty: &Type, span: &Span, diags: &mut Vec<Diagnostic>) {
             }
             walk_type(k, span, diags);
             walk_type(v, span, diags);
+        }
+        // Field types were validated when the struct was built; we
+        // recurse here so that a struct field used as a `Map` key
+        // (e.g. `Map<MyStruct, ...>`) still surfaces its own keying
+        // problems via the parent walk.
+        Type::Struct { fields, .. } => {
+            for (_, fty) in fields {
+                walk_type(fty, span, diags);
+            }
         }
         // `Named` should be resolved away by [`resolve_type_names`]
         // before the checker runs; if one slips through, surface it
@@ -1174,8 +1461,11 @@ const fn equality_result(lhs: &Type, rhs: &Type) -> Option<Type> {
     if is_numeric_pair(lhs, rhs) {
         return Some(Type::Boolean);
     }
+    if is_string_or_union(lhs) && is_string_or_union(rhs) {
+        return Some(Type::Boolean);
+    }
     match (lhs, rhs) {
-        (Type::String, Type::String) | (Type::Boolean, Type::Boolean) => Some(Type::Boolean),
+        (Type::Boolean, Type::Boolean) => Some(Type::Boolean),
         _ => None,
     }
 }
@@ -1184,10 +1474,17 @@ const fn ordering_result(lhs: &Type, rhs: &Type) -> Option<Type> {
     if is_numeric_pair(lhs, rhs) {
         return Some(Type::Boolean);
     }
-    match (lhs, rhs) {
-        (Type::String, Type::String) => Some(Type::Boolean),
-        _ => None,
+    if is_string_or_union(lhs) && is_string_or_union(rhs) {
+        return Some(Type::Boolean);
     }
+    None
+}
+
+/// True for `String` and any `StringUnion`. Used by the comparison
+/// operators so a value of a string-union type can be compared with
+/// a plain string (`if c == "red"`) or with another union value.
+const fn is_string_or_union(ty: &Type) -> bool {
+    matches!(ty, Type::String | Type::StringUnion { .. })
 }
 
 fn binop_error(op: BinOp, lhs: &Type, rhs: &Type) -> String {

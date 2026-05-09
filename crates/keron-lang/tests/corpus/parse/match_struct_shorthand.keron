@@ -1,0 +1,6 @@
+struct Point { x: Int, y: Int }
+fn sum(p: Point): Int {
+  match p {
+    Point { x, y } => x + y,
+  }
+}

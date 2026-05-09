@@ -1,0 +1,136 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        TypeAlias(
+            TypeAliasDecl {
+                name: Spanned {
+                    node: "Color",
+                    span: 5..10,
+                },
+                variants: [
+                    Spanned {
+                        node: "red",
+                        span: 13..18,
+                    },
+                    Spanned {
+                        node: "green",
+                        span: 21..28,
+                    },
+                    Spanned {
+                        node: "blue",
+                        span: 31..37,
+                    },
+                ],
+                span: 0..38,
+            },
+        ),
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "label",
+                    span: 41..46,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "c",
+                            span: 47..48,
+                        },
+                        ty: Spanned {
+                            node: Named(
+                                "Color",
+                            ),
+                            span: 50..55,
+                        },
+                        default: None,
+                        span: 47..55,
+                    },
+                ],
+                return_type: Spanned {
+                    node: String,
+                    span: 58..64,
+                },
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Match {
+                                scrutinee: Spanned {
+                                    node: Var(
+                                        "c",
+                                    ),
+                                    span: 75..76,
+                                },
+                                arms: [
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Lit(
+                                                String(
+                                                    "red",
+                                                ),
+                                            ),
+                                            span: 83..88,
+                                        },
+                                        body: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "warm",
+                                                ),
+                                            ),
+                                            span: 94..100,
+                                        },
+                                        span: 83..100,
+                                    },
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Lit(
+                                                String(
+                                                    "green",
+                                                ),
+                                            ),
+                                            span: 106..113,
+                                        },
+                                        body: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "natural",
+                                                ),
+                                            ),
+                                            span: 117..126,
+                                        },
+                                        span: 106..126,
+                                    },
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Lit(
+                                                String(
+                                                    "blue",
+                                                ),
+                                            ),
+                                            span: 132..138,
+                                        },
+                                        body: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "cool",
+                                                ),
+                                            ),
+                                            span: 143..149,
+                                        },
+                                        span: 132..149,
+                                    },
+                                ],
+                            },
+                            span: 69..155,
+                        },
+                    ),
+                    span: 65..157,
+                },
+                span: 38..157,
+                intrinsic: None,
+            },
+        ),
+    ],
+}

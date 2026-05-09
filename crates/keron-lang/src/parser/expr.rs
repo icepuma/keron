@@ -9,8 +9,9 @@
 //! additive       := multiplicative (('+' | '-') multiplicative)*  -- left-assoc
 //! multiplicative := unary (('*' | '/') unary)*                    -- left-assoc
 //! unary          := '-' unary | power
-//! power          := atom ('**' unary)?                            -- right-assoc
-//! atom           := literal | '(' expr ')'
+//! power          := postfix ('**' unary)?                         -- right-assoc
+//! postfix        := atom ('.' ident)*                             -- left-assoc field access
+//! atom           := literal | '(' expr ')' | match_expr | …
 //! ```
 //!
 //! `**` binds tighter than unary `-` (matching Python/math), so
@@ -18,6 +19,10 @@
 //! the literal grammar; `-7` is `Unary(Neg, Int(7))`. This means
 //! `-9223372036854775808` is unrepresentable (the positive form
 //! overflows `i64`), an accepted edge case.
+//!
+//! Field access is *postfix* — tighter than unary, so `-p.x` parses
+//! as `-(p.x)`. Chains fold left-associatively into nested
+//! [`Expr::Field`] nodes (e.g. `a.b.c` → `Field(Field(a, b), c)`).
 
 use chumsky::prelude::*;
 
@@ -27,6 +32,7 @@ use crate::ast::{
 
 use super::{
     block::block,
+    match_expr::match_expr,
     string::string_expr,
     util::{Extra, ident, pad, span_to_range},
 };
@@ -40,15 +46,39 @@ pub(super) fn expr<'src>() -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<
             map_atom(expr.clone()),
             if_atom(expr.clone()),
             for_atom(expr.clone()),
+            match_expr(expr.clone()).padded_by(pad()),
             var_or_call(expr.clone()),
             expr.clone()
                 .delimited_by(just('(').padded_by(pad()), just(')').padded_by(pad())),
         ));
 
+        // Postfix field access: `a.b.c` folds into nested `Expr::Field`
+        // nodes. Tighter than unary so `-p.x` is `-(p.x)`.
+        let postfix = atom
+            .then(
+                just('.')
+                    .padded_by(pad())
+                    .ignore_then(spanned_ident())
+                    .repeated()
+                    .collect::<Vec<_>>(),
+            )
+            .map(|(receiver, fields)| {
+                fields.into_iter().fold(receiver, |acc, field| {
+                    let span = acc.span.start..field.span.end;
+                    Spanned {
+                        node: Expr::Field {
+                            receiver: Box::new(acc),
+                            field,
+                        },
+                        span,
+                    }
+                })
+            });
+
         // unary and power are mutually recursive: unary's RHS recurses on
-        // unary; power's RHS is unary; unary's fall-through is power.
+        // unary; power's RHS is unary; unary's fall-through is postfix.
         let unary = recursive(|unary| {
-            let power = atom
+            let power = postfix
                 .clone()
                 .then(
                     just("**")

@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: pattern type mismatch: scrutinee is `Int`, found literal of type `String`
+  --> 3:5
+  |
+3 |     "zero" => 0,
+  |     ^^^^^^

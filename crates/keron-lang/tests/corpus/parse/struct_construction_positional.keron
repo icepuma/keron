@@ -1,0 +1,2 @@
+struct Point { x: Int, y: Int }
+val origin: Point = Point(0, 0)

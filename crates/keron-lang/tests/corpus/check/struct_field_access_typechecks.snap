@@ -1,0 +1,172 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Struct(
+            StructDecl {
+                name: Spanned {
+                    node: "Host",
+                    span: 7..11,
+                },
+                fields: [
+                    StructField {
+                        name: Spanned {
+                            node: "name",
+                            span: 14..18,
+                        },
+                        ty: Spanned {
+                            node: String,
+                            span: 20..26,
+                        },
+                        span: 14..26,
+                    },
+                    StructField {
+                        name: Spanned {
+                            node: "port",
+                            span: 28..32,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 34..37,
+                        },
+                        span: 28..38,
+                    },
+                ],
+                span: 0..40,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "h",
+                    span: 44..45,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Struct {
+                            name: "Host",
+                            fields: [
+                                (
+                                    "name",
+                                    String,
+                                ),
+                                (
+                                    "port",
+                                    Int,
+                                ),
+                            ],
+                        },
+                        span: 47..51,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "Host",
+                            span: 54..58,
+                        },
+                        args: [
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "name",
+                                        span: 59..63,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "alpha",
+                                        ),
+                                    ),
+                                    span: 66..73,
+                                },
+                                span: 59..73,
+                            },
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "port",
+                                        span: 75..79,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            22,
+                                        ),
+                                    ),
+                                    span: 82..84,
+                                },
+                                span: 75..84,
+                            },
+                        ],
+                    },
+                    span: 54..86,
+                },
+                span: 40..86,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "n",
+                    span: 90..91,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 93..99,
+                    },
+                ),
+                value: Spanned {
+                    node: Field {
+                        receiver: Spanned {
+                            node: Var(
+                                "h",
+                            ),
+                            span: 102..103,
+                        },
+                        field: Spanned {
+                            node: "name",
+                            span: 104..108,
+                        },
+                    },
+                    span: 102..108,
+                },
+                span: 86..108,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "p",
+                    span: 113..114,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Int,
+                        span: 116..119,
+                    },
+                ),
+                value: Spanned {
+                    node: Field {
+                        receiver: Spanned {
+                            node: Var(
+                                "h",
+                            ),
+                            span: 122..123,
+                        },
+                        field: Spanned {
+                            node: "port",
+                            span: 124..128,
+                        },
+                    },
+                    span: 122..128,
+                },
+                span: 109..128,
+            },
+        ),
+    ],
+}

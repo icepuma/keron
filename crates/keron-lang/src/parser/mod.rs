@@ -3,10 +3,14 @@
 mod block;
 mod expr;
 mod fn_decl;
+mod match_expr;
+mod pattern;
 mod reconcile;
 mod string;
+mod struct_decl;
 #[cfg(test)]
 mod tests;
+mod type_alias;
 mod types;
 mod use_decl;
 mod util;
@@ -22,6 +26,8 @@ use self::{
     expr::expr,
     fn_decl::fn_decl,
     reconcile::reconcile_decl,
+    struct_decl::struct_decl,
+    type_alias::type_alias_decl,
     types::type_annotation,
     use_decl::use_decl,
     util::{Extra, ident, pad, span_to_range, spanned},
@@ -73,6 +79,8 @@ fn item<'src>() -> impl Parser<'src, &'src str, Item, Extra<'src>> {
     .map(Item::ExprStmt);
     choice((
         use_decl().map(Item::Use),
+        struct_decl().map(Item::Struct),
+        type_alias_decl().map(Item::TypeAlias),
         val_decl(e.clone()).map(Item::Val),
         fn_decl(e.clone()).map(Item::Fn),
         reconcile_decl(e).map(Item::Reconcile),

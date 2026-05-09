@@ -1,0 +1,167 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Struct(
+            StructDecl {
+                name: Spanned {
+                    node: "Inner",
+                    span: 7..12,
+                },
+                fields: [
+                    StructField {
+                        name: Spanned {
+                            node: "v",
+                            span: 15..16,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 18..21,
+                        },
+                        span: 15..22,
+                    },
+                ],
+                span: 0..24,
+            },
+        ),
+        Struct(
+            StructDecl {
+                name: Spanned {
+                    node: "Outer",
+                    span: 31..36,
+                },
+                fields: [
+                    StructField {
+                        name: Spanned {
+                            node: "inner",
+                            span: 39..44,
+                        },
+                        ty: Spanned {
+                            node: Struct {
+                                name: "Inner",
+                                fields: [
+                                    (
+                                        "v",
+                                        Int,
+                                    ),
+                                ],
+                            },
+                            span: 46..51,
+                        },
+                        span: 39..52,
+                    },
+                ],
+                span: 24..55,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "o",
+                    span: 59..60,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Struct {
+                            name: "Outer",
+                            fields: [
+                                (
+                                    "inner",
+                                    Struct {
+                                        name: "Inner",
+                                        fields: [
+                                            (
+                                                "v",
+                                                Int,
+                                            ),
+                                        ],
+                                    },
+                                ),
+                            ],
+                        },
+                        span: 62..67,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "Outer",
+                            span: 70..75,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Call {
+                                        callee: Spanned {
+                                            node: "Inner",
+                                            span: 76..81,
+                                        },
+                                        args: [
+                                            CallArg {
+                                                name: None,
+                                                value: Spanned {
+                                                    node: Literal(
+                                                        Int(
+                                                            7,
+                                                        ),
+                                                    ),
+                                                    span: 82..83,
+                                                },
+                                                span: 82..83,
+                                            },
+                                        ],
+                                    },
+                                    span: 76..84,
+                                },
+                                span: 76..84,
+                            },
+                        ],
+                    },
+                    span: 70..86,
+                },
+                span: 55..86,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "n",
+                    span: 90..91,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Int,
+                        span: 93..96,
+                    },
+                ),
+                value: Spanned {
+                    node: Field {
+                        receiver: Spanned {
+                            node: Field {
+                                receiver: Spanned {
+                                    node: Var(
+                                        "o",
+                                    ),
+                                    span: 99..100,
+                                },
+                                field: Spanned {
+                                    node: "inner",
+                                    span: 101..106,
+                                },
+                            },
+                            span: 99..106,
+                        },
+                        field: Spanned {
+                            node: "v",
+                            span: 107..108,
+                        },
+                    },
+                    span: 99..108,
+                },
+                span: 86..108,
+            },
+        ),
+    ],
+}

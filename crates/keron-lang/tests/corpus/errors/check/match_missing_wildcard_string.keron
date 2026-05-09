@@ -1,0 +1,6 @@
+fn label(s: String): Int {
+  match s {
+    "a" => 1,
+    "b" => 2,
+  }
+}

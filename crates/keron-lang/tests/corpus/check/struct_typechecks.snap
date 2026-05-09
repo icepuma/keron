@@ -1,0 +1,241 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Struct(
+            StructDecl {
+                name: Spanned {
+                    node: "Point",
+                    span: 7..12,
+                },
+                fields: [
+                    StructField {
+                        name: Spanned {
+                            node: "x",
+                            span: 15..16,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 18..21,
+                        },
+                        span: 15..21,
+                    },
+                    StructField {
+                        name: Spanned {
+                            node: "y",
+                            span: 23..24,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 26..29,
+                        },
+                        span: 23..30,
+                    },
+                ],
+                span: 0..32,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "origin",
+                    span: 36..42,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Struct {
+                            name: "Point",
+                            fields: [
+                                (
+                                    "x",
+                                    Int,
+                                ),
+                                (
+                                    "y",
+                                    Int,
+                                ),
+                            ],
+                        },
+                        span: 44..49,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "Point",
+                            span: 52..57,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            0,
+                                        ),
+                                    ),
+                                    span: 58..59,
+                                },
+                                span: 58..59,
+                            },
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            0,
+                                        ),
+                                    ),
+                                    span: 61..62,
+                                },
+                                span: 61..62,
+                            },
+                        ],
+                    },
+                    span: 52..64,
+                },
+                span: 32..64,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "labeled",
+                    span: 68..75,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Struct {
+                            name: "Point",
+                            fields: [
+                                (
+                                    "x",
+                                    Int,
+                                ),
+                                (
+                                    "y",
+                                    Int,
+                                ),
+                            ],
+                        },
+                        span: 77..82,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "Point",
+                            span: 85..90,
+                        },
+                        args: [
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "x",
+                                        span: 91..92,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            3,
+                                        ),
+                                    ),
+                                    span: 95..96,
+                                },
+                                span: 91..96,
+                            },
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "y",
+                                        span: 98..99,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            4,
+                                        ),
+                                    ),
+                                    span: 102..103,
+                                },
+                                span: 98..103,
+                            },
+                        ],
+                    },
+                    span: 85..105,
+                },
+                span: 64..105,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "mixed",
+                    span: 109..114,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Struct {
+                            name: "Point",
+                            fields: [
+                                (
+                                    "x",
+                                    Int,
+                                ),
+                                (
+                                    "y",
+                                    Int,
+                                ),
+                            ],
+                        },
+                        span: 116..121,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "Point",
+                            span: 124..129,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            7,
+                                        ),
+                                    ),
+                                    span: 130..131,
+                                },
+                                span: 130..131,
+                            },
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "y",
+                                        span: 133..134,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            8,
+                                        ),
+                                    ),
+                                    span: 137..138,
+                                },
+                                span: 133..138,
+                            },
+                        ],
+                    },
+                    span: 124..140,
+                },
+                span: 105..140,
+            },
+        ),
+    ],
+}

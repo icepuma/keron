@@ -23,6 +23,12 @@ pub enum Item {
     Use(UseDecl),
     Val(ValDecl),
     Fn(FnDecl),
+    /// `struct Name { f: T, ... }` — nominal record. Constructed via
+    /// the existing call form (`Name(...)`); field access via `v.f`.
+    Struct(StructDecl),
+    /// `type Name = "a" | "b" | ...` — nominal alias for a closed set
+    /// of string literals. The only kind of type alias today.
+    TypeAlias(TypeAliasDecl),
     Reconcile(ReconcileDecl),
     /// A top-level expression evaluated for its effect (e.g.
     /// `if cond { reconcile foo }`). The expression must have type
@@ -84,6 +90,33 @@ pub struct FnDecl {
     /// The evaluator dispatches on this tag instead of `body`, so the
     /// `body` field is an unused empty block for intrinsic decls.
     pub intrinsic: Option<IntrinsicId>,
+}
+
+/// `struct Name { field: Type, ... }` — a nominal record type. Field
+/// order is significant: the implicit constructor accepts positional
+/// arguments in declared order (and named arguments by field name).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StructDecl {
+    pub name: Spanned<String>,
+    pub fields: Vec<StructField>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StructField {
+    pub name: Spanned<String>,
+    pub ty: Spanned<Type>,
+    pub span: Span,
+}
+
+/// `type Name = "a" | "b" | ...` — a nominal closed enumeration of
+/// string literals. There must be at least one variant; duplicates are
+/// rejected by the checker.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeAliasDecl {
+    pub name: Spanned<String>,
+    pub variants: Vec<Spanned<String>>,
+    pub span: Span,
 }
 
 /// Tag identifying a stdlib intrinsic.
@@ -203,6 +236,62 @@ pub enum Expr {
         iter_expr: Box<Spanned<Self>>,
         body: Box<Block>,
     },
+    /// `receiver.field` — postfix field access. The checker requires
+    /// the receiver to have a struct type and the field name to exist
+    /// on that struct.
+    Field {
+        receiver: Box<Spanned<Self>>,
+        field: Spanned<String>,
+    },
+    /// `match scrutinee { pattern => body, ... }`. Arms are tried in
+    /// source order; the first matching pattern wins. The match's
+    /// type is the common type of every arm body. Exhaustiveness is
+    /// enforced by the checker: a string-union scrutinee may exhaust
+    /// by listing every variant; every other scrutinee type requires
+    /// a wildcard `_` (or bind) arm.
+    Match {
+        scrutinee: Box<Spanned<Self>>,
+        arms: Vec<MatchArm>,
+    },
+}
+
+/// One arm in a `match` expression: `pattern => body`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MatchArm {
+    pub pattern: Spanned<Pattern>,
+    pub body: Spanned<Expr>,
+    pub span: Span,
+}
+
+/// A `match` arm pattern.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Pattern {
+    /// A literal pattern: matches values equal to `lit`. Numeric and
+    /// boolean literals match the corresponding primitive scrutinee;
+    /// string literals match a `String` scrutinee or — when allowed —
+    /// a `StringUnion` whose variant set contains the literal.
+    Lit(Literal),
+    /// `_` — matches anything; binds nothing.
+    Wildcard,
+    /// A bare lowercase identifier — matches anything; binds the
+    /// scrutinee value to that name in the arm body.
+    Bind(String),
+    /// `Name { f: pat, g, ... }` — destructures a struct value.
+    /// Pattern fields may be partial (uncovered fields are ignored,
+    /// like `_`). A field with no sub-pattern is shorthand for
+    /// `f: f` (binds the field's value to its own name).
+    Struct {
+        name: Spanned<String>,
+        fields: Vec<StructPatternField>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructPatternField {
+    pub name: Spanned<String>,
+    /// `None` is shorthand: bind the field value to its own name.
+    pub pattern: Option<Spanned<Pattern>>,
+    pub span: Span,
 }
 
 /// Binding shape for a [`Expr::For`].
@@ -311,14 +400,30 @@ pub enum Type {
     /// function's body, and of an `if` expression used as control
     /// flow. Writable in source as the annotation `Void`.
     Void,
+    /// A user-declared `struct Name { field: T, ... }`. Nominal: two
+    /// structs with identical fields but different names are distinct
+    /// types. Field order is preserved for positional construction.
+    Struct {
+        name: String,
+        fields: Vec<(String, Self)>,
+    },
+    /// A user-declared `type Name = "a" | "b" | ...` — a nominal
+    /// closed enumeration of string literals. Nominal: two unions
+    /// with identical variant sets but different names are distinct
+    /// types. Variants are unique and stored in source order.
+    StringUnion {
+        name: String,
+        variants: Vec<String>,
+    },
     /// A type referenced by name in source, awaiting import
     /// resolution. The parser produces this for any capitalized
     /// identifier in type position that isn't a primitive keyword
     /// (`String`/`Int`/`Boolean`/`Double`/`Void`/`List`/`Map`); the
     /// module loader rewrites it to the canonical variant via the
-    /// builtin registry (`Symlink`/`File`/`Directory`/`Resource`).
-    /// After loading, this variant should never appear — the type
-    /// checker treats any leftover `Named` as an error.
+    /// builtin registry (`Symlink`/`File`/`Directory`/`Resource`) or
+    /// the local module's `struct`/`type` declarations. After
+    /// loading, this variant should never appear — the type checker
+    /// treats any leftover `Named` as an error.
     Named(String),
 }
 
@@ -336,7 +441,12 @@ impl fmt::Display for Type {
             Self::Directory => f.write_str("Directory"),
             Self::Resource => f.write_str("Resource"),
             Self::Void => f.write_str("Void"),
-            Self::Named(name) => f.write_str(name),
+            // Structs and string unions are nominal: print just the
+            // declared name. The full field/variant list is only
+            // included in dedicated diagnostics.
+            Self::Struct { name, .. } | Self::StringUnion { name, .. } | Self::Named(name) => {
+                f.write_str(name)
+            }
         }
     }
 }

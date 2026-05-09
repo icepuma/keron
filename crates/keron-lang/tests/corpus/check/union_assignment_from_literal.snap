@@ -1,0 +1,90 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        TypeAlias(
+            TypeAliasDecl {
+                name: Spanned {
+                    node: "Mode",
+                    span: 5..9,
+                },
+                variants: [
+                    Spanned {
+                        node: "on",
+                        span: 12..16,
+                    },
+                    Spanned {
+                        node: "off",
+                        span: 19..24,
+                    },
+                    Spanned {
+                        node: "auto",
+                        span: 27..33,
+                    },
+                ],
+                span: 0..34,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "m1",
+                    span: 38..40,
+                },
+                ty: Some(
+                    Spanned {
+                        node: StringUnion {
+                            name: "Mode",
+                            variants: [
+                                "on",
+                                "off",
+                                "auto",
+                            ],
+                        },
+                        span: 42..46,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        String(
+                            "on",
+                        ),
+                    ),
+                    span: 49..53,
+                },
+                span: 34..54,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "m2",
+                    span: 58..60,
+                },
+                ty: Some(
+                    Spanned {
+                        node: StringUnion {
+                            name: "Mode",
+                            variants: [
+                                "on",
+                                "off",
+                                "auto",
+                            ],
+                        },
+                        span: 62..66,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        String(
+                            "auto",
+                        ),
+                    ),
+                    span: 69..75,
+                },
+                span: 54..76,
+            },
+        ),
+    ],
+}

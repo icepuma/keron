@@ -1,0 +1,6 @@
+fn label(s: String): String {
+  match s {
+    "" => "empty",
+    other => other,
+  }
+}

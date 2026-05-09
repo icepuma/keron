@@ -1,0 +1,170 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Struct(
+            StructDecl {
+                name: Spanned {
+                    node: "Point",
+                    span: 7..12,
+                },
+                fields: [
+                    StructField {
+                        name: Spanned {
+                            node: "x",
+                            span: 15..16,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 18..21,
+                        },
+                        span: 15..21,
+                    },
+                    StructField {
+                        name: Spanned {
+                            node: "y",
+                            span: 23..24,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 26..29,
+                        },
+                        span: 23..30,
+                    },
+                ],
+                span: 0..32,
+            },
+        ),
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "axis",
+                    span: 35..39,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "p",
+                            span: 40..41,
+                        },
+                        ty: Spanned {
+                            node: Struct {
+                                name: "Point",
+                                fields: [
+                                    (
+                                        "x",
+                                        Int,
+                                    ),
+                                    (
+                                        "y",
+                                        Int,
+                                    ),
+                                ],
+                            },
+                            span: 43..48,
+                        },
+                        default: None,
+                        span: 40..48,
+                    },
+                ],
+                return_type: Spanned {
+                    node: String,
+                    span: 51..57,
+                },
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Match {
+                                scrutinee: Spanned {
+                                    node: Var(
+                                        "p",
+                                    ),
+                                    span: 68..69,
+                                },
+                                arms: [
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Struct {
+                                                name: Spanned {
+                                                    node: "Point",
+                                                    span: 76..81,
+                                                },
+                                                fields: [
+                                                    StructPatternField {
+                                                        name: Spanned {
+                                                            node: "x",
+                                                            span: 84..85,
+                                                        },
+                                                        pattern: Some(
+                                                            Spanned {
+                                                                node: Lit(
+                                                                    Int(
+                                                                        0,
+                                                                    ),
+                                                                ),
+                                                                span: 87..88,
+                                                            },
+                                                        ),
+                                                        span: 84..88,
+                                                    },
+                                                    StructPatternField {
+                                                        name: Spanned {
+                                                            node: "y",
+                                                            span: 90..91,
+                                                        },
+                                                        pattern: Some(
+                                                            Spanned {
+                                                                node: Lit(
+                                                                    Int(
+                                                                        0,
+                                                                    ),
+                                                                ),
+                                                                span: 93..94,
+                                                            },
+                                                        ),
+                                                        span: 90..95,
+                                                    },
+                                                ],
+                                            },
+                                            span: 76..97,
+                                        },
+                                        body: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "origin",
+                                                ),
+                                            ),
+                                            span: 100..108,
+                                        },
+                                        span: 76..108,
+                                    },
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Wildcard,
+                                            span: 114..116,
+                                        },
+                                        body: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "other",
+                                                ),
+                                            ),
+                                            span: 119..126,
+                                        },
+                                        span: 114..126,
+                                    },
+                                ],
+                            },
+                            span: 62..132,
+                        },
+                    ),
+                    span: 58..134,
+                },
+                span: 32..134,
+                intrinsic: None,
+            },
+        ),
+    ],
+}

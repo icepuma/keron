@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: duplicate variant `"on"`
+  --> 1:28
+  |
+1 | type Mode = "on" | "off" | "on"
+  |                            ^^^^

@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `match` arm body type `String` does not match earlier arm type `Int`
+  --> 5:14
+  |
+5 |     "off" => "zero",
+  |              ^^^^^^

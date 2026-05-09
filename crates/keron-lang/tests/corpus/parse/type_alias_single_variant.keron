@@ -1,0 +1,2 @@
+type Mode = "auto"
+val m: Mode = "auto"

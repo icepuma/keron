@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: field access requires a struct, found `Int` for `.x`
+  --> 2:16
+  |
+2 | val z: Int = n.x
+  |                ^

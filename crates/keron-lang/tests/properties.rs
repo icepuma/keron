@@ -91,6 +91,9 @@ const KEYWORDS: &[&str] = &[
     "else",
     "for",
     "in",
+    "match",
+    "struct",
+    "type",
     "true",
     "false",
     "String",
@@ -157,6 +160,8 @@ fn literal_source_for(ty: &Type) -> BoxedStrategy<(String, Type)> {
         | Type::Directory
         | Type::Resource
         | Type::Void
+        | Type::Struct { .. }
+        | Type::StringUnion { .. }
         | Type::Named(_) => {
             unreachable!("structured/resource/void types are not used in literal_source_for")
         }
@@ -192,7 +197,9 @@ fn eval_simple(e: &Expr) -> Literal {
         | Expr::Var(_)
         | Expr::Call { .. }
         | Expr::If { .. }
-        | Expr::For { .. } => {
+        | Expr::For { .. }
+        | Expr::Field { .. }
+        | Expr::Match { .. } => {
             panic!("eval_simple only supports literals and unary")
         }
     }
@@ -866,6 +873,82 @@ proptest! {
         prop_assert!(
             errs[0].message.contains("Void"),
             "got: {}", errs[0].message
+        );
+    }
+
+    // ---------- structs / unions / match ----------
+
+    #[test]
+    fn struct_construction_round_trip(
+        name in ident_strategy().prop_filter("must start uppercase",
+            |s| s.chars().next().is_some_and(|c| c.is_ascii_uppercase())),
+        n_fields in 1usize..=6,
+    ) {
+        // Generate `struct Name { f0: Int, f1: Int, ... }` plus a
+        // construction val. The constructor should typecheck cleanly
+        // when the right number of `Int`-typed positional args is
+        // supplied.
+        let fields = (0..n_fields)
+            .map(|i| format!("f{i}: Int"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let args = (0..n_fields)
+            .map(|i| format!("{i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let src = format!(
+            "struct {name} {{ {fields} }}\nval v: {name} = {name}({args})"
+        );
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok(), "check failed for: {src}");
+    }
+
+    #[test]
+    fn match_full_union_coverage_typechecks(n_variants in 1usize..=5) {
+        // Build `type Color = "v0" | "v1" | ...` and a fn whose
+        // `match` lists every variant. Should typecheck without a
+        // wildcard (the union is closed and exhaustively covered).
+        let variants_decl = (0..n_variants)
+            .map(|i| format!("\"v{i}\""))
+            .collect::<Vec<_>>()
+            .join(" | ");
+        let arms = (0..n_variants)
+            .map(|i| format!("\"v{i}\" => {i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let src = format!(
+            "type Color = {variants_decl}\n\
+             fn label(c: Color): Int {{\n\
+               match c {{ {arms} }}\n\
+             }}\n",
+        );
+        let prog = parse(&src).expect("parse should succeed");
+        prop_assert!(check(&prog).is_ok(), "check failed for: {src}");
+    }
+
+    #[test]
+    fn match_one_missing_variant_always_errors(n_variants in 2usize..=5) {
+        // Same as above, but drop the last arm. Without a wildcard
+        // the checker must flag the missing variant.
+        let variants_decl = (0..n_variants)
+            .map(|i| format!("\"v{i}\""))
+            .collect::<Vec<_>>()
+            .join(" | ");
+        let arms = (0..n_variants - 1)
+            .map(|i| format!("\"v{i}\" => {i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let src = format!(
+            "type Color = {variants_decl}\n\
+             fn label(c: Color): Int {{\n\
+               match c {{ {arms} }}\n\
+             }}\n",
+        );
+        let prog = parse(&src).expect("parse should succeed");
+        let errs = check(&prog).expect_err("missing variant should fail");
+        prop_assert!(
+            errs.iter().any(|d| d.message.contains("non-exhaustive")),
+            "got: {:?}", errs
         );
     }
 }

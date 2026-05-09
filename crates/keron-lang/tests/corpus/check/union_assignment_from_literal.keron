@@ -1,0 +1,3 @@
+type Mode = "on" | "off" | "auto"
+val m1: Mode = "on"
+val m2: Mode = "auto"

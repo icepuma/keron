@@ -1,0 +1,55 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        TypeAlias(
+            TypeAliasDecl {
+                name: Spanned {
+                    node: "Color",
+                    span: 5..10,
+                },
+                variants: [
+                    Spanned {
+                        node: "red",
+                        span: 13..18,
+                    },
+                    Spanned {
+                        node: "green",
+                        span: 21..28,
+                    },
+                    Spanned {
+                        node: "blue",
+                        span: 31..37,
+                    },
+                ],
+                span: 0..38,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "c",
+                    span: 42..43,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Named(
+                            "Color",
+                        ),
+                        span: 45..50,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        String(
+                            "red",
+                        ),
+                    ),
+                    span: 53..58,
+                },
+                span: 38..59,
+            },
+        ),
+    ],
+}

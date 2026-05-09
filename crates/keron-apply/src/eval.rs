@@ -28,8 +28,8 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, anyhow, bail};
 use keron_lang::{
-    BinOp, Block, CallArg, Expr, FnDecl, ForPattern, IntrinsicId, Item, Literal, MapEntry, Spanned,
-    Stmt, StringPart, UnaryOp,
+    BinOp, Block, CallArg, Expr, FnDecl, ForPattern, IntrinsicId, Item, Literal, MapEntry,
+    MatchArm, Pattern, Spanned, Stmt, StringPart, StructDecl, StructPatternField, UnaryOp,
 };
 use keron_modules::{ModuleGraph, ModuleId, stdlib};
 
@@ -44,20 +44,28 @@ enum Value {
     List(Vec<Self>),
     Map(Vec<(Self, Self)>),
     Resource(ResourceState),
+    /// A user-defined struct value. The `name` carries the declared
+    /// struct name (used for diagnostics and pattern matching);
+    /// `fields` preserves declaration order.
+    Struct {
+        name: String,
+        fields: Vec<(String, Self)>,
+    },
     Void,
 }
 
 impl Value {
-    const fn type_name(&self) -> &'static str {
+    fn type_name(&self) -> String {
         match self {
-            Self::String(_) => "String",
-            Self::Int(_) => "Int",
-            Self::Bool(_) => "Boolean",
-            Self::Double(_) => "Double",
-            Self::List(_) => "List",
-            Self::Map(_) => "Map",
-            Self::Resource(_) => "Resource",
-            Self::Void => "Void",
+            Self::String(_) => "String".into(),
+            Self::Int(_) => "Int".into(),
+            Self::Bool(_) => "Boolean".into(),
+            Self::Double(_) => "Double".into(),
+            Self::List(_) => "List".into(),
+            Self::Map(_) => "Map".into(),
+            Self::Resource(_) => "Resource".into(),
+            Self::Struct { name, .. } => name.clone(),
+            Self::Void => "Void".into(),
         }
     }
 }
@@ -68,6 +76,10 @@ impl Value {
 struct ModuleTop<'p> {
     val_decls: HashMap<String, &'p Spanned<Expr>>,
     fns: HashMap<String, &'p FnDecl>,
+    /// Struct decls in this module, keyed by the struct's name. Used
+    /// by `eval_call` to dispatch construction calls before falling
+    /// through to fn lookup.
+    structs: HashMap<String, &'p StructDecl>,
     cache: RefCell<HashMap<String, Value>>,
     in_progress: RefCell<HashSet<String>>,
     /// `local_name` → (`origin_module`, `original_name`).
@@ -156,6 +168,7 @@ pub fn eval_graph(graph: &ModuleGraph) -> Result<Vec<ResourceState>> {
         let mut top = ModuleTop {
             val_decls: HashMap::new(),
             fns: HashMap::new(),
+            structs: HashMap::new(),
             cache: RefCell::new(HashMap::new()),
             in_progress: RefCell::new(HashSet::new()),
             imports: module.imports.clone(),
@@ -168,7 +181,10 @@ pub fn eval_graph(graph: &ModuleGraph) -> Result<Vec<ResourceState>> {
                 Item::Fn(f) => {
                     top.fns.insert(f.name.node.clone(), f);
                 }
-                Item::Use(_) | Item::Reconcile(_) | Item::ExprStmt(_) => {}
+                Item::Struct(s) => {
+                    top.structs.insert(s.name.node.clone(), s);
+                }
+                Item::Use(_) | Item::TypeAlias(_) | Item::Reconcile(_) | Item::ExprStmt(_) => {}
             }
         }
         graph_top.modules.insert(id.clone(), top);
@@ -187,7 +203,11 @@ pub fn eval_graph(graph: &ModuleGraph) -> Result<Vec<ResourceState>> {
         let env = Env::new(&graph_top, id.clone());
         for item in &module.program.items {
             match item {
-                Item::Use(_) | Item::Val(_) | Item::Fn(_) => {}
+                Item::Use(_)
+                | Item::Val(_)
+                | Item::Fn(_)
+                | Item::Struct(_)
+                | Item::TypeAlias(_) => {}
                 Item::Reconcile(r) => {
                     for chain in &r.chains {
                         for expr in chain {
@@ -344,7 +364,98 @@ fn eval_expr(expr: &Spanned<Expr>, env: &Env<'_, '_>) -> Result<Value> {
             eval_block_value(block, env, &mut sink)
         }
         Expr::For { .. } => bail!("`for` is not a value expression"),
+        Expr::Field { receiver, field } => {
+            let v = eval_expr(receiver, env)?;
+            match v {
+                Value::Struct { name, fields } => fields
+                    .into_iter()
+                    .find(|(n, _)| n == &field.node)
+                    .map(|(_, val)| val)
+                    .ok_or_else(|| anyhow!("struct `{name}` has no field `{}`", field.node)),
+                other => bail!(
+                    "field access requires a struct, found {} for `.{}`",
+                    other.type_name(),
+                    field.node
+                ),
+            }
+        }
+        Expr::Match { scrutinee, arms } => eval_match(scrutinee, arms, env),
     }
+}
+
+/// Evaluate a `match` expression: try each arm in source order; the
+/// first pattern that succeeds wins. The type checker has already
+/// proven exhaustiveness, so a fall-through here means the AST and
+/// the checker disagree — surface it as an error rather than panic.
+fn eval_match(scrutinee: &Spanned<Expr>, arms: &[MatchArm], env: &Env<'_, '_>) -> Result<Value> {
+    let val = eval_expr(scrutinee, env)?;
+    for arm in arms {
+        let mut bindings: HashMap<String, Value> = HashMap::new();
+        if try_match_pattern(&arm.pattern.node, &val, &mut bindings) {
+            let mut arm_env = env.clone();
+            for (n, v) in bindings {
+                arm_env.local.insert(n, v);
+            }
+            return eval_expr(&arm.body, &arm_env);
+        }
+    }
+    bail!("no `match` arm matched value of type {}", val.type_name())
+}
+
+fn try_match_pattern(
+    pattern: &Pattern,
+    value: &Value,
+    bindings: &mut HashMap<String, Value>,
+) -> bool {
+    match pattern {
+        Pattern::Wildcard => true,
+        Pattern::Bind(name) => {
+            bindings.insert(name.clone(), value.clone());
+            true
+        }
+        // Literal patterns mirror `==` semantics: `value_eq` is the
+        // single source of truth so a `match` arm and a `x == lit`
+        // test always agree on equality (including the Int↔Double
+        // promotion rules and NaN-safe Double comparisons).
+        Pattern::Lit(lit) => value_eq(&eval_literal(lit), value),
+        Pattern::Struct { name, fields } => match_struct_pattern(name, fields, value, bindings),
+    }
+}
+
+fn match_struct_pattern(
+    name: &Spanned<String>,
+    fields: &[StructPatternField],
+    value: &Value,
+    bindings: &mut HashMap<String, Value>,
+) -> bool {
+    let Value::Struct {
+        name: vname,
+        fields: vfields,
+    } = value
+    else {
+        return false;
+    };
+    if vname != &name.node {
+        return false;
+    }
+    for f in fields {
+        let Some((_, fval)) = vfields.iter().find(|(n, _)| n == &f.name.node) else {
+            return false;
+        };
+        match &f.pattern {
+            Some(sub) => {
+                if !try_match_pattern(&sub.node, fval, bindings) {
+                    return false;
+                }
+            }
+            None => {
+                // Shorthand `Point { x }` — bind the field's value to
+                // a binding named after the field.
+                bindings.insert(f.name.node.clone(), fval.clone());
+            }
+        }
+    }
+    true
 }
 
 fn eval_block_value(
@@ -514,11 +625,23 @@ fn stringify(v: &Value, out: &mut String) -> Result<()> {
 }
 
 /// Resolve a callee through (1) the current module's `from … use …`
-/// imports, (2) the current module's own fns, and (3) the implicit
-/// stdlib builtin registry, then dispatch. Intrinsic fns (carried via
-/// [`FnDecl::intrinsic`]) bypass body evaluation.
+/// imports, (2) the current module's own fns / structs, and (3) the
+/// implicit stdlib builtin registry, then dispatch. Intrinsic fns
+/// (carried via [`FnDecl::intrinsic`]) and struct constructors
+/// bypass body evaluation.
 fn eval_call(name: &str, args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     let module = env.current_module();
+    // Cross-module struct construction: an imported `Point` resolves
+    // to a struct in its origin module.
+    if let Some((origin, original)) = module.imports.get(name)
+        && let Some(origin_mod) = env.graph.modules.get(origin)
+        && let Some(decl) = origin_mod.structs.get(original)
+    {
+        return construct_struct(decl, args, env);
+    }
+    if let Some(decl) = module.structs.get(name) {
+        return construct_struct(decl, args, env);
+    }
     let (origin_id, fn_decl): (ModuleId, &FnDecl) =
         if let Some((origin, original)) = module.imports.get(name) {
             let origin_mod = env
@@ -557,6 +680,37 @@ fn eval_call(name: &str, args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     let mut sink = Vec::new();
     let v = eval_block_value(&fn_decl.body, &call_env, &mut sink)?;
     Ok(v)
+}
+
+/// Construct a struct value: bind each declared field by name (named
+/// arg) or by position (positional arg), then assemble a
+/// [`Value::Struct`]. Argument resolution mirrors [`bind_params`] —
+/// the type checker has already validated counts and types so a hit
+/// here is well-typed by construction.
+fn construct_struct(decl: &StructDecl, args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let mut fields: Vec<(String, Value)> = Vec::with_capacity(decl.fields.len());
+    let mut positional = args.iter().filter(|a| a.name.is_none());
+    for field in &decl.fields {
+        let named = args
+            .iter()
+            .find(|a| a.name.as_ref().is_some_and(|n| n.node == field.name.node));
+        let value = if let Some(arg) = named {
+            eval_expr(&arg.value, env)?
+        } else if let Some(arg) = positional.next() {
+            eval_expr(&arg.value, env)?
+        } else {
+            bail!(
+                "missing argument for field `{}` of struct `{}`",
+                field.name.node,
+                decl.name.node
+            );
+        };
+        fields.push((field.name.node.clone(), value));
+    }
+    Ok(Value::Struct {
+        name: decl.name.node.clone(),
+        fields,
+    })
 }
 
 fn builtin_fn(name: &str) -> Option<&'static FnDecl> {
@@ -1220,5 +1374,190 @@ reconcile file(path = pick(\"a\"), content = \"\")\n",
         let states = run("val tag: String = \"ok\"\n\
              reconcile file(path = \"/${tag}\", content = \"\")\n");
         assert_eq!(first_file_path(&states), &PathBuf::from("/ok"));
+    }
+
+    // ---------- structs / unions / match ----------
+
+    #[test]
+    fn struct_field_access_round_trips() {
+        let states = run("struct Host { name: String, port: Int }\n\
+             val h: Host = Host(name = \"alpha\", port = 22)\n\
+             reconcile file(path = \"/${h.name}-${h.port}\", content = \"\")\n");
+        assert_eq!(first_file_path(&states), &PathBuf::from("/alpha-22"));
+    }
+
+    #[test]
+    fn struct_construction_positional_and_named_match() {
+        let states = run("struct Pair { a: String, b: String }\n\
+             val p1: Pair = Pair(\"x\", \"y\")\n\
+             val p2: Pair = Pair(b = \"y\", a = \"x\")\n\
+             reconcile file(path = \"/${p1.a}-${p1.b}\", content = \"\")\n\
+             reconcile file(path = \"/${p2.a}-${p2.b}\", content = \"\")\n");
+        let paths: Vec<_> = states
+            .iter()
+            .map(|s| match s {
+                ResourceState::File { path, .. } => path.clone(),
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(paths, vec![PathBuf::from("/x-y"), PathBuf::from("/x-y")]);
+    }
+
+    #[test]
+    fn match_string_union_drives_branch() {
+        let states = run("type Color = \"red\" | \"green\" | \"blue\"\n\
+             fn label(c: Color): String {\n\
+               match c {\n\
+                 \"red\" => \"warm\",\n\
+                 \"green\" => \"natural\",\n\
+                 \"blue\" => \"cool\",\n\
+               }\n\
+             }\n\
+             val c: Color = \"green\"\n\
+             reconcile file(path = \"/${label(c)}\", content = \"\")\n");
+        assert_eq!(first_file_path(&states), &PathBuf::from("/natural"));
+    }
+
+    #[test]
+    fn match_struct_destructure_binds_fields() {
+        let states = run("struct Point { x: Int, y: Int }\n\
+             fn axis(p: Point): String {\n\
+               match p {\n\
+                 Point { x: 0, y: 0 } => \"origin\",\n\
+                 Point { x: 0, y } => \"y-axis\",\n\
+                 Point { x, y: 0 } => \"x-axis\",\n\
+                 _ => \"other\",\n\
+               }\n\
+             }\n\
+             reconcile file(path = \"/${axis(Point(0, 0))}\", content = \"\")\n\
+             reconcile file(path = \"/${axis(Point(3, 0))}\", content = \"\")\n\
+             reconcile file(path = \"/${axis(Point(0, 5))}\", content = \"\")\n\
+             reconcile file(path = \"/${axis(Point(2, 3))}\", content = \"\")\n");
+        let paths: Vec<_> = states
+            .iter()
+            .map(|s| match s {
+                ResourceState::File { path, .. } => path.clone(),
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from("/origin"),
+                PathBuf::from("/x-axis"),
+                PathBuf::from("/y-axis"),
+                PathBuf::from("/other"),
+            ]
+        );
+    }
+
+    #[test]
+    fn match_with_bind_arm_renames_scrutinee() {
+        let states = run("fn label(s: String): String {\n\
+               match s {\n\
+                 \"\" => \"empty\",\n\
+                 other => other,\n\
+               }\n\
+             }\n\
+             reconcile file(path = \"/${label(\"hello\")}\", content = \"\")\n");
+        assert_eq!(first_file_path(&states), &PathBuf::from("/hello"));
+    }
+
+    #[test]
+    fn union_value_compares_equal_to_string_literal() {
+        let states = run("type Mode = \"on\" | \"off\"\n\
+             val m: Mode = \"on\"\n\
+             reconcile file(path = if m == \"on\" { \"/active\" } else { \"/idle\" }, content = \"\")\n");
+        assert_eq!(first_file_path(&states), &PathBuf::from("/active"));
+    }
+
+    #[test]
+    fn match_int_literal_pattern_picks_the_exact_arm() {
+        // `match` over an Int with literal patterns + wildcard. Each
+        // arm must be selected only when the literal *equals* the
+        // value; mutating `==` to `!=` in `try_match_pattern`'s Int
+        // arm would mis-route every probe.
+        let states = run("fn pick(n: Int): String {\n\
+               match n {\n\
+                 0 => \"zero\",\n\
+                 1 => \"one\",\n\
+                 _ => \"other\",\n\
+               }\n\
+             }\n\
+             reconcile file(path = \"/${pick(0)}\", content = \"\")\n\
+             reconcile file(path = \"/${pick(1)}\", content = \"\")\n\
+             reconcile file(path = \"/${pick(7)}\", content = \"\")\n");
+        let paths: Vec<_> = states
+            .iter()
+            .map(|s| match s {
+                ResourceState::File { path, .. } => path.clone(),
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from("/zero"),
+                PathBuf::from("/one"),
+                PathBuf::from("/other"),
+            ]
+        );
+    }
+
+    #[test]
+    fn match_boolean_literal_pattern_picks_the_exact_arm() {
+        // Distinguishes `true` and `false` literal patterns. Mutating
+        // the Bool arm of `try_match_pattern` (delete arm, or `==` to
+        // `!=`) would route both inputs to the wildcard fallback.
+        let states = run("fn label(b: Boolean): String {\n\
+               match b {\n\
+                 true => \"yes\",\n\
+                 false => \"no\",\n\
+                 _ => \"unreachable\",\n\
+               }\n\
+             }\n\
+             reconcile file(path = \"/${label(true)}\", content = \"\")\n\
+             reconcile file(path = \"/${label(false)}\", content = \"\")\n");
+        let paths: Vec<_> = states
+            .iter()
+            .map(|s| match s {
+                ResourceState::File { path, .. } => path.clone(),
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(paths, vec![PathBuf::from("/yes"), PathBuf::from("/no")]);
+    }
+
+    #[test]
+    fn match_double_literal_pattern_picks_the_exact_arm() {
+        // Distinguishes Double literal patterns. Mutating the Double
+        // arm — delete, or any of the `<`/`==`/`-`/`/` swaps that
+        // cargo-mutants flagged on the EPSILON tolerance check —
+        // would mis-route an exact match.
+        let states = run("fn label(d: Double): String {\n\
+               match d {\n\
+                 1.5 => \"half\",\n\
+                 2.5 => \"two-half\",\n\
+                 _ => \"other\",\n\
+               }\n\
+             }\n\
+             reconcile file(path = \"/${label(1.5)}\", content = \"\")\n\
+             reconcile file(path = \"/${label(2.5)}\", content = \"\")\n\
+             reconcile file(path = \"/${label(7.0)}\", content = \"\")\n");
+        let paths: Vec<_> = states
+            .iter()
+            .map(|s| match s {
+                ResourceState::File { path, .. } => path.clone(),
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from("/half"),
+                PathBuf::from("/two-half"),
+                PathBuf::from("/other"),
+            ]
+        );
     }
 }

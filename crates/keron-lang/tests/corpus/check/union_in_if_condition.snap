@@ -1,0 +1,163 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        TypeAlias(
+            TypeAliasDecl {
+                name: Spanned {
+                    node: "Color",
+                    span: 5..10,
+                },
+                variants: [
+                    Spanned {
+                        node: "red",
+                        span: 13..18,
+                    },
+                    Spanned {
+                        node: "green",
+                        span: 21..28,
+                    },
+                    Spanned {
+                        node: "blue",
+                        span: 31..37,
+                    },
+                ],
+                span: 0..38,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "c",
+                    span: 42..43,
+                },
+                ty: Some(
+                    Spanned {
+                        node: StringUnion {
+                            name: "Color",
+                            variants: [
+                                "red",
+                                "green",
+                                "blue",
+                            ],
+                        },
+                        span: 45..50,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        String(
+                            "red",
+                        ),
+                    ),
+                    span: 53..58,
+                },
+                span: 38..59,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "warm",
+                    span: 63..67,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 69..76,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Eq,
+                        lhs: Spanned {
+                            node: Var(
+                                "c",
+                            ),
+                            span: 79..80,
+                        },
+                        rhs: Spanned {
+                            node: Literal(
+                                String(
+                                    "red",
+                                ),
+                            ),
+                            span: 84..89,
+                        },
+                    },
+                    span: 79..89,
+                },
+                span: 59..90,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "tag",
+                    span: 94..97,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 99..105,
+                    },
+                ),
+                value: Spanned {
+                    node: If {
+                        cond: Spanned {
+                            node: Binary {
+                                op: Eq,
+                                lhs: Spanned {
+                                    node: Var(
+                                        "c",
+                                    ),
+                                    span: 111..112,
+                                },
+                                rhs: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "red",
+                                        ),
+                                    ),
+                                    span: 116..121,
+                                },
+                            },
+                            span: 111..121,
+                        },
+                        then_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: Literal(
+                                        String(
+                                            "warm",
+                                        ),
+                                    ),
+                                    span: 124..130,
+                                },
+                            ),
+                            span: 122..133,
+                        },
+                        else_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: Literal(
+                                        String(
+                                            "cool",
+                                        ),
+                                    ),
+                                    span: 140..146,
+                                },
+                            ),
+                            span: 138..149,
+                        },
+                    },
+                    span: 108..149,
+                },
+                span: 90..149,
+            },
+        ),
+    ],
+}

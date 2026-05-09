@@ -1,0 +1,137 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Struct(
+            StructDecl {
+                name: Spanned {
+                    node: "Point",
+                    span: 7..12,
+                },
+                fields: [
+                    StructField {
+                        name: Spanned {
+                            node: "x",
+                            span: 15..16,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 18..21,
+                        },
+                        span: 15..21,
+                    },
+                    StructField {
+                        name: Spanned {
+                            node: "y",
+                            span: 23..24,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 26..29,
+                        },
+                        span: 23..30,
+                    },
+                ],
+                span: 0..32,
+            },
+        ),
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "sum",
+                    span: 35..38,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "p",
+                            span: 39..40,
+                        },
+                        ty: Spanned {
+                            node: Named(
+                                "Point",
+                            ),
+                            span: 42..47,
+                        },
+                        default: None,
+                        span: 39..47,
+                    },
+                ],
+                return_type: Spanned {
+                    node: Int,
+                    span: 50..53,
+                },
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Match {
+                                scrutinee: Spanned {
+                                    node: Var(
+                                        "p",
+                                    ),
+                                    span: 64..65,
+                                },
+                                arms: [
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Struct {
+                                                name: Spanned {
+                                                    node: "Point",
+                                                    span: 72..77,
+                                                },
+                                                fields: [
+                                                    StructPatternField {
+                                                        name: Spanned {
+                                                            node: "x",
+                                                            span: 80..81,
+                                                        },
+                                                        pattern: None,
+                                                        span: 80..81,
+                                                    },
+                                                    StructPatternField {
+                                                        name: Spanned {
+                                                            node: "y",
+                                                            span: 83..84,
+                                                        },
+                                                        pattern: None,
+                                                        span: 83..85,
+                                                    },
+                                                ],
+                                            },
+                                            span: 72..87,
+                                        },
+                                        body: Spanned {
+                                            node: Binary {
+                                                op: Add,
+                                                lhs: Spanned {
+                                                    node: Var(
+                                                        "x",
+                                                    ),
+                                                    span: 90..91,
+                                                },
+                                                rhs: Spanned {
+                                                    node: Var(
+                                                        "y",
+                                                    ),
+                                                    span: 94..95,
+                                                },
+                                            },
+                                            span: 90..95,
+                                        },
+                                        span: 72..95,
+                                    },
+                                ],
+                            },
+                            span: 58..101,
+                        },
+                    ),
+                    span: 54..103,
+                },
+                span: 32..103,
+                intrinsic: None,
+            },
+        ),
+    ],
+}

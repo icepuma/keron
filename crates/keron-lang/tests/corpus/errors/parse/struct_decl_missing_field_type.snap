@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: found '}' expected something else, '#', or ':'
+  --> 1:26
+  |
+1 | struct Point { x: Int, y }
+  |                          ^

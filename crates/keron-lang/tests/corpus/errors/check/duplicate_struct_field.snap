@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: duplicate field `x`
+  --> 1:24
+  |
+1 | struct Point { x: Int, x: Int }
+  |                        ^

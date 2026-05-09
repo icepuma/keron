@@ -1,0 +1,92 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Struct(
+            StructDecl {
+                name: Spanned {
+                    node: "Point",
+                    span: 7..12,
+                },
+                fields: [
+                    StructField {
+                        name: Spanned {
+                            node: "x",
+                            span: 15..16,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 18..21,
+                        },
+                        span: 15..21,
+                    },
+                    StructField {
+                        name: Spanned {
+                            node: "y",
+                            span: 23..24,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 26..29,
+                        },
+                        span: 23..30,
+                    },
+                ],
+                span: 0..32,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "origin",
+                    span: 36..42,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Named(
+                            "Point",
+                        ),
+                        span: 44..49,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "Point",
+                            span: 52..57,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            0,
+                                        ),
+                                    ),
+                                    span: 58..59,
+                                },
+                                span: 58..59,
+                            },
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            0,
+                                        ),
+                                    ),
+                                    span: 61..62,
+                                },
+                                span: 61..62,
+                            },
+                        ],
+                    },
+                    span: 52..64,
+                },
+                span: 32..64,
+            },
+        ),
+    ],
+}

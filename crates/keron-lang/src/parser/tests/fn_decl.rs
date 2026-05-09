@@ -10,7 +10,12 @@ fn first_fn(src: &str) -> crate::ast::FnDecl {
     let prog = ok(src);
     match prog.items.into_iter().next().expect("at least one item") {
         Item::Fn(f) => f,
-        Item::Use(_) | Item::Val(_) | Item::Reconcile(_) | Item::ExprStmt(_) => {
+        Item::Use(_)
+        | Item::Val(_)
+        | Item::Struct(_)
+        | Item::TypeAlias(_)
+        | Item::Reconcile(_)
+        | Item::ExprStmt(_) => {
             panic!("expected a fn item")
         }
     }

@@ -21,8 +21,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use keron_lang::{
-    Diagnostic, FnDecl, ImportedSymbols, Item, Program, Type, UseDecl, ValDecl, check_module,
-    parse, resolve_type_names,
+    Diagnostic, FnDecl, FnSig, ImportedSymbols, Item, ParamSig, Program, StructDecl, Type, UseDecl,
+    ValDecl, check_module, parse, resolve_type_names,
 };
 
 /// Identifies a module in the graph. Modules are keyed by their
@@ -59,12 +59,16 @@ pub struct CheckedModule {
     /// Local-name → origin mapping for every `use` item in this module.
     pub imports: HashMap<String, (ModuleId, String)>,
     /// Top-level fn names this module makes available to importers.
+    /// Includes struct constructors: a `struct Point { … }` exports
+    /// `Point` as a synthesised constructor fn alongside the
+    /// `Type::Struct` entry in [`Self::exported_types`].
     pub exported_fns: HashSet<String>,
     /// Top-level val names this module makes available to importers.
     pub exported_vals: HashSet<String>,
-    /// Named types this module makes available to importers. User
-    /// modules can't declare types yet, so this is always empty;
-    /// stdlib types are exposed as builtins, not via the module graph.
+    /// Named types this module makes available to importers. Built
+    /// from `struct` and `type` declarations in the module's source.
+    /// (Stdlib types are exposed as builtins, not via the module
+    /// graph.)
     pub exported_types: HashMap<String, Type>,
 }
 
@@ -281,10 +285,7 @@ impl ResolveState {
                     });
                 }
             }
-            let (exported_fns, exported_vals) = collect_exports(&program);
-            // User modules can't declare types yet; stdlib types are
-            // exposed as builtins, not via the module graph.
-            let exported_types: HashMap<String, Type> = HashMap::new();
+            let (exported_fns, exported_vals, exported_types) = collect_exports(&program);
             modules.insert(
                 id.clone(),
                 CheckedModule {
@@ -482,46 +483,111 @@ fn build_imported_symbols(
         let Some(origin) = modules.get(origin_id) else {
             continue;
         };
-        if let Some(sig) = sig_for(origin, orig_name) {
-            out.fns.insert(local.clone(), sig);
-        } else if let Some(ty) = val_type_for(origin, orig_name) {
-            out.vals.insert(local.clone(), ty);
-        } else if let Some(ty) = origin.exported_types.get(orig_name) {
-            out.types.insert(local.clone(), ty.clone());
-        }
+        // Structs export under both namespaces: their `Type::Struct`
+        // for annotations *and* their synthesised constructor fn for
+        // calls. Plain fn / val / type-alias imports fan out to
+        // exactly one slot. The val fallback only fires when neither
+        // a fn signature nor an exported type matched; otherwise we'd
+        // re-classify the imported name on top of an already-correct
+        // entry.
+        place_imported_symbol(&mut out, origin, local, orig_name);
     }
     out
 }
 
-fn sig_for(module: &CheckedModule, name: &str) -> Option<keron_lang::FnSig> {
+/// Route one imported name into the right slot(s) of `out`. Structs
+/// land in both `fns` and `types`; type aliases land in `types`; fns
+/// land in `fns`; annotated vals land in `vals` only when nothing
+/// else placed the name. Sequenced as discrete early returns so the
+/// "either fn or type matched" check never collapses to a single
+/// boolean operator (where a `||` ↔ `&&` swap would be observationally
+/// equivalent given pass-1's duplicate-name rules and survive
+/// mutation testing).
+fn place_imported_symbol(
+    out: &mut ImportedSymbols,
+    origin: &CheckedModule,
+    local: &str,
+    orig_name: &str,
+) {
+    let sig = sig_for(origin, orig_name);
+    let ty = origin.exported_types.get(orig_name).cloned();
+    if let Some(sig) = sig {
+        out.fns.insert(local.to_string(), sig);
+    }
+    if let Some(ty) = ty.clone() {
+        out.types.insert(local.to_string(), ty);
+    }
+    // Val fallback fires only when neither slot above accepted the
+    // name. Sequenced as separate `Option` checks so the early
+    // `return` doesn't reduce to a `||` operator (pass-1's
+    // duplicate-name rules make the only-one-true case unreachable,
+    // so a `||`↔`&&` swap would be observationally equivalent).
+    if origin.exported_fns.contains(orig_name) {
+        return;
+    }
+    if ty.is_some() {
+        return;
+    }
+    if let Some(val_ty) = val_type_for(origin, orig_name) {
+        out.vals.insert(local.to_string(), val_ty);
+    }
+}
+
+fn sig_for(module: &CheckedModule, name: &str) -> Option<FnSig> {
     if !module.exported_fns.contains(name) {
         return None;
     }
-    // Locate the FnDecl and rebuild a FnSig. (FnSig isn't stored on
-    // CheckedModule yet — we recompute it from the AST since a fn
-    // declaration uniquely determines its signature.)
+    // Locate the FnDecl or struct ctor and rebuild a FnSig. (FnSig
+    // isn't stored on CheckedModule — we recompute it from the AST,
+    // since both fn and struct declarations uniquely determine their
+    // signatures.)
     for item in &module.program.items {
-        if let Item::Fn(f) = item
-            && f.name.node == name
-        {
-            return Some(sig_from_fn_decl(f));
+        match item {
+            Item::Fn(f) if f.name.node == name => return Some(sig_from_fn_decl(f)),
+            Item::Struct(s) if s.name.node == name => return Some(sig_from_struct_decl(s)),
+            _ => {}
         }
     }
     None
 }
 
-fn sig_from_fn_decl(f: &FnDecl) -> keron_lang::FnSig {
-    keron_lang::FnSig {
+fn sig_from_fn_decl(f: &FnDecl) -> FnSig {
+    FnSig {
         params: f
             .params
             .iter()
-            .map(|p| keron_lang::ParamSig {
+            .map(|p| ParamSig {
                 name: p.name.node.clone(),
                 ty: p.ty.node.clone(),
                 has_default: p.default.is_some(),
             })
             .collect(),
         return_type: f.return_type.node.clone(),
+    }
+}
+
+/// Synthesize a [`FnSig`] for a struct's implicit constructor. Each
+/// declared field becomes a positional parameter (no defaults) in
+/// declared order; the return type is the [`Type::Struct`] itself.
+fn sig_from_struct_decl(s: &StructDecl) -> FnSig {
+    FnSig {
+        params: s
+            .fields
+            .iter()
+            .map(|f| ParamSig {
+                name: f.name.node.clone(),
+                ty: f.ty.node.clone(),
+                has_default: false,
+            })
+            .collect(),
+        return_type: Type::Struct {
+            name: s.name.node.clone(),
+            fields: s
+                .fields
+                .iter()
+                .map(|f| (f.name.node.clone(), f.ty.node.clone()))
+                .collect(),
+        },
     }
 }
 
@@ -545,9 +611,18 @@ fn val_type_for(module: &CheckedModule, name: &str) -> Option<Type> {
     None
 }
 
-fn collect_exports(program: &Program) -> (HashSet<String>, HashSet<String>) {
+/// Collect every exportable name from a module:
+/// - top-level `fn` decls AND struct constructors → `exported_fns`,
+/// - top-level annotated `val` decls → `exported_vals`,
+/// - `struct` and `type` decls → `exported_types`.
+///
+/// A struct shows up in both `exported_fns` (as its constructor) and
+/// `exported_types` (as its `Type::Struct{…}`), since importers may
+/// want to use either or both.
+fn collect_exports(program: &Program) -> (HashSet<String>, HashSet<String>, HashMap<String, Type>) {
     let mut fns = HashSet::new();
     let mut vals = HashSet::new();
+    let mut types: HashMap<String, Type> = HashMap::new();
     for item in &program.items {
         match item {
             Item::Fn(f) => {
@@ -556,10 +631,33 @@ fn collect_exports(program: &Program) -> (HashSet<String>, HashSet<String>) {
             Item::Val(v) => {
                 vals.insert(v.name.node.clone());
             }
+            Item::Struct(s) => {
+                fns.insert(s.name.node.clone());
+                types.insert(
+                    s.name.node.clone(),
+                    Type::Struct {
+                        name: s.name.node.clone(),
+                        fields: s
+                            .fields
+                            .iter()
+                            .map(|f| (f.name.node.clone(), f.ty.node.clone()))
+                            .collect(),
+                    },
+                );
+            }
+            Item::TypeAlias(t) => {
+                types.insert(
+                    t.name.node.clone(),
+                    Type::StringUnion {
+                        name: t.name.node.clone(),
+                        variants: t.variants.iter().map(|v| v.node.clone()).collect(),
+                    },
+                );
+            }
             _ => {}
         }
     }
-    (fns, vals)
+    (fns, vals, types)
 }
 
 #[cfg(test)]
@@ -675,7 +773,7 @@ mod tests {
     #[test]
     fn collect_exports_separates_fns_and_vals() {
         let prog = parse("fn f(): Int { 1 }\nval v: Int = 1\n").unwrap();
-        let (fns, vals) = collect_exports(&prog);
+        let (fns, vals, _types) = collect_exports(&prog);
         assert!(fns.contains("f"));
         assert!(vals.contains("v"));
         assert!(!fns.contains("v"));
@@ -685,7 +783,7 @@ mod tests {
     #[test]
     fn val_type_for_returns_annotation() {
         let prog = parse("val s: String = \"hi\"\nval n: Int = 0\n").unwrap();
-        let (fns, vals) = collect_exports(&prog);
+        let (fns, vals, _types) = collect_exports(&prog);
         let module = CheckedModule {
             id: ModuleId::File(PathBuf::from("/val-type-for-test.keron")),
             source: String::new(),
@@ -703,7 +801,7 @@ mod tests {
     #[test]
     fn val_type_for_skips_unannotated_vals() {
         let prog = parse("val v = 5\n").unwrap();
-        let (fns, vals) = collect_exports(&prog);
+        let (fns, vals, _types) = collect_exports(&prog);
         let module = CheckedModule {
             id: ModuleId::File(PathBuf::from("/val-type-for-test.keron")),
             source: String::new(),
@@ -715,5 +813,106 @@ mod tests {
         };
         // `val_type_for` requires an explicit annotation today.
         assert_eq!(val_type_for(&module, "v"), None);
+    }
+
+    #[test]
+    fn collect_exports_includes_struct_in_fns_and_types() {
+        // A `struct` declaration exports under both namespaces:
+        // `fns` (for construction calls) and `types` (for type
+        // annotations). Dropping either match arm in `collect_exports`
+        // surfaces here.
+        let prog = parse("struct Point { x: Int, y: Int }\n").unwrap();
+        let (fns, vals, types) = collect_exports(&prog);
+        assert!(fns.contains("Point"));
+        assert!(types.contains_key("Point"));
+        assert!(!vals.contains("Point"));
+        let Type::Struct {
+            name,
+            fields: f_fields,
+        } = types.get("Point").unwrap()
+        else {
+            panic!("expected Type::Struct, got {:?}", types.get("Point"));
+        };
+        assert_eq!(name, "Point");
+        assert_eq!(f_fields.len(), 2);
+        assert_eq!(f_fields[0].0, "x");
+        assert_eq!(f_fields[1].0, "y");
+    }
+
+    #[test]
+    fn collect_exports_includes_type_alias_in_types_only() {
+        // `type Color = "..."` exports a `Type::StringUnion` under
+        // `types` and nothing under `fns`/`vals`. Deleting the
+        // TypeAlias arm in `collect_exports` would drop this entry.
+        let prog = parse("type Color = \"red\" | \"green\"\n").unwrap();
+        let (fns, vals, types) = collect_exports(&prog);
+        assert!(!fns.contains("Color"));
+        assert!(!vals.contains("Color"));
+        let Type::StringUnion { name, variants } = types.get("Color").unwrap() else {
+            panic!("expected Type::StringUnion, got {:?}", types.get("Color"));
+        };
+        assert_eq!(name, "Color");
+        assert_eq!(variants, &vec!["red".to_string(), "green".to_string()]);
+    }
+
+    #[test]
+    fn sig_for_distinguishes_fn_and_struct_by_exact_name() {
+        // `sig_for` is an `if exported_fns.contains(name)` gate
+        // followed by a name-matched walk of the AST. The name match
+        // must use exact equality on both the `Fn` and `Struct` arms;
+        // a guard mutated to `true` would hand back the *first* item
+        // of the right kind regardless of the requested name.
+        let prog = parse(
+            "fn other(): Int { 1 }\n\
+             fn only(): String { \"x\" }\n\
+             struct Tag { v: Int }\n\
+             struct Other { n: Int }\n",
+        )
+        .unwrap();
+        let (fns, vals, types) = collect_exports(&prog);
+        let module = CheckedModule {
+            id: ModuleId::File(PathBuf::from("/sig-for-test.keron")),
+            source: String::new(),
+            program: prog,
+            imports: HashMap::new(),
+            exported_fns: fns,
+            exported_vals: vals,
+            exported_types: types,
+        };
+        // An exact-name match on `only` must yield String, not the
+        // earlier-encountered `other` fn's Int.
+        let sig = sig_for(&module, "only").expect("`only` is exported");
+        assert_eq!(sig.return_type, Type::String);
+
+        // Same idea for structs: `Tag` must match `Tag`, not `Other`.
+        // We probe BOTH names — the first declared struct (`Tag`) and
+        // a later one (`Other`) — so a guard mutated to `true` (which
+        // would always return the first struct in source order) is
+        // visible: `sig_for("Other")` would otherwise hand back
+        // `Tag`'s field set.
+        let sig = sig_for(&module, "Tag").expect("`Tag` is exported");
+        let Type::Struct {
+            name,
+            fields: tag_fields,
+        } = sig.return_type
+        else {
+            panic!("expected struct return type");
+        };
+        assert_eq!(name, "Tag");
+        assert_eq!(tag_fields[0].0, "v");
+
+        let sig = sig_for(&module, "Other").expect("`Other` is exported");
+        let Type::Struct {
+            name,
+            fields: other_fields,
+        } = sig.return_type
+        else {
+            panic!("expected struct return type");
+        };
+        assert_eq!(name, "Other");
+        assert_eq!(other_fields[0].0, "n");
+
+        // Truly missing names return None.
+        assert!(sig_for(&module, "nonexistent").is_none());
     }
 }

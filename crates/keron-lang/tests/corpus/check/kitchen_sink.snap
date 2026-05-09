@@ -4286,10 +4286,1888 @@ Program {
                             ),
                         ],
                         trailing: None,
-                        span: 7774..7792,
+                        span: 7774..7989,
                     },
                 },
-                span: 7749..7792,
+                span: 7749..7989,
+            },
+        ),
+        Struct(
+            StructDecl {
+                name: Spanned {
+                    node: "Host",
+                    span: 7996..8000,
+                },
+                fields: [
+                    StructField {
+                        name: Spanned {
+                            node: "name",
+                            span: 8005..8009,
+                        },
+                        ty: Spanned {
+                            node: String,
+                            span: 8011..8017,
+                        },
+                        span: 8005..8017,
+                    },
+                    StructField {
+                        name: Spanned {
+                            node: "port",
+                            span: 8021..8025,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 8027..8030,
+                        },
+                        span: 8021..8030,
+                    },
+                    StructField {
+                        name: Spanned {
+                            node: "tls",
+                            span: 8034..8037,
+                        },
+                        ty: Spanned {
+                            node: Boolean,
+                            span: 8039..8046,
+                        },
+                        span: 8034..8046,
+                    },
+                ],
+                span: 7989..8051,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "origin_host",
+                    span: 8055..8066,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Struct {
+                            name: "Host",
+                            fields: [
+                                (
+                                    "name",
+                                    String,
+                                ),
+                                (
+                                    "port",
+                                    Int,
+                                ),
+                                (
+                                    "tls",
+                                    Boolean,
+                                ),
+                            ],
+                        },
+                        span: 8068..8072,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "Host",
+                            span: 8075..8079,
+                        },
+                        args: [
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "name",
+                                        span: 8080..8084,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "alpha.local",
+                                        ),
+                                    ),
+                                    span: 8087..8100,
+                                },
+                                span: 8080..8100,
+                            },
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "port",
+                                        span: 8102..8106,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            22,
+                                        ),
+                                    ),
+                                    span: 8109..8111,
+                                },
+                                span: 8102..8111,
+                            },
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "tls",
+                                        span: 8113..8116,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        Boolean(
+                                            true,
+                                        ),
+                                    ),
+                                    span: 8119..8123,
+                                },
+                                span: 8113..8123,
+                            },
+                        ],
+                    },
+                    span: 8075..8125,
+                },
+                span: 8051..8125,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "mirror_host",
+                    span: 8129..8140,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Struct {
+                            name: "Host",
+                            fields: [
+                                (
+                                    "name",
+                                    String,
+                                ),
+                                (
+                                    "port",
+                                    Int,
+                                ),
+                                (
+                                    "tls",
+                                    Boolean,
+                                ),
+                            ],
+                        },
+                        span: 8142..8146,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "Host",
+                            span: 8149..8153,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "beta.local",
+                                        ),
+                                    ),
+                                    span: 8154..8166,
+                                },
+                                span: 8154..8166,
+                            },
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            22,
+                                        ),
+                                    ),
+                                    span: 8168..8170,
+                                },
+                                span: 8168..8170,
+                            },
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "tls",
+                                        span: 8172..8175,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        Boolean(
+                                            false,
+                                        ),
+                                    ),
+                                    span: 8178..8183,
+                                },
+                                span: 8172..8183,
+                            },
+                        ],
+                    },
+                    span: 8149..8185,
+                },
+                span: 8125..8185,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "tagged_host",
+                    span: 8189..8200,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Struct {
+                            name: "Host",
+                            fields: [
+                                (
+                                    "name",
+                                    String,
+                                ),
+                                (
+                                    "port",
+                                    Int,
+                                ),
+                                (
+                                    "tls",
+                                    Boolean,
+                                ),
+                            ],
+                        },
+                        span: 8202..8206,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "Host",
+                            span: 8209..8213,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "gamma.local",
+                                        ),
+                                    ),
+                                    span: 8214..8227,
+                                },
+                                span: 8214..8227,
+                            },
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "port",
+                                        span: 8229..8233,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            443,
+                                        ),
+                                    ),
+                                    span: 8236..8239,
+                                },
+                                span: 8229..8239,
+                            },
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "tls",
+                                        span: 8241..8244,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        Boolean(
+                                            true,
+                                        ),
+                                    ),
+                                    span: 8247..8251,
+                                },
+                                span: 8241..8251,
+                            },
+                        ],
+                    },
+                    span: 8209..8377,
+                },
+                span: 8185..8377,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "origin_port",
+                    span: 8381..8392,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Int,
+                        span: 8394..8397,
+                    },
+                ),
+                value: Spanned {
+                    node: Field {
+                        receiver: Spanned {
+                            node: Var(
+                                "origin_host",
+                            ),
+                            span: 8400..8411,
+                        },
+                        field: Spanned {
+                            node: "port",
+                            span: 8412..8416,
+                        },
+                    },
+                    span: 8400..8416,
+                },
+                span: 8377..8416,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "origin_label",
+                    span: 8421..8433,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 8435..8441,
+                    },
+                ),
+                value: Spanned {
+                    node: Interpolation(
+                        [
+                            Expr(
+                                Spanned {
+                                    node: Field {
+                                        receiver: Spanned {
+                                            node: Var(
+                                                "origin_host",
+                                            ),
+                                            span: 8447..8458,
+                                        },
+                                        field: Spanned {
+                                            node: "name",
+                                            span: 8459..8463,
+                                        },
+                                    },
+                                    span: 8447..8463,
+                                },
+                            ),
+                            Text(
+                                ":",
+                            ),
+                            Expr(
+                                Spanned {
+                                    node: Field {
+                                        receiver: Spanned {
+                                            node: Var(
+                                                "origin_host",
+                                            ),
+                                            span: 8467..8478,
+                                        },
+                                        field: Spanned {
+                                            node: "port",
+                                            span: 8479..8483,
+                                        },
+                                    },
+                                    span: 8467..8483,
+                                },
+                            ),
+                        ],
+                    ),
+                    span: 8444..8485,
+                },
+                span: 8417..8555,
+            },
+        ),
+        Struct(
+            StructDecl {
+                name: Spanned {
+                    node: "Endpoint",
+                    span: 8562..8570,
+                },
+                fields: [
+                    StructField {
+                        name: Spanned {
+                            node: "host",
+                            span: 8575..8579,
+                        },
+                        ty: Spanned {
+                            node: Struct {
+                                name: "Host",
+                                fields: [
+                                    (
+                                        "name",
+                                        String,
+                                    ),
+                                    (
+                                        "port",
+                                        Int,
+                                    ),
+                                    (
+                                        "tls",
+                                        Boolean,
+                                    ),
+                                ],
+                            },
+                            span: 8581..8585,
+                        },
+                        span: 8575..8585,
+                    },
+                    StructField {
+                        name: Spanned {
+                            node: "path",
+                            span: 8589..8593,
+                        },
+                        ty: Spanned {
+                            node: String,
+                            span: 8595..8601,
+                        },
+                        span: 8589..8601,
+                    },
+                ],
+                span: 8555..8606,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "ep",
+                    span: 8610..8612,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Struct {
+                            name: "Endpoint",
+                            fields: [
+                                (
+                                    "host",
+                                    Struct {
+                                        name: "Host",
+                                        fields: [
+                                            (
+                                                "name",
+                                                String,
+                                            ),
+                                            (
+                                                "port",
+                                                Int,
+                                            ),
+                                            (
+                                                "tls",
+                                                Boolean,
+                                            ),
+                                        ],
+                                    },
+                                ),
+                                (
+                                    "path",
+                                    String,
+                                ),
+                            ],
+                        },
+                        span: 8614..8622,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "Endpoint",
+                            span: 8625..8633,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Var(
+                                        "origin_host",
+                                    ),
+                                    span: 8634..8645,
+                                },
+                                span: 8634..8645,
+                            },
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "/healthz",
+                                        ),
+                                    ),
+                                    span: 8647..8657,
+                                },
+                                span: 8647..8657,
+                            },
+                        ],
+                    },
+                    span: 8625..8659,
+                },
+                span: 8606..8659,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "ep_url",
+                    span: 8663..8669,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 8671..8677,
+                    },
+                ),
+                value: Spanned {
+                    node: Interpolation(
+                        [
+                            Text(
+                                "https://",
+                            ),
+                            Expr(
+                                Spanned {
+                                    node: Field {
+                                        receiver: Spanned {
+                                            node: Field {
+                                                receiver: Spanned {
+                                                    node: Var(
+                                                        "ep",
+                                                    ),
+                                                    span: 8691..8693,
+                                                },
+                                                field: Spanned {
+                                                    node: "host",
+                                                    span: 8694..8698,
+                                                },
+                                            },
+                                            span: 8691..8698,
+                                        },
+                                        field: Spanned {
+                                            node: "name",
+                                            span: 8699..8703,
+                                        },
+                                    },
+                                    span: 8691..8703,
+                                },
+                            ),
+                            Text(
+                                ":",
+                            ),
+                            Expr(
+                                Spanned {
+                                    node: Field {
+                                        receiver: Spanned {
+                                            node: Field {
+                                                receiver: Spanned {
+                                                    node: Var(
+                                                        "ep",
+                                                    ),
+                                                    span: 8707..8709,
+                                                },
+                                                field: Spanned {
+                                                    node: "host",
+                                                    span: 8710..8714,
+                                                },
+                                            },
+                                            span: 8707..8714,
+                                        },
+                                        field: Spanned {
+                                            node: "port",
+                                            span: 8715..8719,
+                                        },
+                                    },
+                                    span: 8707..8719,
+                                },
+                            ),
+                            Expr(
+                                Spanned {
+                                    node: Field {
+                                        receiver: Spanned {
+                                            node: Var(
+                                                "ep",
+                                            ),
+                                            span: 8722..8724,
+                                        },
+                                        field: Spanned {
+                                            node: "path",
+                                            span: 8725..8729,
+                                        },
+                                    },
+                                    span: 8722..8729,
+                                },
+                            ),
+                        ],
+                    ),
+                    span: 8680..8731,
+                },
+                span: 8659..9055,
+            },
+        ),
+        TypeAlias(
+            TypeAliasDecl {
+                name: Spanned {
+                    node: "Mode",
+                    span: 9060..9064,
+                },
+                variants: [
+                    Spanned {
+                        node: "on",
+                        span: 9067..9071,
+                    },
+                    Spanned {
+                        node: "off",
+                        span: 9074..9079,
+                    },
+                    Spanned {
+                        node: "auto",
+                        span: 9082..9088,
+                    },
+                ],
+                span: 9055..9089,
+            },
+        ),
+        TypeAlias(
+            TypeAliasDecl {
+                name: Spanned {
+                    node: "LogLevel",
+                    span: 9094..9102,
+                },
+                variants: [
+                    Spanned {
+                        node: "debug",
+                        span: 9105..9112,
+                    },
+                    Spanned {
+                        node: "info",
+                        span: 9115..9121,
+                    },
+                    Spanned {
+                        node: "warn",
+                        span: 9124..9130,
+                    },
+                    Spanned {
+                        node: "error",
+                        span: 9133..9140,
+                    },
+                ],
+                span: 9089..9142,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "current_mode",
+                    span: 9146..9158,
+                },
+                ty: Some(
+                    Spanned {
+                        node: StringUnion {
+                            name: "Mode",
+                            variants: [
+                                "on",
+                                "off",
+                                "auto",
+                            ],
+                        },
+                        span: 9160..9164,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        String(
+                            "auto",
+                        ),
+                    ),
+                    span: 9167..9173,
+                },
+                span: 9142..9174,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "current_level",
+                    span: 9178..9191,
+                },
+                ty: Some(
+                    Spanned {
+                        node: StringUnion {
+                            name: "LogLevel",
+                            variants: [
+                                "debug",
+                                "info",
+                                "warn",
+                                "error",
+                            ],
+                        },
+                        span: 9193..9201,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        String(
+                            "info",
+                        ),
+                    ),
+                    span: 9204..9210,
+                },
+                span: 9174..9283,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "active",
+                    span: 9287..9293,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 9295..9302,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Eq,
+                        lhs: Spanned {
+                            node: Var(
+                                "current_mode",
+                            ),
+                            span: 9305..9317,
+                        },
+                        rhs: Spanned {
+                            node: Literal(
+                                String(
+                                    "on",
+                                ),
+                            ),
+                            span: 9321..9325,
+                        },
+                    },
+                    span: 9305..9325,
+                },
+                span: 9283..9326,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "verbose",
+                    span: 9330..9337,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 9339..9345,
+                    },
+                ),
+                value: Spanned {
+                    node: If {
+                        cond: Spanned {
+                            node: Binary {
+                                op: Eq,
+                                lhs: Spanned {
+                                    node: Var(
+                                        "current_level",
+                                    ),
+                                    span: 9351..9364,
+                                },
+                                rhs: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "debug",
+                                        ),
+                                    ),
+                                    span: 9368..9375,
+                                },
+                            },
+                            span: 9351..9375,
+                        },
+                        then_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: Literal(
+                                        String(
+                                            "traces enabled",
+                                        ),
+                                    ),
+                                    span: 9380..9396,
+                                },
+                            ),
+                            span: 9376..9399,
+                        },
+                        else_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: Literal(
+                                        String(
+                                            "default",
+                                        ),
+                                    ),
+                                    span: 9408..9417,
+                                },
+                            ),
+                            span: 9404..9678,
+                        },
+                    },
+                    span: 9348..9678,
+                },
+                span: 9326..9678,
+            },
+        ),
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "level_label",
+                    span: 9681..9692,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "level",
+                            span: 9693..9698,
+                        },
+                        ty: Spanned {
+                            node: StringUnion {
+                                name: "LogLevel",
+                                variants: [
+                                    "debug",
+                                    "info",
+                                    "warn",
+                                    "error",
+                                ],
+                            },
+                            span: 9700..9708,
+                        },
+                        default: None,
+                        span: 9693..9708,
+                    },
+                ],
+                return_type: Spanned {
+                    node: String,
+                    span: 9711..9717,
+                },
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Match {
+                                scrutinee: Spanned {
+                                    node: Var(
+                                        "level",
+                                    ),
+                                    span: 9728..9733,
+                                },
+                                arms: [
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Lit(
+                                                String(
+                                                    "debug",
+                                                ),
+                                            ),
+                                            span: 9740..9747,
+                                        },
+                                        body: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "verbose",
+                                                ),
+                                            ),
+                                            span: 9751..9760,
+                                        },
+                                        span: 9740..9760,
+                                    },
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Lit(
+                                                String(
+                                                    "info",
+                                                ),
+                                            ),
+                                            span: 9766..9772,
+                                        },
+                                        body: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "normal",
+                                                ),
+                                            ),
+                                            span: 9777..9785,
+                                        },
+                                        span: 9766..9785,
+                                    },
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Lit(
+                                                String(
+                                                    "warn",
+                                                ),
+                                            ),
+                                            span: 9791..9797,
+                                        },
+                                        body: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "elevated",
+                                                ),
+                                            ),
+                                            span: 9802..9812,
+                                        },
+                                        span: 9791..9812,
+                                    },
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Lit(
+                                                String(
+                                                    "error",
+                                                ),
+                                            ),
+                                            span: 9818..9825,
+                                        },
+                                        body: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "critical",
+                                                ),
+                                            ),
+                                            span: 9829..9839,
+                                        },
+                                        span: 9818..9839,
+                                    },
+                                ],
+                            },
+                            span: 9722..9845,
+                        },
+                    ),
+                    span: 9718..9848,
+                },
+                span: 9678..9848,
+                intrinsic: None,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "level_summary",
+                    span: 9852..9865,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 9867..9873,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "level_label",
+                            span: 9876..9887,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Var(
+                                        "current_level",
+                                    ),
+                                    span: 9888..9901,
+                                },
+                                span: 9888..9901,
+                            },
+                        ],
+                    },
+                    span: 9876..9971,
+                },
+                span: 9848..9971,
+            },
+        ),
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "nicknamed",
+                    span: 9974..9983,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "s",
+                            span: 9984..9985,
+                        },
+                        ty: Spanned {
+                            node: String,
+                            span: 9987..9993,
+                        },
+                        default: None,
+                        span: 9984..9993,
+                    },
+                ],
+                return_type: Spanned {
+                    node: String,
+                    span: 9996..10002,
+                },
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Match {
+                                scrutinee: Spanned {
+                                    node: Var(
+                                        "s",
+                                    ),
+                                    span: 10013..10014,
+                                },
+                                arms: [
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Lit(
+                                                String(
+                                                    "alpha",
+                                                ),
+                                            ),
+                                            span: 10021..10028,
+                                        },
+                                        body: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "Alpha host",
+                                                ),
+                                            ),
+                                            span: 10032..10044,
+                                        },
+                                        span: 10021..10044,
+                                    },
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Lit(
+                                                String(
+                                                    "beta",
+                                                ),
+                                            ),
+                                            span: 10050..10056,
+                                        },
+                                        body: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "Beta host",
+                                                ),
+                                            ),
+                                            span: 10061..10072,
+                                        },
+                                        span: 10050..10072,
+                                    },
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Bind(
+                                                "other",
+                                            ),
+                                            span: 10078..10086,
+                                        },
+                                        body: Spanned {
+                                            node: Interpolation(
+                                                [
+                                                    Text(
+                                                        "unknown: ",
+                                                    ),
+                                                    Expr(
+                                                        Spanned {
+                                                            node: Var(
+                                                                "other",
+                                                            ),
+                                                            span: 10101..10106,
+                                                        },
+                                                    ),
+                                                ],
+                                            ),
+                                            span: 10089..10108,
+                                        },
+                                        span: 10078..10108,
+                                    },
+                                ],
+                            },
+                            span: 10007..10114,
+                        },
+                    ),
+                    span: 10003..10117,
+                },
+                span: 9971..10117,
+                intrinsic: None,
+            },
+        ),
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "classify_port",
+                    span: 10120..10133,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "p",
+                            span: 10134..10135,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 10137..10140,
+                        },
+                        default: None,
+                        span: 10134..10140,
+                    },
+                ],
+                return_type: Spanned {
+                    node: String,
+                    span: 10143..10149,
+                },
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Match {
+                                scrutinee: Spanned {
+                                    node: Var(
+                                        "p",
+                                    ),
+                                    span: 10160..10161,
+                                },
+                                arms: [
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Lit(
+                                                Int(
+                                                    22,
+                                                ),
+                                            ),
+                                            span: 10168..10170,
+                                        },
+                                        body: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "ssh",
+                                                ),
+                                            ),
+                                            span: 10175..10180,
+                                        },
+                                        span: 10168..10180,
+                                    },
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Lit(
+                                                Int(
+                                                    80,
+                                                ),
+                                            ),
+                                            span: 10186..10188,
+                                        },
+                                        body: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "http",
+                                                ),
+                                            ),
+                                            span: 10193..10199,
+                                        },
+                                        span: 10186..10199,
+                                    },
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Lit(
+                                                Int(
+                                                    443,
+                                                ),
+                                            ),
+                                            span: 10205..10208,
+                                        },
+                                        body: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "https",
+                                                ),
+                                            ),
+                                            span: 10212..10219,
+                                        },
+                                        span: 10205..10219,
+                                    },
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Wildcard,
+                                            span: 10225..10229,
+                                        },
+                                        body: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "other",
+                                                ),
+                                            ),
+                                            span: 10232..10239,
+                                        },
+                                        span: 10225..10239,
+                                    },
+                                ],
+                            },
+                            span: 10154..10245,
+                        },
+                    ),
+                    span: 10150..10248,
+                },
+                span: 10117..10248,
+                intrinsic: None,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "origin_role",
+                    span: 10252..10263,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 10265..10271,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "classify_port",
+                            span: 10274..10287,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Field {
+                                        receiver: Spanned {
+                                            node: Var(
+                                                "origin_host",
+                                            ),
+                                            span: 10288..10299,
+                                        },
+                                        field: Spanned {
+                                            node: "port",
+                                            span: 10300..10304,
+                                        },
+                                    },
+                                    span: 10288..10304,
+                                },
+                                span: 10288..10304,
+                            },
+                        ],
+                    },
+                    span: 10274..10306,
+                },
+                span: 10248..10306,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "origin_nick",
+                    span: 10310..10321,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 10323..10329,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "nicknamed",
+                            span: 10332..10341,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Field {
+                                        receiver: Spanned {
+                                            node: Var(
+                                                "origin_host",
+                                            ),
+                                            span: 10342..10353,
+                                        },
+                                        field: Spanned {
+                                            node: "name",
+                                            span: 10354..10358,
+                                        },
+                                    },
+                                    span: 10342..10358,
+                                },
+                                span: 10342..10358,
+                            },
+                        ],
+                    },
+                    span: 10332..10482,
+                },
+                span: 10306..10482,
+            },
+        ),
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "host_kind",
+                    span: 10485..10494,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "h",
+                            span: 10495..10496,
+                        },
+                        ty: Spanned {
+                            node: Struct {
+                                name: "Host",
+                                fields: [
+                                    (
+                                        "name",
+                                        String,
+                                    ),
+                                    (
+                                        "port",
+                                        Int,
+                                    ),
+                                    (
+                                        "tls",
+                                        Boolean,
+                                    ),
+                                ],
+                            },
+                            span: 10498..10502,
+                        },
+                        default: None,
+                        span: 10495..10502,
+                    },
+                ],
+                return_type: Spanned {
+                    node: String,
+                    span: 10505..10511,
+                },
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Match {
+                                scrutinee: Spanned {
+                                    node: Var(
+                                        "h",
+                                    ),
+                                    span: 10522..10523,
+                                },
+                                arms: [
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Struct {
+                                                name: Spanned {
+                                                    node: "Host",
+                                                    span: 10530..10534,
+                                                },
+                                                fields: [
+                                                    StructPatternField {
+                                                        name: Spanned {
+                                                            node: "name",
+                                                            span: 10537..10541,
+                                                        },
+                                                        pattern: Some(
+                                                            Spanned {
+                                                                node: Lit(
+                                                                    String(
+                                                                        "alpha.local",
+                                                                    ),
+                                                                ),
+                                                                span: 10543..10556,
+                                                            },
+                                                        ),
+                                                        span: 10537..10556,
+                                                    },
+                                                    StructPatternField {
+                                                        name: Spanned {
+                                                            node: "port",
+                                                            span: 10558..10562,
+                                                        },
+                                                        pattern: Some(
+                                                            Spanned {
+                                                                node: Lit(
+                                                                    Int(
+                                                                        22,
+                                                                    ),
+                                                                ),
+                                                                span: 10564..10566,
+                                                            },
+                                                        ),
+                                                        span: 10558..10566,
+                                                    },
+                                                    StructPatternField {
+                                                        name: Spanned {
+                                                            node: "tls",
+                                                            span: 10568..10571,
+                                                        },
+                                                        pattern: Some(
+                                                            Spanned {
+                                                                node: Lit(
+                                                                    Boolean(
+                                                                        true,
+                                                                    ),
+                                                                ),
+                                                                span: 10573..10577,
+                                                            },
+                                                        ),
+                                                        span: 10568..10578,
+                                                    },
+                                                ],
+                                            },
+                                            span: 10530..10582,
+                                        },
+                                        body: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "primary-ssh",
+                                                ),
+                                            ),
+                                            span: 10585..10598,
+                                        },
+                                        span: 10530..10598,
+                                    },
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Struct {
+                                                name: Spanned {
+                                                    node: "Host",
+                                                    span: 10604..10608,
+                                                },
+                                                fields: [
+                                                    StructPatternField {
+                                                        name: Spanned {
+                                                            node: "name",
+                                                            span: 10611..10615,
+                                                        },
+                                                        pattern: None,
+                                                        span: 10611..10615,
+                                                    },
+                                                    StructPatternField {
+                                                        name: Spanned {
+                                                            node: "port",
+                                                            span: 10617..10621,
+                                                        },
+                                                        pattern: Some(
+                                                            Spanned {
+                                                                node: Lit(
+                                                                    Int(
+                                                                        22,
+                                                                    ),
+                                                                ),
+                                                                span: 10623..10625,
+                                                            },
+                                                        ),
+                                                        span: 10617..10625,
+                                                    },
+                                                    StructPatternField {
+                                                        name: Spanned {
+                                                            node: "tls",
+                                                            span: 10627..10630,
+                                                        },
+                                                        pattern: None,
+                                                        span: 10627..10631,
+                                                    },
+                                                ],
+                                            },
+                                            span: 10604..10633,
+                                        },
+                                        body: Spanned {
+                                            node: Interpolation(
+                                                [
+                                                    Text(
+                                                        "ssh-",
+                                                    ),
+                                                    Expr(
+                                                        Spanned {
+                                                            node: Var(
+                                                                "name",
+                                                            ),
+                                                            span: 10643..10647,
+                                                        },
+                                                    ),
+                                                    Text(
+                                                        "-tls=",
+                                                    ),
+                                                    Expr(
+                                                        Spanned {
+                                                            node: Var(
+                                                                "tls",
+                                                            ),
+                                                            span: 10655..10658,
+                                                        },
+                                                    ),
+                                                ],
+                                            ),
+                                            span: 10636..10660,
+                                        },
+                                        span: 10604..10660,
+                                    },
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Struct {
+                                                name: Spanned {
+                                                    node: "Host",
+                                                    span: 10666..10670,
+                                                },
+                                                fields: [
+                                                    StructPatternField {
+                                                        name: Spanned {
+                                                            node: "name",
+                                                            span: 10673..10677,
+                                                        },
+                                                        pattern: None,
+                                                        span: 10673..10677,
+                                                    },
+                                                    StructPatternField {
+                                                        name: Spanned {
+                                                            node: "port",
+                                                            span: 10679..10683,
+                                                        },
+                                                        pattern: None,
+                                                        span: 10679..10683,
+                                                    },
+                                                    StructPatternField {
+                                                        name: Spanned {
+                                                            node: "tls",
+                                                            span: 10685..10688,
+                                                        },
+                                                        pattern: None,
+                                                        span: 10685..10689,
+                                                    },
+                                                ],
+                                            },
+                                            span: 10666..10695,
+                                        },
+                                        body: Spanned {
+                                            node: Interpolation(
+                                                [
+                                                    Expr(
+                                                        Spanned {
+                                                            node: Var(
+                                                                "name",
+                                                            ),
+                                                            span: 10701..10705,
+                                                        },
+                                                    ),
+                                                    Text(
+                                                        ":",
+                                                    ),
+                                                    Expr(
+                                                        Spanned {
+                                                            node: Var(
+                                                                "port",
+                                                            ),
+                                                            span: 10709..10713,
+                                                        },
+                                                    ),
+                                                    Text(
+                                                        "/tls=",
+                                                    ),
+                                                    Expr(
+                                                        Spanned {
+                                                            node: Var(
+                                                                "tls",
+                                                            ),
+                                                            span: 10721..10724,
+                                                        },
+                                                    ),
+                                                ],
+                                            ),
+                                            span: 10698..10726,
+                                        },
+                                        span: 10666..10726,
+                                    },
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Wildcard,
+                                            span: 10732..10734,
+                                        },
+                                        body: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "unknown",
+                                                ),
+                                            ),
+                                            span: 10737..10746,
+                                        },
+                                        span: 10732..10746,
+                                    },
+                                ],
+                            },
+                            span: 10516..10752,
+                        },
+                    ),
+                    span: 10512..10755,
+                },
+                span: 10482..10755,
+                intrinsic: None,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "origin_kind",
+                    span: 10759..10770,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 10772..10778,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "host_kind",
+                            span: 10781..10790,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Var(
+                                        "origin_host",
+                                    ),
+                                    span: 10791..10802,
+                                },
+                                span: 10791..10802,
+                            },
+                        ],
+                    },
+                    span: 10781..10804,
+                },
+                span: 10755..10804,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "mirror_kind",
+                    span: 10808..10819,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 10821..10827,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "host_kind",
+                            span: 10830..10839,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Var(
+                                        "mirror_host",
+                                    ),
+                                    span: 10840..10851,
+                                },
+                                span: 10840..10851,
+                            },
+                        ],
+                    },
+                    span: 10830..10975,
+                },
+                span: 10804..10975,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "mode_marker",
+                    span: 10979..10990,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 10992..10998,
+                    },
+                ),
+                value: Spanned {
+                    node: Interpolation(
+                        [
+                            Text(
+                                "mode-",
+                            ),
+                            Expr(
+                                Spanned {
+                                    node: Match {
+                                        scrutinee: Spanned {
+                                            node: Var(
+                                                "current_mode",
+                                            ),
+                                            span: 11015..11027,
+                                        },
+                                        arms: [
+                                            MatchArm {
+                                                pattern: Spanned {
+                                                    node: Lit(
+                                                        String(
+                                                            "on",
+                                                        ),
+                                                    ),
+                                                    span: 11032..11036,
+                                                },
+                                                body: Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "active",
+                                                        ),
+                                                    ),
+                                                    span: 11042..11050,
+                                                },
+                                                span: 11032..11050,
+                                            },
+                                            MatchArm {
+                                                pattern: Spanned {
+                                                    node: Lit(
+                                                        String(
+                                                            "off",
+                                                        ),
+                                                    ),
+                                                    span: 11054..11059,
+                                                },
+                                                body: Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "idle",
+                                                        ),
+                                                    ),
+                                                    span: 11064..11070,
+                                                },
+                                                span: 11054..11070,
+                                            },
+                                            MatchArm {
+                                                pattern: Spanned {
+                                                    node: Lit(
+                                                        String(
+                                                            "auto",
+                                                        ),
+                                                    ),
+                                                    span: 11074..11080,
+                                                },
+                                                body: Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "watching",
+                                                        ),
+                                                    ),
+                                                    span: 11084..11094,
+                                                },
+                                                span: 11074..11094,
+                                            },
+                                        ],
+                                    },
+                                    span: 11009..11097,
+                                },
+                            ),
+                        ],
+                    ),
+                    span: 11001..11099,
+                },
+                span: 10975..11101,
+            },
+        ),
+        Reconcile(
+            ReconcileDecl {
+                chains: [
+                    [
+                        Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "file",
+                                    span: 11111..11115,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: Some(
+                                            Spanned {
+                                                node: "path",
+                                                span: 11119..11123,
+                                            },
+                                        ),
+                                        value: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "~/.config/keron/state",
+                                                ),
+                                            ),
+                                            span: 11126..11149,
+                                        },
+                                        span: 11119..11149,
+                                    },
+                                    CallArg {
+                                        name: Some(
+                                            Spanned {
+                                                node: "content",
+                                                span: 11153..11160,
+                                            },
+                                        ),
+                                        value: Spanned {
+                                            node: Interpolation(
+                                                [
+                                                    Expr(
+                                                        Spanned {
+                                                            node: Var(
+                                                                "mode_marker",
+                                                            ),
+                                                            span: 11166..11177,
+                                                        },
+                                                    ),
+                                                    Text(
+                                                        "\nrole=",
+                                                    ),
+                                                    Expr(
+                                                        Spanned {
+                                                            node: Var(
+                                                                "origin_role",
+                                                            ),
+                                                            span: 11187..11198,
+                                                        },
+                                                    ),
+                                                    Text(
+                                                        "\nlevel=",
+                                                    ),
+                                                    Expr(
+                                                        Spanned {
+                                                            node: Var(
+                                                                "level_summary",
+                                                            ),
+                                                            span: 11209..11222,
+                                                        },
+                                                    ),
+                                                    Text(
+                                                        "\n",
+                                                    ),
+                                                ],
+                                            ),
+                                            span: 11163..11226,
+                                        },
+                                        span: 11153..11226,
+                                    },
+                                ],
+                            },
+                            span: 11111..11230,
+                        },
+                    ],
+                ],
+                span: 11101..11230,
             },
         ),
     ],

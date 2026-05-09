@@ -1,0 +1,124 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Struct(
+            StructDecl {
+                name: Spanned {
+                    node: "Inner",
+                    span: 7..12,
+                },
+                fields: [
+                    StructField {
+                        name: Spanned {
+                            node: "v",
+                            span: 15..16,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 18..21,
+                        },
+                        span: 15..22,
+                    },
+                ],
+                span: 0..24,
+            },
+        ),
+        Struct(
+            StructDecl {
+                name: Spanned {
+                    node: "Outer",
+                    span: 31..36,
+                },
+                fields: [
+                    StructField {
+                        name: Spanned {
+                            node: "inner",
+                            span: 39..44,
+                        },
+                        ty: Spanned {
+                            node: Named(
+                                "Inner",
+                            ),
+                            span: 46..51,
+                        },
+                        span: 39..52,
+                    },
+                ],
+                span: 24..54,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "sum",
+                    span: 58..61,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Int,
+                        span: 63..66,
+                    },
+                ),
+                value: Spanned {
+                    node: Field {
+                        receiver: Spanned {
+                            node: Field {
+                                receiver: Spanned {
+                                    node: Call {
+                                        callee: Spanned {
+                                            node: "Outer",
+                                            span: 69..74,
+                                        },
+                                        args: [
+                                            CallArg {
+                                                name: None,
+                                                value: Spanned {
+                                                    node: Call {
+                                                        callee: Spanned {
+                                                            node: "Inner",
+                                                            span: 75..80,
+                                                        },
+                                                        args: [
+                                                            CallArg {
+                                                                name: None,
+                                                                value: Spanned {
+                                                                    node: Literal(
+                                                                        Int(
+                                                                            7,
+                                                                        ),
+                                                                    ),
+                                                                    span: 81..82,
+                                                                },
+                                                                span: 81..82,
+                                                            },
+                                                        ],
+                                                    },
+                                                    span: 75..83,
+                                                },
+                                                span: 75..83,
+                                            },
+                                        ],
+                                    },
+                                    span: 69..84,
+                                },
+                                field: Spanned {
+                                    node: "inner",
+                                    span: 85..90,
+                                },
+                            },
+                            span: 69..90,
+                        },
+                        field: Spanned {
+                            node: "v",
+                            span: 91..92,
+                        },
+                    },
+                    span: 69..92,
+                },
+                span: 54..92,
+            },
+        ),
+    ],
+}

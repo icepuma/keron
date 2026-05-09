@@ -1,0 +1,5 @@
+struct Host {
+  name: String,
+  port: Int,
+  tls: Boolean,
+}

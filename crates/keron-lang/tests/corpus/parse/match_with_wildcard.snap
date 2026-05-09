@@ -1,0 +1,107 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "classify",
+                    span: 3..11,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "n",
+                            span: 12..13,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 15..18,
+                        },
+                        default: None,
+                        span: 12..18,
+                    },
+                ],
+                return_type: Spanned {
+                    node: String,
+                    span: 21..27,
+                },
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Match {
+                                scrutinee: Spanned {
+                                    node: Var(
+                                        "n",
+                                    ),
+                                    span: 38..39,
+                                },
+                                arms: [
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Lit(
+                                                Int(
+                                                    0,
+                                                ),
+                                            ),
+                                            span: 46..47,
+                                        },
+                                        body: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "zero",
+                                                ),
+                                            ),
+                                            span: 51..57,
+                                        },
+                                        span: 46..57,
+                                    },
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Lit(
+                                                Int(
+                                                    1,
+                                                ),
+                                            ),
+                                            span: 63..64,
+                                        },
+                                        body: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "one",
+                                                ),
+                                            ),
+                                            span: 68..73,
+                                        },
+                                        span: 63..73,
+                                    },
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Wildcard,
+                                            span: 79..81,
+                                        },
+                                        body: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "other",
+                                                ),
+                                            ),
+                                            span: 84..91,
+                                        },
+                                        span: 79..91,
+                                    },
+                                ],
+                            },
+                            span: 32..97,
+                        },
+                    ),
+                    span: 28..99,
+                },
+                span: 0..99,
+                intrinsic: None,
+            },
+        ),
+    ],
+}

@@ -1,0 +1,47 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        TypeAlias(
+            TypeAliasDecl {
+                name: Spanned {
+                    node: "Mode",
+                    span: 5..9,
+                },
+                variants: [
+                    Spanned {
+                        node: "auto",
+                        span: 12..18,
+                    },
+                ],
+                span: 0..19,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "m",
+                    span: 23..24,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Named(
+                            "Mode",
+                        ),
+                        span: 26..30,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        String(
+                            "auto",
+                        ),
+                    ),
+                    span: 33..39,
+                },
+                span: 19..40,
+            },
+        ),
+    ],
+}

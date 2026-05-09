@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: non-exhaustive `match` on `Point`: a wildcard arm `_` is required
+  --> 3:9
+  |
+3 |   match p {
+  |         ^

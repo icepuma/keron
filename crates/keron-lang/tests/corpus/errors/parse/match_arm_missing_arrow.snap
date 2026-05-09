@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: found '1' expected something else, '#', or '='
+  --> 2:5
+  |
+2 |   1 1,
+  |     ^

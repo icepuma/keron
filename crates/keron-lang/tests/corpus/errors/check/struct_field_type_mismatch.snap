@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: type mismatch: expected `Int`, found `String`
+  --> 2:22
+  |
+2 | val p: Point = Point("zero", 0)
+  |                      ^^^^^^

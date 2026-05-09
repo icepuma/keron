@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: non-exhaustive `match` on `String`: a wildcard arm `_` is required
+  --> 2:9
+  |
+2 |   match s {
+  |         ^

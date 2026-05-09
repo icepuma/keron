@@ -1,0 +1,7 @@
+type Mode = "on" | "off"
+fn flip(m: Mode): Mode {
+  match m {
+    "on" => "off",
+    "off" => "on",
+  }
+}

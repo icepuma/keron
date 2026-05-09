@@ -1,0 +1,88 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "label",
+                    span: 3..8,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "s",
+                            span: 9..10,
+                        },
+                        ty: Spanned {
+                            node: String,
+                            span: 12..18,
+                        },
+                        default: None,
+                        span: 9..18,
+                    },
+                ],
+                return_type: Spanned {
+                    node: String,
+                    span: 21..27,
+                },
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Match {
+                                scrutinee: Spanned {
+                                    node: Var(
+                                        "s",
+                                    ),
+                                    span: 38..39,
+                                },
+                                arms: [
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Lit(
+                                                String(
+                                                    "",
+                                                ),
+                                            ),
+                                            span: 46..48,
+                                        },
+                                        body: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "empty",
+                                                ),
+                                            ),
+                                            span: 52..59,
+                                        },
+                                        span: 46..59,
+                                    },
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Bind(
+                                                "other",
+                                            ),
+                                            span: 65..71,
+                                        },
+                                        body: Spanned {
+                                            node: Var(
+                                                "other",
+                                            ),
+                                            span: 74..79,
+                                        },
+                                        span: 65..79,
+                                    },
+                                ],
+                            },
+                            span: 32..85,
+                        },
+                    ),
+                    span: 28..87,
+                },
+                span: 0..87,
+                intrinsic: None,
+            },
+        ),
+    ],
+}

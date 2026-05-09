@@ -275,3 +275,121 @@ reconcile {
 for r in mixed_resources {
   reconcile r
 }
+
+# --- structs ---
+#
+# `struct Name { ... }` declares a nominal record. The implicit
+# constructor accepts positional args (declared order), named args, or
+# a mix (positional first, then named).
+
+struct Host {
+  name: String,
+  port: Int,
+  tls: Boolean,
+}
+
+val origin_host: Host = Host(name = "alpha.local", port = 22, tls = true)
+val mirror_host: Host = Host("beta.local", 22, tls = false)
+val tagged_host: Host = Host("gamma.local", port = 443, tls = true)
+
+# Field access via postfix `.field`. Tighter than unary, so `-p.x`
+# is `-(p.x)`. Chains fold left (`a.b.c` is `(a.b).c`).
+val origin_port: Int = origin_host.port
+val origin_label: String = "${origin_host.name}:${origin_host.port}"
+
+# Structs nest like any other type and flow through interpolations.
+struct Endpoint {
+  host: Host,
+  path: String,
+}
+
+val ep: Endpoint = Endpoint(origin_host, "/healthz")
+val ep_url: String = "https://${ep.host.name}:${ep.host.port}${ep.path}"
+
+# --- string-union aliases ---
+#
+# `type Name = "a" | "b" | ...` is a closed enumeration over string
+# literals. Subtype of `String` so it works with `==`/`!=` and ordinary
+# `if` conditions. A literal RHS is admitted only when it's in the
+# variant set; assigning a free-form `String` is rejected (no
+# auto-narrowing).
+
+type Mode = "on" | "off" | "auto"
+type LogLevel = "debug" | "info" | "warn" | "error"
+
+val current_mode: Mode = "auto"
+val current_level: LogLevel = "info"
+
+# Compare a union value against a string literal in an `if` condition.
+val active: Boolean = current_mode == "on"
+val verbose: String = if current_level == "debug" {
+  "traces enabled"
+} else {
+  "default"
+}
+
+# --- `match` ---
+#
+# `match` is exhaustive on string-union scrutinees (every variant must
+# appear, no `_` needed). On every other type — `String`, `Int`,
+# struct, etc. — a wildcard arm `_` is required.
+
+# Exhaustive over a closed union: no wildcard.
+fn level_label(level: LogLevel): String {
+  match level {
+    "debug" => "verbose",
+    "info"  => "normal",
+    "warn"  => "elevated",
+    "error" => "critical",
+  }
+}
+
+val level_summary: String = level_label(current_level)
+
+# Wildcard fallthrough on `String` (infinite domain) and on `Int`.
+fn nicknamed(s: String): String {
+  match s {
+    "alpha" => "Alpha host",
+    "beta"  => "Beta host",
+    other   => "unknown: ${other}",
+  }
+}
+
+fn classify_port(p: Int): String {
+  match p {
+    22  => "ssh",
+    80  => "http",
+    443 => "https",
+    _   => "other",
+  }
+}
+
+val origin_role: String = classify_port(origin_host.port)
+val origin_nick: String = nicknamed(origin_host.name)
+
+# Struct destructure patterns: literal sub-patterns, shorthand binds,
+# nested patterns, and the mandatory wildcard arm.
+fn host_kind(h: Host): String {
+  match h {
+    Host { name: "alpha.local", port: 22, tls: true }   => "primary-ssh",
+    Host { name, port: 22, tls } => "ssh-${name}-tls=${tls}",
+    Host { name, port, tls }     => "${name}:${port}/tls=${tls}",
+    _ => "unknown",
+  }
+}
+
+val origin_kind: String = host_kind(origin_host)
+val mirror_kind: String = host_kind(mirror_host)
+
+# `match` is a value-producing expression, so it composes with `if`,
+# string interpolation, and reconcile inputs alike.
+val mode_marker: String = "mode-${match current_mode {
+  "on"   => "active",
+  "off"  => "idle",
+  "auto" => "watching",
+}}"
+
+reconcile file(
+  path = "~/.config/keron/state",
+  content = "${mode_marker}\nrole=${origin_role}\nlevel=${level_summary}\n",
+)

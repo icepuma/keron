@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: missing required argument `y` for `Point`
+  --> 2:16
+  |
+2 | val p: Point = Point(0)
+  |                ^^^^^^^^^
