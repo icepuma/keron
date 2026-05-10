@@ -975,11 +975,11 @@ mod tests {
         let entry = proj.entry(src);
         let canonical = fs::canonicalize(&entry).unwrap();
         let base_dir = canonical.parent().unwrap().to_path_buf();
-        let graph = resolve(EntrySource {
+        let graph = resolve(vec![EntrySource {
             text: src.to_string(),
             base_dir,
             id: keron_modules::ModuleId::File(canonical),
-        })
+        }])
         .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
         eval_graph(&graph).unwrap_or_else(|e| panic!("eval failed: {e}"))
     }
@@ -1711,11 +1711,11 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         );
         let canonical = fs::canonicalize(&entry).unwrap();
         let base_dir = canonical.parent().unwrap().to_path_buf();
-        let graph = resolve(EntrySource {
+        let graph = resolve(vec![EntrySource {
             text: fs::read_to_string(&entry).unwrap(),
             base_dir,
             id: keron_modules::ModuleId::File(canonical),
-        })
+        }])
         .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
         let err = eval_graph(&graph).expect_err("missing var should fail");
         assert!(
@@ -1767,11 +1767,11 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
             proj.entry("reconcile template(path = \"/x\", source = \"bad.tpl\", vars = {})\n");
         let canonical = fs::canonicalize(&entry).unwrap();
         let base_dir = canonical.parent().unwrap().to_path_buf();
-        let graph = resolve(EntrySource {
+        let graph = resolve(vec![EntrySource {
             text: fs::read_to_string(&entry).unwrap(),
             base_dir,
             id: keron_modules::ModuleId::File(canonical),
-        })
+        }])
         .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
         let err = eval_graph(&graph).expect_err("unterminated should fail");
         assert!(
@@ -1806,11 +1806,11 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
             proj.entry("reconcile template(path = \"/x\", source = \"missing.tpl\", vars = {})\n");
         let canonical = fs::canonicalize(&entry).unwrap();
         let base_dir = canonical.parent().unwrap().to_path_buf();
-        let graph = resolve(EntrySource {
+        let graph = resolve(vec![EntrySource {
             text: fs::read_to_string(&entry).unwrap(),
             base_dir,
             id: keron_modules::ModuleId::File(canonical),
-        })
+        }])
         .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
         let err = eval_graph(&graph).expect_err("missing source should fail");
         assert!(err.to_string().contains("missing.tpl"), "got: {err:#}");

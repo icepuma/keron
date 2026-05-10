@@ -40,14 +40,33 @@ impl TempProject {
         path
     }
 
-    fn entry_source(file: &Path, content: &str) -> EntrySource {
+    fn entry_source(file: &Path, content: &str) -> Vec<EntrySource> {
         let canonical = fs::canonicalize(file).expect("canonicalize entry");
         let base_dir = canonical.parent().expect("entry has parent").to_path_buf();
-        EntrySource {
+        vec![EntrySource {
             text: content.to_string(),
             base_dir,
             id: ModuleId::File(canonical),
-        }
+        }]
+    }
+
+    /// Build a multi-root [`EntrySource`] list from already-written
+    /// files. Each `(file, content)` pair becomes one root; the
+    /// loader's recursive discovery is bypassed so tests can pin the
+    /// exact set of roots they care about.
+    fn roots(files: &[(&Path, &str)]) -> Vec<EntrySource> {
+        files
+            .iter()
+            .map(|(f, src)| {
+                let canonical = fs::canonicalize(f).expect("canonicalize root");
+                let base_dir = canonical.parent().expect("root has parent").to_path_buf();
+                EntrySource {
+                    text: (*src).to_string(),
+                    base_dir,
+                    id: ModuleId::File(canonical),
+                }
+            })
+            .collect()
     }
 }
 
@@ -67,7 +86,7 @@ fn builtins_are_implicitly_in_scope() {
     let entry = proj.write("entry.keron", src);
     let graph = resolve(TempProject::entry_source(&entry, src)).expect("resolve ok");
     let entry_id = ModuleId::File(fs::canonicalize(&entry).unwrap());
-    assert_eq!(graph.entry, entry_id);
+    assert_eq!(graph.entries, vec![entry_id]);
     assert_eq!(graph.modules.len(), 1, "stdlib does not enter the graph");
 }
 
@@ -270,4 +289,127 @@ fn cycle_path_starts_and_ends_at_same_module() {
     let parts: Vec<&str> = after.split(" -> ").collect();
     assert!(parts.len() >= 3, "expected cycle path, got: {after}");
     assert_eq!(parts.first(), parts.last());
+}
+
+#[test]
+fn imports_override_alphanumeric_order() {
+    // The core property of the loader contract: when `a.keron` imports
+    // from `z.keron`, `z` runs before `a` even though `a < z`
+    // alphanumerically. Without this, every `use` edge could be
+    // silently violated whenever the importer's name sorts before its
+    // dependency's.
+    let proj = TempProject::new("imports-override-alpha");
+    let z_path = proj.write("z.keron", "val foo: Int = 7\n");
+    let a_path = proj.write(
+        "a.keron",
+        "from \"./z.keron\" use foo\nval bar: Int = foo + 1\n",
+    );
+    let a_src = fs::read_to_string(&a_path).unwrap();
+    let z_src = fs::read_to_string(&z_path).unwrap();
+    let graph =
+        resolve(TempProject::roots(&[(&a_path, &a_src), (&z_path, &z_src)])).expect("resolve ok");
+    let a_id = ModuleId::File(fs::canonicalize(&a_path).unwrap());
+    let z_id = ModuleId::File(fs::canonicalize(&z_path).unwrap());
+    let pos_a = graph
+        .topo_order
+        .iter()
+        .position(|m| m == &a_id)
+        .expect("a in topo");
+    let pos_z = graph
+        .topo_order
+        .iter()
+        .position(|m| m == &z_id)
+        .expect("z in topo");
+    assert!(
+        pos_z < pos_a,
+        "import edge z -> a must serialize z first; got: {:?}",
+        graph.topo_order,
+    );
+}
+
+#[test]
+fn alphanumeric_tie_break_when_no_imports() {
+    // With no `use` edges between three modules, the topological
+    // order falls back to alphanumeric `ModuleId` order. The previous
+    // implementation drew this from `HashMap::keys()` which is
+    // non-deterministic; with petgraph the input ordering matters and
+    // we feed it sorted, so the result is stable across runs.
+    let proj = TempProject::new("alpha-tiebreak");
+    let c_path = proj.write("c.keron", "val cv: Int = 3\n");
+    let b_path = proj.write("b.keron", "val bv: Int = 2\n");
+    let a_path = proj.write("a.keron", "val av: Int = 1\n");
+    let a_src = fs::read_to_string(&a_path).unwrap();
+    let b_src = fs::read_to_string(&b_path).unwrap();
+    let c_src = fs::read_to_string(&c_path).unwrap();
+    // Pass the roots in a deliberately-shuffled order so a missing
+    // sort step would surface as a topo_order matching the input.
+    let graph = resolve(TempProject::roots(&[
+        (&c_path, &c_src),
+        (&a_path, &a_src),
+        (&b_path, &b_src),
+    ]))
+    .expect("resolve ok");
+    let a_id = ModuleId::File(fs::canonicalize(&a_path).unwrap());
+    let b_id = ModuleId::File(fs::canonicalize(&b_path).unwrap());
+    let c_id = ModuleId::File(fs::canonicalize(&c_path).unwrap());
+    assert_eq!(
+        graph.topo_order,
+        vec![a_id, b_id, c_id],
+        "expected alphanumeric order regardless of input order",
+    );
+}
+
+#[test]
+fn per_file_scope_isolates_vals_without_explicit_use() {
+    // Under the old directory-concatenation model, every `val` in any
+    // file in the same dir was visible everywhere. Under per-file
+    // scope, referencing another module's val without an explicit
+    // `use` must fail with the type checker's unknown-identifier
+    // diagnostic.
+    let proj = TempProject::new("per-file-scope");
+    let a_path = proj.write("a.keron", "val x: Int = 1\n");
+    let b_path = proj.write("b.keron", "val n: Int = x\n");
+    let a_src = fs::read_to_string(&a_path).unwrap();
+    let b_src = fs::read_to_string(&b_path).unwrap();
+    let bundle = resolve(TempProject::roots(&[(&a_path, &a_src), (&b_path, &b_src)]))
+        .expect_err("b references x without `use` -> should fail");
+    let messages: Vec<&String> = bundle
+        .errors
+        .iter()
+        .flat_map(|e| &e.diagnostics)
+        .map(|d| &d.message)
+        .collect();
+    assert!(
+        messages.iter().any(|m| m.contains('x')),
+        "expected an error mentioning `x`, got: {messages:?}",
+    );
+}
+
+#[test]
+fn multi_root_loads_every_root_into_the_graph() {
+    // Two roots with no `use` edges between them must both end up in
+    // `graph.modules` and `graph.entries`. Previously only a single
+    // entry was supported, so passing both required directory
+    // concatenation; now they are independent first-class modules.
+    let proj = TempProject::new("multi-root");
+    let a_path = proj.write(
+        "a.keron",
+        "val s: Symlink = symlink(from = \"a-from\", to = \"a-to\")\n\
+         reconcile s\n",
+    );
+    let b_path = proj.write(
+        "b.keron",
+        "val s: Symlink = symlink(from = \"b-from\", to = \"b-to\")\n\
+         reconcile s\n",
+    );
+    let a_src = fs::read_to_string(&a_path).unwrap();
+    let b_src = fs::read_to_string(&b_path).unwrap();
+    let graph =
+        resolve(TempProject::roots(&[(&a_path, &a_src), (&b_path, &b_src)])).expect("resolve ok");
+    let a_id = ModuleId::File(fs::canonicalize(&a_path).unwrap());
+    let b_id = ModuleId::File(fs::canonicalize(&b_path).unwrap());
+    assert!(graph.modules.contains_key(&a_id), "a missing from modules",);
+    assert!(graph.modules.contains_key(&b_id), "b missing from modules",);
+    assert_eq!(graph.entries.len(), 2);
+    assert!(graph.entries.contains(&a_id) && graph.entries.contains(&b_id));
 }

@@ -18,11 +18,10 @@ mod load;
 mod plan;
 mod report;
 
-use std::fs;
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use keron_modules::{EntrySource, ModuleId, resolve};
 
 use crate::diff::RenderOptions;
@@ -57,15 +56,26 @@ where
     W: Write,
 {
     let source = load::load(path)?;
-    let entry_id = entry_module_id(path)?;
-    let base_dir = entry_base_dir(path)?;
+    let roots: Vec<EntrySource> = source
+        .files
+        .into_iter()
+        .map(|f| {
+            // The file's parent is the resolution root for relative
+            // `use` paths in that file (`./` and `../` resolve here).
+            // `LoadedFile.path` is canonical, so `parent()` is too.
+            let base_dir = f
+                .path
+                .parent()
+                .map_or_else(|| f.path.clone(), Path::to_path_buf);
+            EntrySource {
+                text: f.text,
+                base_dir,
+                id: ModuleId::File(f.path),
+            }
+        })
+        .collect();
 
-    let graph = resolve(EntrySource {
-        text: source.text,
-        base_dir,
-        id: entry_id,
-    })
-    .map_err(|bundle| {
+    let graph = resolve(roots).map_err(|bundle| {
         anyhow::anyhow!(
             "module resolution failed:\n{}",
             report::render(&bundle, color)
@@ -95,26 +105,11 @@ where
     Ok(())
 }
 
-fn entry_module_id(path: &Path) -> Result<ModuleId> {
-    let canonical = fs::canonicalize(path)
-        .with_context(|| format!("canonicalizing entry `{}`", path.display()))?;
-    Ok(ModuleId::File(canonical))
-}
-
-fn entry_base_dir(path: &Path) -> Result<std::path::PathBuf> {
-    let canonical = fs::canonicalize(path)
-        .with_context(|| format!("canonicalizing entry `{}`", path.display()))?;
-    if canonical.is_dir() {
-        Ok(canonical)
-    } else {
-        Ok(canonical.parent().unwrap_or(&canonical).to_path_buf())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::env;
+    use std::fs;
     use std::io::Cursor;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -160,40 +155,6 @@ mod tests {
         let mut sout: Vec<u8> = Vec::new();
         let res = run_with_io(path, execute, &mut sin, &mut sout, false);
         (res, String::from_utf8(sout).unwrap())
-    }
-
-    #[test]
-    fn entry_base_dir_for_file_returns_parent() {
-        let dir = std::env::temp_dir().join("keron-base-dir-file");
-        fs::create_dir_all(&dir).unwrap();
-        let file = dir.join("entry.keron");
-        fs::write(&file, "").unwrap();
-        let got = entry_base_dir(&file).unwrap();
-        let canonical_dir = fs::canonicalize(&dir).unwrap();
-        assert_eq!(got, canonical_dir);
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn entry_base_dir_for_dir_returns_dir_itself() {
-        let dir = std::env::temp_dir().join("keron-base-dir-dir");
-        fs::create_dir_all(&dir).unwrap();
-        let got = entry_base_dir(&dir).unwrap();
-        let canonical_dir = fs::canonicalize(&dir).unwrap();
-        assert_eq!(got, canonical_dir);
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn entry_module_id_canonicalizes_path() {
-        let dir = std::env::temp_dir().join("keron-entry-mod-id");
-        fs::create_dir_all(&dir).unwrap();
-        let file = dir.join("entry.keron");
-        fs::write(&file, "").unwrap();
-        let got = entry_module_id(&file).unwrap();
-        let ModuleId::File(p) = got;
-        assert_eq!(p, fs::canonicalize(&file).unwrap());
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -246,11 +246,11 @@ mod tests {
                    reconcile template(path = \"/b\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n";
         fs::write(&entry, src).unwrap();
         let canonical = fs::canonicalize(&entry).unwrap();
-        let graph = resolve(EntrySource {
+        let graph = resolve(vec![EntrySource {
             text: src.into(),
             base_dir: canonical.parent().unwrap().to_path_buf(),
             id: ModuleId::File(canonical),
-        })
+        }])
         .unwrap();
         let plan = build_plan(&graph).unwrap();
         assert_eq!(plan.changes.len(), 2);

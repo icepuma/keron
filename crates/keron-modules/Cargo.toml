@@ -12,6 +12,7 @@ authors.workspace = true
 keron-lang.workspace = true
 
 anyhow.workspace = true
+petgraph.workspace = true
 
 [lints]
 workspace = true

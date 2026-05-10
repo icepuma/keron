@@ -24,11 +24,14 @@ use keron_lang::{
     Diagnostic, FnDecl, FnSig, ImportedSymbols, Item, ParamSig, Program, StructDecl, Type, UseDecl,
     ValDecl, check_module, parse, resolve_type_names,
 };
+use petgraph::Graph;
+use petgraph::algo::toposort;
+use petgraph::graph::NodeIndex;
 
 /// Identifies a module in the graph. Modules are keyed by their
 /// canonicalized filesystem path; stdlib items are exposed as
 /// builtins and don't participate in the graph.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ModuleId {
     File(PathBuf),
 }
@@ -72,14 +75,19 @@ pub struct CheckedModule {
     pub exported_types: HashMap<String, Type>,
 }
 
-/// All modules reachable from the entry, indexed for evaluation.
+/// All modules reachable from the entry roots, indexed for evaluation.
 #[derive(Debug)]
 pub struct ModuleGraph {
     pub modules: HashMap<ModuleId, CheckedModule>,
-    pub entry: ModuleId,
+    /// The roots passed to [`resolve`] — every module supplied directly
+    /// by the caller (via [`EntrySource`]). Files reached only through
+    /// `use` chains do not appear here. Order matches the input.
+    pub entries: Vec<ModuleId>,
     /// Modules in topological order: dependencies precede their
-    /// dependents. The evaluator walks this in order so an imported
-    /// library's reconciles fire before its importer's.
+    /// dependents, so an imported library's reconciles fire before its
+    /// importer's. Modules with no `use` path between them in either
+    /// direction fall back to alphanumeric `ModuleId` order — this is
+    /// the deterministic tie-break the loader contract promises.
     pub topo_order: Vec<ModuleId>,
 }
 
@@ -105,33 +113,47 @@ pub struct ResolveErrors {
     pub sources: HashMap<ModuleId, String>,
 }
 
-/// Configuration for one resolution.
+/// Configuration for one root module passed to [`resolve`].
+///
+/// Every `.keron` file in the project is its own module: the loader no
+/// longer concatenates a directory's files into one text blob, so each
+/// root corresponds to exactly one file.
 #[derive(Debug)]
 pub struct EntrySource {
-    /// Raw source text of the entry. For directory entries this is
-    /// the concatenation of every `.keron` file in sorted order.
+    /// Raw source text of the file.
     pub text: String,
     /// Directory used as the resolution root for relative `use`
-    /// paths in the entry. For a single-file entry, this is the
-    /// file's parent directory.
+    /// paths in this module. Always the file's parent directory.
     pub base_dir: PathBuf,
-    /// Stable identity for the entry module. Usually
-    /// `ModuleId::File(canonical_entry_path)`.
+    /// Stable identity for this module: `ModuleId::File(canonical_path)`.
     pub id: ModuleId,
 }
 
-/// Load + parse + check the entry and all its transitive dependencies.
+/// Load + parse + check every supplied root and their transitive
+/// dependencies into a single graph.
+///
+/// `roots` is treated as a set of equally-weighted entry points: every
+/// root's reconciles will run during evaluation, in topological order.
+/// Pass a single-element `vec![source]` for the single-file case.
 ///
 /// # Errors
 /// Returns a [`ResolveErrors`] aggregate carrying one [`ResolveError`]
 /// per failing module — parse errors, import-resolution errors, and
 /// type-check errors all funnel through the same shape — plus a
 /// `sources` map suitable for ariadne-style rendering.
-pub fn resolve(entry: EntrySource) -> Result<ModuleGraph, ResolveErrors> {
+pub fn resolve(roots: Vec<EntrySource>) -> Result<ModuleGraph, ResolveErrors> {
     let mut state = ResolveState::default();
-    let entry_id = entry.id.clone();
-    state.load_module(entry.id, entry.text, &entry.base_dir);
-    state.into_graph(entry_id)
+    let mut entries: Vec<ModuleId> = Vec::with_capacity(roots.len());
+    let mut seen: HashSet<ModuleId> = HashSet::new();
+    for root in roots {
+        if seen.insert(root.id.clone()) {
+            entries.push(root.id.clone());
+        }
+        // `load_module` is itself idempotent on duplicate ids — passing
+        // the same root twice is a no-op after the first call.
+        state.load_module(root.id, root.text, &root.base_dir);
+    }
+    state.into_graph(entries)
 }
 
 #[derive(Default)]
@@ -219,7 +241,7 @@ impl ResolveState {
         }
     }
 
-    fn into_graph(mut self, entry: ModuleId) -> Result<ModuleGraph, ResolveErrors> {
+    fn into_graph(mut self, entries: Vec<ModuleId>) -> Result<ModuleGraph, ResolveErrors> {
         // Snapshot every loaded module's source so the failure path
         // can hand them to the renderer. `raw` entries are drained
         // below as the modules become `CheckedModule`s, so we have to
@@ -229,10 +251,7 @@ impl ResolveState {
             .iter()
             .map(|(id, raw)| (id.clone(), raw.source.clone()))
             .collect();
-        // Build the dependency edges from each module's `use` items
-        // pointing at dependencies (so topo order = deps first).
-        let edges = self.compute_edges();
-        let topo = match topo_sort(&edges, self.raw.keys().cloned().collect()) {
+        let topo = match self.compute_topo() {
             Ok(o) => o,
             Err(cycle) => {
                 self.errors.push(ResolveError {
@@ -303,7 +322,7 @@ impl ResolveState {
         if self.errors.is_empty() {
             Ok(ModuleGraph {
                 modules,
-                entry,
+                entries,
                 topo_order: topo,
             })
         } else {
@@ -314,23 +333,60 @@ impl ResolveState {
         }
     }
 
-    fn compute_edges(&self) -> HashMap<ModuleId, Vec<ModuleId>> {
-        let mut edges: HashMap<ModuleId, Vec<ModuleId>> = HashMap::new();
-        for (id, raw) in &self.raw {
-            let mut deps = Vec::new();
+    /// Build the module DAG and topologically sort it.
+    ///
+    /// Backed by [`petgraph`]: nodes are inserted in alphanumeric
+    /// `ModuleId` order so [`petgraph::algo::toposort`] (which is DFS
+    /// based and respects insertion order) breaks ties between
+    /// import-unrelated modules deterministically. Imports — `use`
+    /// edges — are the *primary* ordering constraint: if `a.keron`
+    /// imports `z.keron`, `z` runs before `a` even though `a < z`
+    /// alphanumerically.
+    ///
+    /// On a cycle, returns the cycle as a `Vec<ModuleId>` reconstructed
+    /// from the offending node via DFS.
+    fn compute_topo(&self) -> Result<Vec<ModuleId>, Vec<ModuleId>> {
+        // petgraph's `toposort` is DFS-post-order with a final reverse,
+        // so for *unconstrained* nodes (no `use` edges between them)
+        // the output order is the reverse of node insertion order.
+        // To make the alphanumeric tie-break observable in the final
+        // result, we insert nodes in reverse-alphanumeric order — the
+        // final reverse then yields alphanumeric. Edge-constrained
+        // nodes still respect their edges either way.
+        let mut sorted_ids: Vec<ModuleId> = self.raw.keys().cloned().collect();
+        sorted_ids.sort();
+        sorted_ids.reverse();
+
+        let mut graph: Graph<ModuleId, ()> = Graph::new();
+        let mut idx: HashMap<ModuleId, NodeIndex> = HashMap::new();
+        for id in &sorted_ids {
+            idx.insert(id.clone(), graph.add_node(id.clone()));
+        }
+
+        // Edges go *from dependency to dependent* so toposort emits
+        // deps first. For each module M and each `use ./Di`, add edge
+        // `Di → M`.
+        for id in &sorted_ids {
+            let Some(raw) = self.raw.get(id) else {
+                continue;
+            };
+            let to = idx[id];
             for item in &raw.program.items {
                 if let Item::Use(u) = item
                     && let Ok(path) = resolve_path(&u.source.node, &raw.base_dir)
                 {
                     let dep_id = ModuleId::File(path);
-                    if self.raw.contains_key(&dep_id) {
-                        deps.push(dep_id);
+                    if let Some(&from) = idx.get(&dep_id) {
+                        graph.add_edge(from, to, ());
                     }
                 }
             }
-            edges.insert(id.clone(), deps);
         }
-        edges
+
+        match toposort(&graph, None) {
+            Ok(order) => Ok(order.into_iter().map(|n| graph[n].clone()).collect()),
+            Err(cycle) => Err(reconstruct_cycle(&graph, cycle.node_id())),
+        }
     }
 
     fn resolve_uses(
@@ -405,58 +461,44 @@ fn resolve_path(raw: &str, base_dir: &Path) -> Result<PathBuf, String> {
     ))
 }
 
-fn topo_sort(
-    edges: &HashMap<ModuleId, Vec<ModuleId>>,
-    nodes: Vec<ModuleId>,
-) -> Result<Vec<ModuleId>, Vec<ModuleId>> {
-    fn visit(
-        id: &ModuleId,
-        edges: &HashMap<ModuleId, Vec<ModuleId>>,
-        visited: &mut HashSet<ModuleId>,
-        on_stack: &mut HashSet<ModuleId>,
-        order: &mut Vec<ModuleId>,
-        path: &mut Vec<ModuleId>,
-    ) -> Result<(), Vec<ModuleId>> {
-        if visited.contains(id) {
-            return Ok(());
-        }
-        if on_stack.contains(id) {
-            let start = path.iter().position(|p| p == id).unwrap_or(0);
-            let mut cycle: Vec<ModuleId> = path[start..].to_vec();
-            cycle.push(id.clone());
-            return Err(cycle);
-        }
-        on_stack.insert(id.clone());
-        path.push(id.clone());
-        if let Some(deps) = edges.get(id) {
-            for dep in deps {
-                visit(dep, edges, visited, on_stack, order, path)?;
+/// Walk the graph from `start` looking for a directed cycle that
+/// contains `start`, and return it as a `Vec<ModuleId>` ending where
+/// it began (so `cycle.first() == cycle.last()`). Used purely for
+/// diagnostics — petgraph's `toposort` reports only the offending
+/// node, but users expect to see the full cycle path.
+fn reconstruct_cycle(graph: &Graph<ModuleId, ()>, start: NodeIndex) -> Vec<ModuleId> {
+    fn dfs(
+        graph: &Graph<ModuleId, ()>,
+        node: NodeIndex,
+        target: NodeIndex,
+        path: &mut Vec<NodeIndex>,
+        visited: &mut HashSet<NodeIndex>,
+    ) -> bool {
+        path.push(node);
+        for next in graph.neighbors(node) {
+            if next == target {
+                return true;
+            }
+            if visited.insert(next) && dfs(graph, next, target, path, visited) {
+                return true;
             }
         }
         path.pop();
-        on_stack.remove(id);
-        visited.insert(id.clone());
-        order.push(id.clone());
-        Ok(())
+        false
     }
 
-    // Depth-first post-order. On revisit of a node currently on the
-    // stack, return the cycle path for diagnostic reporting.
-    let mut visited: HashSet<ModuleId> = HashSet::new();
-    let mut on_stack: HashSet<ModuleId> = HashSet::new();
-    let mut order: Vec<ModuleId> = Vec::new();
-    let mut path: Vec<ModuleId> = Vec::new();
-    for id in nodes {
-        visit(
-            &id,
-            edges,
-            &mut visited,
-            &mut on_stack,
-            &mut order,
-            &mut path,
-        )?;
+    let mut path: Vec<NodeIndex> = Vec::new();
+    let mut visited: HashSet<NodeIndex> = HashSet::from([start]);
+    if dfs(graph, start, start, &mut path, &mut visited) {
+        let mut cycle: Vec<ModuleId> = path.iter().map(|&n| graph[n].clone()).collect();
+        cycle.push(graph[start].clone());
+        cycle
+    } else {
+        // Shouldn't happen — toposort told us there's a cycle through
+        // `start`. Return a singleton so callers still get a useful
+        // diagnostic anchor.
+        vec![graph[start].clone()]
     }
-    Ok(order)
 }
 
 fn build_imported_symbols(
@@ -740,34 +782,35 @@ mod tests {
     }
 
     #[test]
-    fn topo_sort_orders_dependencies_first() {
-        let a = ModuleId::File(PathBuf::from("/topo-a.keron"));
-        let b = ModuleId::File(PathBuf::from("/topo-b.keron"));
-        let mut edges: HashMap<ModuleId, Vec<ModuleId>> = HashMap::new();
-        edges.insert(a.clone(), vec![b.clone()]);
-        edges.insert(b.clone(), vec![]);
-        let order = topo_sort(&edges, vec![a.clone(), b.clone()]).unwrap();
-        let pos_a = order.iter().position(|x| x == &a).unwrap();
-        let pos_b = order.iter().position(|x| x == &b).unwrap();
-        assert!(
-            pos_b < pos_a,
-            "dependency `b` must precede `a` in {order:?}"
-        );
+    fn reconstruct_cycle_returns_singleton_when_no_self_path() {
+        // `reconstruct_cycle` is a diagnostic helper used after
+        // petgraph's `toposort` reports a cycle. When the offending
+        // node has no outgoing path back to itself in the part of the
+        // graph we explore, fall back to the singleton — so the user
+        // still gets *some* anchor in the error message.
+        let mut g: Graph<ModuleId, ()> = Graph::new();
+        let a = ModuleId::File(PathBuf::from("/recon-a.keron"));
+        let n = g.add_node(a.clone());
+        let cycle = reconstruct_cycle(&g, n);
+        assert_eq!(cycle, vec![a]);
     }
 
     #[test]
-    fn topo_sort_reports_cycle_path() {
-        let a = ModuleId::File(PathBuf::from("/topo-cycle-a.keron"));
-        let b = ModuleId::File(PathBuf::from("/topo-cycle-b.keron"));
-        let mut edges: HashMap<ModuleId, Vec<ModuleId>> = HashMap::new();
-        edges.insert(a.clone(), vec![b.clone()]);
-        edges.insert(b.clone(), vec![a.clone()]);
-        let cycle = topo_sort(&edges, vec![a, b]).unwrap_err();
-        // The cycle path begins and ends at the same node — that's
-        // what makes it a cycle. `==` mutated to `!=` would corrupt
-        // the start index and break this invariant.
+    fn reconstruct_cycle_returns_full_path_when_present() {
+        // a → b → a: the helper must walk the cycle and return
+        // [a, b, a] so callers can render the path.
+        let mut g: Graph<ModuleId, ()> = Graph::new();
+        let a = ModuleId::File(PathBuf::from("/recon-cycle-a.keron"));
+        let b = ModuleId::File(PathBuf::from("/recon-cycle-b.keron"));
+        let na = g.add_node(a.clone());
+        let nb = g.add_node(b.clone());
+        g.add_edge(na, nb, ());
+        g.add_edge(nb, na, ());
+        let cycle = reconstruct_cycle(&g, na);
         assert!(cycle.len() >= 2);
         assert_eq!(cycle.first().unwrap(), cycle.last().unwrap());
+        assert_eq!(cycle.first().unwrap(), &a);
+        assert!(cycle.contains(&b), "cycle should include b: {cycle:?}");
     }
 
     #[test]
