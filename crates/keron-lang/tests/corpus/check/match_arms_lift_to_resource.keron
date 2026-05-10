@@ -1,0 +1,11 @@
+type Kind = "link" | "tmpl" | "dir"
+
+# Arms returning different resource singletons (`Symlink`, `Template`,
+# `Directory`) lift to `Resource`, mirroring the list-inference rule.
+fn make(k: Kind): Resource {
+  match k {
+    "link" => symlink(from = "a", to = "b"),
+    "tmpl" => template(path = "p", source = "t.tpl", vars = {}),
+    "dir"  => directory(path = "/d"),
+  }
+}

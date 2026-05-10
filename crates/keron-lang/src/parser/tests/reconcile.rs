@@ -89,7 +89,7 @@ fn rejects_fn_named_reconcile() {
 fn multiple_reconcile_decls_parse() {
     let prog = ok("
         val a: Symlink = symlink(from = \"x\", to = \"y\")
-        val b: File = file(path = \"p\", content = \"c\")
+        val b: Template = template(path = \"p\", source = \"tmpl.tpl\", vars = {\"body\": \"c\"})
         reconcile a
         reconcile b
     ");

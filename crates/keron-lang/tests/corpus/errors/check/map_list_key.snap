@@ -1,7 +1,7 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
 ---
-error: `List<Int>` is not a valid `Map` key type; allowed keys are `String`, `Int`, `Boolean`
+error: `List<Int>` is not a valid `Map` key type; allowed keys are `String` and `Int`
   --> 1:8
   |
 1 | val m: Map<List<Int>, Int> = {}

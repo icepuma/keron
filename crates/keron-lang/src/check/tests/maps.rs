@@ -15,8 +15,14 @@ fn map_int_string_typechecks() {
 }
 
 #[test]
-fn map_boolean_int_typechecks() {
-    assert!(check_src(r"val m: Map<Boolean, Int> = {true: 1, false: 0}").is_ok());
+fn map_boolean_key_annotation_errors() {
+    // Boolean is no longer a permitted Map key type; the diagnostic
+    // names the rejected key and the closed allow-list (`String`,
+    // `Int`).
+    let err =
+        check_src(r"val m: Map<Boolean, Int> = {true: 1, false: 0}").expect_err("should fail");
+    assert!(err[0].message.contains("not a valid `Map` key type"));
+    assert!(err[0].message.contains("Boolean"));
 }
 
 #[test]

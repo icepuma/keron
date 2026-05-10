@@ -25,9 +25,10 @@ val editor_links: List<Symlink> = [
   link("ideavimrc"),
 ]
 
-val gitconfig: File = file(
+val gitconfig: Template = template(
   path = "~/.gitconfig",
-  content = "[user]\n  email = me@example.com\n  name = Me",
+  source = "tmpl.tpl",
+  vars = {"body": "[user]\n  email = me@example.com\n  name = Me"},
 )
 
 # Order matters at apply time: directories first, then symlinks into

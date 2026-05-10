@@ -104,7 +104,7 @@ fn link(name: String): Symlink {
 }
 
 val zshrc: Symlink = link("zshrc")
-val gitcfg: File = file(path = "~/.gitconfig", content = "[user]\n  email = me")
+val gitcfg: Template = template(path = "~/.gitconfig", source = "tmpl.tpl", vars = {"body": "[user]\n  email = me"})
 val xdgcfg: Directory = directory(path = "~/.config")
 
 val all_links: List<Symlink> = [
@@ -198,7 +198,7 @@ for one_link in all_links {
 
 # Iterate a map of name → priority and reconcile a derived file.
 for (name, priority) in by_name {
-  reconcile file(path = "~/.priority/${name}", content = "${priority}")
+  reconcile template(path = "~/.priority/${name}", source = "tmpl.tpl", vars = {"body": "${priority}"})
 }
 
 # `for` composes with `if` for conditional declarations inside a loop.
@@ -234,12 +234,12 @@ val any_resource: Resource = link("vimrc")
 
 val mixed_resources: List<Resource> = [
   link("tmux.conf"),
-  file(path = "/etc/motd", content = "welcome"),
+  template(path = "/etc/motd", source = "tmpl.tpl", vars = {"body": "welcome"}),
   directory(path = "~/data"),
 ]
 
 # Heterogeneous list literals infer to `List<Resource>` automatically.
-val auto_mix = [link("alacritty.yml"), file(path = "/etc/issue", content = "")]
+val auto_mix = [link("alacritty.yml"), template(path = "/etc/issue", source = "tmpl.tpl", vars = {"body": ""})]
 
 # `++` mirrors list synthesis: concatenating lists whose element kinds
 # differ lifts the result to `List<Resource>`.
@@ -250,7 +250,7 @@ val combined_resources = all_links ++ [gitcfg, xdgcfg]
 # kinds — both branches satisfy the `Resource` annotation.
 fn pick(name: String, want_file: Boolean): Resource {
   if want_file {
-    file(path = "~/.config/${name}", content = "")
+    template(path = "~/.config/${name}", source = "tmpl.tpl", vars = {"body": ""})
   } else {
     link(name)
   }
@@ -389,7 +389,8 @@ val mode_marker: String = "mode-${match current_mode {
   "auto" => "watching",
 }}"
 
-reconcile file(
+reconcile template(
   path = "~/.config/keron/state",
-  content = "${mode_marker}\nrole=${origin_role}\nlevel=${level_summary}\n",
+  source = "tmpl.tpl",
+  vars = {"body": "${mode_marker}\nrole=${origin_role}\nlevel=${level_summary}\n"},
 )

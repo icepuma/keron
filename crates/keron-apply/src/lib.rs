@@ -134,6 +134,11 @@ mod tests {
                 fs::remove_dir_all(&root).ok();
             }
             fs::create_dir_all(&root).unwrap();
+            // Seed the same `tmpl.tpl` shim the eval-side tests use so
+            // entry files can call `template(path = X, source =
+            // "tmpl.tpl", vars = {"body": Y})` as a direct stand-in
+            // for the old `file(path = X, content = Y)`.
+            fs::write(root.join("tmpl.tpl"), "${body}").unwrap();
             Self { root }
         }
         fn write(&self, rel: &str, src: &str) -> PathBuf {
@@ -227,7 +232,7 @@ mod tests {
         let proj = TempProject::new("not-execute");
         let entry = proj.write(
             "entry.keron",
-            "reconcile file(path = \"/x\", content = \"y\")\n",
+            "reconcile template(path = \"/x\", source = \"tmpl.tpl\", vars = {\"body\": \"y\"})\n",
         );
         let (res, out) = drive(&entry, false, "");
         res.unwrap();
@@ -252,7 +257,7 @@ mod tests {
         let proj = TempProject::new("empty-plan");
         let entry = proj.write(
             "entry.keron",
-            "val f: File = file(path = \"/x\", content = \"\")\n",
+            "val f: Template = template(path = \"/x\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n",
         );
         let (res, out) = drive(&entry, true, "");
         res.unwrap();
@@ -276,7 +281,7 @@ mod tests {
         let proj = TempProject::new("no-approval");
         let entry = proj.write(
             "entry.keron",
-            "reconcile file(path = \"/x\", content = \"y\")\n",
+            "reconcile template(path = \"/x\", source = \"tmpl.tpl\", vars = {\"body\": \"y\"})\n",
         );
         let (res, out) = drive(&entry, true, "no\n");
         res.unwrap();
@@ -296,7 +301,7 @@ mod tests {
         let proj = TempProject::new("yes-approval");
         let entry = proj.write(
             "entry.keron",
-            "reconcile file(path = \"/x\", content = \"y\")\n",
+            "reconcile template(path = \"/x\", source = \"tmpl.tpl\", vars = {\"body\": \"y\"})\n",
         );
         let (res, out) = drive(&entry, true, "yes\n");
         let err = res.unwrap_err();

@@ -2,8 +2,8 @@
 # `for (k, v) in m` over a `Map<K, V>` binds `k: K` and `v: V` in
 # body scope.
 
-fn write_kv(key: String, count: Int): File {
-  file(path = "~/state/${key}", content = "${count}")
+fn write_kv(key: String, count: Int): Template {
+  template(path = "~/state/${key}", source = "tmpl.tpl", vars = {"body": "${count}"})
 }
 
 val counts: Map<String, Int> = {"alpha": 1, "beta": 2}
@@ -16,7 +16,7 @@ for (name, n) in counts {
 # `Boolean`).
 val codes: Map<Int, String> = {200: "ok", 404: "missing"}
 for (code, label) in codes {
-  reconcile file(path = "/tmp/${code}", content = label)
+  reconcile template(path = "/tmp/${code}", source = "tmpl.tpl", vars = {"body": label})
 }
 
 # Body with inner `val` shadow-checks: `tag` doesn't collide with `k`
@@ -24,5 +24,5 @@ for (code, label) in codes {
 val by_user: Map<String, Boolean> = {"alice": true, "bob": false}
 for (user, enabled) in by_user {
   val tag: String = "${user}=${enabled}"
-  reconcile file(path = "/tmp/${user}", content = tag)
+  reconcile template(path = "/tmp/${user}", source = "tmpl.tpl", vars = {"body": tag})
 }

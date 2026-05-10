@@ -11,7 +11,10 @@ fn reconcile_symlink_call_typechecks() {
 
 #[test]
 fn reconcile_file_call_typechecks() {
-    assert!(check_src(r#"reconcile file(path = "x", content = "y")"#).is_ok());
+    assert!(
+        check_src(r#"reconcile template(path = "x", source = "tmpl.tpl", vars = {"body": "y"})"#)
+            .is_ok()
+    );
 }
 
 #[test]
@@ -58,7 +61,7 @@ fn reconcile_user_fn_returning_symlink_typechecks() {
 fn reconcile_mixed_kinds_via_repeated_directives() {
     let src = r#"
         val s: Symlink = symlink(from = "a", to = "b")
-        val f: File = file(path = "x", content = "y")
+        val f: Template = template(path = "x", source = "tmpl.tpl", vars = {"body": "y"})
         val d: Directory = directory(path = "p")
         reconcile s
         reconcile f
@@ -160,7 +163,7 @@ fn reconcile_arg_type_mismatch_propagates() {
 fn reconcile_chain_of_resources_typechecks() {
     let src = r#"
         val a: Symlink = symlink(from = "x", to = "y")
-        val b: File = file(path = "p", content = "c")
+        val b: Template = template(path = "p", source = "tmpl.tpl", vars = {"body": "c"})
         reconcile a -> b
     "#;
     assert!(check_src(src).is_ok());
@@ -170,7 +173,7 @@ fn reconcile_chain_of_resources_typechecks() {
 fn reconcile_block_of_single_steps_typechecks() {
     let src = r#"
         val a: Symlink = symlink(from = "x", to = "y")
-        val b: File = file(path = "p", content = "c")
+        val b: Template = template(path = "p", source = "tmpl.tpl", vars = {"body": "c"})
         val d: Directory = directory(path = "p")
         reconcile {
           a;
@@ -260,7 +263,7 @@ fn reconcile_block_inside_for_typechecks() {
 fn reconcile_chain_with_resource_step_typechecks() {
     let src = r#"
         val s: Symlink = symlink(from = "a", to = "b")
-        val r: Resource = file(path = "p", content = "c")
+        val r: Resource = template(path = "p", source = "tmpl.tpl", vars = {"body": "c"})
         val d: Directory = directory(path = "d")
         reconcile s -> r -> d
     "#;
@@ -272,7 +275,7 @@ fn reconcile_block_with_resource_step_typechecks() {
     let src = r#"
         val r: Resource = symlink(from = "a", to = "b")
         val rs: List<Resource> = [
-          file(path = "p", content = "c"),
+          template(path = "p", source = "tmpl.tpl", vars = {"body": "c"}),
           directory(path = "d"),
         ]
         reconcile {

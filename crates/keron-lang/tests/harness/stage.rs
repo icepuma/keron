@@ -9,9 +9,9 @@ use keron_lang::{
 use super::render;
 
 /// Pre-resolved imported symbols mirroring the implicit stdlib
-/// builtins (`symlink`, `file`, `directory`, plus the resource type
-/// names). Mirrors `keron-modules::stdlib::fs` by hand because this
-/// harness lives in `keron-lang` and can't depend on
+/// builtins (`symlink`, `template`, `directory`, plus the resource
+/// type names). Mirrors `keron-modules::stdlib::fs` by hand because
+/// this harness lives in `keron-lang` and can't depend on
 /// `keron-modules`. Keep in sync if the registry grows.
 fn fs_imports() -> ImportedSymbols {
     let mut imp = ImportedSymbols::default();
@@ -35,7 +35,7 @@ fn fs_imports() -> ImportedSymbols {
     );
     imp.builtins.insert("symlink".into());
     imp.fns.insert(
-        "file".into(),
+        "template".into(),
         FnSig {
             params: vec![
                 ParamSig {
@@ -44,15 +44,20 @@ fn fs_imports() -> ImportedSymbols {
                     has_default: false,
                 },
                 ParamSig {
-                    name: "content".into(),
+                    name: "source".into(),
                     ty: Type::String,
                     has_default: false,
                 },
+                ParamSig {
+                    name: "vars".into(),
+                    ty: Type::Map(Box::new(Type::String), Box::new(Type::String)),
+                    has_default: false,
+                },
             ],
-            return_type: Type::File,
+            return_type: Type::Template,
         },
     );
-    imp.builtins.insert("file".into());
+    imp.builtins.insert("template".into());
     imp.fns.insert(
         "directory".into(),
         FnSig {
@@ -67,7 +72,7 @@ fn fs_imports() -> ImportedSymbols {
     imp.builtins.insert("directory".into());
     for (name, ty) in [
         ("Symlink", Type::Symlink),
-        ("File", Type::File),
+        ("Template", Type::Template),
         ("Directory", Type::Directory),
         ("Resource", Type::Resource),
     ] {

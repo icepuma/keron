@@ -1,8 +1,8 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
 ---
-error: type mismatch: expected `File`, found `Symlink`
-  --> 3:15
+error: type mismatch: expected `Template`, found `Symlink`
+  --> 3:19
   |
-3 | val f: File = s
-  |               ^
+3 | val f: Template = s
+  |                   ^

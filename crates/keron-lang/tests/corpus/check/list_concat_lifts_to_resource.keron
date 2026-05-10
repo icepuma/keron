@@ -1,6 +1,6 @@
 
 val syms: List<Symlink> = [symlink(from = "df/zsh", to = "~/.zshrc")]
-val files: List<File> = [file(path = "/etc/motd", content = "welcome")]
+val files: List<Template> = [template(path = "/etc/motd", source = "tmpl.tpl", vars = {"body": "welcome"})]
 
 # Inferred type: List<Resource>.
 val all = syms ++ files

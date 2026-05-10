@@ -47,7 +47,7 @@ fn fs_imports() -> ImportedSymbols {
         },
     );
     imp.fns.insert(
-        "file".into(),
+        "template".into(),
         FnSig {
             params: vec![
                 ParamSig {
@@ -56,12 +56,17 @@ fn fs_imports() -> ImportedSymbols {
                     has_default: false,
                 },
                 ParamSig {
-                    name: "content".into(),
+                    name: "source".into(),
                     ty: Type::String,
                     has_default: false,
                 },
+                ParamSig {
+                    name: "vars".into(),
+                    ty: Type::Map(Box::new(Type::String), Box::new(Type::String)),
+                    has_default: false,
+                },
             ],
-            return_type: Type::File,
+            return_type: Type::Template,
         },
     );
     imp.fns.insert(
@@ -76,7 +81,7 @@ fn fs_imports() -> ImportedSymbols {
         },
     );
     imp.types.insert("Symlink".into(), Type::Symlink);
-    imp.types.insert("File".into(), Type::File);
+    imp.types.insert("Template".into(), Type::Template);
     imp.types.insert("Directory".into(), Type::Directory);
     imp.types.insert("Resource".into(), Type::Resource);
     imp
@@ -103,14 +108,14 @@ const KEYWORDS: &[&str] = &[
     "List",
     "Map",
     "Symlink",
-    "File",
+    "Template",
     "Directory",
     "Resource",
     "Void",
     // Builtin function names — collide with `val`/`fn` declarations
     // even though they aren't parser keywords.
     "symlink",
-    "file",
+    "template",
     "directory",
 ];
 
@@ -156,7 +161,7 @@ fn literal_source_for(ty: &Type) -> BoxedStrategy<(String, Type)> {
         Type::List(_)
         | Type::Map(_, _)
         | Type::Symlink
-        | Type::File
+        | Type::Template
         | Type::Directory
         | Type::Resource
         | Type::Void
@@ -458,7 +463,7 @@ proptest! {
 
     #[test]
     fn empty_map_with_map_annotation_typechecks(
-        k in prop_oneof![Just(Type::String), Just(Type::Int), Just(Type::Boolean)],
+        k in prop_oneof![Just(Type::String), Just(Type::Int)],
         v in ty_strategy(),
         name in ident_strategy(),
     ) {
@@ -711,7 +716,7 @@ proptest! {
             let name = format!("r{i}");
             let value = match k {
                 0 => format!("symlink(from = \"a{i}\", to = \"b{i}\")"),
-                1 => format!("file(path = \"p{i}\", content = \"c{i}\")"),
+                1 => format!("template(path = \"p{i}\", source = \"tmpl.tpl\", vars = {{\"body\": \"c{i}\"}})"),
                 _ => format!("directory(path = \"d{i}\")"),
             };
             writeln!(decls, "val {name}: Resource = {value}").expect("write to String");
@@ -739,7 +744,7 @@ proptest! {
         for (i, k) in kinds.iter().enumerate() {
             let frag = match k {
                 0 => format!("symlink(from = \"a{i}\", to = \"b{i}\")"),
-                1 => format!("file(path = \"p{i}\", content = \"c{i}\")"),
+                1 => format!("template(path = \"p{i}\", source = \"tmpl.tpl\", vars = {{\"body\": \"c{i}\"}})"),
                 _ => format!("directory(path = \"d{i}\")"),
             };
             entries.push_str(&frag);
@@ -823,7 +828,7 @@ proptest! {
         // exercising the binding's type. A `Void` loop with body
         // `reconcile <File>` is well-typed.
         let src = format!(
-            "val xs: List<Int> = [{body}]\nfor x in xs {{ reconcile file(path = \"/tmp/${{x}}\", content = \"\") }}"
+            "val xs: List<Int> = [{body}]\nfor x in xs {{ reconcile template(path = \"/tmp/${{x}}\", source = \"tmpl.tpl\", vars = {{\"body\": \"\"}}) }}"
         );
         let prog = parse(&src).expect("parse should succeed");
         prop_assert!(check(&prog).is_ok(), "check failed for: {src}");
@@ -845,7 +850,7 @@ proptest! {
             .collect::<Vec<_>>()
             .join(", ");
         let src = format!(
-            "val m: Map<String, Int> = {{{body}}}\nfor (k, v) in m {{ reconcile file(path = \"/tmp/${{k}}\", content = \"${{v}}\") }}"
+            "val m: Map<String, Int> = {{{body}}}\nfor (k, v) in m {{ reconcile template(path = \"/tmp/${{k}}\", source = \"tmpl.tpl\", vars = {{\"body\": \"${{v}}\"}}) }}"
         );
         let prog = parse(&src).expect("parse should succeed");
         prop_assert!(check(&prog).is_ok(), "check failed for: {src}");

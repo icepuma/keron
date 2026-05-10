@@ -323,7 +323,7 @@ fn resolve_type_in_place(
         | Type::Boolean
         | Type::Double
         | Type::Symlink
-        | Type::File
+        | Type::Template
         | Type::Directory
         | Type::Resource
         | Type::Void => {}
@@ -943,7 +943,7 @@ fn is_subtype(child: &Type, parent: &Type) -> bool {
         // slot) is intentionally not allowed; assignments from a
         // string literal are admitted in `check_expr` only when the
         // literal is in the variant set.
-        (Type::Symlink | Type::File | Type::Directory, Type::Resource)
+        (Type::Symlink | Type::Template | Type::Directory, Type::Resource)
         | (Type::StringUnion { .. }, Type::String) => true,
         (Type::List(c), Type::List(p)) => is_subtype(c, p),
         _ => false,
@@ -953,7 +953,7 @@ fn is_subtype(child: &Type, parent: &Type) -> bool {
 const fn is_resource_singleton(ty: &Type) -> bool {
     matches!(
         ty,
-        Type::Symlink | Type::File | Type::Directory | Type::Resource
+        Type::Symlink | Type::Template | Type::Directory | Type::Resource
     )
 }
 
@@ -1269,7 +1269,7 @@ fn map_type(
         return Err(Diagnostic::new(
             first.key.span.clone(),
             format!(
-                "`{key_ty}` is not a valid `Map` key type; allowed keys are `String`, `Int`, `Boolean`"
+                "`{key_ty}` is not a valid `Map` key type; allowed keys are `String` and `Int`"
             ),
         ));
     }
@@ -1294,7 +1294,7 @@ fn map_type(
 }
 
 const fn is_valid_map_key(ty: &Type) -> bool {
-    matches!(ty, Type::String | Type::Int | Type::Boolean)
+    matches!(ty, Type::String | Type::Int)
 }
 
 /// Recursively check that every `Map<K, V>` occurrence in a declared
@@ -1311,7 +1311,7 @@ fn walk_type(ty: &Type, span: &Span, diags: &mut Vec<Diagnostic>) {
         | Type::Boolean
         | Type::Double
         | Type::Symlink
-        | Type::File
+        | Type::Template
         | Type::Directory
         | Type::Resource
         | Type::Void
@@ -1322,7 +1322,7 @@ fn walk_type(ty: &Type, span: &Span, diags: &mut Vec<Diagnostic>) {
                 diags.push(Diagnostic::new(
                     span.clone(),
                     format!(
-                        "`{k}` is not a valid `Map` key type; allowed keys are `String`, `Int`, `Boolean`"
+                        "`{k}` is not a valid `Map` key type; allowed keys are `String` and `Int`"
                     ),
                 ));
             }
@@ -1368,10 +1368,10 @@ fn check_reconcile_decl(r: &ReconcileDecl, env: &Env, fns: &FnEnv, diags: &mut V
 
 const fn is_reconcilable(ty: &Type) -> bool {
     match ty {
-        Type::Symlink | Type::File | Type::Directory | Type::Resource => true,
+        Type::Symlink | Type::Template | Type::Directory | Type::Resource => true,
         Type::List(inner) => matches!(
             **inner,
-            Type::Symlink | Type::File | Type::Directory | Type::Resource
+            Type::Symlink | Type::Template | Type::Directory | Type::Resource
         ),
         _ => false,
     }

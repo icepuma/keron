@@ -127,8 +127,15 @@ pub struct TypeAliasDecl {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntrinsicId {
     Symlink,
-    File,
     Directory,
+    /// `template(path, source, vars)` — render a templated file. At
+    /// apply time, `source` is read (resolved relative to the
+    /// importing module's directory), `${name}` placeholders are
+    /// substituted with values from `vars`, and the rendered text is
+    /// written to `path`. Subsumes the old `file(path, content)`
+    /// constructor: a non-templating file is just a `template` with
+    /// an empty `vars` map.
+    Template,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -378,23 +385,29 @@ pub enum Type {
     Double,
     List(Box<Self>),
     /// `Map<K, V>`. Allowed key types are validated at type-check
-    /// time: only `String`, `Int`, and `Boolean` are accepted.
+    /// time: only `String` and `Int` are accepted (Boolean is too
+    /// coarse and Double / structured keys make round-tripping
+    /// problematic).
     Map(Box<Self>, Box<Self>),
     /// Filesystem symlink. Constructed via the builtin `symlink(...)`
     /// fn; only enters the apply queue via `reconcile`.
     Symlink,
-    /// File-with-content. Constructed via the builtin `file(...)` fn.
-    File,
+    /// Templated file. Constructed via the builtin
+    /// `template(path, source, vars)` fn; at apply time the
+    /// substituted text lands at `path`. A "plain" file is just a
+    /// template with an empty `vars` map.
+    Template,
     /// Directory ensure-existence. Constructed via the builtin
     /// `directory(...)` fn.
     Directory,
-    /// Common supertype of [`Self::Symlink`], [`Self::File`], and
+    /// Common supertype of [`Self::Symlink`], [`Self::Template`], and
     /// [`Self::Directory`]. There is no constructor — the type only
     /// shows up via annotation (`val r: Resource = symlink(...)`),
-    /// list inference for mixed elements (`[symlink(...), file(...)]`
-    /// has type `List<Resource>`), and `Resource`-typed fn signatures.
-    /// Subtyping is one-way: a specific resource fits a `Resource`
-    /// slot, but `Resource` does not auto-narrow to a specific kind.
+    /// list inference for mixed elements
+    /// (`[symlink(...), template(...)]` has type `List<Resource>`),
+    /// and `Resource`-typed fn signatures. Subtyping is one-way: a
+    /// specific resource fits a `Resource` slot, but `Resource` does
+    /// not auto-narrow to a specific kind.
     Resource,
     /// "No value." The type of an empty block, of a `Void`-returning
     /// function's body, and of an `if` expression used as control
@@ -437,7 +450,7 @@ impl fmt::Display for Type {
             Self::List(inner) => write!(f, "List<{inner}>"),
             Self::Map(k, v) => write!(f, "Map<{k}, {v}>"),
             Self::Symlink => f.write_str("Symlink"),
-            Self::File => f.write_str("File"),
+            Self::Template => f.write_str("Template"),
             Self::Directory => f.write_str("Directory"),
             Self::Resource => f.write_str("Resource"),
             Self::Void => f.write_str("Void"),

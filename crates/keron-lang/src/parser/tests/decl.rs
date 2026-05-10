@@ -138,12 +138,13 @@ fn val_symlink_annotation_parses() {
 }
 
 #[test]
-fn val_file_annotation_parses() {
-    let prog = ok(r#"val f: File = file(path = "p", content = "c")"#);
+fn val_template_annotation_parses() {
+    let prog =
+        ok(r#"val f: Template = template(path = "p", source = "tmpl.tpl", vars = {"body": "c"})"#);
     let v = first_val(&prog);
     assert_eq!(
         v.ty.as_ref().expect("annotation").node,
-        Type::Named("File".into()),
+        Type::Named("Template".into()),
     );
 }
 
@@ -159,11 +160,11 @@ fn val_directory_annotation_parses() {
 
 #[test]
 fn val_list_of_resources_parses() {
-    let prog = ok(r"val xs: List<File> = []");
+    let prog = ok(r"val xs: List<Template> = []");
     let v = first_val(&prog);
     assert_eq!(
         v.ty.as_ref().expect("annotation").node,
-        Type::List(Box::new(Type::Named("File".into()))),
+        Type::List(Box::new(Type::Named("Template".into()))),
     );
 }
 

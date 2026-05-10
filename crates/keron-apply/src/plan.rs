@@ -25,7 +25,7 @@ pub enum Action {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResourceKind {
-    File,
+    Template,
     Directory,
     Symlink,
 }
@@ -33,7 +33,7 @@ pub enum ResourceKind {
 impl ResourceKind {
     pub const fn label(self) -> &'static str {
         match self {
-            Self::File => "file",
+            Self::Template => "template",
             Self::Directory => "directory",
             Self::Symlink => "symlink",
         }
@@ -42,7 +42,7 @@ impl ResourceKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResourceState {
-    File { path: PathBuf, content: String },
+    Template { path: PathBuf, content: String },
     Directory { path: PathBuf },
     Symlink { from: PathBuf, to: PathBuf },
 }
@@ -111,7 +111,7 @@ pub fn build_plan(graph: &keron_modules::ModuleGraph) -> Result<Plan> {
 
 fn address_for(state: &ResourceState) -> String {
     match state {
-        ResourceState::File { path, .. } | ResourceState::Directory { path } => {
+        ResourceState::Template { path, .. } | ResourceState::Directory { path } => {
             path.display().to_string()
         }
         ResourceState::Symlink { from, .. } => from.display().to_string(),
@@ -120,7 +120,7 @@ fn address_for(state: &ResourceState) -> String {
 
 const fn kind_for(state: &ResourceState) -> ResourceKind {
     match state {
-        ResourceState::File { .. } => ResourceKind::File,
+        ResourceState::Template { .. } => ResourceKind::Template,
         ResourceState::Directory { .. } => ResourceKind::Directory,
         ResourceState::Symlink { .. } => ResourceKind::Symlink,
     }
@@ -133,10 +133,10 @@ impl Plan {
             changes: vec![
                 ResourceChange {
                     address: "~/.zshrc".into(),
-                    kind: ResourceKind::File,
+                    kind: ResourceKind::Template,
                     action: Action::Create,
                     before: None,
-                    after: Some(ResourceState::File {
+                    after: Some(ResourceState::Template {
                         path: PathBuf::from("~/.zshrc"),
                         content: "export PATH=...".into(),
                     }),
@@ -187,7 +187,7 @@ mod tests {
         let only_noop = Plan {
             changes: vec![ResourceChange {
                 address: "x".into(),
-                kind: ResourceKind::File,
+                kind: ResourceKind::Template,
                 action: Action::NoOp,
                 before: None,
                 after: None,
@@ -199,7 +199,7 @@ mod tests {
 
     #[test]
     fn address_for_file_uses_path() {
-        let s = ResourceState::File {
+        let s = ResourceState::Template {
             path: PathBuf::from("/etc/x"),
             content: "y".into(),
         };
@@ -238,8 +238,12 @@ mod tests {
         let dir = env::temp_dir().join(format!("keron-build-plan-{}-{n}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let entry = dir.join("entry.keron");
-        let src = "reconcile file(path = \"/a\", content = \"\")\n\
-                   reconcile file(path = \"/b\", content = \"\")\n";
+        // Seed a one-placeholder template alongside the entry so the
+        // `template(path = X, source = "tmpl.tpl", vars = {"body": Y})`
+        // form below resolves at eval time.
+        fs::write(dir.join("tmpl.tpl"), "${body}").unwrap();
+        let src = "reconcile template(path = \"/a\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
+                   reconcile template(path = \"/b\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n";
         fs::write(&entry, src).unwrap();
         let canonical = fs::canonicalize(&entry).unwrap();
         let graph = resolve(EntrySource {

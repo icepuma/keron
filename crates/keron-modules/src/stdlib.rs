@@ -53,6 +53,15 @@ fn build_registry() -> BTreeMap<&'static str, StdModule> {
     reg
 }
 
+/// `std:fs` builtins — the resource constructors plus the
+/// `Resource`/`Symlink`/`Template`/`Directory` types they produce.
+///
+/// `template(path, source, vars)` is the only file-producing form:
+/// `source` is a path to an external template file (resolved
+/// relative to the importing module's directory at apply time);
+/// `${name}` placeholders are substituted from `vars`, and the
+/// rendered text is written to `path`. A "plain" file with no
+/// substitutions is just a `template` whose `vars` map is empty.
 fn build_fs() -> StdModule {
     let mut fns = BTreeMap::new();
     fns.insert(
@@ -65,12 +74,19 @@ fn build_fs() -> StdModule {
         ),
     );
     fns.insert(
-        "file".into(),
+        "template".into(),
         intrinsic_fn(
-            "file",
-            &[("path", Type::String), ("content", Type::String)],
-            Type::File,
-            IntrinsicId::File,
+            "template",
+            &[
+                ("path", Type::String),
+                ("source", Type::String),
+                (
+                    "vars",
+                    Type::Map(Box::new(Type::String), Box::new(Type::String)),
+                ),
+            ],
+            Type::Template,
+            IntrinsicId::Template,
         ),
     );
     fns.insert(
@@ -84,7 +100,7 @@ fn build_fs() -> StdModule {
     );
     let mut types = BTreeMap::new();
     types.insert("Symlink".into(), Type::Symlink);
-    types.insert("File".into(), Type::File);
+    types.insert("Template".into(), Type::Template);
     types.insert("Directory".into(), Type::Directory);
     types.insert("Resource".into(), Type::Resource);
     StdModule { fns, types }
@@ -138,7 +154,7 @@ mod tests {
                 _ => String::new(),
             })
             .collect();
-        assert_eq!(names, vec!["directory", "file", "symlink"]);
+        assert_eq!(names, vec!["directory", "symlink", "template"]);
     }
 
     #[test]
@@ -146,15 +162,23 @@ mod tests {
         let reg = registry();
         let fs = reg.get("fs").expect("fs module present");
         assert!(fs.fns.contains_key("symlink"));
-        assert!(fs.fns.contains_key("file"));
+        assert!(fs.fns.contains_key("template"));
         assert!(fs.fns.contains_key("directory"));
+        assert!(!fs.fns.contains_key("file"));
     }
 
     #[test]
     fn fs_intrinsics_are_tagged() {
         let fs = build_fs();
         assert_eq!(fs.fns["symlink"].intrinsic, Some(IntrinsicId::Symlink));
-        assert_eq!(fs.fns["file"].intrinsic, Some(IntrinsicId::File));
+        assert_eq!(fs.fns["template"].intrinsic, Some(IntrinsicId::Template));
         assert_eq!(fs.fns["directory"].intrinsic, Some(IntrinsicId::Directory));
+    }
+
+    #[test]
+    fn fs_exports_template_type_not_file() {
+        let fs = build_fs();
+        assert!(fs.types.contains_key("Template"));
+        assert!(!fs.types.contains_key("File"));
     }
 }

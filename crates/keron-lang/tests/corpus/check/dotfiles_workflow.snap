@@ -381,22 +381,22 @@ Program {
                 },
                 ty: Some(
                     Spanned {
-                        node: File,
-                        span: 650..654,
+                        node: Template,
+                        span: 650..658,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
-                            node: "file",
-                            span: 657..661,
+                            node: "template",
+                            span: 661..669,
                         },
                         args: [
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "path",
-                                        span: 665..669,
+                                        span: 673..677,
                                     },
                                 ),
                                 value: Spanned {
@@ -405,32 +405,67 @@ Program {
                                             "~/.gitconfig",
                                         ),
                                     ),
-                                    span: 672..686,
+                                    span: 680..694,
                                 },
-                                span: 665..686,
+                                span: 673..694,
                             },
                             CallArg {
                                 name: Some(
                                     Spanned {
-                                        node: "content",
-                                        span: 690..697,
+                                        node: "source",
+                                        span: 698..704,
                                     },
                                 ),
                                 value: Spanned {
                                     node: Literal(
                                         String(
-                                            "[user]\n  email = me@example.com\n  name = Me",
+                                            "tmpl.tpl",
                                         ),
                                     ),
-                                    span: 700..747,
+                                    span: 707..717,
                                 },
-                                span: 690..747,
+                                span: 698..717,
+                            },
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "vars",
+                                        span: 721..725,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Map(
+                                        [
+                                            MapEntry {
+                                                key: Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "body",
+                                                        ),
+                                                    ),
+                                                    span: 729..735,
+                                                },
+                                                value: Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "[user]\n  email = me@example.com\n  name = Me",
+                                                        ),
+                                                    ),
+                                                    span: 737..784,
+                                                },
+                                                span: 729..784,
+                                            },
+                                        ],
+                                    ),
+                                    span: 728..785,
+                                },
+                                span: 721..785,
                             },
                         ],
                     },
-                    span: 657..854,
+                    span: 661..892,
                 },
-                span: 635..854,
+                span: 635..892,
             },
         ),
         Reconcile(
@@ -441,11 +476,11 @@ Program {
                             node: Var(
                                 "home_dirs",
                             ),
-                            span: 864..873,
+                            span: 902..911,
                         },
                     ],
                 ],
-                span: 854..874,
+                span: 892..912,
             },
         ),
         Reconcile(
@@ -456,11 +491,11 @@ Program {
                             node: Var(
                                 "shell_links",
                             ),
-                            span: 884..895,
+                            span: 922..933,
                         },
                     ],
                 ],
-                span: 874..896,
+                span: 912..934,
             },
         ),
         Reconcile(
@@ -471,11 +506,11 @@ Program {
                             node: Var(
                                 "editor_links",
                             ),
-                            span: 906..918,
+                            span: 944..956,
                         },
                     ],
                 ],
-                span: 896..919,
+                span: 934..957,
             },
         ),
         Reconcile(
@@ -486,11 +521,11 @@ Program {
                             node: Var(
                                 "gitconfig",
                             ),
-                            span: 929..938,
+                            span: 967..976,
                         },
                     ],
                 ],
-                span: 919..939,
+                span: 957..977,
             },
         ),
     ],

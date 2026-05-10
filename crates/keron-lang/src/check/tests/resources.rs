@@ -10,8 +10,13 @@ fn symlink_typechecks() {
 }
 
 #[test]
-fn file_typechecks() {
-    assert!(check_src(r#"val f: File = file(path = "x", content = "y")"#).is_ok());
+fn template_typechecks() {
+    assert!(
+        check_src(
+            r#"val f: Template = template(path = "x", source = "tmpl.tpl", vars = {"body": "y"})"#
+        )
+        .is_ok()
+    );
 }
 
 #[test]
@@ -33,7 +38,7 @@ fn resource_type_inside_fn_body_resolves() {
     assert!(
         check_src(
             r#"fn make(): Symlink {
-                val tmp: File = file(path = "/p", content = "")
+                val tmp: Template = template(path = "/p", source = "tmpl.tpl", vars = {"body": ""})
                 symlink(from = "a", to = "b")
             }"#
         )
@@ -51,7 +56,7 @@ fn resource_type_inside_if_branch_resolves() {
         check_src(
             r#"fn make(flag: Boolean): Symlink {
                 if flag {
-                    val a: File = file(path = "/a", content = "")
+                    val a: Template = template(path = "/a", source = "tmpl.tpl", vars = {"body": ""})
                     symlink(from = "x", to = "y")
                 } else {
                     val b: Directory = directory(path = "/b")
@@ -71,7 +76,7 @@ fn resource_type_inside_for_body_resolves() {
         check_src(
             r#"fn pulse(): Void {
                 for n in [1, 2] {
-                    val placeholder: File = file(path = "/x", content = "y")
+                    val placeholder: Template = template(path = "/x", source = "tmpl.tpl", vars = {"body": "y"})
                     reconcile placeholder
                 }
             }"#
@@ -114,13 +119,10 @@ fn symlink_missing_arg_errors() {
 }
 
 #[test]
-fn file_missing_arg_errors() {
-    let err = check_src(r#"val f: File = file(path = "x")"#).expect_err("should fail");
-    assert!(
-        err[0]
-            .message
-            .contains("missing required argument `content`")
-    );
+fn template_missing_arg_errors() {
+    let err = check_src(r#"val f: Template = template(path = "x", source = "tmpl.tpl")"#)
+        .expect_err("should fail");
+    assert!(err[0].message.contains("missing required argument `vars`"));
 }
 
 #[test]
@@ -140,8 +142,8 @@ fn symlink_cannot_be_map_key() {
 }
 
 #[test]
-fn file_cannot_be_map_key() {
-    let err = check_src("val m: Map<File, Int> = {}").expect_err("should fail");
+fn template_cannot_be_map_key() {
+    let err = check_src("val m: Map<Template, Int> = {}").expect_err("should fail");
     assert!(err[0].message.contains("not a valid `Map` key type"));
 }
 
@@ -197,12 +199,12 @@ fn user_val_collides_with_symlink_builtin() {
 }
 
 #[test]
-fn user_val_collides_with_file_builtin() {
-    let err = check_src(r"val file = 1").expect_err("should fail");
+fn user_val_collides_with_template_builtin() {
+    let err = check_src(r"val template = 1").expect_err("should fail");
     assert!(
         err[0]
             .message
-            .contains("`file` is a builtin and cannot be redefined"),
+            .contains("`template` is a builtin and cannot be redefined"),
         "got: {}",
         err[0].message,
     );
@@ -229,8 +231,9 @@ fn symlink_satisfies_resource_annotation() {
 }
 
 #[test]
-fn file_satisfies_resource_annotation() {
-    let src = r#"val r: Resource = file(path = "p", content = "c")"#;
+fn template_satisfies_resource_annotation() {
+    let src =
+        r#"val r: Resource = template(path = "p", source = "tmpl.tpl", vars = {"body": "c"})"#;
     assert!(check_src(src).is_ok());
 }
 
@@ -243,7 +246,7 @@ fn directory_satisfies_resource_annotation() {
 #[test]
 fn mixed_resource_list_inferred_to_list_of_resource() {
     let src = r#"
-        val xs = [symlink(from = "a", to = "b"), file(path = "p", content = "c")]
+        val xs = [symlink(from = "a", to = "b"), template(path = "p", source = "tmpl.tpl", vars = {"body": "c"})]
         val ys: List<Resource> = xs
     "#;
     assert!(check_src(src).is_ok());
@@ -254,7 +257,7 @@ fn mixed_resource_list_with_three_kinds_inferred_to_list_of_resource() {
     let src = r#"
         val xs = [
           symlink(from = "a", to = "b"),
-          file(path = "p", content = "c"),
+          template(path = "p", source = "tmpl.tpl", vars = {"body": "c"}),
           directory(path = "d"),
         ]
         val ys: List<Resource> = xs
@@ -267,7 +270,7 @@ fn list_of_resource_annotation_accepts_mixed_elements() {
     let src = r#"
         val xs: List<Resource> = [
           symlink(from = "a", to = "b"),
-          file(path = "p", content = "c"),
+          template(path = "p", source = "tmpl.tpl", vars = {"body": "c"}),
           directory(path = "d"),
         ]
     "#;
@@ -297,7 +300,7 @@ fn reconcile_accepts_list_of_resource() {
     let src = r#"
         val xs: List<Resource> = [
           symlink(from = "a", to = "b"),
-          file(path = "p", content = "c"),
+          template(path = "p", source = "tmpl.tpl", vars = {"body": "c"}),
         ]
         reconcile xs
     "#;
@@ -308,7 +311,7 @@ fn reconcile_accepts_list_of_resource() {
 fn reconcile_chain_mixes_kinds_via_resource() {
     let src = r#"
         val s: Symlink = symlink(from = "a", to = "b")
-        val f: File = file(path = "p", content = "c")
+        val f: Template = template(path = "p", source = "tmpl.tpl", vars = {"body": "c"})
         val d: Directory = directory(path = "d")
         reconcile s -> f -> d
     "#;
@@ -331,13 +334,13 @@ fn resource_does_not_narrow_to_symlink() {
 }
 
 #[test]
-fn resource_does_not_narrow_to_file() {
+fn resource_does_not_narrow_to_template() {
     let src = r#"
-        val r: Resource = file(path = "p", content = "c")
-        val f: File = r
+        val r: Resource = template(path = "p", source = "p.tmpl", vars = {})
+        val f: Template = r
     "#;
     let err = check_src(src).expect_err("should fail");
-    assert!(err[0].message.contains("expected `File`"));
+    assert!(err[0].message.contains("expected `Template`"));
     assert!(err[0].message.contains("found `Resource`"));
 }
 
@@ -364,14 +367,14 @@ fn list_of_resource_does_not_narrow_to_list_of_symlink() {
 }
 
 #[test]
-fn symlink_does_not_narrow_to_file() {
+fn symlink_does_not_narrow_to_template() {
     // Specific resource kinds remain distinct from each other.
     let src = r#"
         val s: Symlink = symlink(from = "a", to = "b")
-        val f: File = s
+        val f: Template = s
     "#;
     let err = check_src(src).expect_err("should fail");
-    assert!(err[0].message.contains("expected `File`"));
+    assert!(err[0].message.contains("expected `Template`"));
     assert!(err[0].message.contains("found `Symlink`"));
 }
 
@@ -409,7 +412,7 @@ fn fn_param_list_of_resource_accepts_mixed_arg() {
         if true {
           install([
             symlink(from = "a", to = "b"),
-            file(path = "p", content = "c"),
+            template(path = "p", source = "tmpl.tpl", vars = {"body": "c"}),
           ])
         }
     "#;
@@ -427,7 +430,7 @@ fn list_with_int_and_resource_still_errors() {
 fn resource_concat_with_list_of_resource_typechecks() {
     let src = r#"
         val a: List<Symlink> = [symlink(from = "a", to = "b")]
-        val b: List<File> = [file(path = "p", content = "c")]
+        val b: List<Template> = [template(path = "p", source = "tmpl.tpl", vars = {"body": "c"})]
         val all: List<Resource> = a ++ b
     "#;
     assert!(check_src(src).is_ok());
@@ -440,7 +443,7 @@ fn concat_lifts_heterogeneous_resource_lists_in_synthesis() {
     // resources is expected.
     let src = r#"
         val a: List<Symlink> = [symlink(from = "a", to = "b")]
-        val b: List<File> = [file(path = "p", content = "c")]
+        val b: List<Template> = [template(path = "p", source = "tmpl.tpl", vars = {"body": "c"})]
         val all = a ++ b
         reconcile all
     "#;
@@ -474,7 +477,7 @@ fn map_with_resource_value_annotation_accepts_mix() {
     let src = r#"
         val m: Map<String, Resource> = {
           "shell": symlink(from = "df/zsh", to = "~/.zshrc"),
-          "motd": file(path = "/etc/motd", content = "welcome"),
+          "motd": template(path = "/etc/motd", source = "tmpl.tpl", vars = {"body": "welcome"}),
           "data": directory(path = "~/data"),
         }
     "#;
@@ -488,7 +491,7 @@ fn for_over_list_of_resource_binds_resource() {
     let src = r#"
         val rs: List<Resource> = [
           symlink(from = "a", to = "b"),
-          file(path = "p", content = "c"),
+          template(path = "p", source = "tmpl.tpl", vars = {"body": "c"}),
         ]
         for r in rs {
           reconcile r
@@ -506,7 +509,7 @@ fn if_branches_with_specific_resources_satisfy_resource_annotation() {
         val r: Resource = if use_zsh {
           symlink(from = "df/zsh", to = "~/.zshrc")
         } else {
-          file(path = "/etc/motd", content = "welcome")
+          template(path = "/etc/motd", source = "tmpl.tpl", vars = {"body": "welcome"})
         }
         reconcile r
     "#;
@@ -522,7 +525,7 @@ fn if_synthesis_of_mismatched_resource_branches_still_errors() {
         val r = if true {
           symlink(from = "a", to = "b")
         } else {
-          file(path = "p", content = "c")
+          template(path = "p", source = "tmpl.tpl", vars = {"body": "c"})
         }
     "#;
     let err = check_src(src).expect_err("should fail");

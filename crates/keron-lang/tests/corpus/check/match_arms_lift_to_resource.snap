@@ -1,0 +1,250 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        TypeAlias(
+            TypeAliasDecl {
+                name: Spanned {
+                    node: "Kind",
+                    span: 5..9,
+                },
+                variants: [
+                    Spanned {
+                        node: "link",
+                        span: 12..18,
+                    },
+                    Spanned {
+                        node: "tmpl",
+                        span: 21..27,
+                    },
+                    Spanned {
+                        node: "dir",
+                        span: 30..35,
+                    },
+                ],
+                span: 0..178,
+            },
+        ),
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "make",
+                    span: 181..185,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "k",
+                            span: 186..187,
+                        },
+                        ty: Spanned {
+                            node: StringUnion {
+                                name: "Kind",
+                                variants: [
+                                    "link",
+                                    "tmpl",
+                                    "dir",
+                                ],
+                            },
+                            span: 189..193,
+                        },
+                        default: None,
+                        span: 186..193,
+                    },
+                ],
+                return_type: Spanned {
+                    node: Resource,
+                    span: 196..204,
+                },
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Match {
+                                scrutinee: Spanned {
+                                    node: Var(
+                                        "k",
+                                    ),
+                                    span: 215..216,
+                                },
+                                arms: [
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Lit(
+                                                String(
+                                                    "link",
+                                                ),
+                                            ),
+                                            span: 223..229,
+                                        },
+                                        body: Spanned {
+                                            node: Call {
+                                                callee: Spanned {
+                                                    node: "symlink",
+                                                    span: 233..240,
+                                                },
+                                                args: [
+                                                    CallArg {
+                                                        name: Some(
+                                                            Spanned {
+                                                                node: "from",
+                                                                span: 241..245,
+                                                            },
+                                                        ),
+                                                        value: Spanned {
+                                                            node: Literal(
+                                                                String(
+                                                                    "a",
+                                                                ),
+                                                            ),
+                                                            span: 248..251,
+                                                        },
+                                                        span: 241..251,
+                                                    },
+                                                    CallArg {
+                                                        name: Some(
+                                                            Spanned {
+                                                                node: "to",
+                                                                span: 253..255,
+                                                            },
+                                                        ),
+                                                        value: Spanned {
+                                                            node: Literal(
+                                                                String(
+                                                                    "b",
+                                                                ),
+                                                            ),
+                                                            span: 258..261,
+                                                        },
+                                                        span: 253..261,
+                                                    },
+                                                ],
+                                            },
+                                            span: 233..262,
+                                        },
+                                        span: 223..262,
+                                    },
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Lit(
+                                                String(
+                                                    "tmpl",
+                                                ),
+                                            ),
+                                            span: 268..274,
+                                        },
+                                        body: Spanned {
+                                            node: Call {
+                                                callee: Spanned {
+                                                    node: "template",
+                                                    span: 278..286,
+                                                },
+                                                args: [
+                                                    CallArg {
+                                                        name: Some(
+                                                            Spanned {
+                                                                node: "path",
+                                                                span: 287..291,
+                                                            },
+                                                        ),
+                                                        value: Spanned {
+                                                            node: Literal(
+                                                                String(
+                                                                    "p",
+                                                                ),
+                                                            ),
+                                                            span: 294..297,
+                                                        },
+                                                        span: 287..297,
+                                                    },
+                                                    CallArg {
+                                                        name: Some(
+                                                            Spanned {
+                                                                node: "source",
+                                                                span: 299..305,
+                                                            },
+                                                        ),
+                                                        value: Spanned {
+                                                            node: Literal(
+                                                                String(
+                                                                    "t.tpl",
+                                                                ),
+                                                            ),
+                                                            span: 308..315,
+                                                        },
+                                                        span: 299..315,
+                                                    },
+                                                    CallArg {
+                                                        name: Some(
+                                                            Spanned {
+                                                                node: "vars",
+                                                                span: 317..321,
+                                                            },
+                                                        ),
+                                                        value: Spanned {
+                                                            node: Map(
+                                                                [],
+                                                            ),
+                                                            span: 324..326,
+                                                        },
+                                                        span: 317..326,
+                                                    },
+                                                ],
+                                            },
+                                            span: 278..327,
+                                        },
+                                        span: 268..327,
+                                    },
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Lit(
+                                                String(
+                                                    "dir",
+                                                ),
+                                            ),
+                                            span: 333..338,
+                                        },
+                                        body: Spanned {
+                                            node: Call {
+                                                callee: Spanned {
+                                                    node: "directory",
+                                                    span: 343..352,
+                                                },
+                                                args: [
+                                                    CallArg {
+                                                        name: Some(
+                                                            Spanned {
+                                                                node: "path",
+                                                                span: 353..357,
+                                                            },
+                                                        ),
+                                                        value: Spanned {
+                                                            node: Literal(
+                                                                String(
+                                                                    "/d",
+                                                                ),
+                                                            ),
+                                                            span: 360..364,
+                                                        },
+                                                        span: 353..364,
+                                                    },
+                                                ],
+                                            },
+                                            span: 343..365,
+                                        },
+                                        span: 333..365,
+                                    },
+                                ],
+                            },
+                            span: 209..371,
+                        },
+                    ),
+                    span: 205..373,
+                },
+                span: 178..373,
+                intrinsic: None,
+            },
+        ),
+    ],
+}

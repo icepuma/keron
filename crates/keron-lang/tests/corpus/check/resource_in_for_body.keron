@@ -1,7 +1,7 @@
 
 val rs: List<Resource> = [
   symlink(from = "df/zsh", to = "~/.zshrc"),
-  file(path = "/etc/motd", content = "welcome"),
+  template(path = "/etc/motd", source = "tmpl.tpl", vars = {"body": "welcome"}),
   directory(path = "~/data"),
 ]
 

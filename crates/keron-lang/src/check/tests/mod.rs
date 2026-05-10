@@ -53,7 +53,7 @@ fn fs_imports() -> ImportedSymbols {
         },
     );
     imp.fns.insert(
-        "file".into(),
+        "template".into(),
         FnSig {
             params: vec![
                 ParamSig {
@@ -62,12 +62,17 @@ fn fs_imports() -> ImportedSymbols {
                     has_default: false,
                 },
                 ParamSig {
-                    name: "content".into(),
+                    name: "source".into(),
                     ty: Type::String,
                     has_default: false,
                 },
+                ParamSig {
+                    name: "vars".into(),
+                    ty: Type::Map(Box::new(Type::String), Box::new(Type::String)),
+                    has_default: false,
+                },
             ],
-            return_type: Type::File,
+            return_type: Type::Template,
         },
     );
     imp.fns.insert(
@@ -82,15 +87,15 @@ fn fs_imports() -> ImportedSymbols {
         },
     );
     imp.types.insert("Symlink".into(), Type::Symlink);
-    imp.types.insert("File".into(), Type::File);
+    imp.types.insert("Template".into(), Type::Template);
     imp.types.insert("Directory".into(), Type::Directory);
     imp.types.insert("Resource".into(), Type::Resource);
     for name in [
         "symlink",
-        "file",
+        "template",
         "directory",
         "Symlink",
-        "File",
+        "Template",
         "Directory",
         "Resource",
     ] {

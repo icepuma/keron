@@ -120,7 +120,7 @@ fn render_state_lines<W: Write>(
 ) -> io::Result<()> {
     let s = paint(opts.color, color, sign);
     match state {
-        ResourceState::File { path, content } => {
+        ResourceState::Template { path, content } => {
             writeln!(out, "      {s} path    = \"{}\"", path.display())?;
             writeln!(out, "      {s} content = \"{}\"", escape_inline(content))?;
         }
@@ -144,11 +144,11 @@ fn render_diff_lines<W: Write>(
     let s = paint(opts.color, YELLOW, "~");
     match (before, after) {
         (
-            ResourceState::File {
+            ResourceState::Template {
                 path: bp,
                 content: bc,
             },
-            ResourceState::File {
+            ResourceState::Template {
                 path: ap,
                 content: ac,
             },
@@ -264,11 +264,11 @@ mod tests {
     #[test]
     fn sample_renders_each_action() {
         let out = render(&Plan::sample());
-        assert!(out.contains("file.\"~/.zshrc\" will be created"));
+        assert!(out.contains("template.\"~/.zshrc\" will be created"));
         assert!(out.contains("symlink.\"~/.config/nvim\" will be updated in-place"));
         assert!(out.contains("directory.\"/tmp/scratch\" will be destroyed"));
         assert!(out.contains("Plan: 1 to add, 1 to change, 1 to destroy."));
-        assert!(out.contains("+ resource \"file\""));
+        assert!(out.contains("+ resource \"template\""));
         assert!(out.contains("~ resource \"symlink\""));
         assert!(out.contains("- resource \"directory\""));
         assert!(out.contains("~ to   = \"/old/target\" -> \"/new/target\""));
@@ -296,10 +296,10 @@ mod tests {
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "/etc/x".into(),
-                kind: ResourceKind::File,
+                kind: ResourceKind::Template,
                 action: Action::Create,
                 before: None,
-                after: Some(ResourceState::File {
+                after: Some(ResourceState::Template {
                     path: PathBuf::from("/etc/x"),
                     content: "hi".into(),
                 }),
@@ -379,13 +379,13 @@ mod tests {
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "/x".into(),
-                kind: ResourceKind::File,
+                kind: ResourceKind::Template,
                 action: Action::Update,
-                before: Some(ResourceState::File {
+                before: Some(ResourceState::Template {
                     path: PathBuf::from("/x"),
                     content: "old".into(),
                 }),
-                after: Some(ResourceState::File {
+                after: Some(ResourceState::Template {
                     path: PathBuf::from("/x"),
                     content: "new".into(),
                 }),
@@ -401,13 +401,13 @@ mod tests {
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "/old".into(),
-                kind: ResourceKind::File,
+                kind: ResourceKind::Template,
                 action: Action::Update,
-                before: Some(ResourceState::File {
+                before: Some(ResourceState::Template {
                     path: PathBuf::from("/old"),
                     content: "same".into(),
                 }),
-                after: Some(ResourceState::File {
+                after: Some(ResourceState::Template {
                     path: PathBuf::from("/new"),
                     content: "same".into(),
                 }),
@@ -495,9 +495,9 @@ mod tests {
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "/x".into(),
-                kind: ResourceKind::File,
+                kind: ResourceKind::Template,
                 action: Action::Update,
-                before: Some(ResourceState::File {
+                before: Some(ResourceState::Template {
                     path: PathBuf::from("/x"),
                     content: "old".into(),
                 }),
@@ -559,10 +559,10 @@ mod tests {
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "/x".into(),
-                kind: ResourceKind::File,
+                kind: ResourceKind::Template,
                 action: Action::Create,
                 before: None,
-                after: Some(ResourceState::File {
+                after: Some(ResourceState::Template {
                     path: PathBuf::from("/x"),
                     content: "a\tb\n".into(),
                 }),
