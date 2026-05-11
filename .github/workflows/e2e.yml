@@ -22,6 +22,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  gate:
+    name: just
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: gate-ubuntu-latest
+
+      - name: Install just
+        uses: taiki-e/install-action@v2
+        with:
+          tool: just
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+
+      - name: Run repo gate
+        run: just
+
   e2e:
     name: e2e (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

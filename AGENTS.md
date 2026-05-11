@@ -1,9 +1,6 @@
 # AGENTS.md
 
 Project-wide rules for any agent (human or AI) working in this repo.
-The design source-of-truth lives at
-`~/.claude/plans/radiant-juggling-axolotl.md`. Read it before changing
-language semantics, the apply pipeline, or the CLI surface.
 
 ## What this is
 
