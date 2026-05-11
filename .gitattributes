@@ -1,0 +1,14 @@
+# Normalize all text to LF in the repo and on checkout so byte-exact
+# fixture comparisons (templates, snapshots) behave identically on
+# Windows runners as on Linux/macOS.
+* text=auto eol=lf
+
+# Belt-and-suspenders for the file types our fixtures and snapshots use.
+*.keron text eol=lf
+*.tpl   text eol=lf
+*.snap  text eol=lf
+*.toml  text eol=lf
+*.md    text eol=lf
+*.rs    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
