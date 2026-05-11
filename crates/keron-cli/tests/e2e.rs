@@ -1,0 +1,432 @@
+//! Cross-platform end-to-end tests for `keron apply`.
+//!
+//! Drives the real `keron` binary against realistic dotfile fixtures
+//! and asserts the resulting filesystem state. Runs on every OS the
+//! GitHub Actions matrix covers (Linux, macOS, Windows); per-platform
+//! quirks are gated with `cfg` blocks.
+//!
+//! Conventions:
+//!
+//! - Each test isolates its own filesystem state via a per-process
+//!   tempdir under `env::temp_dir()` and treats that as the test's
+//!   fake `$HOME` — every symlink keron creates from `${env("HOME")}/...`
+//!   lands inside the tempdir, so the host's real `$HOME` is never
+//!   touched.
+//! - The `keron` binary is built on demand the first time a test
+//!   needs it (cargo doesn't auto-build other crates' bins for
+//!   integration tests).
+//! - Package tests use the `KERON_TEST_BREW_PACKAGES` cache seam +
+//!   `KERON_TEST_PACKAGE_BIN_*` install seam from `keron-apply`, so
+//!   no real package manager is ever invoked.
+
+use std::env;
+use std::fs;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static SEQ: AtomicUsize = AtomicUsize::new(0);
+
+/// Owns a unique tempdir for one test. Doubles as the fake `$HOME`
+/// the keron child uses to resolve `env("HOME")` interpolations in
+/// fixture manifests. Cleaned up on Drop, even if a test panics —
+/// which keeps repeated local runs from accumulating stale state.
+struct E2eHome {
+    path: PathBuf,
+}
+
+impl E2eHome {
+    fn new(tag: &str) -> Self {
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let path = env::temp_dir().join(format!("keron-e2e-{tag}-{}-{n}", std::process::id()));
+        if path.exists() {
+            let _ = fs::remove_dir_all(&path);
+        }
+        fs::create_dir_all(&path).expect("create fake HOME");
+        Self {
+            path: fs::canonicalize(path).expect("canonicalize fake HOME"),
+        }
+    }
+}
+
+impl Drop for E2eHome {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.path);
+    }
+}
+
+/// Absolute path to the directory containing the fixture named
+/// `name` under `crates/keron-cli/tests/fixtures/`.
+fn fixture_dir(name: &str) -> PathBuf {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    crate_root.join("tests").join("fixtures").join(name)
+}
+
+/// Locate (and build if missing) the `keron` binary.  Walks up from
+/// the integration test executable to the `target/<profile>/`
+/// directory and looks for a sibling `keron` (or `keron.exe` on
+/// Windows). On a cold checkout / fresh worktree the integration
+/// test runs before the bin is built, so we fall back to invoking
+/// `cargo build --bin keron`.
+fn keron_binary() -> PathBuf {
+    let bin_name = if cfg!(windows) { "keron.exe" } else { "keron" };
+    let test_exe = env::current_exe().expect("locating test exe");
+    let mut dir = test_exe
+        .parent()
+        .expect("test exe has parent")
+        .to_path_buf();
+    loop {
+        let candidate = dir.join(bin_name);
+        if candidate.exists() {
+            return candidate;
+        }
+        if !dir.pop() {
+            break;
+        }
+    }
+    let status = Command::new(env!("CARGO"))
+        .args(["build", "--bin", "keron"])
+        .status()
+        .expect("running `cargo build --bin keron`");
+    assert!(status.success(), "cargo build --bin keron failed");
+    // Try again after the build.
+    let mut dir = test_exe
+        .parent()
+        .expect("test exe has parent")
+        .to_path_buf();
+    loop {
+        let candidate = dir.join(bin_name);
+        if candidate.exists() {
+            return candidate;
+        }
+        assert!(
+            dir.pop(),
+            "could not locate `{bin_name}` after `cargo build`",
+        );
+    }
+}
+
+/// Build a `Command` for `keron apply` with the fake HOME wired in.
+/// Each test layers additional env / args on top via the returned
+/// builder, so a single helper covers both the basic-symlinks and
+/// packages flows without per-test boilerplate.
+fn keron_apply(fixture: &Path, home: &Path) -> Command {
+    let mut cmd = Command::new(keron_binary());
+    cmd.args(["apply", "--execute"])
+        .arg(fixture)
+        .env("HOME", home)
+        // Belt-and-suspenders: tests must never see leftover SUDO_*
+        // from the surrounding shell, which would trip the
+        // direct-elevation refusal path.
+        .env_remove("SUDO_UID")
+        .env_remove("SUDO_GID")
+        // Some CI environments (notably macOS GH Actions) preset
+        // these; clear so the dotfile manifest sees the test's
+        // chosen HOME via `env("HOME")` only.
+        .env_remove("USERPROFILE")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    cmd
+}
+
+struct Output {
+    success: bool,
+    stdout: String,
+    stderr: String,
+}
+
+/// Run the prepared command, feeding `stdin_text` to the prompt.
+fn run(mut cmd: Command, stdin_text: &str) -> Output {
+    let mut child = cmd.spawn().expect("spawning keron");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin pipe")
+        .write_all(stdin_text.as_bytes())
+        .expect("writing prompt input");
+    let out = child.wait_with_output().expect("waiting on keron");
+    Output {
+        success: out.status.success(),
+        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+    }
+}
+
+#[test]
+fn basic_dotfiles_creates_symlinks_then_is_idempotent() {
+    // The flagship "real-world dotfiles" flow:
+    //   - Four symlinks under ~ (shell rc, gitconfig, vimrc, nvim
+    //     init.lua) all pointing into the fixture repo.
+    //   - keron must create them on the first run, then report "No
+    //     changes" on the second run because the planner's
+    //     `classify_symlink` diff matches live state.
+    //
+    // Works identically on Linux, macOS, and Windows. On Windows,
+    // symlink creation requires either admin or Developer Mode;
+    // GitHub Actions windows runners run as admin so this passes
+    // out of the box. Locally a non-admin Windows dev would need
+    // to enable Developer Mode.
+    let home = E2eHome::new("basic");
+    let fixture = fixture_dir("basic-dotfiles");
+
+    let first = run(keron_apply(&fixture, &home.path), "yes\n");
+    assert!(
+        first.success,
+        "first run failed: stdout=\n{}\nstderr=\n{}",
+        first.stdout, first.stderr,
+    );
+    assert!(
+        first.stdout.contains("4 added"),
+        "first run should add 4 symlinks: {}",
+        first.stdout,
+    );
+    // The actual symlink targets live in HOME. The planner
+    // canonicalizes the `to` argument, so the symlink points at the
+    // canonical fixture path, not `./zshrc`.
+    let zshrc = home.path.join(".testrc");
+    assert!(zshrc.is_symlink(), "missing ~/.testrc: {}", first.stdout);
+    let gitconfig = home.path.join(".testgitconfig");
+    assert!(gitconfig.is_symlink(), "missing ~/.testgitconfig");
+    let vimrc = home.path.join(".testvimrc");
+    assert!(vimrc.is_symlink(), "missing ~/.testvimrc");
+    // The nested target tests that the executor mkdirs the parent
+    // chain (`~/.config/keron-e2e/nvim/` doesn't exist beforehand).
+    let nvim = home
+        .path
+        .join(".config")
+        .join("keron-e2e")
+        .join("nvim")
+        .join("init.lua");
+    assert!(
+        nvim.is_symlink(),
+        "executor should mkdir parent chain: {}",
+        first.stdout,
+    );
+
+    // Second run: same manifest, same filesystem; the planner sees
+    // every symlink already pointing at the right canonical target
+    // and reports `Action::NoOp`.
+    let second = run(keron_apply(&fixture, &home.path), "yes\n");
+    assert!(
+        second.success,
+        "second run failed: stdout=\n{}\nstderr=\n{}",
+        second.stdout, second.stderr,
+    );
+    assert!(
+        second.stdout.contains("No changes"),
+        "second run should be idempotent, got: {}",
+        second.stdout,
+    );
+}
+
+#[test]
+fn package_resource_installs_then_no_ops_via_cache_seam() {
+    // We can't install real packages in CI without making the
+    // suite slow and host-dependent, so each platform exercises the
+    // wired-up codepath via the test seams that `keron-apply`
+    // already exposes:
+    //   - `KERON_TEST_<MGR>_PACKAGES` pins the cache state.
+    //   - `KERON_TEST_PACKAGE_BIN_<MGR>` swaps the install binary
+    //     for a noop that exits 0.
+    // First run with empty cache → Create + spy invoked → success.
+    // Second run with cache pre-populated → NoOp + spy never
+    // touched.
+    let home = E2eHome::new("pkg");
+    let fixture = fixture_dir("packages");
+    let noop = write_noop_binary(&home.path);
+
+    let (manager_env, cache_env, bin_env) = pick_manager_env_keys();
+
+    let mut first_cmd = keron_apply(&fixture, &home.path);
+    first_cmd
+        .env(manager_env.0, manager_env.1)
+        .env(cache_env, "")
+        .env(bin_env, &noop);
+    let first = run(first_cmd, "yes\n");
+    assert!(
+        first.success,
+        "first run failed: stdout=\n{}\nstderr=\n{}",
+        first.stdout, first.stderr,
+    );
+    assert!(
+        first.stdout.contains("1 added"),
+        "first run should add 1 package: {}",
+        first.stdout,
+    );
+
+    // Second run: cache already has the package; classify as NoOp.
+    // Point the install spy at a path that doesn't exist so an
+    // accidental install attempt would surface as a spawn failure
+    // — pinning that the second run truly skips the executor.
+    let mut second_cmd = keron_apply(&fixture, &home.path);
+    second_cmd
+        .env(manager_env.0, manager_env.1)
+        .env(cache_env, package_name_for_manager(manager_env.1))
+        .env(bin_env, home.path.join("does-not-exist"));
+    let second = run(second_cmd, "yes\n");
+    assert!(
+        second.success,
+        "second run failed: stdout=\n{}\nstderr=\n{}",
+        second.stdout, second.stderr,
+    );
+    assert!(
+        second.stdout.contains("No changes"),
+        "second run should be NoOp, got: {}",
+        second.stdout,
+    );
+}
+
+/// Pick a sensible default manager per host so the fixture's
+/// `match manager { ... }` arm chooses something that actually
+/// makes sense on that platform. Linux + macOS use `brew`, Windows
+/// uses `winget`. The platform doesn't affect correctness — every
+/// arm exercises the same codepath through `packages::install` —
+/// but matching host conventions makes test failures easier to
+/// diagnose.
+const fn pick_manager_env_keys() -> (
+    (&'static str, &'static str), // KERON_E2E_MANAGER → "brew"/"cargo"/"winget"
+    &'static str,                 // KERON_TEST_<MGR>_PACKAGES
+    &'static str,                 // KERON_TEST_PACKAGE_BIN_<MGR>
+) {
+    if cfg!(windows) {
+        (
+            ("KERON_E2E_MANAGER", "winget"),
+            "KERON_TEST_WINGET_PACKAGES",
+            "KERON_TEST_PACKAGE_BIN_WINGET",
+        )
+    } else {
+        (
+            ("KERON_E2E_MANAGER", "brew"),
+            "KERON_TEST_BREW_PACKAGES",
+            "KERON_TEST_PACKAGE_BIN_BREW",
+        )
+    }
+}
+
+/// Name keron's `packages` module would record in the cache, given
+/// the manager keyword the manifest selected. Mirrors the fixture's
+/// `match manager` arms.
+fn package_name_for_manager(manager: &str) -> &'static str {
+    match manager {
+        "winget" => "BurntSushi.ripgrep",
+        // brew / cargo / fallback
+        _ => "ripgrep",
+    }
+}
+
+/// Write a no-op "install binary" — `/bin/true` semantics but as a
+/// concrete file we control. On Unix this is a `#!/bin/sh\nexit 0`
+/// script chmodded executable; on Windows a `.bat` that exits 0.
+/// Used as the value of `KERON_TEST_PACKAGE_BIN_<MGR>` so the
+/// executor "installs" without touching the system.
+fn write_noop_binary(dir: &Path) -> PathBuf {
+    if cfg!(windows) {
+        let p = dir.join("noop.bat");
+        fs::write(&p, "@echo off\r\nexit /b 0\r\n").expect("write noop.bat");
+        p
+    } else {
+        write_unix_noop(dir)
+    }
+}
+
+#[cfg(unix)]
+fn write_unix_noop(dir: &Path) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let p = dir.join("noop.sh");
+    fs::write(&p, "#!/bin/sh\nexit 0\n").expect("write noop.sh");
+    let mut perm = fs::metadata(&p).unwrap().permissions();
+    perm.set_mode(0o755);
+    fs::set_permissions(&p, perm).expect("chmod noop.sh");
+    p
+}
+
+#[cfg(not(unix))]
+fn write_unix_noop(_dir: &Path) -> PathBuf {
+    unreachable!("write_unix_noop called on non-unix host")
+}
+
+#[cfg(unix)]
+#[test]
+fn elevated_symlink_into_protected_dir_is_owned_by_calling_user() {
+    // Linux + macOS exercise the elevation re-exec via the spy
+    // `fake_elevator.sh` (no real sudo, no password prompt). The
+    // protected directory is chmod 0500 so the planner's writability
+    // probe classifies the symlink as elevated; the spy chmods it
+    // back to 0700 immediately before exec'ing the elevated keron
+    // child, so the write succeeds; the child chowns the symlink
+    // back to the calling user.
+    //
+    // Skipped on Windows because the runas-via-ShellExecuteExW path
+    // pops a real UAC prompt that no test runner can answer.
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    let home = E2eHome::new("elevated");
+    let fixture_root = home.path.join("fixture");
+    fs::create_dir_all(&fixture_root).unwrap();
+    let target = fixture_root.join("payload");
+    fs::write(&target, "x").unwrap();
+
+    // Manifest lives inside `fixture_root` so it's the keron_root
+    // for canonicalisation. The destination is in a sibling dir
+    // that's chmod 0500 — owner has no write, so the elevation
+    // probe flags it.
+    let protected = home.path.join("protected");
+    fs::create_dir_all(&protected).unwrap();
+    let mut perm = fs::metadata(&protected).unwrap().permissions();
+    perm.set_mode(0o500);
+    fs::set_permissions(&protected, perm).unwrap();
+    let elevated_link = protected.join("link");
+
+    let manifest = format!(
+        "reconcile symlink(from = \"{}\", to = \"./payload\")\n",
+        elevated_link.display(),
+    );
+    fs::write(fixture_root.join("entry.keron"), &manifest).unwrap();
+
+    // Write the spy elevator — same shape as keron-apply's own
+    // integration test. `KERON_TEST_UNLOCK_DIR` is the
+    // chmod-0700 sentinel we feed through.
+    let spy = fixture_root.join("fake_elevator.sh");
+    fs::write(
+        &spy,
+        "#!/bin/sh\n\
+         if [ -n \"$KERON_TEST_UNLOCK_DIR\" ]; then\n\
+           chmod 0700 \"$KERON_TEST_UNLOCK_DIR\"\n\
+         fi\n\
+         exec \"$@\"\n",
+    )
+    .unwrap();
+    let mut perm = fs::metadata(&spy).unwrap().permissions();
+    perm.set_mode(0o755);
+    fs::set_permissions(&spy, perm).unwrap();
+
+    let my_uid = fs::metadata(&fixture_root).unwrap().uid();
+    let my_group = fs::metadata(&fixture_root).unwrap().gid();
+
+    let mut cmd = keron_apply(&fixture_root, &home.path);
+    cmd.env("KERON_TEST_ELEVATOR", &spy)
+        .env("KERON_TEST_UNLOCK_DIR", &protected);
+    let out = run(cmd, "yes\n");
+
+    // Restore so Drop can clean up cleanly regardless of what
+    // happened above.
+    let mut perm = fs::metadata(&protected).unwrap().permissions();
+    perm.set_mode(0o700);
+    fs::set_permissions(&protected, perm).unwrap();
+
+    assert!(
+        out.success,
+        "elevated apply failed: stdout=\n{}\nstderr=\n{}",
+        out.stdout, out.stderr,
+    );
+    assert!(elevated_link.is_symlink(), "missing elevated symlink");
+    let meta = fs::symlink_metadata(&elevated_link).unwrap();
+    assert_eq!(
+        meta.uid(),
+        my_uid,
+        "elevated symlink must be owned by the calling user, not root",
+    );
+    assert_eq!(meta.gid(), my_group);
+}

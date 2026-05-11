@@ -1,0 +1,16 @@
+# Realistic dotfiles manifest used by the cross-platform e2e suite.
+# Targets resolve to `$HOME/...` (the test sets HOME to a fresh
+# tempdir per run); sources resolve relative to this `.keron` file
+# (which keron canonicalizes inside the keron root).
+
+val home: String = match env("HOME") {
+  null => keron_root(),
+  v => v,
+}
+
+reconcile {
+  symlink(from = "${home}/.testrc", to = "./zshrc");
+  symlink(from = "${home}/.testgitconfig", to = "./gitconfig");
+  symlink(from = "${home}/.testvimrc", to = "./vimrc");
+  symlink(from = "${home}/.config/keron-e2e/nvim/init.lua", to = "./config/nvim/init.lua");
+}

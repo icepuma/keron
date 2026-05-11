@@ -1,0 +1,7 @@
+[user]
+    name = keron e2e
+    email = e2e@example.invalid
+[core]
+    editor = vim
+[init]
+    defaultBranch = main

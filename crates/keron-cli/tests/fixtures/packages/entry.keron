@@ -1,0 +1,16 @@
+# Package manifest used by the cross-platform e2e suite. The test
+# picks one manager per OS via the KERON_E2E_MANAGER env var the
+# driver passes through to user code; on a real run, the user picks
+# the manager themselves.
+
+val manager: String = match env("KERON_E2E_MANAGER") {
+  null => "brew",
+  v => v,
+}
+
+reconcile match manager {
+  "brew"   => brew("ripgrep"),
+  "cargo"  => cargo("ripgrep"),
+  "winget" => winget("BurntSushi.ripgrep"),
+  _        => brew("ripgrep"),
+}
