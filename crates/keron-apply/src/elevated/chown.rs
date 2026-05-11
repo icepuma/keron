@@ -76,7 +76,7 @@ pub mod windows {
     use std::path::{Path, PathBuf};
     use std::ptr;
 
-    use anyhow::{Context, Result, bail};
+    use anyhow::{Result, bail};
     use windows_sys::Win32::Foundation::{
         CloseHandle, GetLastError, HANDLE, HLOCAL, INVALID_HANDLE_VALUE, LocalFree,
     };
@@ -304,23 +304,20 @@ pub mod windows {
         let params: PathBuf = format!("__apply-elevated \"{}\"", payload.display()).into();
         let params_w = to_wide(&params);
 
-        let mut info = SHELLEXECUTEINFOW {
-            cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
-            fMask: SEE_MASK_NOCLOSEPROCESS,
-            hwnd: ptr::null_mut(),
-            lpVerb: verb.as_ptr(),
-            lpFile: exe_w.as_ptr(),
-            lpParameters: params_w.as_ptr(),
-            lpDirectory: ptr::null(),
-            nShow: SW_HIDE,
-            hInstApp: ptr::null_mut(),
-            lpIDList: ptr::null_mut(),
-            lpClass: ptr::null(),
-            hkeyClass: ptr::null_mut(),
-            dwHotKey: 0,
-            Anonymous: unsafe { std::mem::zeroed() },
-            hProcess: ptr::null_mut(),
-        };
+        // SAFETY: `SHELLEXECUTEINFOW` contains an anonymous union;
+        // zero-initialising the whole struct is the documented
+        // pattern in Microsoft's Win32 reference. We immediately
+        // overwrite every field we care about; the union member
+        // ends up holding all-zero bits, which is the documented
+        // "not used" sentinel for the verbs we invoke.
+        #[allow(unsafe_code)]
+        let mut info: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
+        info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
+        info.fMask = SEE_MASK_NOCLOSEPROCESS;
+        info.lpVerb = verb.as_ptr();
+        info.lpFile = exe_w.as_ptr();
+        info.lpParameters = params_w.as_ptr();
+        info.nShow = SW_HIDE;
         // SAFETY: FFI; `info` is correctly initialized per its
         // documented contract (cbSize set, all string ptrs are
         // NUL-terminated UTF-16 we own, NULL where allowed).

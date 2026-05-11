@@ -80,48 +80,12 @@ fn write_spy_elevator(proj: &TempProject) -> PathBuf {
     p
 }
 
-/// Resolve the path to the just-built `keron` binary by walking up
-/// from the test executable. Layout is
-/// `<target>/<profile>/deps/elevated-<hash>` → `<target>/<profile>/keron`.
+/// Path to the freshly-built `keron` binary. `CARGO_BIN_EXE_<name>`
+/// is set by cargo at compile time and points at the binary produced
+/// by the *same* package as this integration test, which is exactly
+/// the artifact we want to drive.
 fn keron_binary_path() -> PathBuf {
-    let test_exe = env::current_exe().expect("locating test exe");
-    let mut dir = test_exe
-        .parent()
-        .expect("test exe has parent")
-        .to_path_buf();
-    // Walk up to find a `keron` sibling — handles both `target/debug/deps`
-    // and `target/<triple>/debug/deps` layouts.
-    loop {
-        let candidate = dir.join("keron");
-        if candidate.exists() {
-            return candidate;
-        }
-        assert!(
-            dir.pop(),
-            "could not find a `keron` binary near test exe at `{}`",
-            test_exe.display(),
-        );
-    }
-}
-
-/// Build the keron binary if it's not already in the test target dir.
-/// The integration test framework doesn't auto-build other crates'
-/// bins, so we do it explicitly with a workspace-relative `cargo`
-/// invocation when the artifact is missing.
-fn ensure_keron_binary_built() {
-    let bin = env::current_exe().unwrap();
-    let mut dir = bin.parent().unwrap().to_path_buf();
-    while !dir.join("keron").exists() {
-        if !dir.pop() {
-            // Build it. `--bin keron` selects the keron-cli entry.
-            let status = Command::new(env!("CARGO"))
-                .args(["build", "--bin", "keron"])
-                .status()
-                .expect("running cargo build");
-            assert!(status.success(), "cargo build --bin keron failed");
-            return;
-        }
-    }
+    PathBuf::from(env!("CARGO_BIN_EXE_keron"))
 }
 
 #[test]
@@ -135,7 +99,6 @@ fn elevated_subset_runs_under_spy_and_chowns_back() {
     // which applies the change and chowns it back to our uid:gid.
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
-    ensure_keron_binary_built();
     let proj = TempProject::new("e2e");
 
     // Plain symlink target (in keron_root, readable / writable).

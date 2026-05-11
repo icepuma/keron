@@ -27,6 +27,7 @@ pub mod detect;
 pub mod payload;
 
 use std::path::Path;
+#[cfg(unix)]
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};

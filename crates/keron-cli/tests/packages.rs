@@ -49,43 +49,16 @@ impl Drop for TempProject {
     }
 }
 
+/// Path to the freshly-built `keron` binary. `CARGO_BIN_EXE_<name>`
+/// is set by cargo at compile time and points at the binary produced
+/// by the *same* package as this integration test, which is exactly
+/// the artifact we want to drive.
 fn keron_binary_path() -> PathBuf {
-    let test_exe = env::current_exe().expect("locating test exe");
-    let mut dir = test_exe
-        .parent()
-        .expect("test exe has parent")
-        .to_path_buf();
-    loop {
-        let candidate = dir.join("keron");
-        if candidate.exists() {
-            return candidate;
-        }
-        assert!(
-            dir.pop(),
-            "could not find a `keron` binary near test exe at `{}`",
-            test_exe.display(),
-        );
-    }
-}
-
-fn ensure_keron_binary_built() {
-    let bin = env::current_exe().unwrap();
-    let mut dir = bin.parent().unwrap().to_path_buf();
-    while !dir.join("keron").exists() {
-        if !dir.pop() {
-            let status = Command::new(env!("CARGO"))
-                .args(["build", "--bin", "keron"])
-                .status()
-                .expect("running cargo build");
-            assert!(status.success(), "cargo build --bin keron failed");
-            return;
-        }
-    }
+    PathBuf::from(env!("CARGO_BIN_EXE_keron"))
 }
 
 #[test]
 fn package_installs_when_absent_and_noops_when_present() {
-    ensure_keron_binary_built();
     let proj = TempProject::new("brew-flow");
     let entry = proj.write("entry.keron", "reconcile brew(\"ripgrep\")\n");
     let keron = keron_binary_path();
@@ -162,7 +135,6 @@ fn duplicate_packages_in_one_plan_install_once() {
     // one NoOp, so the install spy is invoked once. We can't count
     // spy invocations directly without a marker file — instead we
     // assert the diff shows "1 to add", not "2 to add".
-    ensure_keron_binary_built();
     let proj = TempProject::new("dupe");
     let entry = proj.write(
         "entry.keron",

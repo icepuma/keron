@@ -63,48 +63,16 @@ fn fixture_dir(name: &str) -> PathBuf {
     crate_root.join("tests").join("fixtures").join(name)
 }
 
-/// Locate (and build if missing) the `keron` binary.  Walks up from
-/// the integration test executable to the `target/<profile>/`
-/// directory and looks for a sibling `keron` (or `keron.exe` on
-/// Windows). On a cold checkout / fresh worktree the integration
-/// test runs before the bin is built, so we fall back to invoking
-/// `cargo build --bin keron`.
+/// Path to the freshly-built `keron` binary for this test run.
+///
+/// `CARGO_BIN_EXE_<name>` is set by cargo at compile time as the
+/// path to the binary `<name>` produced by the *same* package as the
+/// integration test. Because `tests/e2e.rs` lives in `keron-cli`
+/// alongside the `keron` binary target, this constant resolves to
+/// exactly the binary cargo just built — no walking, no fallback, no
+/// risk of picking up a stale binary from a sibling `CARGO_TARGET_DIR`.
 fn keron_binary() -> PathBuf {
-    let bin_name = if cfg!(windows) { "keron.exe" } else { "keron" };
-    let test_exe = env::current_exe().expect("locating test exe");
-    let mut dir = test_exe
-        .parent()
-        .expect("test exe has parent")
-        .to_path_buf();
-    loop {
-        let candidate = dir.join(bin_name);
-        if candidate.exists() {
-            return candidate;
-        }
-        if !dir.pop() {
-            break;
-        }
-    }
-    let status = Command::new(env!("CARGO"))
-        .args(["build", "--bin", "keron"])
-        .status()
-        .expect("running `cargo build --bin keron`");
-    assert!(status.success(), "cargo build --bin keron failed");
-    // Try again after the build.
-    let mut dir = test_exe
-        .parent()
-        .expect("test exe has parent")
-        .to_path_buf();
-    loop {
-        let candidate = dir.join(bin_name);
-        if candidate.exists() {
-            return candidate;
-        }
-        assert!(
-            dir.pop(),
-            "could not locate `{bin_name}` after `cargo build`",
-        );
-    }
+    PathBuf::from(env!("CARGO_BIN_EXE_keron"))
 }
 
 /// Build a `Command` for `keron apply` with the fake HOME wired in.
