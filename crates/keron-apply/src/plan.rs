@@ -217,10 +217,11 @@ pub fn build_plan(graph: &keron_modules::ModuleGraph, keron_root: &Path) -> Resu
 fn classify(state: ResourceState, cache: &mut PackageCache) -> Result<ResourceChange> {
     let mut change = match &state {
         ResourceState::Symlink { from, to } => classify_symlink(from, to, &state)?,
+        ResourceState::Template { path, content } => classify_template(path, content, &state)?,
         ResourceState::Package { manager, name } => {
             classify_package(*manager, name, &state, cache)?
         }
-        ResourceState::Template { .. } | ResourceState::Directory { .. } => ResourceChange {
+        ResourceState::Directory { .. } => ResourceChange {
             address: address_for(&state),
             kind: kind_for(&state),
             action: Action::Create,
@@ -317,6 +318,64 @@ fn classify_symlink(from: &Path, to: &Path, after: &ResourceState) -> Result<Res
         Ok(_) => bail!(
             "`{}` exists and is not a symlink; refusing to overwrite",
             from.display()
+        ),
+    }
+}
+
+/// Diff a desired template render against the live filesystem.
+///
+/// - missing path → `Create`
+/// - regular file with byte-identical content → `NoOp`
+/// - regular file with different content → `Update` (the existing
+///   contents form the `before` state)
+/// - symlink / directory / other non-file occupant → hard error: the
+///   apply pipeline refuses to clobber user data the same way
+///   [`classify_symlink`] does for non-symlinks
+///
+/// Comparison is bytewise so a non-UTF-8 existing file falls cleanly
+/// through to `Update` rather than failing the read.
+fn classify_template(path: &Path, content: &str, after: &ResourceState) -> Result<ResourceChange> {
+    let address = path.display().to_string();
+    let kind = ResourceKind::Template;
+    match fs::symlink_metadata(path) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(ResourceChange {
+            address,
+            kind,
+            action: Action::Create,
+            before: None,
+            after: Some(after.clone()),
+            requires_elevation: false,
+        }),
+        Err(e) => Err(anyhow!("reading existing path `{}`: {e}", path.display())),
+        Ok(meta) if meta.file_type().is_file() => {
+            let existing_bytes = fs::read(path)
+                .with_context(|| format!("reading existing template `{}`", path.display()))?;
+            let same_content = existing_bytes == content.as_bytes();
+            let action = if same_content {
+                Action::NoOp
+            } else {
+                Action::Update
+            };
+            // `from_utf8_lossy` is fine here — the diff renderer
+            // only consumes `before.content` for display; the
+            // NoOp/Update decision above already used the lossless
+            // byte slice.
+            let existing_text = String::from_utf8_lossy(&existing_bytes).into_owned();
+            Ok(ResourceChange {
+                address,
+                kind,
+                action,
+                before: Some(ResourceState::Template {
+                    path: path.to_path_buf(),
+                    content: existing_text,
+                }),
+                after: Some(after.clone()),
+                requires_elevation: false,
+            })
+        }
+        Ok(_) => bail!(
+            "`{}` exists and is not a regular file; refusing to overwrite",
+            path.display()
         ),
     }
 }
@@ -617,16 +676,95 @@ mod tests {
     }
 
     #[test]
-    fn classify_non_symlink_resource_defaults_to_create() {
-        // Templates / directories / packages still flow through the
-        // Create-only path until their executor support lands.
-        let state = ResourceState::Template {
-            path: PathBuf::from("/whatever"),
-            content: "x".into(),
+    fn classify_directory_still_defaults_to_create() {
+        // Directories don't yet have a live-state classifier (no
+        // executor support yet either); the Create-only fallback
+        // remains until that lands.
+        let state = ResourceState::Directory {
+            path: PathBuf::from("/whatever-keron-dir"),
         };
         let change = classify(state.clone(), &mut PackageCache::new()).unwrap();
         assert_eq!(change.action, Action::Create);
         assert!(change.before.is_none());
         assert_eq!(change.after, Some(state));
+    }
+
+    // ---------- classify_template ----------
+
+    fn template(path: &Path, content: &str) -> ResourceState {
+        ResourceState::Template {
+            path: path.to_path_buf(),
+            content: content.into(),
+        }
+    }
+
+    #[test]
+    fn classify_template_marks_missing_path_as_create() {
+        let d = TempDir::new("template-missing");
+        let path = d.path.join("config.toml");
+        let state = template(&path, "x = 1\n");
+        let change = classify(state.clone(), &mut PackageCache::new()).unwrap();
+        assert_eq!(change.action, Action::Create);
+        assert!(change.before.is_none());
+        assert_eq!(change.after, Some(state));
+    }
+
+    #[test]
+    fn classify_template_marks_byte_identical_content_as_noop() {
+        let d = TempDir::new("template-noop");
+        let path = d.path.join("config.toml");
+        fs::write(&path, "hello\n").unwrap();
+        let state = template(&path, "hello\n");
+        let change = classify(state, &mut PackageCache::new()).unwrap();
+        assert_eq!(change.action, Action::NoOp);
+        let before = change.before.expect("before populated for noop");
+        let ResourceState::Template { content: bc, .. } = before else {
+            panic!("expected Template before");
+        };
+        assert_eq!(bc, "hello\n");
+    }
+
+    #[test]
+    fn classify_template_marks_diverging_content_as_update() {
+        let d = TempDir::new("template-update");
+        let path = d.path.join("config.toml");
+        fs::write(&path, "old\n").unwrap();
+        let state = template(&path, "new\n");
+        let change = classify(state, &mut PackageCache::new()).unwrap();
+        assert_eq!(change.action, Action::Update);
+        let before = change.before.expect("before populated for update");
+        let ResourceState::Template { content: bc, .. } = before else {
+            panic!("expected Template before");
+        };
+        assert_eq!(bc, "old\n", "before should record the *current* content");
+    }
+
+    #[test]
+    fn classify_template_tolerates_non_utf8_existing_file() {
+        // A non-UTF-8 file on disk should classify as Update (the
+        // bytes don't equal our UTF-8 content) without erroring at
+        // the read. `from_utf8_lossy` produces the `before` state
+        // for diff display.
+        let d = TempDir::new("template-non-utf8");
+        let path = d.path.join("binary");
+        fs::write(&path, [0xFFu8, 0xFE, 0xFD]).unwrap();
+        let state = template(&path, "ascii only\n");
+        let change = classify(state, &mut PackageCache::new()).unwrap();
+        assert_eq!(change.action, Action::Update);
+        assert!(change.before.is_some());
+    }
+
+    #[test]
+    fn classify_template_rejects_symlink_occupant() {
+        let d = TempDir::new("template-vs-symlink");
+        let real = d.path.join("real");
+        fs::write(&real, "x").unwrap();
+        let path = d.path.join("alias");
+        make_symlink(&real, &path).unwrap();
+        let err = classify(template(&path, "y"), &mut PackageCache::new())
+            .expect_err("symlink should not be treated as a template target");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("not a regular file"), "got: {msg}");
+        assert!(msg.contains("refusing to overwrite"), "got: {msg}");
     }
 }

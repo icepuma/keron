@@ -6,11 +6,11 @@
 //! OpenTofu-style diff, and — when `execute` is set — prompts the
 //! user before applying.
 //!
-//! The executor wires up symlinks end-to-end today; templates,
-//! directories, and packages still bail with a clear "not yet
-//! implemented" diagnostic at apply time. The planner only diffs the
-//! resource kinds the executor can act on, so the rendered diff
-//! stays truthful as new kinds come online.
+//! The executor wires up symlinks, templates, and packages end-to-end
+//! today; directories still bail with a clear "not yet implemented"
+//! diagnostic at apply time. The planner diffs every supported kind
+//! against live filesystem state, so the rendered diff stays truthful
+//! as new kinds come online.
 
 mod confirm;
 mod diff;
@@ -397,15 +397,14 @@ mod tests {
     }
 
     #[test]
-    fn run_with_execute_and_approval_invokes_executor_for_unsupported_kind() {
-        // "yes" input → `approved=true`, control reaches the executor.
-        // Templates are still stubbed, so the executor surfaces a
-        // "not yet implemented" diagnostic. This pins both halves of
-        // the wiring: confirmation flips control past the cancel
-        // branch, and the executor's per-kind error is propagated.
-        // We target a path inside the test's temp dir so the
-        // elevation pre-check classifies it as unprivileged (and we
-        // hit the in-process executor, not the elevated re-exec).
+    fn run_with_execute_and_approval_renders_template_to_disk() {
+        // "yes" input → control past the cancel branch → executor
+        // calls `write_template`. Pins the full unprivileged wiring:
+        // parse → check → plan → diff → confirm → executor → on-disk
+        // file with the rendered content. The temp-dir destination
+        // keeps the elevation pre-check at "unprivileged" so we
+        // exercise the in-process executor, not the elevated
+        // re-exec.
         let proj = TempProject::new("yes-approval");
         let dest = proj.root.join("out");
         let src = format!(
@@ -414,16 +413,12 @@ mod tests {
         );
         let entry = proj.write("entry.keron", &src);
         let (res, out) = drive(&entry, true, "yes\n");
-        let err = res.unwrap_err();
-        let msg = format!("{err:#}");
-        assert!(
-            msg.contains("not yet implemented") && msg.contains("template"),
-            "expected executor error naming the kind, got: {msg}",
-        );
-        // The diff should still be rendered before the executor fired.
+        res.expect("template apply should succeed");
         assert!(out.contains("will be created"), "diff missing: {out}");
-        // No "Apply cancelled" because approved was true.
         assert!(!out.contains("Apply cancelled"), "got: {out}");
+        assert!(out.contains("1 added"), "summary missing: {out}");
+        let content = fs::read_to_string(&dest).expect("template file written");
+        assert_eq!(content, "y");
     }
 
     #[cfg(unix)]

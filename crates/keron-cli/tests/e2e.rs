@@ -66,7 +66,7 @@ fn strip_unc_prefix(path: PathBuf) -> PathBuf {
 }
 
 #[cfg(not(windows))]
-fn strip_unc_prefix(path: PathBuf) -> PathBuf {
+const fn strip_unc_prefix(path: PathBuf) -> PathBuf {
     path
 }
 
@@ -207,6 +207,49 @@ fn basic_dotfiles_creates_symlinks_then_is_idempotent() {
     // Second run: same manifest, same filesystem; the planner sees
     // every symlink already pointing at the right canonical target
     // and reports `Action::NoOp`.
+    let second = run(keron_apply(&fixture, &home.path), "yes\n");
+    assert!(
+        second.success,
+        "second run failed: stdout=\n{}\nstderr=\n{}",
+        second.stdout, second.stderr,
+    );
+    assert!(
+        second.stdout.contains("No changes"),
+        "second run should be idempotent, got: {}",
+        second.stdout,
+    );
+}
+
+#[test]
+fn template_renders_then_is_idempotent() {
+    // Templates flow: the eval phase reads `greeting.tpl`, expands
+    // `${name}` + `${scope}` with the values from `vars`, and
+    // produces a `ResourceState::Template` with the rendered
+    // content. The executor writes that content to the target path
+    // under the fake `$HOME`. Second run: planner reads the file
+    // back, byte-compares against the desired content, classifies
+    // as `NoOp`, and the diff reports "No changes".
+    let home = E2eHome::new("template");
+    let fixture = fixture_dir("templates");
+
+    let first = run(keron_apply(&fixture, &home.path), "yes\n");
+    assert!(
+        first.success,
+        "first run failed: stdout=\n{}\nstderr=\n{}",
+        first.stdout, first.stderr,
+    );
+    assert!(
+        first.stdout.contains("1 added"),
+        "first run should add 1 template: {}",
+        first.stdout,
+    );
+    let rendered = home.path.join(".testgreeting");
+    let content = fs::read_to_string(&rendered).expect("template file written");
+    assert_eq!(
+        content, "hello keron, this is a e2e fixture\n",
+        "template should have placeholders substituted",
+    );
+
     let second = run(keron_apply(&fixture, &home.path), "yes\n");
     assert!(
         second.success,

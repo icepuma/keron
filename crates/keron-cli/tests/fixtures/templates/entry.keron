@@ -1,0 +1,15 @@
+# Template manifest used by the cross-platform e2e suite. Renders
+# `greeting.tpl` with two `${...}` placeholders into a file under
+# the test's fake `$HOME`. Pins template render + write + idempotency
+# end-to-end through the `keron` CLI.
+
+val home: String = match env("HOME") {
+  null => keron_root(),
+  v => v,
+}
+
+reconcile template(
+  path = "${home}/.testgreeting",
+  source = "./greeting.tpl",
+  vars = {"name": "keron", "scope": "e2e"},
+)

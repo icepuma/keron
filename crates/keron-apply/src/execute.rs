@@ -83,8 +83,9 @@ pub fn apply_change_one(change: &ResourceChange) -> Result<()> {
 fn apply_create(state: &ResourceState) -> Result<()> {
     match state {
         ResourceState::Symlink { from, to } => create_symlink(from, to),
+        ResourceState::Template { path, content } => write_template(path, content),
         ResourceState::Package { manager, name } => packages::install(*manager, name),
-        other => bail!(unsupported_kind(other)),
+        directory @ ResourceState::Directory { .. } => bail!(unsupported_kind(directory)),
     }
 }
 
@@ -104,6 +105,24 @@ fn apply_update(before: &ResourceState, after: &ResourceState) -> Result<()> {
             remove_symlink(bf)?;
             create_symlink(af, at)
         }
+        (
+            ResourceState::Template { path: bp, .. },
+            ResourceState::Template { path: ap, content },
+        ) => {
+            if bp != ap {
+                bail!(
+                    "template update path mismatch: `{}` vs `{}`",
+                    bp.display(),
+                    ap.display(),
+                );
+            }
+            // `fs::write` opens with `O_TRUNC | O_CREAT`, which
+            // overwrites the existing file in place. Not crash-safe
+            // (a power-loss mid-write would leave a truncated file),
+            // but matches what nearly every dotfile manager does and
+            // keeps the executor allocation-free.
+            write_template(ap, content)
+        }
         _ => bail!(unsupported_kind(after)),
     }
 }
@@ -111,7 +130,10 @@ fn apply_update(before: &ResourceState, after: &ResourceState) -> Result<()> {
 fn apply_destroy(state: &ResourceState) -> Result<()> {
     match state {
         ResourceState::Symlink { from, .. } => remove_symlink(from),
-        other => bail!(unsupported_kind(other)),
+        ResourceState::Template { path, .. } => remove_template(path),
+        other @ (ResourceState::Directory { .. } | ResourceState::Package { .. }) => {
+            bail!(unsupported_kind(other))
+        }
     }
 }
 
@@ -137,6 +159,33 @@ fn remove_symlink(path: &Path) -> Result<()> {
         bail!("`{}` is not a symlink; refusing to remove", path.display());
     }
     fs::remove_file(path).with_context(|| format!("removing symlink `{}`", path.display()))
+}
+
+fn write_template(path: &Path, content: &str) -> Result<()> {
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("creating parent directory `{}`", parent.display()))?;
+    }
+    fs::write(path, content).with_context(|| format!("writing template `{}`", path.display()))
+}
+
+fn remove_template(path: &Path) -> Result<()> {
+    // Symmetric with `remove_symlink`: refuse to call `remove_file`
+    // on anything that isn't a plain file. A symlink or directory at
+    // the path means the user's filesystem layout disagrees with the
+    // manifest and we'd rather error than silently destroy unrelated
+    // data.
+    let meta =
+        fs::symlink_metadata(path).with_context(|| format!("inspecting `{}`", path.display()))?;
+    if !meta.file_type().is_file() {
+        bail!(
+            "`{}` is not a regular file; refusing to remove",
+            path.display()
+        );
+    }
+    fs::remove_file(path).with_context(|| format!("removing template `{}`", path.display()))
 }
 
 fn unsupported_kind(state: &ResourceState) -> String {
@@ -449,25 +498,104 @@ mod tests {
     }
 
     #[test]
-    fn create_template_returns_not_implemented_error() {
-        // Templates / directories / packages are still stubbed; the
-        // executor must surface a clear "not yet implemented"
-        // diagnostic mentioning the kind so users can see exactly
-        // which resource type is blocking.
+    fn create_template_writes_file_with_content() {
+        // Templates are wired through `write_template`; the executor
+        // creates the parent chain (`mkdir -p`) and writes the
+        // rendered content verbatim. Sanity-checking against a
+        // tempdir keeps the test hermetic.
+        let d = TempDir::new("template-create");
+        let path = d.path.join("nested").join("config.toml");
         let plan = Plan {
             changes: vec![change(
                 Action::Create,
                 None,
                 Some(ResourceState::Template {
-                    path: PathBuf::from("/x"),
-                    content: "y".into(),
+                    path: path.clone(),
+                    content: "key = \"value\"\n".into(),
                 }),
             )],
         };
-        let err = execute(&plan).unwrap_err();
-        let msg = format!("{err:#}");
-        assert!(msg.contains("not yet implemented"), "got: {msg}");
-        assert!(msg.contains("template"), "should name the kind: {msg}");
+        let summary = execute(&plan).unwrap();
+        assert_eq!(summary.added, 1);
+        let written = fs::read_to_string(&path).expect("file written");
+        assert_eq!(written, "key = \"value\"\n");
+    }
+
+    #[test]
+    fn update_template_overwrites_content() {
+        let d = TempDir::new("template-update");
+        let path = d.path.join("config.toml");
+        fs::write(&path, "old contents\n").unwrap();
+        let plan = Plan {
+            changes: vec![change(
+                Action::Update,
+                Some(ResourceState::Template {
+                    path: path.clone(),
+                    content: "old contents\n".into(),
+                }),
+                Some(ResourceState::Template {
+                    path: path.clone(),
+                    content: "new contents\n".into(),
+                }),
+            )],
+        };
+        let summary = execute(&plan).unwrap();
+        assert_eq!(summary.changed, 1);
+        let written = fs::read_to_string(&path).expect("file written");
+        assert_eq!(written, "new contents\n");
+    }
+
+    #[test]
+    fn destroy_template_removes_file() {
+        let d = TempDir::new("template-destroy");
+        let path = d.path.join("config.toml");
+        fs::write(&path, "x").unwrap();
+        let plan = Plan {
+            changes: vec![change(
+                Action::Destroy,
+                Some(ResourceState::Template {
+                    path: path.clone(),
+                    content: "x".into(),
+                }),
+                None,
+            )],
+        };
+        let summary = execute(&plan).unwrap();
+        assert_eq!(summary.destroyed, 1);
+        assert!(!path.exists(), "destroy should remove the file");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn destroy_template_refuses_to_remove_symlinks() {
+        // Symmetric guard with `destroy_refuses_to_remove_real_files`
+        // for symlinks: if the path on disk turns out to be a
+        // different kind of object than the manifest declared,
+        // refuse rather than silently destroy.
+        let d = TempDir::new("template-destroy-symlink");
+        let real = d.path.join("real");
+        fs::write(&real, "x").unwrap();
+        let link = d.path.join("alias");
+        symlink_impl(&real, &link).unwrap();
+        let plan = Plan {
+            changes: vec![change(
+                Action::Destroy,
+                Some(ResourceState::Template {
+                    path: link.clone(),
+                    content: String::new(),
+                }),
+                None,
+            )],
+        };
+        let err = execute(&plan).expect_err("destroying a symlink-as-template must fail");
+        assert!(
+            format!("{err:#}").contains("not a regular file"),
+            "got: {err:#}",
+        );
+        // The symlink AND its target must still exist after the
+        // refusal.
+        assert!(link.is_symlink());
+        assert!(real.exists());
     }
 
     #[test]
