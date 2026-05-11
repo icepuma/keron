@@ -43,6 +43,19 @@ fn mixed_resource_list_lifts_package_to_resource() {
 }
 
 #[test]
+fn match_lifts_package_and_filesystem_resource_to_resource() {
+    assert!(
+        check_src(
+            "val r: Resource = match true {\n\
+             true => brew(\"git\"),\n\
+             _ => symlink(from = \"/a\", to = \"/b\"),\n\
+             }\n",
+        )
+        .is_ok()
+    );
+}
+
+#[test]
 fn package_is_reconcilable() {
     // `reconcile` accepts anything that satisfies `is_reconcilable`;
     // `Package` is in that set so a manifest can stand on its own

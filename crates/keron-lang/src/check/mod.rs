@@ -150,27 +150,52 @@ pub fn resolve_type_names(
         match item {
             Item::Val(v) => {
                 if let Some(annot) = &mut v.ty {
-                    resolve_type_in_place(&mut annot.node, &annot.span, &scope, &mut diags);
+                    resolve_type_in_place(
+                        &mut annot.node,
+                        &annot.span,
+                        &scope,
+                        &mut diags,
+                        &mut Vec::new(),
+                    );
                 }
+                resolve_expr_types(&mut v.value.node, &scope, &mut diags);
             }
             Item::Fn(f) => {
                 for p in &mut f.params {
-                    resolve_type_in_place(&mut p.ty.node, &p.ty.span, &scope, &mut diags);
+                    resolve_type_in_place(
+                        &mut p.ty.node,
+                        &p.ty.span,
+                        &scope,
+                        &mut diags,
+                        &mut Vec::new(),
+                    );
+                    if let Some(default) = &mut p.default {
+                        resolve_expr_types(&mut default.node, &scope, &mut diags);
+                    }
                 }
                 resolve_type_in_place(
                     &mut f.return_type.node,
                     &f.return_type.span,
                     &scope,
                     &mut diags,
+                    &mut Vec::new(),
                 );
                 resolve_block_types(&mut f.body, &scope, &mut diags);
             }
             Item::Struct(s) => {
                 for field in &mut s.fields {
-                    resolve_type_in_place(&mut field.ty.node, &field.ty.span, &scope, &mut diags);
+                    resolve_type_in_place(
+                        &mut field.ty.node,
+                        &field.ty.span,
+                        &scope,
+                        &mut diags,
+                        &mut Vec::new(),
+                    );
                 }
             }
-            Item::TypeAlias(_) | Item::Reconcile(_) | Item::Use(_) | Item::ExprStmt(_) => {}
+            Item::Reconcile(r) => resolve_reconcile_types(r, &scope, &mut diags),
+            Item::ExprStmt(expr) => resolve_expr_types(&mut expr.node, &scope, &mut diags),
+            Item::TypeAlias(_) | Item::Use(_) => {}
         }
     }
     if diags.is_empty() { Ok(()) } else { Err(diags) }
@@ -235,14 +260,34 @@ fn resolve_block_types(
     diags: &mut Vec<Diagnostic>,
 ) {
     for stmt in &mut block.stmts {
-        if let Stmt::Val(v) = stmt
-            && let Some(annot) = &mut v.ty
-        {
-            resolve_type_in_place(&mut annot.node, &annot.span, scope, diags);
+        match stmt {
+            Stmt::Val(v) => {
+                if let Some(annot) = &mut v.ty {
+                    resolve_type_in_place(
+                        &mut annot.node,
+                        &annot.span,
+                        scope,
+                        diags,
+                        &mut Vec::new(),
+                    );
+                }
+                resolve_expr_types(&mut v.value.node, scope, diags);
+            }
+            Stmt::Reconcile(r) => resolve_reconcile_types(r, scope, diags),
         }
     }
     if let Some(trailing) = &mut block.trailing {
         resolve_expr_types(&mut trailing.node, scope, diags);
+    }
+}
+
+fn resolve_reconcile_types(
+    reconcile: &mut ReconcileDecl,
+    scope: &TypeResolutionScope<'_>,
+    diags: &mut Vec<Diagnostic>,
+) {
+    for expr in reconcile.chains.iter_mut().flatten() {
+        resolve_expr_types(&mut expr.node, scope, diags);
     }
 }
 
@@ -252,15 +297,49 @@ fn resolve_expr_types(
     diags: &mut Vec<Diagnostic>,
 ) {
     match expr {
+        Expr::Unary { operand, .. } => {
+            resolve_expr_types(&mut operand.node, scope, diags);
+        }
+        Expr::Binary { lhs, rhs, .. } => {
+            resolve_expr_types(&mut lhs.node, scope, diags);
+            resolve_expr_types(&mut rhs.node, scope, diags);
+        }
+        Expr::Interpolation(parts) => {
+            for part in parts {
+                if let StringPart::Expr(expr) = part {
+                    resolve_expr_types(&mut expr.node, scope, diags);
+                }
+            }
+        }
+        Expr::List(items) => {
+            for item in items {
+                resolve_expr_types(&mut item.node, scope, diags);
+            }
+        }
+        Expr::Map(entries) => {
+            for entry in entries {
+                resolve_expr_types(&mut entry.key.node, scope, diags);
+                resolve_expr_types(&mut entry.value.node, scope, diags);
+            }
+        }
+        Expr::Call { args, .. } => {
+            for arg in args {
+                resolve_expr_types(&mut arg.value.node, scope, diags);
+            }
+        }
         Expr::If {
+            cond,
             then_branch,
             else_branch,
-            ..
         } => {
+            resolve_expr_types(&mut cond.node, scope, diags);
             resolve_block_types(then_branch, scope, diags);
             resolve_block_types(else_branch, scope, diags);
         }
-        Expr::For { body, .. } => {
+        Expr::For {
+            iter_expr, body, ..
+        } => {
+            resolve_expr_types(&mut iter_expr.node, scope, diags);
             resolve_block_types(body, scope, diags);
         }
         Expr::Field { receiver, .. } => {
@@ -272,14 +351,7 @@ fn resolve_expr_types(
                 resolve_expr_types(&mut arm.body.node, scope, diags);
             }
         }
-        Expr::Literal(_)
-        | Expr::Unary { .. }
-        | Expr::Binary { .. }
-        | Expr::Interpolation(_)
-        | Expr::List(_)
-        | Expr::Map(_)
-        | Expr::Var(_)
-        | Expr::Call { .. } => {}
+        Expr::Literal(_) | Expr::Var(_) => {}
     }
 }
 
@@ -288,10 +360,18 @@ fn resolve_type_in_place(
     span: &Span,
     scope: &TypeResolutionScope<'_>,
     diags: &mut Vec<Diagnostic>,
+    stack: &mut Vec<String>,
 ) {
     match ty {
         Type::Named(name) => match scope.lookup(name) {
             Some(canonical) => {
+                if stack.iter().any(|n| n == name) {
+                    diags.push(Diagnostic::new(
+                        span.clone(),
+                        format!("recursive type `{name}` is not supported"),
+                    ));
+                    return;
+                }
                 // Replace, then recurse: a struct payload pulled from
                 // `local_types` may carry `Type::Named` placeholders
                 // inside its field types (the local-type map is built
@@ -299,8 +379,10 @@ fn resolve_type_in_place(
                 // Resolving those eagerly here keeps the val
                 // annotation's payload structurally identical to the
                 // one synthesised for the struct's constructor.
+                stack.push(name.clone());
                 *ty = canonical.clone();
-                resolve_type_in_place(ty, span, scope, diags);
+                resolve_type_in_place(ty, span, scope, diags, stack);
+                stack.pop();
             }
             None => diags.push(Diagnostic::new(
                 span.clone(),
@@ -308,15 +390,15 @@ fn resolve_type_in_place(
             )),
         },
         Type::List(inner) | Type::Nullable(inner) => {
-            resolve_type_in_place(inner, span, scope, diags);
+            resolve_type_in_place(inner, span, scope, diags, stack);
         }
         Type::Map(k, v) => {
-            resolve_type_in_place(k, span, scope, diags);
-            resolve_type_in_place(v, span, scope, diags);
+            resolve_type_in_place(k, span, scope, diags, stack);
+            resolve_type_in_place(v, span, scope, diags, stack);
         }
         Type::Struct { fields, .. } => {
             for (_, fty) in fields {
-                resolve_type_in_place(fty, span, scope, diags);
+                resolve_type_in_place(fty, span, scope, diags, stack);
             }
         }
         Type::StringUnion { .. }
@@ -870,6 +952,7 @@ fn check_expr(
                     check_expr(&entry.key, key_ty, env, fns)?;
                     check_expr(&entry.value, value_ty, env, fns)?;
                 }
+                reject_duplicate_static_map_keys(entries)?;
                 Ok(())
             }
             _ if entries.is_empty() => Err(Diagnostic::new(
@@ -1321,11 +1404,42 @@ fn map_type(
             ));
         }
     }
+    reject_duplicate_static_map_keys(entries)?;
     Ok(Type::Map(Box::new(key_ty), Box::new(value_ty)))
 }
 
 const fn is_valid_map_key(ty: &Type) -> bool {
     matches!(ty, Type::String | Type::Int)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum StaticMapKey {
+    String(String),
+    Int(i64),
+}
+
+fn reject_duplicate_static_map_keys(entries: &[MapEntry]) -> Result<(), Diagnostic> {
+    let mut seen: HashSet<StaticMapKey> = HashSet::new();
+    for entry in entries {
+        let Some(key) = static_map_key(&entry.key.node) else {
+            continue;
+        };
+        if !seen.insert(key) {
+            return Err(Diagnostic::new(
+                entry.key.span.clone(),
+                "duplicate static map key",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn static_map_key(expr: &Expr) -> Option<StaticMapKey> {
+    match expr {
+        Expr::Literal(Literal::String(s)) => Some(StaticMapKey::String(s.clone())),
+        Expr::Literal(Literal::Int(n)) => Some(StaticMapKey::Int(*n)),
+        _ => None,
+    }
 }
 
 /// Recursively check that every `Map<K, V>` occurrence in a declared

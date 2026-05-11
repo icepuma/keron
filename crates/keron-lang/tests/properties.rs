@@ -434,7 +434,7 @@ proptest! {
 
     #[test]
     fn random_string_int_map_typechecks(
-        keys in prop::collection::vec("[a-zA-Z0-9_]{1,8}", 1..6),
+        keys in prop::collection::hash_set("[a-zA-Z0-9_]{1,8}", 1..6),
         values in prop::collection::vec((i64::MIN + 1)..=i64::MAX, 1..6),
     ) {
         let n = keys.len().min(values.len());

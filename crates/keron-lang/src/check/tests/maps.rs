@@ -57,6 +57,18 @@ fn map_inferred_string_int() {
     assert!(check_src(r#"val m = {"a": 1, "b": 2, "c": 3}"#).is_ok());
 }
 
+#[test]
+fn duplicate_static_string_keys_error() {
+    let err = check_src(r#"val m = {"a": 1, "a": 2}"#).expect_err("should fail");
+    assert!(err[0].message.contains("duplicate static map key"));
+}
+
+#[test]
+fn duplicate_static_int_keys_error_with_annotation() {
+    let err = check_src("val m: Map<Int, String> = {1: \"a\", 1: \"b\"}").expect_err("should fail");
+    assert!(err[0].message.contains("duplicate static map key"));
+}
+
 // ---------- key type validation ----------
 
 #[test]

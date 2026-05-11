@@ -81,6 +81,44 @@ fn resource_type_inside_for_body_resolves() {
 }
 
 #[test]
+fn resource_type_inside_top_level_reconcile_expr_resolves() {
+    assert!(
+        check_src(
+            r#"if true {
+                val f: Template = template(path = "/p", source = "tmpl.tpl", vars = {"body": ""})
+                reconcile f
+            }"#
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn resource_type_inside_reconcile_decl_expr_resolves() {
+    assert!(
+        check_src(
+            r#"reconcile if true {
+                val f: Template = template(path = "/p", source = "tmpl.tpl", vars = {"body": ""})
+                f
+            } else {
+                template(path = "/q", source = "tmpl.tpl", vars = {"body": ""})
+            }"#
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn recursive_struct_type_errors_without_overflowing() {
+    let err = check_src("struct Node { next: Node? }\n").expect_err("should fail");
+    assert!(
+        err.iter()
+            .any(|d| d.message.contains("recursive type `Node`")),
+        "got: {err:?}",
+    );
+}
+
+#[test]
 fn named_args_reorder_for_symlink() {
     assert!(check_src(r#"val s: Symlink = symlink(to = "b", from = "a")"#).is_ok());
 }
