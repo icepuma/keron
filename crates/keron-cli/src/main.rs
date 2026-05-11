@@ -36,13 +36,13 @@ enum Command {
         execute: bool,
     },
 
-    /// Format `.keron` files in place.
-    Fmt {
+    /// Normalize `.keron` files in place.
+    Format {
         /// Path to a `.keron` file or directory tree containing
         /// `.keron` files.
         path: PathBuf,
 
-        /// Check whether files are formatted without writing changes.
+        /// Check whether files are normalized without writing changes.
         #[arg(long)]
         check: bool,
     },
@@ -80,12 +80,12 @@ where
     let cli = Cli::parse_from(args);
     match cli.command {
         Command::Apply { path, execute } => keron_apply::run(&path, execute),
-        Command::Fmt { path, check } => run_fmt(&path, check),
+        Command::Format { path, check } => run_format(&path, check),
         Command::ApplyElevated { payload } => keron_apply::run_elevated_child(&payload),
     }
 }
 
-fn run_fmt(path: &std::path::Path, check: bool) -> anyhow::Result<()> {
+fn run_format(path: &std::path::Path, check: bool) -> anyhow::Result<()> {
     let files = collect_keron_files(path)?;
     let mut changed = Vec::new();
     for file in files {
@@ -99,7 +99,7 @@ fn run_fmt(path: &std::path::Path, check: bool) -> anyhow::Result<()> {
                 .join("; ");
             anyhow::bail!("cannot format `{}`: {msg}", file.display());
         }
-        let formatted = format_source(&text);
+        let formatted = normalize_source(&text);
         if formatted != text {
             changed.push(file.clone());
             if !check {
@@ -156,7 +156,7 @@ fn collect_keron_files_from_dir(dir: &std::path::Path, out: &mut Vec<PathBuf>) -
     Ok(())
 }
 
-fn format_source(src: &str) -> String {
+fn normalize_source(src: &str) -> String {
     if src.is_empty() {
         return String::new();
     }
@@ -229,28 +229,36 @@ mod tests {
     }
 
     #[test]
-    fn format_source_trims_trailing_whitespace_and_final_newline() {
-        assert_eq!(format_source("val x: Int = 1  \n\n"), "val x: Int = 1\n\n");
-        assert_eq!(format_source("val x: Int = 1"), "val x: Int = 1\n");
+    fn normalize_source_trims_trailing_whitespace_and_final_newline() {
+        assert_eq!(
+            normalize_source("val x: Int = 1  \n\n"),
+            "val x: Int = 1\n\n"
+        );
+        assert_eq!(normalize_source("val x: Int = 1"), "val x: Int = 1\n");
     }
 
     #[test]
-    fn run_cli_fmt_writes_keron_files() {
-        let dir = TempDir::new("fmt-write");
+    fn run_cli_format_writes_keron_files() {
+        let dir = TempDir::new("format-write");
         let file = dir.path.join("main.keron");
         fs::write(&file, "val x: Int = 1  ").unwrap();
-        run_cli(["keron".into(), "fmt".into(), file.clone().into_os_string()]).unwrap();
+        run_cli([
+            "keron".into(),
+            "format".into(),
+            file.clone().into_os_string(),
+        ])
+        .unwrap();
         assert_eq!(fs::read_to_string(file).unwrap(), "val x: Int = 1\n");
     }
 
     #[test]
-    fn run_cli_fmt_check_reports_without_writing() {
-        let dir = TempDir::new("fmt-check");
+    fn run_cli_format_check_reports_without_writing() {
+        let dir = TempDir::new("format-check");
         let file = dir.path.join("main.keron");
         fs::write(&file, "val x: Int = 1  ").unwrap();
         let err = run_cli([
             OsString::from("keron"),
-            OsString::from("fmt"),
+            OsString::from("format"),
             OsString::from("--check"),
             file.clone().into_os_string(),
         ])
@@ -262,15 +270,25 @@ mod tests {
     }
 
     #[test]
-    fn run_cli_fmt_recurses_into_subdirectories() {
-        let dir = TempDir::new("fmt-recursive");
+    fn run_cli_format_check_accepts_parseable_corpus_fixtures() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../keron-lang/tests/corpus");
+        for rel in ["parse", "check", "errors/check"] {
+            run_format(&root.join(rel), true).unwrap_or_else(|err| {
+                panic!("parseable corpus fixtures under {rel} should be normalized: {err:#}")
+            });
+        }
+    }
+
+    #[test]
+    fn run_cli_format_recurses_into_subdirectories() {
+        let dir = TempDir::new("format-recursive");
         let sub = dir.path.join("nested");
         fs::create_dir_all(&sub).unwrap();
         let file = sub.join("main.keron");
         fs::write(&file, "val x: Int = 1  ").unwrap();
         run_cli([
             OsString::from("keron"),
-            OsString::from("fmt"),
+            OsString::from("format"),
             dir.path.clone().into_os_string(),
         ])
         .unwrap();
@@ -278,15 +296,15 @@ mod tests {
     }
 
     #[test]
-    fn run_cli_fmt_ignores_non_keron_files_in_directories() {
-        let dir = TempDir::new("fmt-ignore");
+    fn run_cli_format_ignores_non_keron_files_in_directories() {
+        let dir = TempDir::new("format-ignore");
         let keron = dir.path.join("main.keron");
         let notes = dir.path.join("notes.txt");
         fs::write(&keron, "val x: Int = 1").unwrap();
         fs::write(&notes, "not keron syntax !!!").unwrap();
         run_cli([
             OsString::from("keron"),
-            OsString::from("fmt"),
+            OsString::from("format"),
             dir.path.clone().into_os_string(),
         ])
         .unwrap();

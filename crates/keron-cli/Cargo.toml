@@ -1,6 +1,6 @@
 [package]
 name = "keron-cli"
-description = "keron CLI: orchestrates apply, check, fmt, init"
+description = "keron CLI: orchestrates apply and source normalization"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
