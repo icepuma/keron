@@ -60,7 +60,9 @@ Add new crates under `crates/`. Keep each crate single-responsibility.
 - Workspace-wide `[workspace.lints]` apply pedantic + nursery + cargo
   groups at warn level. Each crate opts in via
   `[lints] workspace = true`.
-- `unsafe_code = "forbid"` — no unsafe in this codebase.
+- `unsafe_code = "deny"` — no unsafe in production code. Test-only
+  carve-outs and platform-FFI call sites for the elevated-rights flow
+  may opt in via `#[allow(unsafe_code)]` with a one-line *why* comment.
 - CI promotes warnings to errors with `-D warnings`.
 - Don't add `#[allow(...)]` without a one-line comment explaining why.
 

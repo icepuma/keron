@@ -30,22 +30,51 @@ pub fn render_plan<W: Write>(out: &mut W, plan: &Plan, opts: RenderOptions) -> i
         return Ok(());
     }
 
-    writeln!(out, "keron will perform the following actions:")?;
-    writeln!(out)?;
+    let has_unprivileged = plan
+        .changes
+        .iter()
+        .any(|c| !matches!(c.action, Action::NoOp) && !c.requires_elevation);
+    let has_elevated = plan
+        .changes
+        .iter()
+        .any(|c| !matches!(c.action, Action::NoOp) && c.requires_elevation);
 
-    for change in &plan.changes {
-        if matches!(change.action, Action::NoOp) {
-            continue;
+    if has_unprivileged {
+        writeln!(out, "keron will perform the following actions:")?;
+        writeln!(out)?;
+        for change in &plan.changes {
+            if matches!(change.action, Action::NoOp) || change.requires_elevation {
+                continue;
+            }
+            render_change(out, change, opts)?;
         }
-        render_change(out, change, opts)?;
+    }
+
+    if has_elevated {
+        writeln!(out, "The following changes require elevated rights:")?;
+        writeln!(out)?;
+        for change in &plan.changes {
+            if matches!(change.action, Action::NoOp) || !change.requires_elevation {
+                continue;
+            }
+            render_change(out, change, opts)?;
+        }
     }
 
     let s = plan.summary();
-    writeln!(
-        out,
-        "Plan: {} to add, {} to change, {} to destroy.",
-        s.add, s.change, s.destroy
-    )?;
+    if s.elevated > 0 {
+        writeln!(
+            out,
+            "Plan: {} to add, {} to change, {} to destroy ({} elevated).",
+            s.add, s.change, s.destroy, s.elevated,
+        )?;
+    } else {
+        writeln!(
+            out,
+            "Plan: {} to add, {} to change, {} to destroy.",
+            s.add, s.change, s.destroy,
+        )?;
+    }
     Ok(())
 }
 
@@ -62,10 +91,15 @@ fn render_change<W: Write>(
     };
     let symbol = action_symbol(change.action);
     let color = action_color(change.action);
+    let tag = if change.requires_elevation {
+        "  (elevated)"
+    } else {
+        ""
+    };
 
     writeln!(
         out,
-        "  {hash} {kind}.\"{addr}\" {verb}",
+        "  {hash} {kind}.\"{addr}\" {verb}{tag}",
         hash = paint(opts.color, DIM, "#"),
         kind = change.kind.label(),
         addr = change.address,
@@ -130,6 +164,10 @@ fn render_state_lines<W: Write>(
         ResourceState::Symlink { from, to } => {
             writeln!(out, "      {s} from = \"{}\"", from.display())?;
             writeln!(out, "      {s} to   = \"{}\"", to.display())?;
+        }
+        ResourceState::Package { manager, name } => {
+            writeln!(out, "      {s} manager = \"{}\"", manager.label())?;
+            writeln!(out, "      {s} name    = \"{}\"", escape_inline(name))?;
         }
     }
     Ok(())
@@ -201,6 +239,33 @@ fn render_diff_lines<W: Write>(
                 )?;
             }
         }
+        (
+            ResourceState::Package {
+                manager: bm,
+                name: bn,
+            },
+            ResourceState::Package {
+                manager: am,
+                name: an,
+            },
+        ) => {
+            if bm != am {
+                writeln!(
+                    out,
+                    "      {s} manager = \"{}\" -> \"{}\"",
+                    bm.label(),
+                    am.label()
+                )?;
+            }
+            if bn != an {
+                writeln!(
+                    out,
+                    "      {s} name    = \"{}\" -> \"{}\"",
+                    escape_inline(bn),
+                    escape_inline(an)
+                )?;
+            }
+        }
         _ => {
             // Heterogeneous before/after — render as full destroy + create.
             render_state_lines(out, before, "-", RED, opts)?;
@@ -246,7 +311,7 @@ fn escape_inline(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plan::ResourceKind;
+    use crate::plan::{PackageManager, ResourceKind};
     use std::path::PathBuf;
 
     fn render(plan: &Plan) -> String {
@@ -303,6 +368,7 @@ mod tests {
                     path: PathBuf::from("/etc/x"),
                     content: "hi".into(),
                 }),
+                requires_elevation: false,
             }],
         };
         let out = render(&plan);
@@ -327,6 +393,7 @@ mod tests {
                 after: Some(ResourceState::Directory {
                     path: PathBuf::from("/d"),
                 }),
+                requires_elevation: false,
             }],
         };
         let out = render(&plan);
@@ -345,6 +412,7 @@ mod tests {
                     from: PathBuf::from("/a"),
                     to: PathBuf::from("/b"),
                 }),
+                requires_elevation: false,
             }],
         };
         let out = render(&plan);
@@ -363,6 +431,7 @@ mod tests {
                     path: PathBuf::from("/d"),
                 }),
                 after: None,
+                requires_elevation: false,
             }],
         };
         let out = render(&plan);
@@ -389,6 +458,7 @@ mod tests {
                     path: PathBuf::from("/x"),
                     content: "new".into(),
                 }),
+                requires_elevation: false,
             }],
         };
         let out = render(&plan);
@@ -411,6 +481,7 @@ mod tests {
                     path: PathBuf::from("/new"),
                     content: "same".into(),
                 }),
+                requires_elevation: false,
             }],
         };
         let out = render(&plan);
@@ -437,6 +508,7 @@ mod tests {
                 after: Some(ResourceState::Directory {
                     path: PathBuf::from("/new"),
                 }),
+                requires_elevation: false,
             }],
         };
         let out = render(&plan);
@@ -459,6 +531,7 @@ mod tests {
                 after: Some(ResourceState::Directory {
                     path: PathBuf::from("/d"),
                 }),
+                requires_elevation: false,
             }],
         };
         let out = render(&plan);
@@ -481,6 +554,7 @@ mod tests {
                     from: PathBuf::from("/s"),
                     to: PathBuf::from("/t2"),
                 }),
+                requires_elevation: false,
             }],
         };
         let out = render(&plan);
@@ -504,6 +578,7 @@ mod tests {
                 after: Some(ResourceState::Directory {
                     path: PathBuf::from("/x"),
                 }),
+                requires_elevation: false,
             }],
         };
         let out = render(&plan);
@@ -566,10 +641,134 @@ mod tests {
                     path: PathBuf::from("/x"),
                     content: "a\tb\n".into(),
                 }),
+                requires_elevation: false,
             }],
         };
         let out = render(&plan);
         assert!(out.contains("\\t"), "tab not escaped: {out}");
         assert!(out.contains("\\n"), "newline not escaped: {out}");
+    }
+
+    #[test]
+    fn create_package_renders_manager_and_name_lines() {
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "brew:ripgrep".into(),
+                kind: ResourceKind::Package,
+                action: Action::Create,
+                before: None,
+                after: Some(ResourceState::Package {
+                    manager: PackageManager::Brew,
+                    name: "ripgrep".into(),
+                }),
+                requires_elevation: false,
+            }],
+        };
+        let out = render(&plan);
+        // Header pulls the kind label from `ResourceKind::Package` so
+        // the user sees `package."brew:ripgrep"` rather than the raw
+        // address; the body lists manager + name on separate lines.
+        assert!(
+            out.contains("package.\"brew:ripgrep\" will be created"),
+            "missing header: {out}",
+        );
+        assert!(
+            out.contains("+ resource \"package\""),
+            "missing kind: {out}"
+        );
+        assert!(
+            out.contains("+ manager = \"brew\""),
+            "missing manager line: {out}",
+        );
+        assert!(
+            out.contains("+ name    = \"ripgrep\""),
+            "missing name line: {out}",
+        );
+    }
+
+    #[test]
+    fn destroy_package_renders_with_minus_sign() {
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "cargo:sccache".into(),
+                kind: ResourceKind::Package,
+                action: Action::Destroy,
+                before: Some(ResourceState::Package {
+                    manager: PackageManager::Cargo,
+                    name: "sccache".into(),
+                }),
+                after: None,
+                requires_elevation: false,
+            }],
+        };
+        let out = render(&plan);
+        assert!(
+            out.contains("- manager = \"cargo\""),
+            "missing destroy manager: {out}",
+        );
+        assert!(
+            out.contains("- name    = \"sccache\""),
+            "missing destroy name: {out}",
+        );
+    }
+
+    #[test]
+    fn update_package_renders_only_changed_fields() {
+        // Manager identical (brew → brew), name changes (`git` →
+        // `git@2`). Only the `name` diff line should appear.
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "brew:git".into(),
+                kind: ResourceKind::Package,
+                action: Action::Update,
+                before: Some(ResourceState::Package {
+                    manager: PackageManager::Brew,
+                    name: "git".into(),
+                }),
+                after: Some(ResourceState::Package {
+                    manager: PackageManager::Brew,
+                    name: "git@2".into(),
+                }),
+                requires_elevation: false,
+            }],
+        };
+        let out = render(&plan);
+        assert!(
+            out.contains("~ name    = \"git\" -> \"git@2\""),
+            "missing name diff: {out}",
+        );
+        assert!(
+            !out.contains("~ manager"),
+            "manager should be unchanged: {out}",
+        );
+    }
+
+    #[test]
+    fn package_manager_change_renders_both_diff_lines() {
+        // Cross-manager update is unusual but the body should still
+        // diff both fields cleanly rather than fall through to the
+        // heterogeneous destroy+create path.
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "brew:ripgrep".into(),
+                kind: ResourceKind::Package,
+                action: Action::Update,
+                before: Some(ResourceState::Package {
+                    manager: PackageManager::Brew,
+                    name: "ripgrep".into(),
+                }),
+                after: Some(ResourceState::Package {
+                    manager: PackageManager::Cargo,
+                    name: "ripgrep".into(),
+                }),
+                requires_elevation: false,
+            }],
+        };
+        let out = render(&plan);
+        assert!(
+            out.contains("~ manager = \"brew\" -> \"cargo\""),
+            "missing manager diff: {out}",
+        );
+        assert!(!out.contains("~ name"), "name unchanged: {out}");
     }
 }

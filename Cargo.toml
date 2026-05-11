@@ -27,14 +27,42 @@ ariadne = "=0.6.0"
 anyhow = "=1.0.102"
 clap = { version = "=4.6.1", features = ["derive"] }
 petgraph = "=0.8.3"
+os_info = { version = "=3.14.0", default-features = false }
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.149"
+# Pinned platform binding for the elevated-rights flow on Windows:
+# parent-side SID capture (`OpenProcessToken` + `GetTokenInformation` +
+# `ConvertSidToStringSidW`), child-side ownership transfer
+# (`SetSecurityInfo` on a `CreateFileW` handle opened with
+# `FILE_FLAG_OPEN_REPARSE_POINT` so symlinks get the link's owner, not
+# the target's), and the `ShellExecuteExW` re-exec with the `runas`
+# verb that triggers UAC. Used only behind `#[cfg(windows)]`.
+windows-sys = { version = "=0.61.2", default-features = false, features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_System_Threading",
+    "Win32_System_Memory",
+    "Win32_Storage_FileSystem",
+    "Win32_UI_Shell",
+] }
 
 insta = "=1.47.2"
 libtest-mimic = "=0.8.2"
 bolero = "=0.13.4"
 proptest = "=1.11.0"
+# `#[mutants::skip]` markers for cargo-mutants; the crate itself is
+# a no-op shim providing the attribute path so the compiler accepts
+# the annotation under `cfg(test)`.
+mutants = "=0.0.4"
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# `deny` rather than `forbid` so test modules can opt into a small,
+# well-scoped `unsafe` block (e.g. `std::env::set_var`, which became
+# `unsafe` in edition 2024) via `#[allow(unsafe_code)]`. Production
+# code still errors out — the lint default applies everywhere except
+# the explicitly-tagged sites.
+unsafe_code = "deny"
 missing_debug_implementations = "warn"
 
 [workspace.lints.clippy]

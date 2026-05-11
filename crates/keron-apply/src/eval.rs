@@ -24,7 +24,7 @@
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
 use keron_lang::{
@@ -33,9 +33,9 @@ use keron_lang::{
 };
 use keron_modules::{ModuleGraph, ModuleId, stdlib};
 
-use crate::plan::ResourceState;
+use crate::plan::{PackageManager, ResourceState};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 enum Value {
     String(String),
     Int(i64),
@@ -52,6 +52,47 @@ enum Value {
         fields: Vec<(String, Self)>,
     },
     Void,
+    /// The single inhabitant of `Type::Null` and the absent end of any
+    /// `Type::Nullable(_)`. Constructed only by evaluating the `null`
+    /// literal — there's no runtime path that produces `Null`
+    /// implicitly.
+    Null,
+    /// A value sourced from a secret store via `secret("op://...")`.
+    /// The payload is the resolved plaintext; the `Debug` impl
+    /// redacts it so a `dbg!`, panic backtrace, or any auto-derived
+    /// `Debug` further up the stack can't leak the value.
+    /// `unwrap_secret(...)` is the only way to extract the payload
+    /// back into a `Value::String`.
+    Secret(String),
+}
+
+// Manual `Debug` so `Value::Secret` redacts its payload. Every other
+// variant defers to the same shape `#[derive(Debug)]` would have
+// produced — this is a one-arm carve-out, nothing more.
+impl std::fmt::Debug for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::String(s) => f.debug_tuple("String").field(s).finish(),
+            Self::Int(n) => f.debug_tuple("Int").field(n).finish(),
+            Self::Bool(b) => f.debug_tuple("Bool").field(b).finish(),
+            Self::Double(d) => f.debug_tuple("Double").field(d).finish(),
+            Self::List(xs) => f.debug_tuple("List").field(xs).finish(),
+            Self::Map(entries) => f.debug_tuple("Map").field(entries).finish(),
+            Self::Resource(r) => f.debug_tuple("Resource").field(r).finish(),
+            Self::Struct { name, fields } => f
+                .debug_struct("Struct")
+                .field("name", name)
+                .field("fields", fields)
+                .finish(),
+            Self::Void => f.write_str("Void"),
+            Self::Null => f.write_str("Null"),
+            // Redacted: never print the inner value, even in panic
+            // output. Length is fine — it's structural and helpful
+            // for "did the resolver get an empty string back?"
+            // debugging without leaking content.
+            Self::Secret(s) => write!(f, "Secret(<redacted, {} bytes>)", s.len()),
+        }
+    }
 }
 
 impl Value {
@@ -66,6 +107,8 @@ impl Value {
             Self::Resource(_) => "Resource".into(),
             Self::Struct { name, .. } => name.clone(),
             Self::Void => "Void".into(),
+            Self::Null => "Null".into(),
+            Self::Secret(_) => "Secret".into(),
         }
     }
 }
@@ -91,6 +134,9 @@ struct ModuleTop<'p> {
 /// this with the current module's identity.
 struct GraphTop<'p> {
     modules: HashMap<ModuleId, ModuleTop<'p>>,
+    /// Canonical absolute path the user passed to `keron apply` —
+    /// surfaced to user code through the `keron_root()` builtin.
+    keron_root: PathBuf,
 }
 
 #[derive(Clone)]
@@ -160,9 +206,10 @@ impl<'a, 'p> Env<'a, 'p> {
     }
 }
 
-pub fn eval_graph(graph: &ModuleGraph) -> Result<Vec<ResourceState>> {
+pub fn eval_graph(graph: &ModuleGraph, keron_root: &Path) -> Result<Vec<ResourceState>> {
     let mut graph_top = GraphTop {
         modules: HashMap::new(),
+        keron_root: keron_root.to_path_buf(),
     };
     for (id, module) in &graph.modules {
         let mut top = ModuleTop {
@@ -492,6 +539,7 @@ fn eval_literal(lit: &Literal) -> Value {
         Literal::Int(n) => Value::Int(*n),
         Literal::Boolean(b) => Value::Bool(*b),
         Literal::Double(d) => Value::Double(*d),
+        Literal::Null => Value::Null,
     }
 }
 
@@ -566,12 +614,23 @@ fn eval_binop(op: BinOp, l: Value, r: Value) -> Result<Value> {
 #[allow(clippy::cast_precision_loss)]
 fn value_eq(a: &Value, b: &Value) -> bool {
     match (a, b) {
-        (Value::String(x), Value::String(y)) => x == y,
+        // String and Secret share an inner-string equality body.
+        // The checker only admits `Secret == Secret` (no
+        // String↔Secret cross-type), so the merged arm is safe even
+        // though semantically these are distinct rules.
+        (Value::String(x), Value::String(y)) | (Value::Secret(x), Value::Secret(y)) => x == y,
         (Value::Int(x), Value::Int(y)) => x == y,
         (Value::Bool(x), Value::Bool(y)) => x == y,
         (Value::Double(x), Value::Double(y)) => x == y,
         (Value::Int(x), Value::Double(y)) => (*x as f64) == *y,
         (Value::Double(x), Value::Int(y)) => *x == (*y as f64),
+        // The type checker only lets `null` reach `==` on the other
+        // side of a `T?`, so anything-vs-null is a real check: it's
+        // true iff the other operand is also null. The wildcard
+        // catches every cross-type pairing (which the checker has
+        // already rejected) plus the `Null` vs non-null cases — both
+        // false.
+        (Value::Null, Value::Null) => true,
         _ => false,
     }
 }
@@ -730,13 +789,385 @@ fn dispatch_intrinsic(id: IntrinsicId, args: &[CallArg], env: &Env<'_, '_>) -> R
         IntrinsicId::Symlink => {
             let from = call_string(args, env, "from", 0)?;
             let to = call_string(args, env, "to", 1)?;
+            let target = resolve_managed_path(&to, env, "symlink", "to")?;
             Ok(Value::Resource(ResourceState::Symlink {
                 from: PathBuf::from(from),
-                to: PathBuf::from(to),
+                to: target,
             }))
         }
         IntrinsicId::Template => dispatch_template(args, env),
+        IntrinsicId::KeronRoot => Ok(Value::String(
+            env.graph.keron_root.to_string_lossy().into_owned(),
+        )),
+        IntrinsicId::OsType => Ok(Value::String(detect_os_type())),
+        IntrinsicId::OsArch => Ok(Value::String(detect_os_arch())),
+        IntrinsicId::Env => {
+            let name = call_string(args, env, "name", 0)?;
+            // `env::var` errs both for "not present" and for "not
+            // valid Unicode". We collapse both onto `null` rather
+            // than surfacing the latter as a hard error: a user
+            // who'd want to distinguish them can read the var via a
+            // host-side wrapper. Matches what most config DSLs do.
+            Ok(std::env::var(&name).map_or(Value::Null, Value::String))
+        }
+        IntrinsicId::Secret => {
+            let uri = call_string(args, env, "uri", 0)?;
+            let value =
+                resolve_secret(&uri).with_context(|| format!("resolving secret `{uri}`"))?;
+            Ok(Value::Secret(value))
+        }
+        IntrinsicId::UnwrapSecret => {
+            // The type checker has proven the argument is `Secret`,
+            // so `Value::String` / other variants are unreachable.
+            // We `bail!` instead of `unreachable!` so an AST drift
+            // shows up as a loud error at apply time rather than a
+            // panic.
+            let v = eval_call_arg(args, env, "s", 0)?;
+            match v {
+                Value::Secret(s) => Ok(Value::String(s)),
+                other => bail!(
+                    "unwrap_secret expected `Secret`, found `{}`",
+                    other.type_name()
+                ),
+            }
+        }
+        IntrinsicId::Brew => dispatch_package(args, env, PackageManager::Brew),
+        IntrinsicId::Cargo => dispatch_package(args, env, PackageManager::Cargo),
+        IntrinsicId::Winget => dispatch_package(args, env, PackageManager::Winget),
     }
+}
+
+/// Construct a `Package` resource. Each of the three package
+/// constructors (`brew`/`cargo`/`winget`) routes through here with
+/// the manager identity preselected; the only argument is the
+/// package name, validated by the type checker as a `String`.
+fn dispatch_package(args: &[CallArg], env: &Env<'_, '_>, manager: PackageManager) -> Result<Value> {
+    let name = call_string(args, env, "name", 0)?;
+    if name.is_empty() {
+        bail!("{} package name must not be empty", manager.label());
+    }
+    Ok(Value::Resource(ResourceState::Package { manager, name }))
+}
+
+/// Dispatch a `secret(uri)` call to the right resolver based on the
+/// scheme prefix. Failure to parse, run, or interpret the underlying
+/// CLI is a hard error — there's no "gracefully missing secret" use
+/// case.
+///
+/// The supported-schemes list is the canonical reference; adding a
+/// new provider means one new arm and one CLI wrapper below.
+fn resolve_secret(uri: &str) -> Result<String> {
+    // Test seam: a per-URI override short-circuits all real CLI
+    // shell-outs. Keyed on the full URI so a single registry covers
+    // every scheme uniformly. Production builds skip this entirely.
+    #[cfg(test)]
+    if let Some(v) = secret_test::lookup_override(uri) {
+        return v.map_err(|msg| anyhow!("{msg}"));
+    }
+
+    if uri.starts_with("op://") {
+        return real_resolve_op(uri);
+    }
+    if let Some(rest) = uri.strip_prefix("infisical://") {
+        return real_resolve_infisical(uri, rest);
+    }
+    if let Some(rest) = uri.strip_prefix("bw://") {
+        return real_resolve_bw(uri, rest);
+    }
+    bail!("unsupported secret URI scheme in `{uri}`; supported schemes: op://, infisical://, bw://")
+}
+
+/// Shell out to the 1Password CLI for `op://Vault/Item/field` URIs.
+/// `op read` accepts the URI verbatim; stdout is the secret value
+/// with one trailing newline stripped (matching how the CLI prints).
+/// The function itself is `#[mutants::skip]` because the
+/// `Command::new("op")` invocation can't be exercised in tests
+/// without the CLI on `$PATH`; the testable logic — status / stdout
+/// decoding — lives in [`decode_op_output`].
+#[cfg_attr(test, mutants::skip)]
+fn real_resolve_op(uri: &str) -> Result<String> {
+    let output = std::process::Command::new("op")
+        .arg("read")
+        .arg(uri)
+        .output()
+        .with_context(|| format!("invoking `op` for `{uri}` (is the 1Password CLI installed?)"))?;
+    decode_op_output(uri, output)
+}
+
+/// Decode the `Output` of `op read <uri>` into the secret value or a
+/// contextful error. Split out from [`real_resolve_op`] so the
+/// status-success / stderr-on-failure branches stay testable from a
+/// host that doesn't ship `op` — tests build synthetic
+/// [`std::process::Output`] values and assert the rendered error.
+fn decode_op_output(uri: &str, output: std::process::Output) -> Result<String> {
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("`op read {uri}` failed: {}", stderr.trim());
+    }
+    take_stdout(output.stdout, &format!("op read {uri}"))
+}
+
+/// Shell out to the Infisical CLI for `infisical://<env>/<name>`
+/// URIs. The CLI is invoked as `infisical secrets get <name> --env
+/// <env> --plain`; project ID and path are taken from the
+/// `INFISICAL_PROJECT_ID` / `INFISICAL_PATH` env vars the CLI
+/// already reads, so configs don't have to encode them.
+///
+/// The `Command` invocation can't be exercised in tests so the
+/// function is `#[mutants::skip]`; the URI parser and output decoder
+/// live in [`parse_infisical_uri`] and [`decode_infisical_output`].
+#[cfg_attr(test, mutants::skip)]
+fn real_resolve_infisical(uri: &str, rest: &str) -> Result<String> {
+    let (env, name) = parse_infisical_uri(uri, rest)?;
+    let output = std::process::Command::new("infisical")
+        .arg("secrets")
+        .arg("get")
+        .arg(name)
+        .arg("--env")
+        .arg(env)
+        .arg("--plain")
+        .output()
+        .with_context(|| {
+            format!("invoking `infisical` for `{uri}` (is the Infisical CLI installed?)")
+        })?;
+    decode_infisical_output(env, name, output)
+}
+
+/// Pull `(env, name)` out of an `infisical://<env>/<name>` URI.
+/// Both halves must be non-empty; anything else is a parse error
+/// before any CLI is invoked.
+fn parse_infisical_uri<'a>(uri: &str, rest: &'a str) -> Result<(&'a str, &'a str)> {
+    rest.split_once('/')
+        .filter(|(env, name)| !env.is_empty() && !name.is_empty())
+        .ok_or_else(|| anyhow!("infisical URI must be `infisical://<env>/<name>`, got `{uri}`"))
+}
+
+/// Decode the `Output` of `infisical secrets get` into the secret
+/// value or a contextful error. Symmetric to [`decode_op_output`].
+fn decode_infisical_output(env: &str, name: &str, output: std::process::Output) -> Result<String> {
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!(
+            "`infisical secrets get {name} --env {env} --plain` failed: {}",
+            stderr.trim()
+        );
+    }
+    take_stdout(
+        output.stdout,
+        &format!("infisical secrets get {name} --env {env} --plain"),
+    )
+}
+
+/// Shell out to the Bitwarden CLI for `bw://<item>` or
+/// `bw://<item>/<field>` URIs. The default field is `password`; the
+/// extended form lets a config pick `username`, `totp`, `notes`, or
+/// any other field `bw get` accepts. The session must already be
+/// unlocked (`bw unlock` or `BW_SESSION`); we don't attempt to
+/// prompt at plan time.
+///
+/// `#[mutants::skip]` for the same reason as the other resolvers;
+/// the testable surface lives in [`parse_bw_uri`] and
+/// [`decode_bw_output`].
+#[cfg_attr(test, mutants::skip)]
+fn real_resolve_bw(uri: &str, rest: &str) -> Result<String> {
+    let (item, field) = parse_bw_uri(uri, rest)?;
+    let output = std::process::Command::new("bw")
+        .arg("get")
+        .arg(field)
+        .arg(item)
+        .output()
+        .with_context(|| {
+            format!("invoking `bw` for `{uri}` (is the Bitwarden CLI installed and unlocked?)")
+        })?;
+    decode_bw_output(item, field, output)
+}
+
+/// Pull `(item, field)` out of a `bw://<item>[/<field>]` URI. The
+/// field defaults to `"password"` when only the item is given.
+/// Empty item or empty field is an error.
+fn parse_bw_uri<'a>(uri: &str, rest: &'a str) -> Result<(&'a str, &'a str)> {
+    if rest.is_empty() {
+        bail!("bitwarden URI must be `bw://<item>[/<field>]`, got `{uri}`");
+    }
+    let (item, field) = rest
+        .split_once('/')
+        .map_or((rest, "password"), |(item, field)| (item, field));
+    if item.is_empty() || field.is_empty() {
+        bail!("bitwarden URI must be `bw://<item>[/<field>]`, got `{uri}`");
+    }
+    Ok((item, field))
+}
+
+/// Decode the `Output` of `bw get <field> <item>` into the secret
+/// value or a contextful error.
+fn decode_bw_output(item: &str, field: &str, output: std::process::Output) -> Result<String> {
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("`bw get {field} {item}` failed: {}", stderr.trim());
+    }
+    take_stdout(output.stdout, &format!("bw get {field} {item}"))
+}
+
+/// Convert the captured stdout of a secret-fetching command into a
+/// `String`, trimming exactly one trailing newline. Centralizes the
+/// "UTF-8 + newline normalization" rule so each provider stays a
+/// one-liner around `Command::output`.
+fn take_stdout(bytes: Vec<u8>, command_desc: &str) -> Result<String> {
+    let mut value = String::from_utf8(bytes)
+        .with_context(|| format!("`{command_desc}` produced non-UTF-8 output"))?;
+    if value.ends_with('\n') {
+        value.pop();
+    }
+    Ok(value)
+}
+
+#[cfg(test)]
+mod secret_test {
+    //! Test-only shim that lets eval-side e2e tests inject a fixed
+    //! response for any secret URI without invoking the real CLI.
+    //! The override map is scheme-agnostic — `op://`, `infisical://`,
+    //! and `bw://` all flow through the same lookup so adding a new
+    //! provider doesn't need a new test seam. Thread-local so
+    //! concurrent tests don't interfere; each test owns its own URIs
+    //! and the [`SecretOverride`] RAII guard cleans up on drop.
+
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+
+    thread_local! {
+        static OVERRIDES: RefCell<HashMap<String, Result<String, String>>>
+            = RefCell::new(HashMap::new());
+    }
+
+    pub(super) fn lookup_override(uri: &str) -> Option<Result<String, String>> {
+        OVERRIDES.with(|m| m.borrow().get(uri).cloned())
+    }
+
+    /// RAII guard that installs a fixed response for `uri` and
+    /// removes it on drop, so a panicking assertion can't leave
+    /// stale state behind.
+    pub struct SecretOverride {
+        uri: String,
+    }
+
+    impl SecretOverride {
+        pub fn ok(uri: &str, value: &str) -> Self {
+            OVERRIDES.with(|m| {
+                m.borrow_mut()
+                    .insert(uri.to_string(), Ok(value.to_string()));
+            });
+            Self {
+                uri: uri.to_string(),
+            }
+        }
+
+        pub fn err(uri: &str, message: &str) -> Self {
+            OVERRIDES.with(|m| {
+                m.borrow_mut()
+                    .insert(uri.to_string(), Err(message.to_string()));
+            });
+            Self {
+                uri: uri.to_string(),
+            }
+        }
+    }
+
+    impl Drop for SecretOverride {
+        fn drop(&mut self) {
+            OVERRIDES.with(|m| {
+                m.borrow_mut().remove(&self.uri);
+            });
+        }
+    }
+}
+
+/// Map an `os_info::Type` onto our 4-variant `OsType` string-union.
+/// Anything not in {Linux, Macos, Windows} collapses to `"Unknown"` —
+/// the variant list lives in [`stdlib::OS_TYPE_VARIANTS`] so additions
+/// require touching both sides. Pure on its input so every arm is
+/// reachable from a unit test regardless of the host platform.
+const fn map_os_type(t: os_info::Type) -> &'static str {
+    use os_info::Type;
+    match t {
+        // Every Linux flavour os_info knows about — kept exhaustive
+        // (rather than `_ => "Linux"`) so a new os_info variant we
+        // haven't classified surfaces as "Unknown" until we triage it.
+        Type::Linux
+        | Type::Alpine
+        | Type::Amazon
+        | Type::Android
+        | Type::Arch
+        | Type::Artix
+        | Type::CachyOS
+        | Type::CentOS
+        | Type::Debian
+        | Type::EndeavourOS
+        | Type::Fedora
+        | Type::Garuda
+        | Type::Gentoo
+        | Type::Kali
+        | Type::Mabox
+        | Type::Manjaro
+        | Type::Mariner
+        | Type::Mint
+        | Type::NixOS
+        | Type::Nobara
+        | Type::OpenCloudOS
+        | Type::openEuler
+        | Type::openSUSE
+        | Type::OracleLinux
+        | Type::Pop
+        | Type::Raspbian
+        | Type::Redhat
+        | Type::RedHatEnterprise
+        | Type::RockyLinux
+        | Type::Solus
+        | Type::SUSE
+        | Type::Ubuntu
+        | Type::Ultramarine
+        | Type::Uos
+        | Type::Void => "Linux",
+        Type::Macos => "Macos",
+        Type::Windows => "Windows",
+        _ => "Unknown",
+    }
+}
+
+/// Host-OS detection. Thin wrapper around [`map_os_type`]: reads
+/// `os_info::get().os_type()` and feeds it through the pure mapping.
+/// `#[mutants::skip]` because the input is the runtime host and not
+/// reproducible from a test — `map_os_type` carries the mutation
+/// surface.
+#[cfg_attr(test, mutants::skip)]
+fn detect_os_type() -> String {
+    map_os_type(os_info::get().os_type()).to_string()
+}
+
+/// Map `os_info::Info::architecture()`'s `Option<&str>` onto our
+/// `OsArch` string-union. `os_info` returns the kernel's own arch
+/// label; we normalize a few common synonyms (`amd64` → `x86_64`,
+/// `arm64` → `aarch64`, `i686`/`i386` → `x86`) and fall everything
+/// else through to `"Unknown"`. Variant list lives in
+/// [`stdlib::OS_ARCH_VARIANTS`].
+// Not `const` because str-pattern matching uses `PartialEq` which
+// isn't a stable const trait yet (Rust 1.95.0). When `const_eq`
+// stabilizes, this can be promoted to `const fn` — exposing it to
+// const evaluation is cheap; nothing relies on it today.
+fn map_os_arch(arch: Option<&str>) -> &'static str {
+    match arch {
+        Some("x86_64" | "amd64") => "x86_64",
+        Some("aarch64" | "arm64") => "aarch64",
+        Some("arm") => "arm",
+        Some("x86" | "i386" | "i686") => "x86",
+        _ => "Unknown",
+    }
+}
+
+/// Host-arch detection. Thin wrapper around [`map_os_arch`]; same
+/// host-dependency caveat as [`detect_os_type`].
+#[cfg_attr(test, mutants::skip)]
+fn detect_os_arch() -> String {
+    map_os_arch(os_info::get().architecture()).to_string()
 }
 
 /// Build a `Template` resource by reading a template file from disk
@@ -750,11 +1181,10 @@ fn dispatch_template(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     let path = call_string(args, env, "path", 0)?;
     let source = call_string(args, env, "source", 1)?;
     let vars = call_string_map(args, env, "vars", 2)?;
-    let resolved = resolve_template_path(&source, env);
+    let resolved = resolve_managed_path(&source, env, "template", "source")?;
     let raw = std::fs::read_to_string(&resolved).with_context(|| {
         format!(
-            "could not read template source `{}` (resolved to `{}`)",
-            source,
+            "could not read template source `{source}` (resolved to `{}`)",
             resolved.display()
         )
     })?;
@@ -766,21 +1196,48 @@ fn dispatch_template(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     }))
 }
 
-/// Resolve a template path relative to the importing module's
-/// directory. Absolute paths are taken as-is; relative paths join
-/// against the module's parent directory. The current module's id is
-/// always a [`ModuleId::File`] in v1, so we can always recover that
-/// directory.
-fn resolve_template_path(path: &str, env: &Env<'_, '_>) -> PathBuf {
-    let candidate = PathBuf::from(path);
-    if candidate.is_absolute() {
-        return candidate;
+/// Resolve a user-supplied path argument and pin it inside the keron
+/// root. Applies to the source side of resources `keron apply` owns —
+/// the `to` of a symlink and the `source` of a template — because
+/// those must live inside the directory the user pointed the CLI at;
+/// the project is otherwise free to symlink to or template from
+/// arbitrary host paths, which defeats the "the keron dir is the
+/// single source of truth" model.
+///
+/// Resolution rules:
+/// - Relative paths are joined against the importing module file's
+///   directory, so `to = "./zshrc"` next to `<root>/sub/foo.keron`
+///   means `<root>/sub/zshrc`.
+/// - Absolute paths are taken as-is — typically produced by
+///   interpolating `${keron_root()}` into the string.
+/// - The candidate is canonicalized (resolves `..`, follows any
+///   intermediate symlinks) and then required to be a descendant of
+///   `env.graph.keron_root` (itself canonicalized at run start).
+/// - The canonical target replaces the raw user value; the executor
+///   and the diff renderer both see the absolute, dereferenced path
+///   so a moved symlink does not silently target a different file.
+fn resolve_managed_path(raw: &str, env: &Env<'_, '_>, kind: &str, arg: &str) -> Result<PathBuf> {
+    let candidate = PathBuf::from(raw);
+    let absolute = if candidate.is_absolute() {
+        candidate
+    } else {
+        let ModuleId::File(module_path) = &env.current;
+        module_path.parent().map_or(candidate, |p| p.join(raw))
+    };
+    let canonical = std::fs::canonicalize(&absolute).with_context(|| {
+        format!(
+            "resolving {kind} `{arg}` = `{raw}` (looked for `{}`)",
+            absolute.display()
+        )
+    })?;
+    if !canonical.starts_with(&env.graph.keron_root) {
+        bail!(
+            "{kind} `{arg}` = `{raw}` resolves to `{}`, which is outside the keron root `{}`",
+            canonical.display(),
+            env.graph.keron_root.display()
+        );
     }
-    let ModuleId::File(module_path) = &env.current;
-    match module_path.parent() {
-        Some(parent) => parent.join(candidate),
-        None => candidate,
-    }
+    Ok(canonical)
 }
 
 /// Substitute `${name}` placeholders in `src` with values from
@@ -967,6 +1424,25 @@ mod tests {
         run_with_templates(src, &[])
     }
 
+    /// Same as [`run`] but returns the `keron_root` the harness used
+    /// alongside the resource list, so tests can assert against the
+    /// concrete root path the intrinsic should have observed.
+    fn run_with_root(src: &str) -> (Vec<ResourceState>, PathBuf) {
+        let proj = TempProject::new("run-root");
+        let entry = proj.entry(src);
+        let canonical = fs::canonicalize(&entry).unwrap();
+        let base_dir = canonical.parent().unwrap().to_path_buf();
+        let keron_root = base_dir.clone();
+        let graph = resolve(vec![EntrySource {
+            text: src.to_string(),
+            base_dir,
+            id: keron_modules::ModuleId::File(canonical),
+        }])
+        .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
+        let states = eval_graph(&graph, &keron_root).unwrap_or_else(|e| panic!("eval failed: {e}"));
+        (states, keron_root)
+    }
+
     fn run_with_templates(src: &str, templates: &[(&str, &str)]) -> Vec<ResourceState> {
         let proj = TempProject::new("run");
         for (name, content) in templates {
@@ -975,19 +1451,29 @@ mod tests {
         let entry = proj.entry(src);
         let canonical = fs::canonicalize(&entry).unwrap();
         let base_dir = canonical.parent().unwrap().to_path_buf();
+        let keron_root = base_dir.clone();
         let graph = resolve(vec![EntrySource {
             text: src.to_string(),
             base_dir,
             id: keron_modules::ModuleId::File(canonical),
         }])
         .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
-        eval_graph(&graph).unwrap_or_else(|e| panic!("eval failed: {e}"))
+        eval_graph(&graph, &keron_root).unwrap_or_else(|e| panic!("eval failed: {e}"))
     }
 
     fn first_file_path(states: &[ResourceState]) -> &PathBuf {
         match &states[0] {
             ResourceState::Template { path, .. } | ResourceState::Directory { path } => path,
             ResourceState::Symlink { from, .. } => from,
+            // The helper is for filesystem-shaped resources; package
+            // resources don't have a path, so callers shouldn't reach
+            // for it here. Loud failure beats silently picking the
+            // name field as a "path".
+            ResourceState::Package { manager, name } => {
+                panic!(
+                    "first_file_path: expected filesystem resource, got Package({manager:?}, {name:?})"
+                )
+            }
         }
     }
 
@@ -1711,13 +2197,14 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         );
         let canonical = fs::canonicalize(&entry).unwrap();
         let base_dir = canonical.parent().unwrap().to_path_buf();
+        let keron_root = base_dir.clone();
         let graph = resolve(vec![EntrySource {
             text: fs::read_to_string(&entry).unwrap(),
             base_dir,
             id: keron_modules::ModuleId::File(canonical),
         }])
         .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
-        let err = eval_graph(&graph).expect_err("missing var should fail");
+        let err = eval_graph(&graph, &keron_root).expect_err("missing var should fail");
         assert!(
             err.chain().any(|e| e.to_string().contains("`who`")),
             "got: {err:#}",
@@ -1767,13 +2254,14 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
             proj.entry("reconcile template(path = \"/x\", source = \"bad.tpl\", vars = {})\n");
         let canonical = fs::canonicalize(&entry).unwrap();
         let base_dir = canonical.parent().unwrap().to_path_buf();
+        let keron_root = base_dir.clone();
         let graph = resolve(vec![EntrySource {
             text: fs::read_to_string(&entry).unwrap(),
             base_dir,
             id: keron_modules::ModuleId::File(canonical),
         }])
         .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
-        let err = eval_graph(&graph).expect_err("unterminated should fail");
+        let err = eval_graph(&graph, &keron_root).expect_err("unterminated should fail");
         assert!(
             err.chain().any(|e| e.to_string().contains("unterminated")),
             "got: {err:#}"
@@ -1806,13 +2294,14 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
             proj.entry("reconcile template(path = \"/x\", source = \"missing.tpl\", vars = {})\n");
         let canonical = fs::canonicalize(&entry).unwrap();
         let base_dir = canonical.parent().unwrap().to_path_buf();
+        let keron_root = base_dir.clone();
         let graph = resolve(vec![EntrySource {
             text: fs::read_to_string(&entry).unwrap(),
             base_dir,
             id: keron_modules::ModuleId::File(canonical),
         }])
         .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
-        let err = eval_graph(&graph).expect_err("missing source should fail");
+        let err = eval_graph(&graph, &keron_root).expect_err("missing source should fail");
         assert!(err.to_string().contains("missing.tpl"), "got: {err:#}");
     }
 
@@ -1846,6 +2335,987 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
                 PathBuf::from("/two-half"),
                 PathBuf::from("/other"),
             ]
+        );
+    }
+
+    #[test]
+    fn keron_root_intrinsic_returns_the_root_path_threaded_through_eval() {
+        // End-to-end pin: the value `keron_root()` returns must equal
+        // whatever `eval_graph` was called with. We park the result in
+        // a `directory` resource so we can read the path back.
+        let (states, root) = run_with_root("reconcile directory(path = keron_root())\n");
+        assert_eq!(states.len(), 1);
+        let ResourceState::Directory { path } = &states[0] else {
+            panic!("expected directory, got {:?}", states[0]);
+        };
+        assert_eq!(path, &root);
+    }
+
+    #[test]
+    fn keron_root_interpolates_into_paths() {
+        // The primary use case: stitching `keron_root()` into a path
+        // expression via interpolation.
+        let (states, root) = run_with_root("reconcile directory(path = \"${keron_root()}/sub\")\n");
+        let ResourceState::Directory { path } = &states[0] else {
+            panic!("expected directory, got {:?}", states[0]);
+        };
+        let expected = root.join("sub");
+        assert_eq!(path, &expected);
+    }
+
+    #[test]
+    fn os_type_intrinsic_returns_one_of_the_documented_variants() {
+        // The host's actual OS isn't fixed, but it must collapse into
+        // the four-variant `OsType` union — anything else means the
+        // dispatcher's fallback was bypassed or a new os_info variant
+        // is leaking through.
+        let states = run("reconcile directory(path = os_type())\n");
+        let ResourceState::Directory { path } = &states[0] else {
+            panic!("expected directory, got {:?}", states[0]);
+        };
+        let value = path.to_string_lossy().into_owned();
+        assert!(
+            stdlib::OS_TYPE_VARIANTS.contains(&value.as_str()),
+            "os_type returned `{value}`, not in {:?}",
+            stdlib::OS_TYPE_VARIANTS,
+        );
+    }
+
+    #[test]
+    fn os_arch_intrinsic_returns_one_of_the_documented_variants() {
+        let states = run("reconcile directory(path = os_arch())\n");
+        let ResourceState::Directory { path } = &states[0] else {
+            panic!("expected directory, got {:?}", states[0]);
+        };
+        let value = path.to_string_lossy().into_owned();
+        assert!(
+            stdlib::OS_ARCH_VARIANTS.contains(&value.as_str()),
+            "os_arch returned `{value}`, not in {:?}",
+            stdlib::OS_ARCH_VARIANTS,
+        );
+    }
+
+    #[test]
+    fn detect_os_type_falls_back_to_unknown_for_unmapped_variants() {
+        // Direct dispatcher invariant: every value `detect_os_type`
+        // produces must be one of the documented union variants.
+        // (We can't force a particular host type from a unit test, but
+        // we can pin that whatever the host reports lands in the set.)
+        let got = detect_os_type();
+        assert!(
+            stdlib::OS_TYPE_VARIANTS.contains(&got.as_str()),
+            "detect_os_type produced `{got}`, not in {:?}",
+            stdlib::OS_TYPE_VARIANTS,
+        );
+    }
+
+    #[test]
+    fn detect_os_arch_falls_back_to_unknown_for_unmapped_arches() {
+        let got = detect_os_arch();
+        assert!(
+            stdlib::OS_ARCH_VARIANTS.contains(&got.as_str()),
+            "detect_os_arch produced `{got}`, not in {:?}",
+            stdlib::OS_ARCH_VARIANTS,
+        );
+    }
+
+    #[test]
+    fn map_os_type_categorizes_every_linux_flavour() {
+        // Drive every `os_info::Type` variant `map_os_type` classifies
+        // as Linux. If a variant is dropped from the or-pattern (a
+        // mutation cargo-mutants explicitly tries), at least one of
+        // these inputs maps to "Unknown" instead and surfaces the
+        // regression here.
+        use os_info::Type;
+        for t in [
+            Type::Linux,
+            Type::Alpine,
+            Type::Amazon,
+            Type::Android,
+            Type::Arch,
+            Type::Artix,
+            Type::CachyOS,
+            Type::CentOS,
+            Type::Debian,
+            Type::EndeavourOS,
+            Type::Fedora,
+            Type::Garuda,
+            Type::Gentoo,
+            Type::Kali,
+            Type::Mabox,
+            Type::Manjaro,
+            Type::Mariner,
+            Type::Mint,
+            Type::NixOS,
+            Type::Nobara,
+            Type::OpenCloudOS,
+            Type::openEuler,
+            Type::openSUSE,
+            Type::OracleLinux,
+            Type::Pop,
+            Type::Raspbian,
+            Type::Redhat,
+            Type::RedHatEnterprise,
+            Type::RockyLinux,
+            Type::Solus,
+            Type::SUSE,
+            Type::Ubuntu,
+            Type::Ultramarine,
+            Type::Uos,
+            Type::Void,
+        ] {
+            assert_eq!(map_os_type(t), "Linux", "expected `{t:?}` to map to Linux");
+        }
+    }
+
+    #[test]
+    fn map_os_type_categorizes_macos_and_windows() {
+        // Separate arms — each must produce its own variant. If
+        // either match arm is deleted, the corresponding case
+        // collapses to "Unknown" and the assertion catches it.
+        assert_eq!(map_os_type(os_info::Type::Macos), "Macos");
+        assert_eq!(map_os_type(os_info::Type::Windows), "Windows");
+    }
+
+    #[test]
+    fn map_os_type_falls_back_to_unknown_for_unmapped_variants() {
+        // `Unknown` is the catch-all. Use a couple of os_info
+        // variants that are deliberately *not* in the Linux/Macos/
+        // Windows arms (BSD family, etc.) so we exercise the
+        // `_ => "Unknown"` branch.
+        assert_eq!(map_os_type(os_info::Type::Unknown), "Unknown");
+        assert_eq!(map_os_type(os_info::Type::FreeBSD), "Unknown");
+        assert_eq!(map_os_type(os_info::Type::DragonFly), "Unknown");
+    }
+
+    #[test]
+    fn map_os_arch_normalizes_each_arm() {
+        // Every accepted input string is part of the public contract
+        // (synonyms collapse to canonical variants); pin them all.
+        assert_eq!(map_os_arch(Some("x86_64")), "x86_64");
+        assert_eq!(map_os_arch(Some("amd64")), "x86_64");
+        assert_eq!(map_os_arch(Some("aarch64")), "aarch64");
+        assert_eq!(map_os_arch(Some("arm64")), "aarch64");
+        assert_eq!(map_os_arch(Some("arm")), "arm");
+        assert_eq!(map_os_arch(Some("x86")), "x86");
+        assert_eq!(map_os_arch(Some("i386")), "x86");
+        assert_eq!(map_os_arch(Some("i686")), "x86");
+    }
+
+    #[test]
+    fn map_os_arch_falls_back_to_unknown_for_other_inputs() {
+        // Anything outside the recognized set must land on Unknown.
+        // Both `None` (os_info couldn't detect) and unfamiliar
+        // strings (`mips`, `s390x`, etc.) flow through the same arm.
+        assert_eq!(map_os_arch(None), "Unknown");
+        assert_eq!(map_os_arch(Some("")), "Unknown");
+        assert_eq!(map_os_arch(Some("mips")), "Unknown");
+        assert_eq!(map_os_arch(Some("s390x")), "Unknown");
+        assert_eq!(map_os_arch(Some("powerpc")), "Unknown");
+    }
+
+    #[test]
+    fn nullable_match_extracts_inhabitant_end_to_end() {
+        // End-to-end: a `String?` is destructured via match, and the
+        // non-null arm's bind threads the inhabitant into a directory
+        // path. Pins the whole path Literal::Null → Value::Null →
+        // pattern dispatch → bind narrowing → resource construction.
+        let states = run("val maybe_path: String? = \"/opt/app\"\n\
+             reconcile match maybe_path {\n\
+                 null => directory(path = \"/opt/fallback\"),\n\
+                 p => directory(path = p),\n\
+             }\n");
+        assert_eq!(states.len(), 1);
+        let ResourceState::Directory { path } = &states[0] else {
+            panic!("expected directory, got {:?}", states[0]);
+        };
+        assert_eq!(path, &PathBuf::from("/opt/app"));
+    }
+
+    #[test]
+    fn nullable_match_takes_null_arm_when_value_is_null() {
+        // Same shape, opposite branch: when the nullable val is
+        // `null`, the `null` arm fires and the fallback resource is
+        // produced. Confirms the `Value::Null` runtime equality is
+        // wired up correctly.
+        let states = run("val maybe_path: String? = null\n\
+             reconcile match maybe_path {\n\
+                 null => directory(path = \"/opt/fallback\"),\n\
+                 p => directory(path = p),\n\
+             }\n");
+        let ResourceState::Directory { path } = &states[0] else {
+            panic!("expected directory, got {:?}", states[0]);
+        };
+        assert_eq!(path, &PathBuf::from("/opt/fallback"));
+    }
+
+    #[test]
+    fn nullable_eq_null_is_true_when_value_is_null() {
+        // The one ergonomic exception (`x == null`) end-to-end: the
+        // result must be `Boolean(true)` for a null value. A
+        // directory path is the easiest carrier — we drive the
+        // boolean into a string-typed branch via `if`.
+        let states = run("val maybe: String? = null\n\
+             reconcile if maybe == null {\n\
+                 directory(path = \"/missing\")\n\
+             } else {\n\
+                 directory(path = \"/present\")\n\
+             }\n");
+        let ResourceState::Directory { path } = &states[0] else {
+            panic!("expected directory, got {:?}", states[0]);
+        };
+        assert_eq!(path, &PathBuf::from("/missing"));
+    }
+
+    /// Mint a per-test environment-variable name. Concurrent
+    /// `cargo test` threads share the process env, so each
+    /// env-touching test owns a unique name to avoid stomping on the
+    /// others.
+    fn unique_env_name(prefix: &str) -> String {
+        let n = SEQ.fetch_add(1, AtomicOrdering::Relaxed);
+        format!("KERON_TEST_{prefix}_{}_{n}", std::process::id())
+    }
+
+    /// Set an env var for the lifetime of the test process.
+    ///
+    /// `std::env::set_var` is `unsafe` in edition 2024 because it can
+    /// race with concurrent reads from other threads. Each test here
+    /// owns a unique variable name (see [`unique_env_name`]), so no
+    /// other thread reads the variables we touch — the unsafety is
+    /// confined to this single well-scoped helper.
+    #[allow(unsafe_code)]
+    fn set_env(name: &str, value: &str) {
+        // SAFETY: callers pass a name that no other thread reads. The
+        // workspace forbids unsafe outside opt-in test sites; the
+        // workspace lint is `deny`, not `forbid`, so this `allow` is
+        // honoured.
+        unsafe { std::env::set_var(name, value) }
+    }
+
+    #[test]
+    fn env_returns_value_when_variable_is_set() {
+        let name = unique_env_name("ENV_SET");
+        set_env(&name, "hello");
+        let src = format!(
+            "reconcile match env(\"{name}\") {{\n\
+                 null => directory(path = \"/missing\"),\n\
+                 v => directory(path = v),\n\
+             }}\n",
+        );
+        let states = run(&src);
+        let ResourceState::Directory { path } = &states[0] else {
+            panic!("expected directory, got {:?}", states[0]);
+        };
+        assert_eq!(path, &PathBuf::from("hello"));
+    }
+
+    #[test]
+    fn env_returns_null_when_variable_is_unset() {
+        // Unique name, never set: the only way the dispatcher should
+        // observe it is as `Err(NotPresent)` → `Value::Null`.
+        let name = unique_env_name("ENV_UNSET");
+        let src = format!(
+            "reconcile match env(\"{name}\") {{\n\
+                 null => directory(path = \"/missing\"),\n\
+                 v => directory(path = v),\n\
+             }}\n",
+        );
+        let states = run(&src);
+        let ResourceState::Directory { path } = &states[0] else {
+            panic!("expected directory, got {:?}", states[0]);
+        };
+        assert_eq!(path, &PathBuf::from("/missing"));
+    }
+
+    #[test]
+    fn env_distinguishes_empty_string_from_unset() {
+        // The whole reason the return type is `String?` rather than
+        // `String` with empty-string fallback: a deliberately-empty
+        // value is set, distinct from "absent". Match must take the
+        // bind arm (not the `null` arm) even though the value is `""`.
+        let name = unique_env_name("ENV_EMPTY");
+        set_env(&name, "");
+        let src = format!(
+            "reconcile match env(\"{name}\") {{\n\
+                 null => directory(path = \"/unset\"),\n\
+                 v => directory(path = \"/set\"),\n\
+             }}\n",
+        );
+        let states = run(&src);
+        let ResourceState::Directory { path } = &states[0] else {
+            panic!("expected directory, got {:?}", states[0]);
+        };
+        assert_eq!(path, &PathBuf::from("/set"));
+    }
+
+    #[test]
+    fn env_eq_null_is_an_is_set_check() {
+        // The ergonomic `== null` exception flows through `env(...)`
+        // just like any other nullable. Useful for short guards
+        // without a full `match`.
+        let name = unique_env_name("ENV_PRESENCE");
+        set_env(&name, "x");
+        let src = format!(
+            "reconcile if env(\"{name}\") == null {{\n\
+                 directory(path = \"/missing\")\n\
+             }} else {{\n\
+                 directory(path = \"/present\")\n\
+             }}\n",
+        );
+        let states = run(&src);
+        let ResourceState::Directory { path } = &states[0] else {
+            panic!("expected directory, got {:?}", states[0]);
+        };
+        assert_eq!(path, &PathBuf::from("/present"));
+    }
+
+    /// Mint a per-test `op://` URI so concurrent tests don't share
+    /// the same override slot. Pairs with [`unique_secret_uri`] for
+    /// other schemes.
+    fn unique_op_uri(label: &str) -> String {
+        let n = SEQ.fetch_add(1, AtomicOrdering::Relaxed);
+        format!("op://k/test/{label}_{}_{n}", std::process::id())
+    }
+
+    /// Build a unique URI for any scheme. The scheme + label
+    /// combine into a per-test identifier so multiple tests can
+    /// share the same scheme without their overrides colliding.
+    fn unique_secret_uri(scheme: &str, label: &str) -> String {
+        let n = SEQ.fetch_add(1, AtomicOrdering::Relaxed);
+        format!("{scheme}://k/test/{label}_{}_{n}", std::process::id())
+    }
+
+    #[test]
+    fn secret_op_scheme_resolves_via_test_override() {
+        // The override is the test seam: real production calls
+        // `op read`, but here we hand the dispatcher a fixed value
+        // so we can assert the full secret → unwrap_secret pipeline
+        // without an `op` binary.
+        let uri = unique_op_uri("ok");
+        let _g = secret_test::SecretOverride::ok(&uri, "hunter2");
+        let src = format!(
+            "val token: Secret = secret(\"{uri}\")\n\
+             reconcile directory(path = unwrap_secret(token))\n",
+        );
+        let states = run(&src);
+        let ResourceState::Directory { path } = &states[0] else {
+            panic!("expected directory, got {:?}", states[0]);
+        };
+        assert_eq!(path, &PathBuf::from("hunter2"));
+    }
+
+    #[test]
+    fn secret_infisical_scheme_resolves_via_test_override() {
+        // The override map is scheme-agnostic, so a fixed value
+        // installed for an `infisical://` URI flows through the
+        // same `secret(...) → unwrap_secret(...)` pipeline as `op://`.
+        let uri = unique_secret_uri("infisical", "ok");
+        let _g = secret_test::SecretOverride::ok(&uri, "ifs-value");
+        let src = format!(
+            "val token: Secret = secret(\"{uri}\")\n\
+             reconcile directory(path = unwrap_secret(token))\n",
+        );
+        let states = run(&src);
+        let ResourceState::Directory { path } = &states[0] else {
+            panic!("expected directory, got {:?}", states[0]);
+        };
+        assert_eq!(path, &PathBuf::from("ifs-value"));
+    }
+
+    #[test]
+    fn secret_bw_scheme_resolves_via_test_override() {
+        let uri = unique_secret_uri("bw", "ok");
+        let _g = secret_test::SecretOverride::ok(&uri, "bw-value");
+        let src = format!(
+            "val token: Secret = secret(\"{uri}\")\n\
+             reconcile directory(path = unwrap_secret(token))\n",
+        );
+        let states = run(&src);
+        let ResourceState::Directory { path } = &states[0] else {
+            panic!("expected directory, got {:?}", states[0]);
+        };
+        assert_eq!(path, &PathBuf::from("bw-value"));
+    }
+
+    #[test]
+    fn secret_resolution_failure_is_a_plan_error() {
+        // The dispatcher wraps the underlying error with the URI,
+        // so the failing test message names the offending secret.
+        let uri = unique_op_uri("fail");
+        let _g = secret_test::SecretOverride::err(&uri, "auth required");
+        let proj = TempProject::new("secret-fail");
+        let src = format!(
+            "val token: Secret = secret(\"{uri}\")\n\
+             reconcile directory(path = unwrap_secret(token))\n",
+        );
+        let entry = proj.entry(&src);
+        let canonical = fs::canonicalize(&entry).unwrap();
+        let base_dir = canonical.parent().unwrap().to_path_buf();
+        let keron_root = base_dir.clone();
+        let graph = resolve(vec![EntrySource {
+            text: src,
+            base_dir,
+            id: keron_modules::ModuleId::File(canonical),
+        }])
+        .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
+        let err = eval_graph(&graph, &keron_root).expect_err("op failure should bubble up");
+        let msg = format!("{err:#}");
+        assert!(msg.contains(&uri), "error should name the URI: {msg}");
+        assert!(
+            msg.contains("auth required"),
+            "error should include the simulated failure: {msg}",
+        );
+    }
+
+    #[test]
+    fn secret_unsupported_scheme_is_rejected() {
+        let proj = TempProject::new("secret-bad-scheme");
+        let src = "val tok: Secret = secret(\"file:///etc/secret\")\n\
+                   reconcile directory(path = unwrap_secret(tok))\n";
+        let entry = proj.entry(src);
+        let canonical = fs::canonicalize(&entry).unwrap();
+        let base_dir = canonical.parent().unwrap().to_path_buf();
+        let keron_root = base_dir.clone();
+        let graph = resolve(vec![EntrySource {
+            text: src.to_string(),
+            base_dir,
+            id: keron_modules::ModuleId::File(canonical),
+        }])
+        .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
+        let err = eval_graph(&graph, &keron_root).expect_err("unsupported scheme should fail");
+        let msg = format!("{err:#}");
+        // The diagnostic must list every scheme we *do* support so a
+        // typo in the URI ("opp://" / "vault://" / etc.) surfaces the
+        // canonical set rather than silently failing.
+        for scheme in ["op://", "infisical://", "bw://"] {
+            assert!(
+                msg.contains(scheme),
+                "unsupported-scheme error should hint at `{scheme}`: {msg}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_unwrap_round_trips_through_template_vars() {
+        // Full pipeline: secret → unwrap_secret → template var. The
+        // user has explicitly opted into the leak by calling
+        // `unwrap_secret`, so the rendered file content equals the
+        // resolved secret value.
+        let uri = unique_op_uri("template");
+        let _g = secret_test::SecretOverride::ok(&uri, "deploy-key-abc");
+        let states = run_with_templates(
+            &format!(
+                "val token: Secret = secret(\"{uri}\")\n\
+                 reconcile template(\n\
+                     \tpath = \"/etc/auth\",\n\
+                     \tsource = \"auth.tpl\",\n\
+                     \tvars = {{\"token\": unwrap_secret(token)}},\n\
+                 )\n",
+            ),
+            &[("auth.tpl", "TOKEN=${token}\n")],
+        );
+        let ResourceState::Template { content, .. } = &states[0] else {
+            panic!("expected template, got {:?}", states[0]);
+        };
+        assert_eq!(content, "TOKEN=deploy-key-abc\n");
+    }
+
+    /// Drive a manifest that builds a `secret("<uri>")` resource
+    /// through the full pipeline and return the eval error. Used by
+    /// the URI-validation tests below — no `SecretOverride` is
+    /// installed, so the real resolver's parse step fires before any
+    /// CLI invocation, which means these tests work on machines
+    /// without the underlying CLIs.
+    fn eval_secret_uri_err(uri: &str, project_label: &str) -> String {
+        let proj = TempProject::new(project_label);
+        let src = format!(
+            "val tok: Secret = secret(\"{uri}\")\n\
+             reconcile directory(path = unwrap_secret(tok))\n",
+        );
+        let entry = proj.entry(&src);
+        let canonical = fs::canonicalize(&entry).unwrap();
+        let base_dir = canonical.parent().unwrap().to_path_buf();
+        let keron_root = base_dir.clone();
+        let graph = resolve(vec![EntrySource {
+            text: src,
+            base_dir,
+            id: keron_modules::ModuleId::File(canonical),
+        }])
+        .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
+        let err = eval_graph(&graph, &keron_root).expect_err("URI should fail validation");
+        format!("{err:#}")
+    }
+
+    #[test]
+    fn secret_infisical_uri_requires_env_and_name() {
+        // Both halves of the URI must be present — neither
+        // `infisical://just-env` nor `infisical:///bare-name` is
+        // resolvable, since the CLI needs both.
+        for bad in [
+            "infisical://just-env-no-name",
+            "infisical:///bare-name-no-env",
+            "infisical://env-no-trailing-slash/",
+        ] {
+            let msg = eval_secret_uri_err(bad, "secret-infisical-bad-uri");
+            assert!(
+                msg.contains("infisical://<env>/<name>"),
+                "error should show the expected URI shape for `{bad}`: {msg}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_bw_uri_rejects_empty_item() {
+        // `bw://` with nothing after it has no item to fetch; the
+        // CLI would fail with "no item specified" anyway, but we
+        // catch it at parse time so the diagnostic is clean.
+        let msg = eval_secret_uri_err("bw://", "secret-bw-empty");
+        assert!(
+            msg.contains("bw://<item>"),
+            "error should show the expected URI shape: {msg}",
+        );
+    }
+
+    /// Build a synthetic `std::process::Output` so the decoder tests
+    /// below can exercise the success / failure branches without
+    /// invoking a real CLI. The status is built via platform-specific
+    /// `ExitStatusExt::from_raw`; on Unix the value is a raw wait
+    /// status, on Windows it's the exit code.
+    fn make_output(success: bool, stdout: &[u8], stderr: &[u8]) -> std::process::Output {
+        #[cfg(unix)]
+        let status = {
+            use std::os::unix::process::ExitStatusExt;
+            // Wait-status `0` = exited normally with code 0;
+            // `1 << 8` = exited normally with code 1.
+            std::process::ExitStatus::from_raw(if success { 0 } else { 1 << 8 })
+        };
+        #[cfg(windows)]
+        let status = {
+            use std::os::windows::process::ExitStatusExt;
+            std::process::ExitStatus::from_raw(if success { 0 } else { 1 })
+        };
+        std::process::Output {
+            status,
+            stdout: stdout.to_vec(),
+            stderr: stderr.to_vec(),
+        }
+    }
+
+    #[test]
+    fn take_stdout_returns_utf8_with_trailing_newline_trimmed() {
+        // The shared decoder helper handles UTF-8 decoding + a one-
+        // newline trim. Pin both behaviours: the payload survives
+        // verbatim and exactly one `\n` is removed from the end (a
+        // second is left in place).
+        let v = take_stdout(b"hello\n".to_vec(), "ctx").expect("utf-8 ok");
+        assert_eq!(v, "hello");
+        let v = take_stdout(b"hello\n\n".to_vec(), "ctx").expect("utf-8 ok");
+        assert_eq!(v, "hello\n");
+        let v = take_stdout(b"".to_vec(), "ctx").expect("empty ok");
+        assert_eq!(v, "");
+        let v = take_stdout(b"no-newline".to_vec(), "ctx").expect("no trailing nl ok");
+        assert_eq!(v, "no-newline");
+    }
+
+    #[test]
+    fn take_stdout_errors_on_non_utf8_with_command_context() {
+        // 0xFF is an invalid UTF-8 start byte. The error must
+        // mention the command description so the user can locate
+        // which CLI produced the garbage.
+        let err = take_stdout(vec![0xFF, 0xFE], "op read x").expect_err("not utf-8");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("op read x"), "missing command context: {msg}");
+        assert!(msg.contains("non-UTF-8"), "missing decode hint: {msg}");
+    }
+
+    #[test]
+    fn decode_op_output_returns_stdout_on_success() {
+        let out = make_output(true, b"hunter2\n", b"");
+        let v = decode_op_output("op://Vault/Item/x", out).expect("ok");
+        assert_eq!(v, "hunter2");
+    }
+
+    #[test]
+    fn decode_op_output_surfaces_stderr_on_failure() {
+        // Failure path: the URI and the trimmed stderr both make it
+        // into the diagnostic so the user can locate the offending
+        // secret without re-running the CLI by hand.
+        let out = make_output(false, b"", b"  auth required  \n");
+        let err = decode_op_output("op://X/Y/Z", out).expect_err("status failed");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("op://X/Y/Z"), "missing uri: {msg}");
+        assert!(msg.contains("auth required"), "missing stderr: {msg}");
+        assert!(
+            !msg.contains("  auth required  "),
+            "stderr should be trimmed: {msg}",
+        );
+    }
+
+    #[test]
+    fn parse_infisical_uri_extracts_env_and_name() {
+        let (env, name) =
+            parse_infisical_uri("infisical://prod/api-key", "prod/api-key").expect("ok");
+        assert_eq!(env, "prod");
+        assert_eq!(name, "api-key");
+    }
+
+    #[test]
+    fn parse_infisical_uri_rejects_each_malformed_shape() {
+        // Both halves must be non-empty: empty env, empty name, and
+        // missing separator each surface the canonical URI shape so
+        // the user can fix the typo.
+        for (uri, rest) in [
+            ("infisical://prod", "prod"),
+            ("infisical:///bare-name", "/bare-name"),
+            ("infisical://prod/", "prod/"),
+        ] {
+            let err = parse_infisical_uri(uri, rest).expect_err("malformed URI should fail");
+            let msg = format!("{err:#}");
+            assert!(
+                msg.contains("infisical://<env>/<name>"),
+                "missing canonical shape for `{uri}`: {msg}",
+            );
+        }
+    }
+
+    #[test]
+    fn decode_infisical_output_returns_stdout_on_success() {
+        let out = make_output(true, b"infisical-value\n", b"");
+        let v = decode_infisical_output("prod", "api-key", out).expect("ok");
+        assert_eq!(v, "infisical-value");
+    }
+
+    #[test]
+    fn decode_infisical_output_surfaces_stderr_on_failure() {
+        let out = make_output(false, b"", b"item not found\n");
+        let err = decode_infisical_output("prod", "api-key", out).expect_err("failed");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("prod"), "missing env: {msg}");
+        assert!(msg.contains("api-key"), "missing name: {msg}");
+        assert!(msg.contains("item not found"), "missing stderr: {msg}");
+    }
+
+    #[test]
+    fn parse_bw_uri_defaults_field_to_password() {
+        let (item, field) = parse_bw_uri("bw://github-login", "github-login").expect("ok");
+        assert_eq!(item, "github-login");
+        assert_eq!(field, "password");
+    }
+
+    #[test]
+    fn parse_bw_uri_extracts_explicit_field() {
+        let (item, field) =
+            parse_bw_uri("bw://github-login/username", "github-login/username").expect("ok");
+        assert_eq!(item, "github-login");
+        assert_eq!(field, "username");
+    }
+
+    #[test]
+    fn parse_bw_uri_rejects_empty_item_or_field() {
+        // Three malformed shapes that should each error: empty
+        // rest, empty item before the slash, empty field after.
+        for (uri, rest) in [
+            ("bw://", ""),
+            ("bw:///username", "/username"),
+            ("bw://github-login/", "github-login/"),
+        ] {
+            let err = parse_bw_uri(uri, rest).expect_err("malformed URI should fail");
+            let msg = format!("{err:#}");
+            assert!(
+                msg.contains("bw://<item>"),
+                "missing canonical shape for `{uri}`: {msg}",
+            );
+        }
+    }
+
+    #[test]
+    fn decode_bw_output_returns_stdout_on_success() {
+        let out = make_output(true, b"super-pw\n", b"");
+        let v = decode_bw_output("github-login", "password", out).expect("ok");
+        assert_eq!(v, "super-pw");
+    }
+
+    #[test]
+    fn decode_bw_output_surfaces_stderr_on_failure() {
+        let out = make_output(false, b"", b"vault is locked\n");
+        let err = decode_bw_output("github-login", "password", out).expect_err("failed");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("github-login"), "missing item: {msg}");
+        assert!(msg.contains("password"), "missing field: {msg}");
+        assert!(msg.contains("vault is locked"), "missing stderr: {msg}");
+    }
+
+    #[test]
+    fn secret_value_debug_redacts_payload() {
+        // Manual `Debug` impl is the last line of defence against a
+        // leak via `dbg!`, panic backtraces, or any auto-derived
+        // Debug elsewhere in the stack. The payload must never
+        // appear in the formatted output; the byte length is fine
+        // (it's structural and helps "did the resolver get an empty
+        // string back?" debugging without exposing content).
+        let v = Value::Secret("super-sensitive".into());
+        let formatted = format!("{v:?}");
+        assert!(
+            !formatted.contains("super-sensitive"),
+            "Debug must not leak payload: {formatted}",
+        );
+        assert!(
+            formatted.contains("redacted"),
+            "Debug should mark the value as redacted: {formatted}",
+        );
+        // Length leaks structural info only. 15 is `"super-sensitive".len()`.
+        assert!(
+            formatted.contains("15"),
+            "Debug should include the byte length: {formatted}",
+        );
+    }
+
+    #[test]
+    fn brew_builds_a_package_resource_with_brew_manager() {
+        let states = run("reconcile brew(\"ripgrep\")\n");
+        assert_eq!(states.len(), 1);
+        let ResourceState::Package { manager, name } = &states[0] else {
+            panic!("expected Package, got {:?}", states[0]);
+        };
+        assert_eq!(*manager, PackageManager::Brew);
+        assert_eq!(name, "ripgrep");
+    }
+
+    #[test]
+    fn cargo_builds_a_package_resource_with_cargo_manager() {
+        let states = run("reconcile cargo(\"sccache\")\n");
+        let ResourceState::Package { manager, name } = &states[0] else {
+            panic!("expected Package, got {:?}", states[0]);
+        };
+        assert_eq!(*manager, PackageManager::Cargo);
+        assert_eq!(name, "sccache");
+    }
+
+    #[test]
+    fn winget_builds_a_package_resource_with_winget_manager() {
+        let states = run("reconcile winget(\"Microsoft.PowerShell\")\n");
+        let ResourceState::Package { manager, name } = &states[0] else {
+            panic!("expected Package, got {:?}", states[0]);
+        };
+        assert_eq!(*manager, PackageManager::Winget);
+        assert_eq!(name, "Microsoft.PowerShell");
+    }
+
+    #[test]
+    fn empty_package_name_is_rejected_at_eval() {
+        // The type checker only proves the name is a `String`, not
+        // that it's non-empty; the dispatcher enforces the
+        // non-emptiness so an apply step never has to special-case
+        // an empty `brew install` invocation. The diagnostic names
+        // the manager so the user can locate the offending call.
+        let proj = TempProject::new("brew-empty-name");
+        let src = "reconcile brew(\"\")\n";
+        let entry = proj.entry(src);
+        let canonical = fs::canonicalize(&entry).unwrap();
+        let base_dir = canonical.parent().unwrap().to_path_buf();
+        let keron_root = base_dir.clone();
+        let graph = resolve(vec![EntrySource {
+            text: src.to_string(),
+            base_dir,
+            id: keron_modules::ModuleId::File(canonical),
+        }])
+        .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
+        let err = eval_graph(&graph, &keron_root).expect_err("empty name should fail");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("brew") && msg.contains("empty"),
+            "diagnostic should name brew + empty: {msg}",
+        );
+    }
+
+    #[test]
+    fn reconcile_can_mix_package_and_filesystem_resources() {
+        // The widening rule means a reconcile arm or list can hold
+        // packages alongside filesystem resources. Pins that they
+        // coexist in the resulting plan in source order. The symlink
+        // target is seeded inside the keron root so the new
+        // `resolve_managed_path` check passes.
+        let states = run_with_templates(
+            "reconcile {\n\
+                 brew(\"ripgrep\");\n\
+                 symlink(from = \"/from\", to = \"./inside\");\n\
+                 cargo(\"sccache\");\n\
+             }\n",
+            &[("inside", "")],
+        );
+        assert_eq!(states.len(), 3);
+        assert!(
+            matches!(&states[0], ResourceState::Package { manager: PackageManager::Brew, name } if name == "ripgrep"),
+        );
+        assert!(matches!(&states[1], ResourceState::Symlink { .. }));
+        assert!(
+            matches!(&states[2], ResourceState::Package { manager: PackageManager::Cargo, name } if name == "sccache"),
+        );
+    }
+
+    // ---------- resolve_managed_path ----------
+
+    #[test]
+    fn symlink_to_relative_path_resolves_inside_keron_root() {
+        // `to = "./zshrc"` reads from the entry's directory; the
+        // resolved target is canonical and lives inside the keron
+        // root, so the executor never sees the raw user string.
+        let states = run_with_templates(
+            "reconcile symlink(from = \"/dest\", to = \"./zshrc\")\n",
+            &[("zshrc", "export PATH=...")],
+        );
+        let ResourceState::Symlink { to, .. } = &states[0] else {
+            panic!("expected Symlink, got {:?}", states[0]);
+        };
+        assert!(to.is_absolute(), "to should be canonical: {}", to.display());
+        let last = to.file_name().unwrap();
+        assert_eq!(last, "zshrc");
+    }
+
+    #[test]
+    fn symlink_to_absolute_path_inside_keron_root_is_accepted() {
+        // Most user code interpolates `keron_root()` to build the `to`
+        // argument; the absolute path it produces must still pass the
+        // containment check.
+        let proj = TempProject::new("symlink-keron-root");
+        proj.seed_template("zshrc", "export PATH=...");
+        let src = "reconcile symlink(from = \"/dest\", to = \"${keron_root()}/zshrc\")\n";
+        let entry = proj.entry(src);
+        let canonical = fs::canonicalize(&entry).unwrap();
+        let base_dir = canonical.parent().unwrap().to_path_buf();
+        let keron_root = base_dir.clone();
+        let graph = resolve(vec![EntrySource {
+            text: src.into(),
+            base_dir,
+            id: keron_modules::ModuleId::File(canonical),
+        }])
+        .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
+        let states = eval_graph(&graph, &keron_root).unwrap();
+        let ResourceState::Symlink { to, .. } = &states[0] else {
+            panic!("expected Symlink");
+        };
+        assert!(
+            to.starts_with(&keron_root),
+            "to outside root: {}",
+            to.display()
+        );
+    }
+
+    #[test]
+    fn symlink_to_absolute_path_outside_keron_root_is_rejected() {
+        // `/etc/hosts` exists on every test host but is not inside
+        // the temp keron root. The diagnostic must name the argument,
+        // the user value, and the keron root so the user can see
+        // exactly what is being refused and why.
+        let proj = TempProject::new("symlink-outside");
+        let src = "reconcile symlink(from = \"/dest\", to = \"/etc/hosts\")\n";
+        let entry = proj.entry(src);
+        let canonical = fs::canonicalize(&entry).unwrap();
+        let base_dir = canonical.parent().unwrap().to_path_buf();
+        let keron_root = base_dir.clone();
+        let graph = resolve(vec![EntrySource {
+            text: src.into(),
+            base_dir,
+            id: keron_modules::ModuleId::File(canonical),
+        }])
+        .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
+        let err = eval_graph(&graph, &keron_root).expect_err("path outside root must be refused");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("symlink"), "should name the kind: {msg}");
+        assert!(msg.contains("`to`"), "should name the argument: {msg}");
+        assert!(
+            msg.contains("/etc/hosts"),
+            "should echo the user value: {msg}"
+        );
+        assert!(
+            msg.contains("outside the keron root"),
+            "should explain why: {msg}",
+        );
+    }
+
+    #[test]
+    fn symlink_to_dotdot_escape_is_rejected() {
+        // `to = "../escape"` is a relative form that lands outside
+        // the root after `..` is consumed; canonicalization fails
+        // open into the containment check, not silently accepts.
+        let proj = TempProject::new("symlink-dotdot");
+        // Seed an `escape` file *next to* the keron root so the
+        // `../escape` traversal actually points at a real file (so
+        // canonicalize succeeds and we exercise the containment
+        // check, not just the "file not found" path).
+        let parent = proj.root.parent().unwrap();
+        let escape = parent.join("keron-test-escape.tmp");
+        fs::write(&escape, "x").unwrap();
+        let src = "reconcile symlink(from = \"/dest\", to = \"../keron-test-escape.tmp\")\n";
+        let entry = proj.entry(src);
+        let canonical = fs::canonicalize(&entry).unwrap();
+        let base_dir = canonical.parent().unwrap().to_path_buf();
+        let keron_root = base_dir.clone();
+        let graph = resolve(vec![EntrySource {
+            text: src.into(),
+            base_dir,
+            id: keron_modules::ModuleId::File(canonical),
+        }])
+        .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
+        let err = eval_graph(&graph, &keron_root).expect_err("dotdot escape must be refused");
+        assert!(
+            format!("{err:#}").contains("outside the keron root"),
+            "got: {err:#}",
+        );
+        let _ = fs::remove_file(&escape);
+    }
+
+    #[test]
+    fn symlink_to_missing_path_errors_with_locating_context() {
+        // The path resolves to a file that does not exist; canonicalize
+        // fails. The error chain must mention the kind, the argument
+        // name, the user-supplied value, and where we looked — that's
+        // what makes the diagnostic locatable rather than the bare
+        // io::Error.
+        let proj = TempProject::new("symlink-missing");
+        let src = "reconcile symlink(from = \"/dest\", to = \"./not-there\")\n";
+        let entry = proj.entry(src);
+        let canonical = fs::canonicalize(&entry).unwrap();
+        let base_dir = canonical.parent().unwrap().to_path_buf();
+        let keron_root = base_dir.clone();
+        let graph = resolve(vec![EntrySource {
+            text: src.into(),
+            base_dir,
+            id: keron_modules::ModuleId::File(canonical),
+        }])
+        .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
+        let err = eval_graph(&graph, &keron_root).expect_err("missing target must error");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("symlink"), "kind missing: {msg}");
+        assert!(msg.contains("`to`"), "arg name missing: {msg}");
+        assert!(msg.contains("not-there"), "value missing: {msg}");
+    }
+
+    #[test]
+    fn template_source_outside_keron_root_is_rejected() {
+        // Same containment rule applies to `template(source = ...)`.
+        // An absolute path pointing outside the keron root errors
+        // before the file is even read.
+        let proj = TempProject::new("template-outside");
+        let src = "reconcile template(path = \"/dest\", source = \"/etc/hosts\", vars = {\"body\": \"\"})\n";
+        let entry = proj.entry(src);
+        let canonical = fs::canonicalize(&entry).unwrap();
+        let base_dir = canonical.parent().unwrap().to_path_buf();
+        let keron_root = base_dir.clone();
+        let graph = resolve(vec![EntrySource {
+            text: src.into(),
+            base_dir,
+            id: keron_modules::ModuleId::File(canonical),
+        }])
+        .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
+        let err =
+            eval_graph(&graph, &keron_root).expect_err("template outside root must be refused");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("template"), "kind missing: {msg}");
+        assert!(msg.contains("`source`"), "arg name missing: {msg}");
+        assert!(
+            msg.contains("outside the keron root"),
+            "containment message missing: {msg}",
         );
     }
 }
