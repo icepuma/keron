@@ -69,9 +69,6 @@ where
         .files
         .into_iter()
         .map(|f| {
-            // The file's parent is the resolution root for relative
-            // `use` paths in that file (`./` and `../` resolve here).
-            // `LoadedFile.path` is canonical, so `parent()` is too.
             let base_dir = f
                 .path
                 .parent()
@@ -133,9 +130,6 @@ where
 fn refuse_direct_elevation() -> Result<()> {
     #[cfg(unix)]
     {
-        // Bypassed when keron is invoked as the elevated child:
-        // that path never reaches `run_with_io`; it routes through
-        // `run_elevated_child` in keron-cli's hidden subcommand.
         let euid = unix_effective_uid();
         let sudo_uid_set = std::env::var_os("SUDO_UID").is_some();
         if euid == 0 && std::env::var_os("KERON_ELEVATED_CHILD").is_none() {
@@ -156,13 +150,9 @@ fn refuse_direct_elevation() -> Result<()> {
 
 #[cfg(unix)]
 fn unix_effective_uid() -> u32 {
-    // The current process's euid drives elevation detection. We
-    // can't use `geteuid()` from `libc` (not a workspace dep) and
-    // `MetadataExt::uid()` reports *file* uid not process. Stat
-    // `/proc/self` on Linux or fall back to a temp file owned by
-    // the current process. Simplest portable trick: create a file
-    // and read its uid back — created files inherit the effective
-    // uid. The temp file is removed immediately.
+    // No libc in the workspace deps and `MetadataExt::uid()` reports
+    // *file* uid not process — so create a temp file and read its uid
+    // back; created files inherit the effective uid.
     use std::os::unix::fs::MetadataExt;
     let probe = std::env::temp_dir().join(format!(
         ".keron-euid-probe-{}-{}",
@@ -176,9 +166,8 @@ fn unix_effective_uid() -> u32 {
         .create_new(true)
         .open(&probe)
     else {
-        // Probe failed; conservatively assume non-root so we don't
-        // refuse to run on weird hosts. The elevated path is
-        // gated separately by the elevator probe.
+        // Probe failed: conservatively assume non-root so we don't
+        // refuse to run on weird hosts.
         return 1;
     };
     let uid = f.metadata().map_or(1, |m| m.uid());
@@ -198,8 +187,6 @@ fn keron_root_for(path: &Path, source: &load::LoadedSource) -> Result<PathBuf> {
     if canonical.is_dir() {
         Ok(canonical)
     } else {
-        // Single-file case: `LoadedFile.path` is already canonical, so
-        // its parent is the directory the file lives in.
         Ok(source
             .files
             .first()
@@ -232,11 +219,7 @@ mod tests {
                 fs::remove_dir_all(&root).ok();
             }
             fs::create_dir_all(&root).unwrap();
-            // Seed the same `tmpl.tpl` shim the eval-side tests use so
-            // entry files can call `template(path = X, source =
-            // "tmpl.tpl", vars = {"body": Y})` as a direct stand-in
-            // for the old `file(path = X, content = Y)`.
-            fs::write(root.join("tmpl.tpl"), "${body}").unwrap();
+            fs::write(root.join("tmpl.tpl"), "{{ body }}").unwrap();
             Self { root }
         }
         fn write(&self, rel: &str, src: &str) -> PathBuf {
@@ -262,12 +245,7 @@ mod tests {
 
     #[test]
     fn keron_root_for_returns_dir_when_path_is_dir() {
-        // Directory inputs are taken as-is (canonicalized). This is
-        // the common case: a user passes a folder of `.keron` files,
-        // and `keron_root()` inside the manifests resolves to it.
         let proj = TempProject::new("keron-root-dir");
-        // Drop a single `.keron` so `load::load` succeeds, then
-        // verify keron_root_for picks the directory.
         proj.write("entry.keron", "");
         let source = load::load(&proj.root).unwrap();
         let root = keron_root_for(&proj.root, &source).unwrap();
@@ -276,10 +254,6 @@ mod tests {
 
     #[test]
     fn keron_root_for_returns_parent_when_path_is_file() {
-        // Single-file invocation: `keron_root` is the parent of the
-        // file, not the file itself. The eval path needs a directory
-        // (it's the resolution base for relative imports / template
-        // paths), so the helper normalizes both shapes.
         let proj = TempProject::new("keron-root-file");
         let entry = proj.write("entry.keron", "");
         let source = load::load(&entry).unwrap();
@@ -289,8 +263,6 @@ mod tests {
 
     #[test]
     fn keron_root_for_errors_when_path_is_missing() {
-        // Canonicalize fails for a non-existent path; the error
-        // chain must include the path so the diagnostic is locatable.
         let missing = PathBuf::from("/no/such/keron-root-test-path");
         let source = load::LoadedSource { files: vec![] };
         let err = keron_root_for(&missing, &source).expect_err("missing path should fail");
@@ -302,8 +274,6 @@ mod tests {
 
     #[test]
     fn run_returns_err_for_missing_entry() {
-        // Pin the `Ok(())` mutation: run on a path that doesn't exist
-        // returns Err.
         let missing = PathBuf::from("/no/such/keron-test-entry.keron");
         let (res, _) = drive(&missing, false, "");
         assert!(res.is_err());
@@ -311,13 +281,9 @@ mod tests {
 
     #[test]
     fn public_run_wrapper_returns_err_for_missing_entry() {
-        // Pin the `Ok(())` mutation on the *thin wrapper* `run`. The
-        // wrapper just constructs real stdin/stdout and delegates to
-        // `run_with_io` — but mutating the wrapper itself to `Ok(())`
-        // would skip the delegation entirely. Calling with a path
-        // that can't be read makes the underlying `run_with_io` bail
-        // before any stdin read happens, so this works without
-        // touching real terminal IO.
+        // Pins the `Ok(())` mutation on the thin `run` wrapper:
+        // bailing before any stdin read happens lets us avoid real
+        // terminal IO.
         let missing = PathBuf::from(format!(
             "/no/such/keron-public-run-{}-{}.keron",
             std::process::id(),
@@ -329,10 +295,6 @@ mod tests {
 
     #[test]
     fn run_renders_diff_and_returns_when_not_executing() {
-        // execute=false hits the early return at line 63 *via*
-        // `!execute` being true. Verifies the diff was rendered (so
-        // the body isn't replaced by `Ok(())`) AND that no prompt
-        // was emitted (early return fired).
         let proj = TempProject::new("not-execute");
         let entry = proj.write(
             "entry.keron",
@@ -349,15 +311,9 @@ mod tests {
 
     #[test]
     fn run_returns_early_when_plan_is_empty_even_with_execute() {
-        // Plan-empty branch of `!execute || plan.is_empty()`. Mutating
-        // `||` to `&&` would leave the condition false here (execute
-        // is true, so `!execute` is false; with `&&` even an empty
-        // plan can't trigger the early return), pushing through to
-        // the prompt. We pass empty stdin: if we ever reach the
-        // prompt, `prompt_yes_no` would still succeed (treating EOF
-        // as not-approved), so we instead assert the early return
-        // signature: `Apply cancelled` must NOT appear and the
-        // executor's "not implemented" error must NOT appear.
+        // Mutating `||` to `&&` would push through to the prompt; we
+        // assert the early-return signature instead of trusting that
+        // `prompt_yes_no` would fail closed on empty stdin.
         let proj = TempProject::new("empty-plan");
         let entry = proj.write(
             "entry.keron",
@@ -378,10 +334,6 @@ mod tests {
 
     #[test]
     fn run_with_execute_and_no_approval_prints_cancelled() {
-        // Runs the prompt path. Stdin sends "no\n" → `approved=false`.
-        // The `!approved` branch must print "Apply cancelled." and
-        // return Ok. Without `!`, the branch would fall through to
-        // the executor which currently errors.
         let proj = TempProject::new("no-approval");
         let entry = proj.write(
             "entry.keron",
@@ -398,13 +350,9 @@ mod tests {
 
     #[test]
     fn run_with_execute_and_approval_renders_template_to_disk() {
-        // "yes" input → control past the cancel branch → executor
-        // calls `write_template`. Pins the full unprivileged wiring:
-        // parse → check → plan → diff → confirm → executor → on-disk
-        // file with the rendered content. The temp-dir destination
-        // keeps the elevation pre-check at "unprivileged" so we
-        // exercise the in-process executor, not the elevated
-        // re-exec.
+        // Temp-dir destination keeps the elevation pre-check at
+        // "unprivileged" so we exercise the in-process executor, not
+        // the elevated re-exec.
         let proj = TempProject::new("yes-approval");
         let dest = proj.root.join("out");
         let src = format!(
@@ -424,10 +372,6 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn run_with_execute_creates_symlink_on_disk_end_to_end() {
-        // End-to-end: parse → check → plan → diff → confirm → apply.
-        // The executor walks a real `.keron` source through to a
-        // working symlink on disk. Pins the CLI <-> apply wiring for
-        // the first executor-supported resource kind.
         let proj = TempProject::new("symlink-e2e");
         let target = proj.root.join("target");
         fs::write(&target, "payload").unwrap();
@@ -447,11 +391,9 @@ mod tests {
             "missing apply summary: {out}"
         );
         assert!(out.contains("1 added"), "summary should report add: {out}");
-        // The eval-side `resolve_managed_path` canonicalizes the
-        // user-supplied `to`, so the link points at the canonical
-        // target — compare via `canonicalize` so the assertion holds
-        // on platforms whose temp dir is itself a symlink (macOS:
-        // `/var/folders/...` -> `/private/var/folders/...`).
+        // macOS' `/var/folders/...` temp dir is itself a symlink to
+        // `/private/var/...`; canonicalize both sides so the assertion
+        // doesn't depend on that.
         let resolved = fs::canonicalize(&link).expect("symlink not created");
         let expected = fs::canonicalize(&target).unwrap();
         assert_eq!(resolved, expected);
@@ -460,15 +402,10 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn run_with_execute_is_idempotent_for_symlinks() {
-        // Second apply on an already-correct symlink hits the NoOp
-        // path in the planner — no diff, no prompt, no executor side
-        // effects. Mirrors what an end user sees on the second `keron
-        // apply` of the same manifest.
         let proj = TempProject::new("symlink-idempotent");
         let target = proj.root.join("target");
         fs::write(&target, "payload").unwrap();
         let link = proj.root.join("alias");
-        // Pre-existing correct symlink (same target the manifest wants).
         std::os::unix::fs::symlink(&target, &link).unwrap();
         let src = format!(
             "reconcile symlink(from = \"{}\", to = \"{}\")\n",
@@ -479,8 +416,6 @@ mod tests {
 
         let (res, out) = drive(&entry, true, "yes\n");
         res.unwrap();
-        // Empty plan → "No changes." message, early return before
-        // prompt, no Apply summary line.
         assert!(
             out.contains("No changes"),
             "expected idempotent output, got: {out}"

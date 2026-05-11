@@ -92,9 +92,8 @@ fn apply_create(state: &ResourceState) -> Result<()> {
 fn apply_update(before: &ResourceState, after: &ResourceState) -> Result<()> {
     match (before, after) {
         (ResourceState::Symlink { from: bf, .. }, ResourceState::Symlink { from: af, to: at }) => {
-            // Update only fires when both sides point at the same path.
-            // The planner produces matched pairs; bail loudly if that
-            // invariant ever drifts.
+            // Planner guarantees matched `from` on both sides; bail
+            // loudly if that invariant ever drifts.
             if bf != af {
                 bail!(
                     "symlink update path mismatch: `{}` vs `{}`",
@@ -116,11 +115,8 @@ fn apply_update(before: &ResourceState, after: &ResourceState) -> Result<()> {
                     ap.display(),
                 );
             }
-            // `fs::write` opens with `O_TRUNC | O_CREAT`, which
-            // overwrites the existing file in place. Not crash-safe
-            // (a power-loss mid-write would leave a truncated file),
-            // but matches what nearly every dotfile manager does and
-            // keeps the executor allocation-free.
+            // `fs::write` opens `O_TRUNC | O_CREAT` — not crash-safe
+            // mid-write but matches the dotfile-manager norm.
             write_template(ap, content)
         }
         _ => bail!(unsupported_kind(after)),
@@ -149,10 +145,8 @@ fn create_symlink(from: &Path, to: &Path) -> Result<()> {
 }
 
 fn remove_symlink(path: &Path) -> Result<()> {
-    // `symlink_metadata` does not traverse the link itself, so a broken
-    // symlink (target missing) still reports `is_symlink()`. Refusing
-    // to call `remove_file` on a real file is the safety net that
-    // matches the planner's "won't overwrite" rule.
+    // `symlink_metadata` does not traverse the link, so a broken
+    // symlink (target missing) still reports `is_symlink()`.
     let meta =
         fs::symlink_metadata(path).with_context(|| format!("inspecting `{}`", path.display()))?;
     if !meta.file_type().is_symlink() {
@@ -172,11 +166,9 @@ fn write_template(path: &Path, content: &str) -> Result<()> {
 }
 
 fn remove_template(path: &Path) -> Result<()> {
-    // Symmetric with `remove_symlink`: refuse to call `remove_file`
-    // on anything that isn't a plain file. A symlink or directory at
-    // the path means the user's filesystem layout disagrees with the
-    // manifest and we'd rather error than silently destroy unrelated
-    // data.
+    // Symmetric with `remove_symlink`: a symlink or directory at the
+    // path means the filesystem disagrees with the manifest; refuse
+    // rather than silently destroy unrelated data.
     let meta =
         fs::symlink_metadata(path).with_context(|| format!("inspecting `{}`", path.display()))?;
     if !meta.file_type().is_file() {
@@ -208,10 +200,9 @@ fn symlink_impl(target: &Path, link: &Path) -> io::Result<()> {
 
 #[cfg(windows)]
 fn symlink_impl(target: &Path, link: &Path) -> io::Result<()> {
-    // Dotfile flows mostly link files, but a project that vendors a
-    // whole config directory (`~/.config/nvim` -> `<repo>/nvim`) also
-    // expects this to "just work". Pick the right Windows variant up
-    // front so the user never has to think about file-vs-dir links.
+    // Windows splits file vs directory symlinks at the API level; pick
+    // the right call so dotfile flows that link whole config dirs
+    // (`~/.config/nvim` -> `<repo>/nvim`) work without ceremony.
     if target.is_dir() {
         std::os::windows::fs::symlink_dir(target, link)
     } else {
@@ -311,10 +302,6 @@ mod tests {
 
     #[test]
     fn create_symlink_creates_missing_parent_directories() {
-        // Dotfile flows expect `~/.config/nvim` to "just work" even
-        // when `~/.config` does not yet exist; the executor mkdirs the
-        // chain so users don't have to declare every intermediate
-        // directory by hand.
         let d = TempDir::new("create-parent");
         let target = d.path.join("real");
         fs::write(&target, "hi").unwrap();
@@ -394,10 +381,6 @@ mod tests {
 
     #[test]
     fn destroy_refuses_to_remove_real_files() {
-        // The "destroy only operates on symlinks" guard backs up the
-        // planner-side "won't overwrite real files" rule. If the user
-        // hand-edits a plan or some future code path constructs a
-        // Destroy against a regular file, we still refuse.
         let d = TempDir::new("destroy-real");
         let path = d.path.join("real");
         fs::write(&path, "data").unwrap();
@@ -446,9 +429,6 @@ mod tests {
 
     #[test]
     fn summary_tallies_each_action_independently() {
-        // Three actions in one plan — guards each counter against
-        // mutation. Each is its own action so we can pin exactly which
-        // tally arm fired without ordering ambiguity.
         let d = TempDir::new("mixed");
         let target = d.path.join("real");
         fs::write(&target, "hi").unwrap();
@@ -499,10 +479,6 @@ mod tests {
 
     #[test]
     fn create_template_writes_file_with_content() {
-        // Templates are wired through `write_template`; the executor
-        // creates the parent chain (`mkdir -p`) and writes the
-        // rendered content verbatim. Sanity-checking against a
-        // tempdir keeps the test hermetic.
         let d = TempDir::new("template-create");
         let path = d.path.join("nested").join("config.toml");
         let plan = Plan {
@@ -568,10 +544,6 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn destroy_template_refuses_to_remove_symlinks() {
-        // Symmetric guard with `destroy_refuses_to_remove_real_files`
-        // for symlinks: if the path on disk turns out to be a
-        // different kind of object than the manifest declared,
-        // refuse rather than silently destroy.
         let d = TempDir::new("template-destroy-symlink");
         let real = d.path.join("real");
         fs::write(&real, "x").unwrap();
@@ -592,8 +564,6 @@ mod tests {
             format!("{err:#}").contains("not a regular file"),
             "got: {err:#}",
         );
-        // The symlink AND its target must still exist after the
-        // refusal.
         assert!(link.is_symlink());
         assert!(real.exists());
     }
@@ -617,11 +587,8 @@ mod tests {
 
     #[test]
     fn create_package_dispatches_to_packages_install() {
-        // Packages are now wired through `packages::install`. We
-        // verify dispatch happens (i.e. we get past the executor's
-        // "unsupported kind" fallthrough) by pointing the binary
-        // override at `/bin/true` so the install "succeeds"
-        // immediately without touching the real package manager.
+        // Point the binary override at `/bin/true` so install
+        // "succeeds" without touching the real package manager.
         // SAFETY: edition 2024 env mutation; test serialises via
         // SEQ-based temp dir naming and restores PATH-style env on
         // exit.
@@ -658,9 +625,6 @@ mod tests {
 
     #[test]
     fn update_aborts_when_path_changes_between_before_and_after() {
-        // The planner pairs Update before/after on the same `from`.
-        // A drifted plan with different `from` paths is a bug — bail
-        // loudly so we never delete a path the user did not declare.
         let d = TempDir::new("update-drift");
         let plan = Plan {
             changes: vec![change(

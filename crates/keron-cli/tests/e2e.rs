@@ -155,18 +155,9 @@ fn run(mut cmd: Command, stdin_text: &str) -> Output {
 
 #[test]
 fn basic_dotfiles_creates_symlinks_then_is_idempotent() {
-    // The flagship "real-world dotfiles" flow:
-    //   - Four symlinks under ~ (shell rc, gitconfig, vimrc, nvim
-    //     init.lua) all pointing into the fixture repo.
-    //   - keron must create them on the first run, then report "No
-    //     changes" on the second run because the planner's
-    //     `classify_symlink` diff matches live state.
-    //
-    // Works identically on Linux, macOS, and Windows. On Windows,
-    // symlink creation requires either admin or Developer Mode;
-    // GitHub Actions windows runners run as admin so this passes
-    // out of the box. Locally a non-admin Windows dev would need
-    // to enable Developer Mode.
+    // On Windows, symlink creation requires either admin or
+    // Developer Mode. GitHub Actions windows runners run as admin
+    // so this passes; a non-admin Windows dev needs Developer Mode.
     let home = E2eHome::new("basic");
     let fixture = fixture_dir("basic-dotfiles");
 
@@ -181,17 +172,14 @@ fn basic_dotfiles_creates_symlinks_then_is_idempotent() {
         "first run should add 4 symlinks: {}",
         first.stdout,
     );
-    // The actual symlink targets live in HOME. The planner
-    // canonicalizes the `to` argument, so the symlink points at the
-    // canonical fixture path, not `./zshrc`.
     let zshrc = home.path.join(".testrc");
     assert!(zshrc.is_symlink(), "missing ~/.testrc: {}", first.stdout);
     let gitconfig = home.path.join(".testgitconfig");
     assert!(gitconfig.is_symlink(), "missing ~/.testgitconfig");
     let vimrc = home.path.join(".testvimrc");
     assert!(vimrc.is_symlink(), "missing ~/.testvimrc");
-    // The nested target tests that the executor mkdirs the parent
-    // chain (`~/.config/keron-e2e/nvim/` doesn't exist beforehand).
+    // The executor must mkdir the parent chain (`~/.config/.../nvim/`
+    // doesn't exist beforehand); the nested target pins that step.
     let nvim = home
         .path
         .join(".config")
@@ -204,9 +192,6 @@ fn basic_dotfiles_creates_symlinks_then_is_idempotent() {
         first.stdout,
     );
 
-    // Second run: same manifest, same filesystem; the planner sees
-    // every symlink already pointing at the right canonical target
-    // and reports `Action::NoOp`.
     let second = run(keron_apply(&fixture, &home.path), "yes\n");
     assert!(
         second.success,
@@ -222,13 +207,6 @@ fn basic_dotfiles_creates_symlinks_then_is_idempotent() {
 
 #[test]
 fn template_renders_then_is_idempotent() {
-    // Templates flow: the eval phase reads `greeting.tpl`, expands
-    // `${name}` + `${scope}` with the values from `vars`, and
-    // produces a `ResourceState::Template` with the rendered
-    // content. The executor writes that content to the target path
-    // under the fake `$HOME`. Second run: planner reads the file
-    // back, byte-compares against the desired content, classifies
-    // as `NoOp`, and the diff reports "No changes".
     let home = E2eHome::new("template");
     let fixture = fixture_dir("templates");
 
@@ -265,16 +243,10 @@ fn template_renders_then_is_idempotent() {
 
 #[test]
 fn package_resource_installs_then_no_ops_via_cache_seam() {
-    // We can't install real packages in CI without making the
-    // suite slow and host-dependent, so each platform exercises the
-    // wired-up codepath via the test seams that `keron-apply`
-    // already exposes:
-    //   - `KERON_TEST_<MGR>_PACKAGES` pins the cache state.
-    //   - `KERON_TEST_PACKAGE_BIN_<MGR>` swaps the install binary
-    //     for a noop that exits 0.
-    // First run with empty cache → Create + spy invoked → success.
-    // Second run with cache pre-populated → NoOp + spy never
-    // touched.
+    // Real package managers can't run in CI; instead drive the
+    // codepath via the `KERON_TEST_<MGR>_PACKAGES` cache seam and
+    // `KERON_TEST_PACKAGE_BIN_<MGR>` install-binary seam exposed by
+    // `keron-apply`.
     let home = E2eHome::new("pkg");
     let fixture = fixture_dir("packages");
     let noop = write_noop_binary(&home.path);
@@ -298,10 +270,9 @@ fn package_resource_installs_then_no_ops_via_cache_seam() {
         first.stdout,
     );
 
-    // Second run: cache already has the package; classify as NoOp.
-    // Point the install spy at a path that doesn't exist so an
-    // accidental install attempt would surface as a spawn failure
-    // — pinning that the second run truly skips the executor.
+    // Point the second-run install spy at a non-existent path: any
+    // accidental install attempt surfaces as a spawn failure, pinning
+    // that the NoOp classification truly skips the executor.
     let mut second_cmd = keron_apply(&fixture, &home.path);
     second_cmd
         .env(manager_env.0, manager_env.1)
@@ -353,7 +324,6 @@ const fn pick_manager_env_keys() -> (
 fn package_name_for_manager(manager: &str) -> &'static str {
     match manager {
         "winget" => "BurntSushi.ripgrep",
-        // brew / cargo / fallback
         _ => "ripgrep",
     }
 }
@@ -392,16 +362,8 @@ fn write_unix_noop(_dir: &Path) -> PathBuf {
 #[cfg(unix)]
 #[test]
 fn elevated_symlink_into_protected_dir_is_owned_by_calling_user() {
-    // Linux + macOS exercise the elevation re-exec via the spy
-    // `fake_elevator.sh` (no real sudo, no password prompt). The
-    // protected directory is chmod 0500 so the planner's writability
-    // probe classifies the symlink as elevated; the spy chmods it
-    // back to 0700 immediately before exec'ing the elevated keron
-    // child, so the write succeeds; the child chowns the symlink
-    // back to the calling user.
-    //
-    // Skipped on Windows because the runas-via-ShellExecuteExW path
-    // pops a real UAC prompt that no test runner can answer.
+    // Skipped on Windows: the runas-via-ShellExecuteExW path pops a
+    // real UAC prompt that no test runner can answer.
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
     let home = E2eHome::new("elevated");
@@ -410,10 +372,6 @@ fn elevated_symlink_into_protected_dir_is_owned_by_calling_user() {
     let target = fixture_root.join("payload");
     fs::write(&target, "x").unwrap();
 
-    // Manifest lives inside `fixture_root` so it's the keron_root
-    // for canonicalisation. The destination is in a sibling dir
-    // that's chmod 0500 — owner has no write, so the elevation
-    // probe flags it.
     let protected = home.path.join("protected");
     fs::create_dir_all(&protected).unwrap();
     let mut perm = fs::metadata(&protected).unwrap().permissions();
@@ -427,9 +385,6 @@ fn elevated_symlink_into_protected_dir_is_owned_by_calling_user() {
     );
     fs::write(fixture_root.join("entry.keron"), &manifest).unwrap();
 
-    // Write the spy elevator — same shape as keron-apply's own
-    // integration test. `KERON_TEST_UNLOCK_DIR` is the
-    // chmod-0700 sentinel we feed through.
     let spy = fixture_root.join("fake_elevator.sh");
     fs::write(
         &spy,

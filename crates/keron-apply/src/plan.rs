@@ -285,13 +285,10 @@ fn classify_symlink(from: &Path, to: &Path, after: &ResourceState) -> Result<Res
         }),
         Err(e) => Err(anyhow!("reading existing path `{}`: {e}", from.display())),
         Ok(meta) if meta.file_type().is_symlink() => {
-            // `read_link` gives the literal target as stored — used
-            // verbatim for the diff display. `canonicalize(from)`
-            // follows the link to its final destination so the
-            // NoOp/Update decision compares apples to apples with the
-            // desired `to` (which the evaluator has already
-            // canonicalized). A broken link (canonicalize fails) is
-            // always Update; the user wants the planner to fix it.
+            // `read_link` returns the literal target for diff display;
+            // `canonicalize` follows the link so NoOp/Update compares
+            // apples to apples against `to` (already canonicalized by
+            // the evaluator). A broken link is always Update.
             let current_literal = fs::read_link(from)
                 .with_context(|| format!("reading existing symlink `{}`", from.display()))?;
             let resolves_to_same = fs::canonicalize(from)
@@ -356,10 +353,9 @@ fn classify_template(path: &Path, content: &str, after: &ResourceState) -> Resul
             } else {
                 Action::Update
             };
-            // `from_utf8_lossy` is fine here — the diff renderer
-            // only consumes `before.content` for display; the
-            // NoOp/Update decision above already used the lossless
-            // byte slice.
+            // The diff renderer only consumes `before.content` for
+            // display; NoOp/Update was decided on the lossless byte
+            // slice above so `from_utf8_lossy` is safe here.
             let existing_text = String::from_utf8_lossy(&existing_bytes).into_owned();
             Ok(ResourceChange {
                 address,
@@ -386,9 +382,6 @@ fn address_for(state: &ResourceState) -> String {
             path.display().to_string()
         }
         ResourceState::Symlink { from, .. } => from.display().to_string(),
-        // `<manager>:<name>` is unique enough to dedupe "brew install
-        // ripgrep" from "cargo install ripgrep" while still being
-        // human-readable in the diff header.
         ResourceState::Package { manager, name } => format!("{}:{}", manager.label(), name),
     }
 }
@@ -505,10 +498,6 @@ mod tests {
 
     #[test]
     fn build_plan_emits_one_change_per_resource() {
-        // End-to-end: build a graph from source, run build_plan, and
-        // verify the resulting Plan reflects the resources produced
-        // by the evaluator. Mutating build_plan to Ok(Default) would
-        // produce an empty Plan, breaking every assertion below.
         use keron_modules::{EntrySource, ModuleId, resolve};
         use std::env;
         use std::fs;
@@ -518,10 +507,7 @@ mod tests {
         let dir = env::temp_dir().join(format!("keron-build-plan-{}-{n}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let entry = dir.join("entry.keron");
-        // Seed a one-placeholder template alongside the entry so the
-        // `template(path = X, source = "tmpl.tpl", vars = {"body": Y})`
-        // form below resolves at eval time.
-        fs::write(dir.join("tmpl.tpl"), "${body}").unwrap();
+        fs::write(dir.join("tmpl.tpl"), "{{ body }}").unwrap();
         let src = "reconcile template(path = \"/a\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
                    reconcile template(path = \"/b\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n";
         fs::write(&entry, src).unwrap();
@@ -545,8 +531,6 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
-    // ---------- classify_symlink ----------
-
     use std::env;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -567,10 +551,9 @@ mod tests {
                 fs::remove_dir_all(&p).ok();
             }
             fs::create_dir_all(&p).unwrap();
-            // Tests compare against `fs::canonicalize(link)` for the
-            // NoOp arm, so the test path must already be canonical
-            // (macOS `env::temp_dir()` returns `/var/folders/...`,
-            // which canonicalize rewrites to `/private/var/folders/...`).
+            // NoOp arm compares against `fs::canonicalize(link)`, so
+            // the test path must already be canonical (macOS rewrites
+            // `/var/folders/...` -> `/private/var/folders/...`).
             let path = fs::canonicalize(&p).unwrap();
             Self { path }
         }
@@ -626,9 +609,6 @@ mod tests {
         let state = desired(&from, &to);
         let change = classify(state, &mut PackageCache::new()).unwrap();
         assert_eq!(change.action, Action::NoOp);
-        // The captured `before` records what's already on disk so the
-        // diff renderer can show it; mutating either side would break
-        // a future "show the existing link target" UX.
         let before = change.before.expect("before populated for noop");
         let ResourceState::Symlink { from: bf, to: bt } = before else {
             panic!("expected Symlink in before");
@@ -659,10 +639,6 @@ mod tests {
 
     #[test]
     fn classify_symlink_rejects_real_file_occupant() {
-        // A real file at the symlink path is exactly the case where
-        // silent overwriting would lose user data. The planner refuses
-        // so the user sees the conflict at plan time, not after their
-        // dotfile has already been destroyed.
         let d = TempDir::new("clobber");
         let from = d.path.join("alias");
         fs::write(&from, "user data").unwrap();
@@ -677,9 +653,6 @@ mod tests {
 
     #[test]
     fn classify_directory_still_defaults_to_create() {
-        // Directories don't yet have a live-state classifier (no
-        // executor support yet either); the Create-only fallback
-        // remains until that lands.
         let state = ResourceState::Directory {
             path: PathBuf::from("/whatever-keron-dir"),
         };
@@ -688,8 +661,6 @@ mod tests {
         assert!(change.before.is_none());
         assert_eq!(change.after, Some(state));
     }
-
-    // ---------- classify_template ----------
 
     fn template(path: &Path, content: &str) -> ResourceState {
         ResourceState::Template {
@@ -741,10 +712,6 @@ mod tests {
 
     #[test]
     fn classify_template_tolerates_non_utf8_existing_file() {
-        // A non-UTF-8 file on disk should classify as Update (the
-        // bytes don't equal our UTF-8 content) without erroring at
-        // the read. `from_utf8_lossy` produces the `before` state
-        // for diff display.
         let d = TempDir::new("template-non-utf8");
         let path = d.path.join("binary");
         fs::write(&path, [0xFFu8, 0xFE, 0xFD]).unwrap();

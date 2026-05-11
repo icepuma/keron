@@ -90,23 +90,15 @@ fn keron_binary_path() -> PathBuf {
 
 #[test]
 fn elevated_subset_runs_under_spy_and_chowns_back() {
-    // End-to-end: a manifest with one unprivileged change (in the
-    // temp dir, so the writability probe says "no elevation") and
-    // one elevated change (target = a path inside a chmod-0500
-    // subdir, so the probe says "yes"). Drive `keron apply
-    // --execute` via the binary, with KERON_TEST_ELEVATOR pointing
-    // at the shell-script spy. The spy execs the elevated keron,
-    // which applies the change and chowns it back to our uid:gid.
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
     let proj = TempProject::new("e2e");
 
-    // Plain symlink target (in keron_root, readable / writable).
     let plain_target = proj.write("plain-target", "x");
     let plain_link = proj.root.join("plain-link");
 
     // Protected directory: 0500 means write-denied to the owner
-    // (us) too, so the probe classifies as elevated.
+    // (us) too, so the writability probe classifies as elevated.
     let protected_dir = proj.root.join("protected");
     fs::create_dir_all(&protected_dir).unwrap();
     let protected_target = proj.write("elevated-target", "x");
@@ -130,6 +122,8 @@ fn elevated_subset_runs_under_spy_and_chowns_back() {
     let my_uid = fs::metadata(&proj.root).unwrap().uid();
     let my_group = fs::metadata(&proj.root).unwrap().gid();
 
+    // SUDO_UID/SUDO_GID must be unset: if the surrounding shell ran
+    // under sudo, leftovers would trip the direct-elevation refusal.
     let output = Command::new(&keron)
         .args(["apply", "--execute"])
         .arg(&entry)
@@ -156,9 +150,6 @@ fn elevated_subset_runs_under_spy_and_chowns_back() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    // Echo the captured transcript so nextest's
-    // --success-output=immediate-final surfaces the plan + apply
-    // output in the CI log on green runs.
     println!("--- keron stdout ---\n{stdout}");
     if !stderr.is_empty() {
         println!("--- keron stderr ---\n{stderr}");
@@ -169,14 +160,11 @@ fn elevated_subset_runs_under_spy_and_chowns_back() {
         output.status,
     );
 
-    // The unprivileged change applied directly.
     assert!(
         plain_link.is_symlink(),
         "plain symlink should be created: stdout=\n{stdout}",
     );
 
-    // The elevated change applied via the spy. Symlink must exist
-    // and be owned by us (chown-back step).
     assert!(
         protected_link.is_symlink(),
         "elevated symlink should be created: stdout=\n{stdout}",
@@ -189,8 +177,6 @@ fn elevated_subset_runs_under_spy_and_chowns_back() {
     );
     assert_eq!(elev_meta.gid(), my_group);
 
-    // The unprivileged summary line appears before the elevated
-    // child's output, both inherited through stdio.
     assert!(
         stdout.contains("Apply complete"),
         "missing unprivileged summary: {stdout}",

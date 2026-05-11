@@ -63,9 +63,8 @@ fn load_file(path: &Path) -> Result<LoadedFile> {
 }
 
 fn load_dir(root: &Path) -> Result<Vec<LoadedFile>> {
-    // Walk gathers entry-relative paths; sort by relative path so the
-    // ordering is the alphanumeric tree-walk the model promises (and is
-    // independent of the OS's `read_dir` order).
+    // Sort by relative path so the ordering matches the model's
+    // promised alphanumeric tree-walk, independent of `read_dir`.
     let mut paths: Vec<PathBuf> = Vec::new();
     walk(root, &mut paths)?;
     paths.sort_by(|a, b| {
@@ -77,9 +76,9 @@ fn load_dir(root: &Path) -> Result<Vec<LoadedFile>> {
     let mut files: Vec<LoadedFile> = Vec::with_capacity(paths.len());
     let mut seen: HashSet<PathBuf> = HashSet::new();
     for path in paths {
-        // Canonicalize before reading so two entries pointing at the
-        // same real file (e.g. via a symlinked subdir) collapse to one
-        // module. Resolver also keys ModuleId::File by canonical path.
+        // Canonicalize so two entries pointing at the same real file
+        // (e.g. via a symlinked subdir) collapse to one module; the
+        // resolver also keys `ModuleId::File` by canonical path.
         let canonical = fs::canonicalize(&path)
             .with_context(|| format!("canonicalizing `{}`", path.display()))?;
         if !seen.insert(canonical.clone()) {
@@ -105,8 +104,8 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
             .file_type()
             .with_context(|| format!("stat `{}`", path.display()))?;
         // `file_type()` does not follow symlinks: a symlink-to-dir
-        // reports `is_symlink()` and we skip it. That keeps recursion
-        // bounded without hand-rolled cycle detection.
+        // reports `is_symlink()` and we skip it, bounding recursion
+        // without hand-rolled cycle detection.
         if ft.is_dir() {
             walk(&path, out)?;
         } else if ft.is_file() && path.extension().and_then(|e| e.to_str()) == Some("keron") {
@@ -183,9 +182,6 @@ mod tests {
 
     #[test]
     fn load_dir_returns_files_in_alphanumeric_order() {
-        // Without sorting the loader would return whatever
-        // `read_dir` decides (filesystem-dependent). Force the
-        // out-of-order names so a missing/inverted sort is visible.
         let d = TempDir::new("dir-sort");
         fs::write(d.path.join("z.keron"), "val z: Int = 0\n").unwrap();
         fs::write(d.path.join("b.keron"), "val b: Int = 0\n").unwrap();
@@ -201,8 +197,6 @@ mod tests {
 
     #[test]
     fn load_dir_recurses_into_subdirectories() {
-        // The previous loader walked one level only. This fixture
-        // pins the recursion: nested .keron files must show up too.
         let d = TempDir::new("dir-recurse");
         fs::create_dir_all(d.path.join("sub/deeper")).unwrap();
         fs::write(d.path.join("a.keron"), "val a: Int = 0\n").unwrap();
@@ -219,8 +213,8 @@ mod tests {
 
     #[test]
     fn load_dir_alphanumeric_order_uses_full_relative_path() {
-        // `a/x.keron < a/y.keron < b/x.keron` — the sort key is the
-        // full relative path, not just the basename.
+        // Sort key is the full relative path, not the basename:
+        // `a/x.keron < a/y.keron < b/x.keron`.
         let d = TempDir::new("dir-relpath-sort");
         fs::create_dir_all(d.path.join("a")).unwrap();
         fs::create_dir_all(d.path.join("b")).unwrap();
@@ -248,9 +242,6 @@ mod tests {
 
     #[test]
     fn load_dir_skips_subdirectories_named_with_keron_extension() {
-        // A directory whose name happens to end in `.keron` must not
-        // be treated as a file. Mutating the file/dir filter would
-        // surface here.
         let d = TempDir::new("dir-skip-subdir");
         fs::write(d.path.join("a.keron"), "val a: Int = 1\n").unwrap();
         fs::create_dir(d.path.join("nested.keron")).unwrap();

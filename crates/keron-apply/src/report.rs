@@ -31,26 +31,20 @@ fn render_one(
 ) {
     let header = module.display();
     let Some(src) = src_by_id.get(module).filter(|s| !s.is_empty()) else {
-        // Module whose source we don't have, or which has empty
-        // source. Ariadne needs a non-empty buffer to compute
-        // line/col, so emit a minimal one-liner instead.
+        // Ariadne needs a non-empty buffer to compute line/col; emit
+        // a minimal one-liner when we don't have the source.
         let _ = std::io::Write::write_fmt(out, format_args!("[{header}] {}\n", d.message));
         return;
     };
 
-    // Clamp the span to the source length to keep ariadne from
-    // panicking on synthesized 0..0 spans for whole-module errors
-    // (e.g. cycle reports) — we still want a useful report header
-    // even when the span has nothing meaningful to point at.
+    // Synthesized `0..0` spans (cycle reports) and out-of-range spans
+    // would otherwise panic ariadne — clamp to source length.
     let end = d.span.end.min(src.len());
     let start = d.span.start.min(end);
     let span = (header.clone(), start..end);
 
-    // The label needs a message for ariadne to draw the underline
-    // arm; otherwise it just renders the source line with no marker.
-    // `Config::with_color(false)` only governs structural decorations
-    // — per-label colors set via `Label::with_color(...)` bypass it,
-    // so we only paint when color is requested.
+    // Per-label colors set via `Label::with_color` bypass
+    // `Config::with_color(false)`, so only paint when requested.
     let mut label = Label::new(span.clone()).with_message(&d.message);
     if color {
         label = label.with_color(Color::Red);
@@ -64,8 +58,8 @@ fn render_one(
     let mut buf: Vec<u8> = Vec::new();
     let cache = sources(std::iter::once((header.clone(), src.as_str())));
     if report.write(cache, Cursor::new(&mut buf)).is_err() {
-        // Fall back to the plain rendering rather than swallowing the
-        // diagnostic entirely — a renderer error must not lose info.
+        // A renderer error must not lose info — fall back to the plain
+        // one-liner rather than swallow the diagnostic.
         let _ = std::io::Write::write_fmt(out, format_args!("[{header}] {}\n", d.message));
         return;
     }
@@ -101,19 +95,14 @@ mod tests {
         );
         let out = render(&bundle, false);
         assert!(out.contains("bad token"), "missing message: {out}");
-        // ariadne renders a `[Error]` header for `ReportKind::Error`.
         assert!(out.contains("Error"), "missing kind header: {out}");
-        // The path must appear so the user knows which file.
         assert!(out.contains("/tmp/foo.keron"), "missing path: {out}");
-        // Line 2 is where byte 14 lives (0-based: "val x = 1\n" is 10 chars).
+        // Byte 14 lives on line 2 ("val x = 1\n" is 10 chars).
         assert!(out.contains(":2"), "missing line marker: {out}");
     }
 
     #[test]
     fn render_falls_back_for_module_without_source() {
-        // A module whose source string is empty (or absent from the
-        // map) takes the fallback path. Rendering must not crash and
-        // must still surface the module id and message.
         let bundle = bundle_with(
             ModuleId::File("/synth.keron".into()),
             "",
@@ -143,9 +132,6 @@ mod tests {
 
     #[test]
     fn render_clamps_span_past_source_end() {
-        // `module cycle` diagnostics carry `0..0` synthesized spans;
-        // other internal paths could produce a span past EOF. Either
-        // way, ariadne should not panic.
         let bundle = bundle_with(
             ModuleId::File("/y.keron".into()),
             "val x = 1\n",

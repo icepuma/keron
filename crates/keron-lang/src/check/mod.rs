@@ -363,9 +363,6 @@ pub fn check(program: &Program) -> Result<(), Vec<Diagnostic>> {
 pub fn check_module(program: &Program, imported: &ImportedSymbols) -> Result<(), Vec<Diagnostic>> {
     let mut diags = Vec::new();
 
-    // Pass 1: seed names from imports, then collect every local
-    // top-level name; reject duplicates across val/fn namespaces and
-    // against imports; validate fn signatures.
     let mut top_names: HashMap<String, ItemKind> = HashMap::new();
     let mut fn_env: FnEnv = imported.fns.clone();
     for name in fn_env.keys() {
@@ -436,8 +433,6 @@ pub fn check_module(program: &Program, imported: &ImportedSymbols) -> Result<(),
         }
     }
 
-    // Pass 2: check items in source order, with imported vals seeded
-    // into the val scope so callees can reference them.
     let mut val_env = Env::default();
     for (name, ty) in &imported.vals {
         val_env.bind(name.clone(), ty.clone(), BindingKind::OuterVal);
@@ -599,10 +594,6 @@ fn check_fn_decl(f: &FnDecl, outer_env: &Env, fns: &FnEnv, diags: &mut Vec<Diagn
     if f.intrinsic.is_some() {
         return;
     }
-    // Build the param scope: start from outer vals (re-tagged as
-    // OuterVal in case the caller passed something with mixed kinds),
-    // then check each default in left-to-right order before binding
-    // the param. Allow params to silently shadow outer vals.
     let mut scope = Env::default();
     for (name, (ty, _)) in &outer_env.bindings {
         scope.bind(name.clone(), ty.clone(), BindingKind::OuterVal);
@@ -1224,7 +1215,6 @@ fn check_call(
         )
     })?;
 
-    // Validate ordering: all positional before all named.
     let mut seen_named = false;
     for arg in args {
         if arg.name.is_some() {
@@ -1237,7 +1227,6 @@ fn check_call(
         }
     }
 
-    // Match each arg to a parameter slot.
     let mut matched: Vec<Option<&CallArg>> = std::iter::repeat_n(None, sig.params.len()).collect();
     let mut pos_idx = 0usize;
     for arg in args {
@@ -1275,7 +1264,6 @@ fn check_call(
         }
     }
 
-    // Type-check supplied args; fail on missing required.
     for (i, param) in sig.params.iter().enumerate() {
         match matched[i] {
             Some(arg) => check_expr(&arg.value, &param.ty, env, fns)?,

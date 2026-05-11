@@ -54,9 +54,9 @@ pub fn run(payload_path: &Path) -> Result<()> {
         if let Some(path) = leaf_path(change)
             && let Err(e) = chown::set_owner(&path, &payload.owner)
         {
-            // The write succeeded; only the chown failed. Don't abort
-            // the loop — finish what we can and report the broken
-            // ownership at the end so the user has a complete list.
+            // Write succeeded, chown failed: don't abort the loop —
+            // finish the rest and surface a complete list of broken
+            // ownerships at the end.
             let _ = writeln!(
                 stdout,
                 "warning: failed to set owner on `{}`: {e:#}",

@@ -28,22 +28,14 @@ pub fn path_requires_elevation(state: &ResourceState, action: Action) -> bool {
         return false;
     }
     match state {
-        // Symlink touches `from.parent()`: create makes a new entry,
-        // update removes+re-creates, destroy unlinks. All three need
-        // write on the parent. The `to` field is the link target;
-        // we never write to it, so it's irrelevant for elevation.
+        // All three actions (create/update/destroy) write to
+        // `from.parent()`; `to` is the link target and never written.
         ResourceState::Symlink { from, .. } => from.parent().is_none_or(|p| !dir_is_writable(p)),
-        // Template + Directory both touch their `path.parent()`.
-        // For Update on a Template we also need to overwrite `path`
-        // itself; if the parent is writable that's almost always
-        // possible, and if it's not the probe catches it.
         ResourceState::Template { path, .. } | ResourceState::Directory { path } => {
             path.parent().is_none_or(|p| !dir_is_writable(p))
         }
-        // Packages are routed through `PackageManager::requires_elevation`.
-        // Reaching this arm means a caller mistakenly asked the
-        // filesystem detector about a package; treat as "no" so the
-        // package-side policy is authoritative.
+        // Packages defer to `PackageManager::requires_elevation`;
+        // returning false here lets that policy stay authoritative.
         ResourceState::Package { .. } => false,
     }
 }
@@ -60,9 +52,6 @@ fn dir_is_writable(start: &Path) -> bool {
     let probe = anchor.join(format!(
         ".keron-elevation-probe-{}-{}",
         std::process::id(),
-        // Monotonic-ish suffix so two probes on the same dir at the
-        // same pid don't collide. Time-based is fine; the probe is
-        // ephemeral.
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.subsec_nanos())
@@ -77,7 +66,8 @@ fn dir_is_writable(start: &Path) -> bool {
             true
         }
         Err(e) if e.kind() == io::ErrorKind::PermissionDenied => false,
-        // ReadOnlyFilesystem, NotFound (race), etc. — conservative.
+        // ReadOnlyFilesystem, NotFound (race), etc.: classify
+        // conservatively as needing elevation.
         Err(_) => false,
     }
 }
@@ -141,8 +131,6 @@ mod tests {
 
     #[test]
     fn noop_never_needs_elevation_even_for_protected_paths() {
-        // NoOp short-circuits before the probe: nothing happens at
-        // apply time, so elevation is moot.
         let state = ResourceState::Symlink {
             from: PathBuf::from("/etc/keron-noop"),
             to: PathBuf::from("/etc/some-target"),
@@ -152,9 +140,6 @@ mod tests {
 
     #[test]
     fn package_resource_defers_to_manager_policy() {
-        // Filesystem detector returns false for packages; the
-        // per-manager policy on `PackageManager::requires_elevation`
-        // is the authoritative source.
         let state = ResourceState::Package {
             manager: crate::plan::PackageManager::Brew,
             name: "ripgrep".into(),
@@ -174,9 +159,6 @@ mod tests {
 
     #[test]
     fn directory_walks_up_to_find_anchor() {
-        // Resource path is several levels deep below an existing
-        // ancestor; the probe must find the ancestor and decide
-        // based on its writability.
         let d = TempDir::new("nested");
         let state = ResourceState::Directory {
             path: d.path.join("a").join("b").join("c"),
@@ -187,11 +169,9 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn unwritable_dir_needs_elevation() {
-        // chmod 0500 removes write for owner and everyone — the
-        // probe should report PermissionDenied. Skip on Windows
-        // because the chmod-equivalent dance is ACL-heavy and
-        // out-of-scope for v1 (we cover Windows protected paths via
-        // manual e2e tests with `/etc`-equivalent locations).
+        // Skip on Windows: the chmod-equivalent ACL dance is
+        // out-of-scope for v1; Windows protected paths are covered
+        // via manual e2e tests against `/etc`-equivalent locations.
         use std::os::unix::fs::PermissionsExt;
         let d = TempDir::new("readonly");
         let mut perms = fs::metadata(&d.path).unwrap().permissions();
@@ -215,7 +195,6 @@ mod tests {
         let deep = d.path.join("a").join("b").join("c");
         let anchor = nearest_existing_ancestor(&deep).expect("must find some ancestor");
         assert!(anchor.is_dir(), "anchor must be an existing directory");
-        // The anchor should be a prefix of `deep`.
         assert!(deep.starts_with(&anchor));
     }
 }

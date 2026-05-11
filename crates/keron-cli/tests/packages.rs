@@ -63,8 +63,6 @@ fn package_installs_when_absent_and_noops_when_present() {
     let entry = proj.write("entry.keron", "reconcile brew(\"ripgrep\")\n");
     let keron = keron_binary_path();
 
-    // First run: cache reports nothing installed; ripgrep is
-    // classified Create; install spy succeeds.
     let first = Command::new(&keron)
         .args(["apply", "--execute"])
         .arg(&entry)
@@ -100,8 +98,9 @@ fn package_installs_when_absent_and_noops_when_present() {
         "first run should report 1 added: {stdout1}",
     );
 
-    // Second run: cache says ripgrep is now installed; plan
-    // classifies as NoOp; no install attempt.
+    // Second run uses `/usr/bin/false` as the install spy: if the
+    // planner ever attempts to install, the executor exits non-zero
+    // and the test fails — proving the NoOp classification holds.
     let second = Command::new(&keron)
         .args(["apply", "--execute"])
         .arg(&entry)
@@ -132,17 +131,13 @@ fn package_installs_when_absent_and_noops_when_present() {
         stdout2.contains("No changes"),
         "second run should be NoOp: {stdout2}",
     );
-    // /usr/bin/false would have exited the install non-zero; that
-    // this run still succeeds proves we never attempted to install.
 }
 
 #[test]
 fn duplicate_packages_in_one_plan_install_once() {
-    // Two `brew(...)` resources for the same package in the same
-    // plan: the cache's "mark to install" semantics make the second
-    // one NoOp, so the install spy is invoked once. We can't count
-    // spy invocations directly without a marker file — instead we
-    // assert the diff shows "1 to add", not "2 to add".
+    // Asserts via the diff line ("1 to add", not "2 to add") rather
+    // than counting spy invocations — there's no marker file in this
+    // wiring, so the diff is the cheapest observable.
     let proj = TempProject::new("dupe");
     let entry = proj.write(
         "entry.keron",

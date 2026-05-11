@@ -77,11 +77,6 @@ mod tests {
 
     #[test]
     fn run_cli_apply_with_missing_path_errors() {
-        // End-to-end exercise of the dispatch path: parse argv,
-        // route to the Apply arm, call keron_apply::run, observe the
-        // canonical "path does not exist" error. The `Ok(())` mutant
-        // on this fn would skip both the parse and the delegate, so
-        // a guaranteed-failing input is enough to kill it.
         let err = run_cli([
             "keron",
             "apply",
@@ -97,11 +92,6 @@ mod tests {
 
     #[test]
     fn run_cli_apply_threads_execute_flag_to_keron_apply() {
-        // `--execute` flips the inner `execute` arg. Even with a
-        // missing path the executor branch differs only in stdin
-        // handling, so both arms reach the same `path does not
-        // exist` canonicalize error — what we're pinning here is
-        // that the flag-parsing wiring stays intact.
         let err = run_cli([
             "keron",
             "apply",

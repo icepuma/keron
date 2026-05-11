@@ -63,11 +63,8 @@ pub fn run_elevated(plan: &Plan) -> Result<ExecuteSummary> {
     if !status.success() {
         bail!("elevated apply exited with status {status}; see output above for details");
     }
-    // The child writes its summary to stdout. The parent inherited
-    // stdio so the user already saw it; we report a generic
-    // "succeeded" tally rather than parse the child's summary. v1
-    // doesn't try to merge counts across the boundary; both halves
-    // are visible to the user.
+    // The child's summary already reached the user via inherited
+    // stdio; v1 doesn't merge counts across the elevation boundary.
     Ok(ExecuteSummary {
         added: 0,
         changed: 0,
@@ -123,11 +120,10 @@ fn invoke_elevator(exe: &Path, payload: &Path) -> Result<std::process::ExitStatu
 
 #[cfg(unix)]
 fn probe_elevator() -> Option<std::path::PathBuf> {
-    // Tty-friendly first: sudo and doas always prompt on the
-    // controlling terminal. pkexec last because it requires a polkit
-    // auth agent that only runs in a graphical desktop session;
-    // falling back to it on a headless box just produces a confusing
-    // "no agent" failure.
+    // Tty-friendly first: sudo/doas prompt on the controlling
+    // terminal. pkexec last because its polkit auth agent only runs
+    // in a graphical session — falling back to it on a headless box
+    // just produces a confusing "no agent" failure.
     for name in ["sudo", "doas", "pkexec"] {
         if let Some(path) = which_on_path(name) {
             return Some(path);
@@ -169,9 +165,6 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn probe_elevator_returns_none_when_path_is_empty() {
-        // SAFETY: test-only env mutation; the lint is fine because
-        // single-threaded test_elevator_override doesn't read PATH.
-        // Use a scoped set/restore so other tests aren't affected.
         let saved = std::env::var_os("PATH");
         // SAFETY: edition 2024 marks set_var unsafe; this test
         // single-threads its mutations and restores PATH before

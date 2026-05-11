@@ -128,9 +128,8 @@ fn write_secure(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 fn rand_suffix() -> u64 {
-    // Cheap unique-enough suffix; collision means `create_new` errs
-    // and the parent surfaces the retry to the user. No need for a
-    // real RNG crate.
+    // Time-based unique-enough suffix; collision means `create_new`
+    // errs and the parent surfaces it. Avoids pulling in a RNG crate.
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| u64::try_from(d.as_nanos()).unwrap_or(u64::MAX))
@@ -161,21 +160,17 @@ pub fn capture_owner() -> Result<OwnerId> {
 #[cfg(unix)]
 fn capture_owner_unix() -> Result<OwnerId> {
     use std::os::unix::fs::MetadataExt;
-    // Prefer SUDO_UID/GID if set (user re-running keron under sudo
-    // for some reason — direct-sudo is refused at the entry point,
-    // but a script could plumb the env in for tests / oddities).
+    // Prefer SUDO_UID/GID if a script plumbed it in (direct-sudo is
+    // refused at the entry point, but tests/oddities can set it).
     if let (Ok(uid), Ok(gid)) = (std::env::var("SUDO_UID"), std::env::var("SUDO_GID"))
         && let (Ok(uid), Ok(gid)) = (uid.parse(), gid.parse())
     {
         return Ok(OwnerId::Posix { uid, gid });
     }
-    // Otherwise stat the binary. Cargo-installed keron lives in
-    // `~/.cargo/bin/keron` — owned by the user. A system-wide
-    // install (`/usr/local/bin/keron`) is root-owned: in that case
-    // the user *should* have set SUDO_UID; if not we fall back to
-    // current process's runtime uid via `geteuid()` — but we don't
-    // want libc, so a second stat on the user's `current_dir` works
-    // (the CWD belongs to the calling user in any reasonable shell).
+    // No libc in the workspace, so stat the cwd as a stand-in for
+    // `geteuid()` — the CWD belongs to the calling user in any
+    // reasonable shell, and is correct even when the binary itself
+    // is root-owned (system-wide install).
     let probe = std::env::current_dir().context("locating the calling user via cwd")?;
     let meta = fs::metadata(&probe)
         .with_context(|| format!("stat-ing `{}` for uid/gid", probe.display()))?;
@@ -247,7 +242,6 @@ mod tests {
         let path = {
             let tempfile = write_payload(&plan, &owner).unwrap();
             tempfile.path().to_path_buf()
-            // drop happens here
         };
         assert!(!path.exists(), "payload must be removed on drop");
     }

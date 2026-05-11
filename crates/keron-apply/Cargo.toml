@@ -17,6 +17,7 @@ ariadne.workspace = true
 os_info.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tera.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true

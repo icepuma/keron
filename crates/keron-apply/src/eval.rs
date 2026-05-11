@@ -86,10 +86,6 @@ impl std::fmt::Debug for Value {
                 .finish(),
             Self::Void => f.write_str("Void"),
             Self::Null => f.write_str("Null"),
-            // Redacted: never print the inner value, even in panic
-            // output. Length is fine — it's structural and helpful
-            // for "did the resolver get an empty string back?"
-            // debugging without leaking content.
             Self::Secret(s) => write!(f, "Secret(<redacted, {} bytes>)", s.len()),
         }
     }
@@ -187,8 +183,6 @@ impl<'a, 'p> Env<'a, 'p> {
             if !module.in_progress.borrow_mut().insert(key.clone()) {
                 bail!("cycle while evaluating `val {name}`");
             }
-            // Vals evaluate in their owning module's scope, with no
-            // borrowed locals.
             let module_env = Env::new(self.graph, self.current.clone());
             let v = eval_expr(expr, &module_env)?;
             module.in_progress.borrow_mut().remove(&key);
@@ -496,8 +490,6 @@ fn match_struct_pattern(
                 }
             }
             None => {
-                // Shorthand `Point { x }` — bind the field's value to
-                // a binding named after the field.
                 bindings.insert(f.name.node.clone(), fval.clone());
             }
         }
@@ -1240,39 +1232,47 @@ fn resolve_managed_path(raw: &str, env: &Env<'_, '_>, kind: &str, arg: &str) -> 
     Ok(canonical)
 }
 
-/// Substitute `${name}` placeholders in `src` with values from
-/// `vars`. A placeholder name that isn't in `vars` is an error; an
-/// unterminated `${` (no closing `}`) is also an error. Other `$`
-/// occurrences pass through literally — including a trailing `$`
-/// at the end of input. Char-iteration here keeps the implementation
-/// UTF-8-clean without manual byte arithmetic.
+/// Render a Tera template against the supplied variable map.
+///
+/// Missing variables are a hard error: Tera's default behaviour
+/// raises a "Variable X not found in context while rendering ..."
+/// error from the renderer, which preserves the old hand-rolled
+/// `${name}` engine's "typo'd placeholder is a build failure, not
+/// silent empty text" guarantee.
+///
+/// Autoescape is disabled. Dotfile content is not HTML; `&`, `<`,
+/// `>`, `"` must pass through verbatim. Tera's default autoescape
+/// applies only to `.html` / `.htm` / `.xml` extensions — we
+/// register the template under an extension-less name and clear the
+/// autoescape list defensively in case that ever changes.
 fn render_template(src: &str, vars: &HashMap<String, String>) -> Result<String> {
-    let mut out = String::with_capacity(src.len());
-    let mut chars = src.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '$' && chars.peek() == Some(&'{') {
-            chars.next(); // consume the opening `{`
-            let mut name = String::new();
-            let mut closed = false;
-            for nc in chars.by_ref() {
-                if nc == '}' {
-                    closed = true;
-                    break;
-                }
-                name.push(nc);
-            }
-            if !closed {
-                bail!("unterminated `${{` in template");
-            }
-            match vars.get(&name) {
-                Some(v) => out.push_str(v),
-                None => bail!("template variable `{name}` not provided"),
-            }
-        } else {
-            out.push(c);
-        }
+    const NAME: &str = "__keron_inline__";
+    let mut tera = tera::Tera::default();
+    tera.autoescape_on(Vec::new());
+    tera.add_raw_template(NAME, src)
+        .map_err(|e| anyhow!("parsing template: {}", format_tera_error(&e)))?;
+    let mut ctx = tera::Context::new();
+    for (k, v) in vars {
+        ctx.insert(k, v);
     }
-    Ok(out)
+    tera.render(NAME, &ctx)
+        .map_err(|e| anyhow!("rendering template: {}", format_tera_error(&e)))
+}
+
+/// Flatten Tera's source chain into a single line. Tera wraps the
+/// real cause (e.g. "Variable who not found in context") inside a
+/// generic "Failed to render ..." outer error; without the chain
+/// walk the user only sees the outer wrapper.
+fn format_tera_error(err: &tera::Error) -> String {
+    use std::error::Error as _;
+    let mut msg = err.to_string();
+    let mut source: Option<&dyn std::error::Error> = err.source();
+    while let Some(e) = source {
+        msg.push_str(": ");
+        msg.push_str(&e.to_string());
+        source = e.source();
+    }
+    msg
 }
 
 fn bind_params(
@@ -1390,11 +1390,11 @@ mod tests {
             // Drop a generic one-placeholder template alongside the
             // entry so the convention `template(path = X, source =
             // "tmpl.tpl", vars = {"body": Y})` works as a direct
-            // replacement for the old `template(path = X, source = \"tmpl.tpl\", vars = {\"body\": Y})`
+            // stand-in for the old `file(path = X, content = Y)`
             // shape. Tests that care about template-level mechanics
             // (multiple placeholders, missing vars, etc.) seed their
             // own template file via `seed_template`.
-            fs::write(root.join("tmpl.tpl"), "${body}").expect("seed default template");
+            fs::write(root.join("tmpl.tpl"), "{{ body }}").expect("seed default template");
             Self { root }
         }
 
@@ -1417,7 +1417,7 @@ mod tests {
 
     /// Resolve + evaluate a snippet as the entry of a fresh module
     /// graph; return the resulting resource list. The temp project
-    /// auto-seeds a `tmpl.tpl` template (single `${body}`
+    /// auto-seeds a `tmpl.tpl` template (single `{{ body }}`
     /// placeholder); tests that need richer templates use
     /// [`run_with_templates`].
     fn run(src: &str) -> Vec<ResourceState> {
@@ -1484,8 +1484,6 @@ mod tests {
         }
     }
 
-    // ---------- type_name ----------
-
     #[test]
     fn value_type_name_returns_canonical_strings() {
         assert_eq!(Value::String(String::new()).type_name(), "String");
@@ -1504,8 +1502,6 @@ mod tests {
         assert_eq!(Value::Void.type_name(), "Void");
     }
 
-    // ---------- eval_unary ----------
-
     #[test]
     fn eval_unary_negates_int() {
         let v = eval_unary(UnaryOp::Neg, Value::Int(5)).unwrap();
@@ -1522,8 +1518,6 @@ mod tests {
         };
         assert!((d - -2.5).abs() < 1e-9);
     }
-
-    // ---------- eval_binop arithmetic ----------
 
     fn int(n: i64) -> Value {
         Value::Int(n)
@@ -1642,8 +1636,6 @@ mod tests {
         assert_bool(&eval_binop(BinOp::Ge, int(0), int(1)).unwrap(), false);
     }
 
-    // ---------- value_eq ----------
-
     #[test]
     fn value_eq_each_arm() {
         assert!(value_eq(&s("x"), &s("x")));
@@ -1665,8 +1657,6 @@ mod tests {
         assert!(!value_eq(&s("1"), &int(1)));
         assert!(!value_eq(&Value::Bool(true), &int(1)));
     }
-
-    // ---------- value_cmp ----------
 
     #[test]
     fn value_cmp_orders_each_combination() {
@@ -1691,8 +1681,6 @@ mod tests {
             std::cmp::Ordering::Less
         );
     }
-
-    // ---------- stringify ----------
 
     #[test]
     fn stringify_each_primitive() {
@@ -1719,8 +1707,6 @@ mod tests {
         let err = stringify(&Value::List(Vec::new()), &mut out).unwrap_err();
         assert!(err.to_string().contains("cannot interpolate"));
     }
-
-    // ---------- end-to-end via run() ----------
 
     #[test]
     fn eval_graph_emits_resources_for_reconciles() {
@@ -1946,8 +1932,6 @@ mod tests {
         assert_eq!(paths, vec![PathBuf::from("/eq"), PathBuf::from("/ne")]);
     }
 
-    // ---------- bind_params / call_string ----------
-
     #[test]
     fn bind_params_resolves_named_arg_by_name() {
         // Named args may appear in any order; bind_params has to
@@ -1985,13 +1969,11 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         // `eval_call_arg` would re-route the args.
         let states = run_with_templates(
             "reconcile template(\"/positional\", \"body.tpl\", {\"body\": \"hi\"})\n",
-            &[("body.tpl", "${body}")],
+            &[("body.tpl", "{{ body }}")],
         );
         assert_eq!(first_file_path(&states), &PathBuf::from("/positional"));
         assert_eq!(first_file_content(&states), "hi");
     }
-
-    // ---------- cycle detection ----------
 
     #[test]
     fn val_eval_succeeds_when_not_in_progress() {
@@ -2005,8 +1987,6 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
              reconcile template(path = \"/${tag}\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n");
         assert_eq!(first_file_path(&states), &PathBuf::from("/ok"));
     }
-
-    // ---------- structs / unions / match ----------
 
     #[test]
     fn struct_field_access_round_trips() {
@@ -2158,22 +2138,20 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         assert_eq!(paths, vec![PathBuf::from("/yes"), PathBuf::from("/no")]);
     }
 
-    // ---------- template intrinsic ----------
-
     #[test]
     fn template_substitutes_vars_into_resource_content() {
-        // Render `${user}` and `${shell}` from the supplied vars map
-        // and verify the resulting Template resource carries the
-        // substituted text. Pins both `dispatch_template`'s arg
+        // Render `{{ user }}` and `{{ shell }}` from the supplied
+        // vars map and verify the resulting Template resource carries
+        // the substituted text. Pins both `dispatch_template`'s arg
         // routing (path / source / vars) and `render_template`'s
-        // placeholder substitution.
+        // Tera substitution.
         let states = run_with_templates(
             "reconcile template(\n\
                  \tpath = \"/etc/passwd\",\n\
                  \tsource = \"shell.tpl\",\n\
                  \tvars = {\"user\": \"alice\", \"shell\": \"/bin/zsh\"},\n\
              )\n",
-            &[("shell.tpl", "${user}:x:1000:${shell}\n")],
+            &[("shell.tpl", "{{ user }}:x:1000:{{ shell }}\n")],
         );
         assert_eq!(states.len(), 1);
         assert_eq!(first_file_path(&states), &PathBuf::from("/etc/passwd"));
@@ -2182,12 +2160,12 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
 
     #[test]
     fn template_unknown_var_errors() {
-        // A `${name}` placeholder that isn't in `vars` is a hard
-        // failure at apply-eval time. Mutating `render_template`'s
-        // `bail!` to `Ok(...)` would silently emit text containing
-        // an empty placeholder.
+        // A `{{ name }}` placeholder that isn't in `vars` is a hard
+        // failure at apply-eval time — Tera's strict mode flagged on
+        // the renderer. Mutating that flag back to `false` would let
+        // typo'd placeholders silently render as empty strings.
         let proj = TempProject::new("tmpl-unknown-var");
-        proj.seed_template("greet.tpl", "hello ${who}");
+        proj.seed_template("greet.tpl", "hello {{ who }}");
         let entry = proj.entry(
             "reconcile template(\n\
                  \tpath = \"/x\",\n\
@@ -2213,25 +2191,28 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
 
     #[test]
     fn template_passes_non_ascii_text_through_unchanged() {
-        // Non-ASCII bytes (here: an em-dash and a snowman) used to
-        // trip a hand-rolled byte-index walker. The char-iteration
-        // form should hand them through verbatim.
+        // Non-ASCII bytes (here: an em-dash and a snowman) must
+        // round-trip through the Tera renderer verbatim. The
+        // underlying renderer is UTF-8-clean, but a future swap to a
+        // byte-indexed implementation would re-open this hole.
         let states = run_with_templates(
             "reconcile template(\n\
                  \tpath = \"/x\",\n\
                  \tsource = \"intl.tpl\",\n\
                  \tvars = {\"who\": \"alice\"},\n\
              )\n",
-            &[("intl.tpl", "${who} — ☃\n")],
+            &[("intl.tpl", "{{ who }} — ☃\n")],
         );
         assert_eq!(first_file_content(&states), "alice — ☃\n");
     }
 
     #[test]
-    fn template_treats_trailing_dollar_as_literal() {
-        // A `$` at end-of-input has no `{` follower, so it must pass
-        // through literally. (Old byte-walker tripped on the boundary
-        // check.)
+    fn template_treats_lone_dollar_as_literal() {
+        // Tera assigns no special meaning to `$`; a stray `$` (with
+        // or without surrounding text) must round-trip unchanged.
+        // Pins the autoescape-off + Tera-parsing contract: a future
+        // switch back to a `$`-based mini-language would silently
+        // change semantics here.
         let states = run_with_templates(
             "reconcile template(\n\
                  \tpath = \"/x\",\n\
@@ -2244,12 +2225,12 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
     }
 
     #[test]
-    fn template_unterminated_dollar_brace_errors() {
-        // `${` with no closing `}` is a hard error. Without the
-        // closed-flag check, render_template would either swallow
-        // the rest of the template or panic on missing-key lookup.
+    fn template_unterminated_braces_errors() {
+        // `{{` with no closing `}}` is a Tera parse error. Pin the
+        // failure so a future swap to a more permissive engine
+        // doesn't silently swallow the broken placeholder.
         let proj = TempProject::new("tmpl-unterminated");
-        proj.seed_template("bad.tpl", "open ${unfinished");
+        proj.seed_template("bad.tpl", "open {{ unfinished");
         let entry =
             proj.entry("reconcile template(path = \"/x\", source = \"bad.tpl\", vars = {})\n");
         let canonical = fs::canonicalize(&entry).unwrap();
@@ -2263,7 +2244,8 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
         let err = eval_graph(&graph, &keron_root).expect_err("unterminated should fail");
         assert!(
-            err.chain().any(|e| e.to_string().contains("unterminated")),
+            err.chain()
+                .any(|e| e.to_string().contains("parsing template")),
             "got: {err:#}"
         );
     }
@@ -2272,16 +2254,40 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
     fn render_template_substitutes_known_var() {
         let mut vars = HashMap::new();
         vars.insert("name".into(), "alice".into());
-        let out = render_template("hello ${name}!", &vars).unwrap();
+        let out = render_template("hello {{ name }}!", &vars).unwrap();
         assert_eq!(out, "hello alice!");
     }
 
     #[test]
     fn render_template_passes_lone_dollar_through() {
-        // `$x` (no `{`) is a literal `$x`; no var lookup happens.
+        // `$x` and `$$` have no meaning to Tera; they're literal
+        // text. Pin so the legacy `${var}` syntax can never re-emerge
+        // by accident.
         let vars = HashMap::new();
         let out = render_template("$5 and $$", &vars).unwrap();
         assert_eq!(out, "$5 and $$");
+    }
+
+    #[test]
+    fn render_template_does_not_autoescape_html_metacharacters() {
+        // Dotfiles routinely contain `<`, `>`, `&`, `"` — autoescape
+        // would mangle them into HTML entities. Pin that the
+        // renderer leaves them alone.
+        let mut vars = HashMap::new();
+        vars.insert("payload".into(), "a < b && c > d \"q\"".into());
+        let out = render_template("{{ payload }}", &vars).unwrap();
+        assert_eq!(out, "a < b && c > d \"q\"");
+    }
+
+    #[test]
+    fn render_template_supports_tera_filters() {
+        // The `default-features = false` Tera build still ships the
+        // core filter set. Pin that `upper` works so a future
+        // accidental flip to a no-filters build is loud.
+        let mut vars = HashMap::new();
+        vars.insert("user".into(), "alice".into());
+        let out = render_template("{{ user | upper }}", &vars).unwrap();
+        assert_eq!(out, "ALICE");
     }
 
     #[test]
@@ -2353,8 +2359,6 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
 
     #[test]
     fn keron_root_interpolates_into_paths() {
-        // The primary use case: stitching `keron_root()` into a path
-        // expression via interpolation.
         let (states, root) = run_with_root("reconcile directory(path = \"${keron_root()}/sub\")\n");
         let ResourceState::Directory { path } = &states[0] else {
             panic!("expected directory, got {:?}", states[0]);
@@ -2534,10 +2538,6 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
 
     #[test]
     fn nullable_match_takes_null_arm_when_value_is_null() {
-        // Same shape, opposite branch: when the nullable val is
-        // `null`, the `null` arm fires and the fallback resource is
-        // produced. Confirms the `Value::Null` runtime equality is
-        // wired up correctly.
         let states = run("val maybe_path: String? = null\n\
              reconcile match maybe_path {\n\
                  null => directory(path = \"/opt/fallback\"),\n\
@@ -2611,8 +2611,6 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
 
     #[test]
     fn env_returns_null_when_variable_is_unset() {
-        // Unique name, never set: the only way the dispatcher should
-        // observe it is as `Err(NotPresent)` → `Value::Null`.
         let name = unique_env_name("ENV_UNSET");
         let src = format!(
             "reconcile match env(\"{name}\") {{\n\
@@ -2812,7 +2810,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
                      \tvars = {{\"token\": unwrap_secret(token)}},\n\
                  )\n",
             ),
-            &[("auth.tpl", "TOKEN=${token}\n")],
+            &[("auth.tpl", "TOKEN={{ token }}\n")],
         );
         let ResourceState::Template { content, .. } = &states[0] else {
             panic!("expected template, got {:?}", states[0]);
@@ -3012,8 +3010,6 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
 
     #[test]
     fn parse_bw_uri_rejects_empty_item_or_field() {
-        // Three malformed shapes that should each error: empty
-        // rest, empty item before the slash, empty field after.
         for (uri, rest) in [
             ("bw://", ""),
             ("bw:///username", "/username"),
@@ -3152,8 +3148,6 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
             matches!(&states[2], ResourceState::Package { manager: PackageManager::Cargo, name } if name == "sccache"),
         );
     }
-
-    // ---------- resolve_managed_path ----------
 
     #[test]
     fn symlink_to_relative_path_resolves_inside_keron_root() {

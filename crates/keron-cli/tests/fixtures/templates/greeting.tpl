@@ -1,1 +1,1 @@
-hello ${name}, this is a ${scope} fixture
+hello {{ name }}, this is a {{ scope }} fixture

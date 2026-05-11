@@ -149,8 +149,6 @@ pub fn resolve(roots: Vec<EntrySource>) -> Result<ModuleGraph, ResolveErrors> {
         if seen.insert(root.id.clone()) {
             entries.push(root.id.clone());
         }
-        // `load_module` is itself idempotent on duplicate ids — passing
-        // the same root twice is a no-op after the first call.
         state.load_module(root.id, root.text, &root.base_dir);
     }
     state.into_graph(entries)
@@ -195,7 +193,6 @@ impl ResolveState {
                 base_dir: base_dir.to_path_buf(),
             },
         );
-        // Record then queue every distinct dependency.
         for item in &program.items {
             if let Item::Use(u) = item {
                 self.queue_dep(&id, u);
@@ -242,10 +239,9 @@ impl ResolveState {
     }
 
     fn into_graph(mut self, entries: Vec<ModuleId>) -> Result<ModuleGraph, ResolveErrors> {
-        // Snapshot every loaded module's source so the failure path
-        // can hand them to the renderer. `raw` entries are drained
-        // below as the modules become `CheckedModule`s, so we have to
-        // capture the text up front.
+        // `raw` is drained below as modules become `CheckedModule`s,
+        // so snapshot every loaded module's source up front for the
+        // failure-path renderer.
         let sources: HashMap<ModuleId, String> = self
             .raw
             .iter()
@@ -283,11 +279,11 @@ impl ResolveState {
             let imports = self.resolve_uses(id, &raw.program, &raw.base_dir, &modules);
             let imported = build_imported_symbols(&imports, &modules);
             let mut program = raw.program;
-            // Type-name resolution must succeed before the checker runs:
+            // Type-name resolution must succeed before `check_module`:
             // any surviving `Type::Named` placeholder triggers spurious
             // cascades like duplicate "unknown type" reports and bogus
-            // "expected `X`, found `X`" mismatches (where one side is the
-            // unresolved name and the other the canonical variant).
+            // "expected `X`, found `X`" mismatches where one side is
+            // the unresolved name and the other the canonical variant.
             match resolve_type_names(&mut program, &imported) {
                 Ok(()) => {
                     if let Err(diags) = check_module(&program, &imported) {
@@ -347,12 +343,10 @@ impl ResolveState {
     /// from the offending node via DFS.
     fn compute_topo(&self) -> Result<Vec<ModuleId>, Vec<ModuleId>> {
         // petgraph's `toposort` is DFS-post-order with a final reverse,
-        // so for *unconstrained* nodes (no `use` edges between them)
-        // the output order is the reverse of node insertion order.
-        // To make the alphanumeric tie-break observable in the final
-        // result, we insert nodes in reverse-alphanumeric order — the
-        // final reverse then yields alphanumeric. Edge-constrained
-        // nodes still respect their edges either way.
+        // so for unconstrained nodes the output is the reverse of node
+        // insertion order. Insert in reverse-alphanumeric order so the
+        // final reverse yields alphanumeric — without this, the
+        // documented alphanumeric tie-break would not hold.
         let mut sorted_ids: Vec<ModuleId> = self.raw.keys().cloned().collect();
         sorted_ids.sort();
         sorted_ids.reverse();
@@ -363,9 +357,9 @@ impl ResolveState {
             idx.insert(id.clone(), graph.add_node(id.clone()));
         }
 
-        // Edges go *from dependency to dependent* so toposort emits
-        // deps first. For each module M and each `use ./Di`, add edge
-        // `Di → M`.
+        // Edges go from dependency to dependent so toposort emits
+        // deps first: for each module M and each `use ./Di`, add edge
+        // Di → M.
         for id in &sorted_ids {
             let Some(raw) = self.raw.get(id) else {
                 continue;
@@ -401,7 +395,8 @@ impl ResolveState {
             let Item::Use(u) = item else { continue };
             let dep_id = match resolve_path(&u.source.node, base_dir) {
                 Ok(path) => ModuleId::File(path),
-                Err(_) => continue, // already reported during queue_dep
+                // Already reported during queue_dep.
+                Err(_) => continue,
             };
             for name in &u.names {
                 let exported = modules.get(&dep_id).is_some_and(|m| {
@@ -506,10 +501,9 @@ fn build_imported_symbols(
     modules: &HashMap<ModuleId, CheckedModule>,
 ) -> ImportedSymbols {
     let mut out = ImportedSymbols::default();
-    // Seed every stdlib item as a builtin: implicitly in scope in
-    // every user module, no `from … use …` required. Tracked in
-    // `out.builtins` so the duplicate-name diagnostic can distinguish
-    // "user-imported" from "builtin".
+    // `out.builtins` lets the duplicate-name diagnostic distinguish
+    // "user-imported" from "builtin"; every stdlib item is seeded
+    // implicitly in scope so user modules don't need an import line.
     for stdmod in stdlib::registry().values() {
         for (name, decl) in &stdmod.fns {
             out.fns.insert(name.clone(), sig_from_fn_decl(decl));
@@ -520,18 +514,10 @@ fn build_imported_symbols(
             out.builtins.insert(name.clone());
         }
     }
-    // User-file `from … use …` items merge on top.
     for (local, (origin_id, orig_name)) in imports {
         let Some(origin) = modules.get(origin_id) else {
             continue;
         };
-        // Structs export under both namespaces: their `Type::Struct`
-        // for annotations *and* their synthesised constructor fn for
-        // calls. Plain fn / val / type-alias imports fan out to
-        // exactly one slot. The val fallback only fires when neither
-        // a fn signature nor an exported type matched; otherwise we'd
-        // re-classify the imported name on top of an already-correct
-        // entry.
         place_imported_symbol(&mut out, origin, local, orig_name);
     }
     out
@@ -559,11 +545,11 @@ fn place_imported_symbol(
     if let Some(ty) = ty.clone() {
         out.types.insert(local.to_string(), ty);
     }
-    // Val fallback fires only when neither slot above accepted the
-    // name. Sequenced as separate `Option` checks so the early
-    // `return` doesn't reduce to a `||` operator (pass-1's
-    // duplicate-name rules make the only-one-true case unreachable,
-    // so a `||`↔`&&` swap would be observationally equivalent).
+    // Sequenced as discrete early returns rather than `||`-chained so
+    // mutation testing can't collapse the operator: pass-1's
+    // duplicate-name rules make the only-one-true case unreachable, so
+    // a `||`↔`&&` swap on a single combined check would be
+    // observationally equivalent.
     if origin.exported_fns.contains(orig_name) {
         return;
     }
@@ -579,10 +565,6 @@ fn sig_for(module: &CheckedModule, name: &str) -> Option<FnSig> {
     if !module.exported_fns.contains(name) {
         return None;
     }
-    // Locate the FnDecl or struct ctor and rebuild a FnSig. (FnSig
-    // isn't stored on CheckedModule — we recompute it from the AST,
-    // since both fn and struct declarations uniquely determine their
-    // signatures.)
     for item in &module.program.items {
         match item {
             Item::Fn(f) if f.name.node == name => return Some(sig_from_fn_decl(f)),
@@ -645,11 +627,8 @@ fn val_type_for(module: &CheckedModule, name: &str) -> Option<Type> {
             return Some(annot.node.clone());
         }
     }
-    // Without an explicit annotation, we don't know the val's type
-    // without re-running the checker — for now require imports of
-    // vals to come from annotated sources. (Most stdlib vals will be
-    // annotated; user vals can add an annotation if they want to be
-    // importable.)
+    // Unannotated vals would require re-running the checker to type;
+    // for now imports require an explicit annotation on the source.
     None
 }
 
@@ -783,11 +762,6 @@ mod tests {
 
     #[test]
     fn reconstruct_cycle_returns_singleton_when_no_self_path() {
-        // `reconstruct_cycle` is a diagnostic helper used after
-        // petgraph's `toposort` reports a cycle. When the offending
-        // node has no outgoing path back to itself in the part of the
-        // graph we explore, fall back to the singleton — so the user
-        // still gets *some* anchor in the error message.
         let mut g: Graph<ModuleId, ()> = Graph::new();
         let a = ModuleId::File(PathBuf::from("/recon-a.keron"));
         let n = g.add_node(a.clone());
@@ -797,8 +771,6 @@ mod tests {
 
     #[test]
     fn reconstruct_cycle_returns_full_path_when_present() {
-        // a → b → a: the helper must walk the cycle and return
-        // [a, b, a] so callers can render the path.
         let mut g: Graph<ModuleId, ()> = Graph::new();
         let a = ModuleId::File(PathBuf::from("/recon-cycle-a.keron"));
         let b = ModuleId::File(PathBuf::from("/recon-cycle-b.keron"));
@@ -854,16 +826,11 @@ mod tests {
             exported_vals: vals,
             exported_types: HashMap::new(),
         };
-        // `val_type_for` requires an explicit annotation today.
         assert_eq!(val_type_for(&module, "v"), None);
     }
 
     #[test]
     fn collect_exports_includes_struct_in_fns_and_types() {
-        // A `struct` declaration exports under both namespaces:
-        // `fns` (for construction calls) and `types` (for type
-        // annotations). Dropping either match arm in `collect_exports`
-        // surfaces here.
         let prog = parse("struct Point { x: Int, y: Int }\n").unwrap();
         let (fns, vals, types) = collect_exports(&prog);
         assert!(fns.contains("Point"));
@@ -884,9 +851,6 @@ mod tests {
 
     #[test]
     fn collect_exports_includes_type_alias_in_types_only() {
-        // `type Color = "..."` exports a `Type::StringUnion` under
-        // `types` and nothing under `fns`/`vals`. Deleting the
-        // TypeAlias arm in `collect_exports` would drop this entry.
         let prog = parse("type Color = \"red\" | \"green\"\n").unwrap();
         let (fns, vals, types) = collect_exports(&prog);
         assert!(!fns.contains("Color"));
@@ -900,11 +864,6 @@ mod tests {
 
     #[test]
     fn sig_for_distinguishes_fn_and_struct_by_exact_name() {
-        // `sig_for` is an `if exported_fns.contains(name)` gate
-        // followed by a name-matched walk of the AST. The name match
-        // must use exact equality on both the `Fn` and `Struct` arms;
-        // a guard mutated to `true` would hand back the *first* item
-        // of the right kind regardless of the requested name.
         let prog = parse(
             "fn other(): Int { 1 }\n\
              fn only(): String { \"x\" }\n\
@@ -922,17 +881,9 @@ mod tests {
             exported_vals: vals,
             exported_types: types,
         };
-        // An exact-name match on `only` must yield String, not the
-        // earlier-encountered `other` fn's Int.
         let sig = sig_for(&module, "only").expect("`only` is exported");
         assert_eq!(sig.return_type, Type::String);
 
-        // Same idea for structs: `Tag` must match `Tag`, not `Other`.
-        // We probe BOTH names — the first declared struct (`Tag`) and
-        // a later one (`Other`) — so a guard mutated to `true` (which
-        // would always return the first struct in source order) is
-        // visible: `sig_for("Other")` would otherwise hand back
-        // `Tag`'s field set.
         let sig = sig_for(&module, "Tag").expect("`Tag` is exported");
         let Type::Struct {
             name,
@@ -955,7 +906,6 @@ mod tests {
         assert_eq!(name, "Other");
         assert_eq!(other_fields[0].0, "n");
 
-        // Truly missing names return None.
         assert!(sig_for(&module, "nonexistent").is_none());
     }
 }

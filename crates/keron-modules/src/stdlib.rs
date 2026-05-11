@@ -355,9 +355,6 @@ mod tests {
 
     #[test]
     fn os_type_return_is_a_string_union_with_documented_variants() {
-        // Pin the exact variant list so a typo in `build_os` (or in
-        // `OS_TYPE_VARIANTS`) surfaces here rather than at apply time
-        // where the diagnostic is muddier.
         let reg = registry();
         let os = reg.get("os").expect("os module present");
         let Type::StringUnion {
@@ -393,8 +390,6 @@ mod tests {
 
     #[test]
     fn os_module_exports_union_types_for_user_code() {
-        // Type aliases are exposed alongside the fns so a user can
-        // write `val t: OsType = os_type()` (or `match os_type() { ... }`).
         let reg = registry();
         let os = reg.get("os").expect("os module present");
         assert!(os.types.contains_key("OsType"));
@@ -427,14 +422,12 @@ mod tests {
     fn secrets_module_registers_secret_and_unwrap_secret() {
         let reg = registry();
         let s = reg.get("secrets").expect("secrets module present");
-        // `secret(uri: String): Secret`
         let sec = s.fns.get("secret").expect("secret fn present");
         assert_eq!(sec.intrinsic, Some(IntrinsicId::Secret));
         assert_eq!(sec.params.len(), 1);
         assert_eq!(sec.params[0].name.node, "uri");
         assert_eq!(sec.params[0].ty.node, Type::String);
         assert_eq!(sec.return_type.node, Type::Secret);
-        // `unwrap_secret(s: Secret): String`
         let uw = s
             .fns
             .get("unwrap_secret")
@@ -444,17 +437,11 @@ mod tests {
         assert_eq!(uw.params[0].name.node, "s");
         assert_eq!(uw.params[0].ty.node, Type::Secret);
         assert_eq!(uw.return_type.node, Type::String);
-        // The `Secret` type is exported so users can annotate `val
-        // token: Secret = secret(...)`.
         assert_eq!(s.types.get("Secret"), Some(&Type::Secret));
     }
 
     #[test]
     fn env_module_registers_env_with_nullable_string_return() {
-        // The signature is the whole API contract for `env`: one
-        // `String` parameter and a `String?` return. A drift here
-        // (e.g. accidentally returning bare `String`) would make
-        // unset variables silently look like empty strings.
         let reg = registry();
         let env_mod = reg.get("env").expect("env module present");
         let f = env_mod.fns.get("env").expect("env fn present");

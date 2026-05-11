@@ -52,8 +52,6 @@ pub(super) fn expr<'src>() -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<
                 .delimited_by(just('(').padded_by(pad()), just(')').padded_by(pad())),
         ));
 
-        // Postfix field access: `a.b.c` folds into nested `Expr::Field`
-        // nodes. Tighter than unary so `-p.x` is `-(p.x)`.
         let postfix = atom
             .then(
                 just('.')
@@ -75,8 +73,6 @@ pub(super) fn expr<'src>() -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<
                 })
             });
 
-        // unary and power are mutually recursive: unary's RHS recurses on
-        // unary; power's RHS is unary; unary's fall-through is postfix.
         let unary = recursive(|unary| {
             let power = postfix
                 .clone()

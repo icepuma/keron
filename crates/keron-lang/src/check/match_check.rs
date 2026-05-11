@@ -280,7 +280,6 @@ fn check_exhaustive(
             ))
         }
         Type::Nullable(inner) => {
-            // A catch-all covers both halves at once, so we're done.
             if has_catch_all {
                 return Ok(());
             }

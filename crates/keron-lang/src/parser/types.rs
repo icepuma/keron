@@ -50,9 +50,6 @@ pub(super) fn type_annotation<'src>() -> impl Parser<'src, &'src str, Type, Extr
         // single normalized form.
         base.then(just('?').padded_by(pad()).repeated().count())
             .map(|(inner, count)| {
-                // No `?`s, or the inner is already nullable / `Null`
-                // (where another wrapper would be a no-op): pass it
-                // through unchanged. Otherwise wrap exactly once.
                 if count == 0 || matches!(inner, Type::Null | Type::Nullable(_)) {
                     inner
                 } else {

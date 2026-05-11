@@ -95,9 +95,6 @@ Don't add more recipes; fold extra checks into one of these two.
 
 ## Coding conventions
 
-- **No comments explaining what** — name things well and let the code
-  speak. Comments are for non-obvious *why*, hidden invariants, or
-  workarounds.
 - **No backwards-compat shims**: this is pre-1.0; rename or delete
   freely. Don't leave `// removed` breadcrumbs.
 - **No half-finished implementations**: if it doesn't work end-to-end,
@@ -106,6 +103,57 @@ Don't add more recipes; fold extra checks into one of these two.
 - **Errors**: prefer `thiserror` for typed errors in libraries,
   `anyhow` only at the binary boundary.
 - **No `unsafe`.** Forbidden by lint.
+
+### Comments
+
+These rules govern **non-doc comments** — line (`// ...`) and block
+(`/* ... */`) comments inside function bodies and module bodies.
+**Rust doc comments (`///`, `//!`, `#[doc = "..."]`) are exempt** and
+should still document every public item, plus any non-obvious private
+helper. Doc comments are the API surface; the rules below are about
+inline noise.
+
+Default to writing **no inline comments**. Add one only when the WHY
+is non-obvious to a future reader who already has the code: a hidden
+invariant, a surprising platform constraint, a workaround for a
+specific upstream bug, or behavior that would otherwise look like a
+typo. If removing the comment wouldn't confuse a reader, the comment
+shouldn't exist.
+
+Specifically, **delete or never write**:
+
+- **Restating WHAT the code does.** `// loop over args` above a `for
+  arg in args { ... }` is noise — the reader can see the loop.
+- **Naming-the-line comments.** `// canonicalize the path` above
+  `let canonical = fs::canonicalize(&p)?;`. The identifier already
+  says it.
+- **Section headers inside short functions.** `// ---------- parse
+  ----------` blocks inside a 30-line function. If a function needs
+  internal headers, it's two functions.
+- **Caller-list comments.** `// used by foo() and bar()`. Rots
+  immediately; `cargo` already knows.
+- **Provenance comments.** `// added for issue #123`, `// part of the
+  template rewrite`. Belongs in the commit message / PR description.
+- **TODO without a tracking task.** Either fix it now or open an
+  issue and reference it: `// TODO(#42): ...`.
+- **Comments that paraphrase a tool's own error.** `// unwrap is
+  safe here because the type checker proved it` — say it in a
+  `.expect("...")` instead so the panic message carries the rationale.
+
+Write a comment when:
+
+- A constant looks arbitrary but isn't (`// matches the kernel's
+  PATH_MAX on Linux`).
+- A workaround papers over an upstream bug (`// chumsky #245: ...`).
+- A non-local invariant is being relied on (`// safe to skip the
+  check because resolve_managed_path canonicalizes`).
+- Platform behavior diverges in a way the `cfg` block alone doesn't
+  explain (`// FILE_FLAG_OPEN_REPARSE_POINT so we set ownership on
+  the link itself, not its target`).
+
+If you find yourself writing a multi-paragraph essay, move it to a
+module-level `//!` doc comment instead — that's the right surface for
+prose.
 
 ## Tests
 

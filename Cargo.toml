@@ -30,6 +30,14 @@ petgraph = "=0.8.3"
 os_info = { version = "=3.14.0", default-features = false }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.149"
+# Jinja2-style template engine for `template(...)` resources.
+# `default-features = false` drops the optional builtin filter
+# bundle (chrono / chrono-tz / humansize / rand / slug / urlencode);
+# the core engine still ships standard filters like `upper`, `lower`,
+# `replace`, `default`, `trim`, `length` that are sufficient for the
+# dotfile use case. The full bundle can be re-enabled later if a
+# manifest needs e.g. date formatting.
+tera = { version = "=1.20.1", default-features = false }
 # Pinned platform binding for the elevated-rights flow on Windows:
 # parent-side SID capture (`OpenProcessToken` + `GetTokenInformation` +
 # `ConvertSidToStringSidW`), child-side ownership transfer

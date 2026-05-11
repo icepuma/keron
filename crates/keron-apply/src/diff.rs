@@ -267,7 +267,6 @@ fn render_diff_lines<W: Write>(
             }
         }
         _ => {
-            // Heterogeneous before/after — render as full destroy + create.
             render_state_lines(out, before, "-", RED, opts)?;
             render_state_lines(out, after, "+", GREEN, opts)?;
         }
@@ -355,9 +354,6 @@ mod tests {
 
     #[test]
     fn create_renders_path_and_content_lines() {
-        // Pin the body produced by `render_state_lines` for a Create
-        // action — without each line, a `Ok(())` mutation would still
-        // pass the action-header assertions in `sample_renders_each_action`.
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "/etc/x".into(),
@@ -443,8 +439,6 @@ mod tests {
 
     #[test]
     fn update_file_renders_only_changed_fields() {
-        // Path same, content different: only the `content` line
-        // should appear. `!= → ==` would invert that.
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "/x".into(),
@@ -517,9 +511,6 @@ mod tests {
 
     #[test]
     fn update_directory_with_unchanged_path_renders_no_path_line() {
-        // When the path is identical, the `bp != ap` guard suppresses
-        // the path line. `!= → ==` would emit a stale (or empty)
-        // diff line.
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "/d".into(),
@@ -540,7 +531,6 @@ mod tests {
 
     #[test]
     fn update_symlink_renders_only_changed_field() {
-        // `from` same, `to` different — only the `to` line should appear.
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "/s".into(),
@@ -564,8 +554,6 @@ mod tests {
 
     #[test]
     fn update_kind_change_renders_destroy_then_create() {
-        // Heterogeneous before/after falls through to the `_` arm and
-        // emits both a `-` and a `+` block. Pins that fallback path.
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "/x".into(),
@@ -602,10 +590,6 @@ mod tests {
 
     #[test]
     fn color_output_uses_action_specific_code_for_each_action() {
-        // Construct a plan with one of each non-NoOp action, render
-        // with color, and assert the expected ANSI code appears for
-        // each action's symbol. Mutating `action_color` to "" would
-        // strip the codes.
         let mut buf = Vec::new();
         render_plan(&mut buf, &Plan::sample(), RenderOptions { color: true }).unwrap();
         let out = String::from_utf8(buf).unwrap();
@@ -629,8 +613,6 @@ mod tests {
 
     #[test]
     fn create_with_special_chars_in_content_escapes_them() {
-        // End-to-end: render a File with a tab/newline content and
-        // verify `escape_inline` actually fires in the diff output.
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "/x".into(),
@@ -665,9 +647,6 @@ mod tests {
             }],
         };
         let out = render(&plan);
-        // Header pulls the kind label from `ResourceKind::Package` so
-        // the user sees `package."brew:ripgrep"` rather than the raw
-        // address; the body lists manager + name on separate lines.
         assert!(
             out.contains("package.\"brew:ripgrep\" will be created"),
             "missing header: {out}",
@@ -714,8 +693,6 @@ mod tests {
 
     #[test]
     fn update_package_renders_only_changed_fields() {
-        // Manager identical (brew → brew), name changes (`git` →
-        // `git@2`). Only the `name` diff line should appear.
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "brew:git".into(),
@@ -745,9 +722,6 @@ mod tests {
 
     #[test]
     fn package_manager_change_renders_both_diff_lines() {
-        // Cross-manager update is unusual but the body should still
-        // diff both fields cleanly rather than fall through to the
-        // heterogeneous destroy+create path.
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "brew:ripgrep".into(),
