@@ -59,7 +59,38 @@ jobs:
       - name: Build keron
         run: cargo build --bin keron --locked
 
+      - name: Demo — print the plan diff each e2e fixture produces
+        # Visible record in the CI log of *what* the suite is
+        # actually exercising — same fixtures + same binary the
+        # `cargo nextest` step will run, just in plan-only mode
+        # against a throwaway HOME so the diff is rendered without
+        # any side effects. `cargo run --bin keron` handles
+        # platform-specific binary paths for us.
+        shell: bash
+        env:
+          KERON_E2E_MANAGER: ${{ runner.os == 'Windows' && 'winget' || 'brew' }}
+          # Linux + macOS export HOME from the runner; the bash
+          # shell on Windows runners exports it too, so a single
+          # `mktemp -d` works on all three.
+          DEMO_HOME_PARENT: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          DEMO_HOME=$(mktemp -d -p "$DEMO_HOME_PARENT")
+          export HOME="$DEMO_HOME"
+          echo "::group::basic-dotfiles plan"
+          cargo run --bin keron --locked -- apply crates/keron-cli/tests/fixtures/basic-dotfiles
+          echo "::endgroup::"
+          echo "::group::packages plan"
+          cargo run --bin keron --locked -- apply crates/keron-cli/tests/fixtures/packages
+          echo "::endgroup::"
+          rm -rf "$DEMO_HOME"
+
       - name: Run e2e suite
         # `--no-fail-fast` so we see every failing scenario per run,
-        # not just the first.
-        run: cargo nextest run -p keron-cli --test e2e --locked --no-fail-fast
+        # not just the first. `--success-output=immediate-final`
+        # surfaces each test's captured stdout (the keron plan + apply
+        # output) at the end of the run so a CI consumer can see
+        # exactly what the binary produced even on green runs.
+        run: |
+          cargo nextest run -p keron-cli --test e2e --locked \
+            --no-fail-fast --success-output=immediate-final
