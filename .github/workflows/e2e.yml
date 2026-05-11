@@ -103,6 +103,10 @@ jobs:
         # surfaces each test's captured stdout (the keron plan + apply
         # output) at the end of the run so a CI consumer can see
         # exactly what the binary produced even on green runs.
+        # `shell: bash` for cross-platform `\` line continuation —
+        # the Windows runner's default `pwsh` parses `\` as a unary
+        # operator and falls over.
+        shell: bash
         run: |
           cargo nextest run -p keron-cli --test e2e --locked \
             --no-fail-fast --success-output=immediate-final
