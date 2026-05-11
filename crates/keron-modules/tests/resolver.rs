@@ -91,30 +91,6 @@ fn builtins_are_implicitly_in_scope() {
 }
 
 #[test]
-fn legacy_std_import_is_rejected_with_helpful_hint() {
-    let proj = TempProject::new("legacy-std-import");
-    let src = "from \"std:fs\" use symlink, Symlink\n\
-               val s: Symlink = symlink(from = \"a\", to = \"b\")\n\
-               reconcile s\n";
-    let entry = proj.write("entry.keron", src);
-    let bundle = resolve(TempProject::entry_source(&entry, src)).expect_err("should fail");
-    assert!(
-        bundle
-            .errors
-            .iter()
-            .flat_map(|e| &e.diagnostics)
-            .any(|d| d.message.contains("stdlib items are now builtins")),
-        "expected builtins-hint error, got: {:?}",
-        bundle
-            .errors
-            .iter()
-            .flat_map(|e| &e.diagnostics)
-            .map(|d| &d.message)
-            .collect::<Vec<_>>(),
-    );
-}
-
-#[test]
 fn invalid_path_prefix_errors() {
     let proj = TempProject::new("bad-prefix");
     let src = "from \"helpers.keron\" use foo\n";

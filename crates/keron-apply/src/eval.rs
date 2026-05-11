@@ -2256,8 +2256,8 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
     #[test]
     fn render_template_passes_lone_dollar_through() {
         // `$x` and `$$` have no meaning to Tera; they're literal
-        // text. Pin so the legacy `${var}` syntax can never re-emerge
-        // by accident.
+        // text. Pin so a `$`-flavoured engine can never sneak back
+        // in and turn dotfile shell snippets into rendering errors.
         let vars = HashMap::new();
         let out = render_template("$5 and $$", &vars).unwrap();
         assert_eq!(out, "$5 and $$");

@@ -10,9 +10,7 @@
 //!
 //! Stdlib items live in the [`stdlib`] registry as Rust data; they are
 //! exposed to every user module as **builtins** — implicitly in scope,
-//! no import line required. The legacy `from "std:..."` form is
-//! rejected by the resolver with a clear "stdlib items are builtins"
-//! diagnostic.
+//! no import line required.
 
 pub mod stdlib;
 
@@ -437,11 +435,6 @@ impl ResolveState {
 }
 
 fn resolve_path(raw: &str, base_dir: &Path) -> Result<PathBuf, String> {
-    if raw.starts_with("std:") {
-        return Err(format!(
-            "stdlib items are now builtins; remove `from \"{raw}\" use ...`"
-        ));
-    }
     if raw.starts_with("./") || raw.starts_with("../") || raw.starts_with('/') {
         let joined = base_dir.join(raw);
         let canonical =
@@ -691,12 +684,6 @@ mod tests {
             ModuleId::File(PathBuf::from("/abs/x.keron")).display(),
             "/abs/x.keron"
         );
-    }
-
-    #[test]
-    fn resolve_path_std_scheme_rejected_with_builtins_hint() {
-        let err = resolve_path("std:fs", Path::new("/anywhere")).unwrap_err();
-        assert!(err.contains("stdlib items are now builtins"), "got: {err}");
     }
 
     #[test]
