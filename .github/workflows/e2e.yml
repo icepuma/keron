@@ -69,6 +69,18 @@ jobs:
         shell: bash
         env:
           KERON_E2E_MANAGER: ${{ runner.os == 'Windows' && 'winget' || 'brew' }}
+          # The cache populator shells out to the real package
+          # manager at plan time (`brew list` / `cargo install
+          # --list` / `winget list`). brew isn't installed on
+          # Ubuntu runners and winget isn't on Linux/macOS, so any
+          # demo run that picks a non-native manager would fail
+          # spawning the binary. The test seam bypasses the
+          # shell-out and reports an empty cache instead — setting
+          # all three is harmless because only the one matching
+          # `KERON_E2E_MANAGER` is consulted.
+          KERON_TEST_BREW_PACKAGES: ""
+          KERON_TEST_CARGO_PACKAGES: ""
+          KERON_TEST_WINGET_PACKAGES: ""
           # Linux + macOS export HOME from the runner; the bash
           # shell on Windows runners exports it too, so a single
           # `mktemp -d` works on all three.
