@@ -140,6 +140,29 @@ fn missing_export_errors() {
 }
 
 #[test]
+fn importing_unannotated_val_errors_clearly() {
+    let proj = TempProject::new("unannotated-val-export");
+    let helpers_src = "val answer = 42\n";
+    proj.write("helpers.keron", helpers_src);
+    let entry_src = "from \"./helpers.keron\" use answer\n\
+                     val n: Int = answer\n";
+    let entry = proj.write("entry.keron", entry_src);
+    let bundle = resolve(TempProject::entry_source(&entry, entry_src)).expect_err("should fail");
+    let messages: Vec<_> = bundle
+        .errors
+        .iter()
+        .flat_map(|e| &e.diagnostics)
+        .map(|d| d.message.as_str())
+        .collect();
+    assert!(
+        messages
+            .iter()
+            .any(|m| m.contains("explicit type annotation")),
+        "got: {messages:?}",
+    );
+}
+
+#[test]
 fn cycle_errors() {
     let proj = TempProject::new("cycle");
     proj.write(

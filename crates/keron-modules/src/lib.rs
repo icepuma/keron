@@ -403,16 +403,19 @@ impl ResolveState {
                         || m.exported_types.contains_key(&name.node)
                 });
                 if !exported {
-                    self.errors.push(ResolveError {
-                        module: importer.clone(),
-                        diagnostics: vec![Diagnostic::new(
-                            name.span.clone(),
+                    let message = modules.get(&dep_id).map_or_else(
+                        || {
                             format!(
                                 "module `{}` does not export `{}`",
                                 dep_id.display(),
                                 name.node
-                            ),
-                        )],
+                            )
+                        },
+                        |m| missing_export_message(m, &name.node),
+                    );
+                    self.errors.push(ResolveError {
+                        module: importer.clone(),
+                        diagnostics: vec![Diagnostic::new(name.span.clone(), message)],
                     });
                     continue;
                 }
@@ -625,6 +628,26 @@ fn val_type_for(module: &CheckedModule, name: &str) -> Option<Type> {
     None
 }
 
+fn missing_export_message(module: &CheckedModule, name: &str) -> String {
+    if module.program.items.iter().any(|item| {
+        matches!(
+            item,
+            Item::Val(ValDecl {
+                name: n,
+                ty: None,
+                ..
+            }) if n.node == name
+        )
+    }) {
+        format!(
+            "module `{}` defines `{name}`, but imported vals must have an explicit type annotation",
+            module.id.display()
+        )
+    } else {
+        format!("module `{}` does not export `{name}`", module.id.display())
+    }
+}
+
 /// Collect every exportable name from a module:
 /// - top-level `fn` decls AND struct constructors → `exported_fns`,
 /// - top-level annotated `val` decls → `exported_vals`,
@@ -642,7 +665,7 @@ fn collect_exports(program: &Program) -> (HashSet<String>, HashSet<String>, Hash
             Item::Fn(f) => {
                 fns.insert(f.name.node.clone());
             }
-            Item::Val(v) => {
+            Item::Val(v) if v.ty.is_some() => {
                 vals.insert(v.name.node.clone());
             }
             Item::Struct(s) => {
