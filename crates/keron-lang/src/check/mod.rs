@@ -691,6 +691,7 @@ fn check_fn_decl(f: &FnDecl, outer_env: &Env, fns: &FnEnv, diags: &mut Vec<Diagn
         }
     }
 
+    reject_reconcile_in_fn_block(&f.body, diags);
     check_top_block(&f.body, &f.return_type.node, scope, fns, diags);
 }
 
@@ -699,6 +700,77 @@ fn check_param_default(p: &Param, env: &Env, fns: &FnEnv, diags: &mut Vec<Diagno
         && let Err(d) = check_expr(default, &p.ty.node, env, fns)
     {
         diags.push(d);
+    }
+}
+
+fn reject_reconcile_in_fn_block(block: &Block, diags: &mut Vec<Diagnostic>) {
+    for stmt in &block.stmts {
+        match stmt {
+            Stmt::Val(v) => reject_reconcile_in_fn_expr(&v.value, diags),
+            Stmt::Reconcile(r) => diags.push(Diagnostic::new(
+                r.span.clone(),
+                "`reconcile` is not allowed inside `fn` bodies; return resources and reconcile them at top level",
+            )),
+        }
+    }
+    if let Some(expr) = &block.trailing {
+        reject_reconcile_in_fn_expr(expr, diags);
+    }
+}
+
+fn reject_reconcile_in_fn_expr(expr: &Spanned<Expr>, diags: &mut Vec<Diagnostic>) {
+    match &expr.node {
+        Expr::Literal(_) | Expr::Var(_) => {}
+        Expr::Unary { operand, .. } => reject_reconcile_in_fn_expr(operand, diags),
+        Expr::Binary { lhs, rhs, .. } => {
+            reject_reconcile_in_fn_expr(lhs, diags);
+            reject_reconcile_in_fn_expr(rhs, diags);
+        }
+        Expr::Interpolation(parts) => {
+            for part in parts {
+                if let StringPart::Expr(inner) = part {
+                    reject_reconcile_in_fn_expr(inner, diags);
+                }
+            }
+        }
+        Expr::List(items) => {
+            for item in items {
+                reject_reconcile_in_fn_expr(item, diags);
+            }
+        }
+        Expr::Map(entries) => {
+            for entry in entries {
+                reject_reconcile_in_fn_expr(&entry.key, diags);
+                reject_reconcile_in_fn_expr(&entry.value, diags);
+            }
+        }
+        Expr::Call { args, .. } => {
+            for arg in args {
+                reject_reconcile_in_fn_expr(&arg.value, diags);
+            }
+        }
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
+            reject_reconcile_in_fn_expr(cond, diags);
+            reject_reconcile_in_fn_block(then_branch, diags);
+            reject_reconcile_in_fn_block(else_branch, diags);
+        }
+        Expr::For {
+            iter_expr, body, ..
+        } => {
+            reject_reconcile_in_fn_expr(iter_expr, diags);
+            reject_reconcile_in_fn_block(body, diags);
+        }
+        Expr::Field { receiver, .. } => reject_reconcile_in_fn_expr(receiver, diags),
+        Expr::Match { scrutinee, arms } => {
+            reject_reconcile_in_fn_expr(scrutinee, diags);
+            for arm in arms {
+                reject_reconcile_in_fn_expr(&arm.body, diags);
+            }
+        }
     }
 }
 

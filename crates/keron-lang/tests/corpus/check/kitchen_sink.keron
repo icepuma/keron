@@ -160,17 +160,16 @@ val rounded: String = if ratio < 1.5 {
 # --- `Void` and `if` as control flow (no `else`) ---
 
 # A `Void`-returning function: the body is a block whose trailing
-# expression is absent, so the block has type `Void`. Functions that
-# only schedule resources (no value to return) use this shape.
-fn ensure_extra_dirs(): Void {
-  reconcile xdgcfg
-}
+# expression is absent, so the block has type `Void`. Functions stay
+# pure; resource scheduling happens through top-level `reconcile`,
+# `if`, and `for` forms instead.
+fn no_extra_dirs(): Void {}
 
 # `if` without an `else` is type-legal exactly when both branches are
 # `Void`. The implicit empty `else` is itself a `Void` block, so the
-# branches match. Useful for conditional reconciles.
-fn install_optional_extras(flag: Boolean): Void {
-  if flag { reconcile all_links }
+# branches match.
+fn maybe_noop(flag: Boolean): Void {
+  if flag {}
 }
 
 # `reconcile` is the only side-effect-bearing form; constructing the

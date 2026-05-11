@@ -1,10 +1,6 @@
 
-val target: Symlink = symlink(from = "a", to = "b")
+fn noop(): Void {}
 
-fn install(): Void {
-  reconcile target
-}
-
-fn install_if(flag: Boolean): Void {
-  if flag { reconcile target }
+fn noop_if(flag: Boolean): Void {
+  if flag {}
 }

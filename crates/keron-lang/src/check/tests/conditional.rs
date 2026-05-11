@@ -228,24 +228,26 @@ fn else_if_chain_without_terminal_else_errors() {
 
 #[test]
 fn void_fn_with_no_trailing_typechecks() {
-    let src = r#"
-        val target: Symlink = symlink(from = "a", to = "b")
-        fn install(): Void {
-          reconcile target
-        }
-    "#;
+    let src = r"
+        fn noop(): Void {}
+    ";
     assert!(check_src(src).is_ok());
 }
 
 #[test]
-fn void_fn_with_conditional_reconcile_typechecks() {
+fn void_fn_with_conditional_reconcile_errors() {
     let src = r#"
         val target: Symlink = symlink(from = "a", to = "b")
         fn install_if(flag: Boolean): Void {
           if flag { reconcile target }
         }
     "#;
-    assert!(check_src(src).is_ok());
+    let err = check_src(src).expect_err("functions must not reconcile resources");
+    assert!(
+        err[0].message.contains("not allowed inside `fn` bodies"),
+        "got: {}",
+        err[0].message
+    );
 }
 
 #[test]

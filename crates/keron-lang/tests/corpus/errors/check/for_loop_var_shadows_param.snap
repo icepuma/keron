@@ -4,5 +4,5 @@ source: crates/keron-lang/tests/harness/mod.rs
 error: `x` is already defined as a parameter in this scope
   --> 3:7
   |
-3 |   for x in xs { reconcile x }
+3 |   for x in xs {}
   |       ^

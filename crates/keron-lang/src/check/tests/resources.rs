@@ -72,7 +72,6 @@ fn resource_type_inside_for_body_resolves() {
             r#"fn pulse(): Void {
                 for n in [1, 2] {
                     val placeholder: Template = template(path = "/x", source = "tmpl.tpl", vars = {"body": "y"})
-                    reconcile placeholder
                 }
             }"#
         )
@@ -380,14 +379,12 @@ fn fn_returning_resource_from_symlink_typechecks() {
 
 #[test]
 fn fn_param_resource_accepts_specific_kinds() {
-    // Top-level call expressions aren't legal; the `if true { … }`
-    // wrapper turns the call into a Void-typed expression statement.
     let src = r#"
-        fn install(r: Resource): Void {
-            reconcile r
+        fn install(r: Resource): Resource {
+            r
         }
         val s: Symlink = symlink(from = "a", to = "b")
-        if true { install(s) }
+        reconcile install(s)
     "#;
     assert!(check_src(src).is_ok());
 }
@@ -395,15 +392,13 @@ fn fn_param_resource_accepts_specific_kinds() {
 #[test]
 fn fn_param_list_of_resource_accepts_mixed_arg() {
     let src = r#"
-        fn install(rs: List<Resource>): Void {
-            reconcile rs
+        fn install(rs: List<Resource>): List<Resource> {
+            rs
         }
-        if true {
-          install([
+        reconcile install([
             symlink(from = "a", to = "b"),
             template(path = "p", source = "tmpl.tpl", vars = {"body": "c"}),
-          ])
-        }
+        ])
     "#;
     assert!(check_src(src).is_ok());
 }

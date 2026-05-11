@@ -1,0 +1,14 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `reconcile` is not allowed inside `fn` bodies; return resources and reconcile them at top level
+  --> 4:3
+  |
+4 |   reconcile target
+  |   ^^^^^^^^^^^^^^^^^
+
+error: `reconcile` is not allowed inside `fn` bodies; return resources and reconcile them at top level
+  --> 8:13
+  |
+8 |   if flag { reconcile target }
+  |             ^^^^^^^^^^^^^^^^^
