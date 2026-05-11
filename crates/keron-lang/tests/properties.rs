@@ -14,100 +14,25 @@
 use std::fmt::Write as _;
 
 use keron_lang::{
-    Diagnostic, Expr, FnSig, ImportedSymbols, Item, Literal, ParamSig, Program, Spanned, Type,
-    UnaryOp, check_module, parse, resolve_type_names,
+    Diagnostic, Expr, Item, Literal, Program, Spanned, Type, UnaryOp, check_module, parse,
+    resolve_type_names,
 };
 use proptest::prelude::*;
 
+#[path = "support/stdlib.rs"]
+mod stdlib;
+
 fn check(program: &Program) -> Result<(), Vec<Diagnostic>> {
     let mut prog = program.clone();
-    let imp = fs_imports();
+    let imp = stdlib::imports();
     resolve_type_names(&mut prog, &imp)?;
     check_module(&prog, &imp)
 }
 
-fn fs_imports() -> ImportedSymbols {
-    let mut imp = ImportedSymbols::default();
-    imp.fns.insert(
-        "symlink".into(),
-        FnSig {
-            params: vec![
-                ParamSig {
-                    name: "from".into(),
-                    ty: Type::String,
-                    has_default: false,
-                },
-                ParamSig {
-                    name: "to".into(),
-                    ty: Type::String,
-                    has_default: false,
-                },
-            ],
-            return_type: Type::Symlink,
-        },
-    );
-    imp.fns.insert(
-        "template".into(),
-        FnSig {
-            params: vec![
-                ParamSig {
-                    name: "path".into(),
-                    ty: Type::String,
-                    has_default: false,
-                },
-                ParamSig {
-                    name: "source".into(),
-                    ty: Type::String,
-                    has_default: false,
-                },
-                ParamSig {
-                    name: "vars".into(),
-                    ty: Type::Map(Box::new(Type::String), Box::new(Type::String)),
-                    has_default: false,
-                },
-            ],
-            return_type: Type::Template,
-        },
-    );
-    imp.types.insert("Symlink".into(), Type::Symlink);
-    imp.types.insert("Template".into(), Type::Template);
-    imp.types.insert("Resource".into(), Type::Resource);
-    imp
-}
-
-const KEYWORDS: &[&str] = &[
-    // Parser-level keywords.
-    "val",
-    "fn",
-    "reconcile",
-    "if",
-    "else",
-    "for",
-    "in",
-    "match",
-    "struct",
-    "type",
-    "true",
-    "false",
-    "String",
-    "Int",
-    "Boolean",
-    "Double",
-    "List",
-    "Map",
-    "Symlink",
-    "Template",
-    "Resource",
-    "Void",
-    // Builtin function names — collide with `val`/`fn` declarations
-    // even though they aren't parser keywords.
-    "symlink",
-    "template",
-];
-
 fn ident_strategy() -> impl Strategy<Value = String> {
-    "[a-zA-Z_][a-zA-Z0-9_]{0,16}"
-        .prop_filter("must not be a keyword", |s| !KEYWORDS.contains(&s.as_str()))
+    "[a-zA-Z_][a-zA-Z0-9_]{0,16}".prop_filter("must not be a keyword", |s| {
+        !stdlib::RESERVED_OR_BUILTIN_NAMES.contains(&s.as_str())
+    })
 }
 
 fn ty_strategy() -> impl Strategy<Value = Type> {

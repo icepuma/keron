@@ -1,4 +1,4 @@
-//! Bolero-driven fuzz tests. The contract: neither `parse` nor `check`
+//! Bolero-driven fuzz tests. The contract: neither `parse` nor full check
 //! may panic on any input — well-formed source returns `Ok`, malformed
 //! source returns `Err(Vec<Diagnostic>)`.
 //!
@@ -6,7 +6,10 @@
 //! no fuzzer dependency). To run with coverage-guided libfuzzer:
 //!     `cargo bolero test parse_never_panics --engine libfuzzer`
 
-use keron_lang::{check, parse};
+use keron_lang::{check_module, parse, resolve_type_names};
+
+#[path = "support/stdlib.rs"]
+mod stdlib;
 
 #[test]
 fn parse_never_panics() {
@@ -21,9 +24,12 @@ fn parse_never_panics() {
 fn check_never_panics() {
     bolero::check!().for_each(|input: &[u8]| {
         if let Ok(s) = std::str::from_utf8(input)
-            && let Ok(prog) = parse(s)
+            && let Ok(mut prog) = parse(s)
         {
-            let _ = check(&prog);
+            let imp = stdlib::imports();
+            if resolve_type_names(&mut prog, &imp).is_ok() {
+                let _ = check_module(&prog, &imp);
+            }
         }
     });
 }
