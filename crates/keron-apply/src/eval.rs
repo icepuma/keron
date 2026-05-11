@@ -772,9 +772,8 @@ fn eval_call(name: &str, args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
         return dispatch_intrinsic(intrinsic, args, env);
     }
 
-    let bindings = bind_params(fn_decl, args, env)?;
     let mut call_env = Env::new(env.graph, origin_id);
-    call_env.local = bindings;
+    bind_params(fn_decl, args, env, &mut call_env)?;
 
     let mut sink = Vec::new();
     let v = eval_block_value(&fn_decl.body, &call_env, &mut sink)?;
@@ -1310,6 +1309,7 @@ fn resolve_managed_path(raw: &str, env: &Env<'_, '_>, kind: &str, arg: &str) -> 
 fn render_template(src: &str, vars: &HashMap<String, String>) -> Result<String> {
     const NAME: &str = "__keron_inline__";
     let mut tera = tera::Tera::default();
+    tera.functions.clear();
     tera.autoescape_on(Vec::new());
     tera.add_raw_template(NAME, src)
         .map_err(|e| anyhow!("parsing template: {}", format_tera_error(&e)))?;
@@ -1341,8 +1341,8 @@ fn bind_params(
     fn_decl: &FnDecl,
     args: &[CallArg],
     env: &Env<'_, '_>,
-) -> Result<HashMap<String, Value>> {
-    let mut bound = HashMap::new();
+    call_env: &mut Env<'_, '_>,
+) -> Result<()> {
     let mut positional = args.iter().filter(|a| a.name.is_none());
     for param in &fn_decl.params {
         let named = args
@@ -1353,13 +1353,13 @@ fn bind_params(
         } else if let Some(arg) = positional.next() {
             eval_expr(&arg.value, env)?
         } else if let Some(default) = &param.default {
-            eval_expr(default, env)?
+            eval_expr(default, call_env)?
         } else {
             bail!("missing argument for parameter `{}`", param.name.node);
         };
-        bound.insert(param.name.node.clone(), value);
+        call_env.local.insert(param.name.node.clone(), value);
     }
-    Ok(bound)
+    Ok(())
 }
 
 fn call_string(
@@ -1539,6 +1539,13 @@ mod tests {
     }
 
     fn run_with_templates(src: &str, templates: &[(&str, &str)]) -> Vec<ResourceState> {
+        run_result_with_templates(src, templates).unwrap_or_else(|e| panic!("eval failed: {e}"))
+    }
+
+    fn run_result_with_templates(
+        src: &str,
+        templates: &[(&str, &str)],
+    ) -> Result<Vec<ResourceState>> {
         let proj = TempProject::new("run");
         for (name, content) in templates {
             proj.seed_template(name, content);
@@ -1552,8 +1559,8 @@ mod tests {
             base_dir,
             id: keron_modules::ModuleId::File(canonical),
         }])
-        .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
-        eval_graph(&graph, &keron_root).unwrap_or_else(|e| panic!("eval failed: {e}"))
+        .map_err(|errs| anyhow!("resolve failed: {errs:?}"))?;
+        eval_graph(&graph, &keron_root)
     }
 
     fn first_file_path(states: &[ResourceState]) -> &PathBuf {
@@ -1820,6 +1827,28 @@ mod tests {
             "val f: Template = template(path = \"/x\", source = \"tmpl.tpl\", vars = {\"body\": \"y\"})\n",
         );
         assert!(states.is_empty());
+    }
+
+    #[test]
+    fn template_rendering_rejects_builtin_functions() {
+        let err = run_result_with_templates(
+            "reconcile template(path = \"/x\", source = \"tmpl.tpl\", vars = {})\n",
+            &[("tmpl.tpl", "{{ get_env(name=\"PATH\") }}")],
+        )
+        .expect_err("Tera builtins must not be available");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("get_env"), "error should name get_env: {msg}");
+    }
+
+    #[test]
+    fn default_param_can_reference_earlier_param_at_runtime() {
+        let states = run(
+            "fn file(path: String, body: String = path + \" body\"): Template {\n\
+             \ttemplate(path = path, source = \"tmpl.tpl\", vars = {\"body\": body})\n\
+             }\n\
+             reconcile file(\"/x\")\n",
+        );
+        assert_eq!(first_file_content(&states), "/x body");
     }
 
     #[test]
