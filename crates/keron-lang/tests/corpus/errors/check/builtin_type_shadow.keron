@@ -1,0 +1,5 @@
+struct Resource {
+  path: String,
+}
+
+type Secret = "plain"

@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: unreachable `match` arm: a previous wildcard or binding pattern matches every remaining value
+  --> 4:5
+  |
+4 |     "a" => 2,
+  |     ^^^

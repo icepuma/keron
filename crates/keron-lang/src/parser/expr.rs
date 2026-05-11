@@ -373,9 +373,14 @@ fn number_literal<'src>() -> impl Parser<'src, &'src str, Literal, Extra<'src>> 
         .to_slice()
         .try_map(|s: &str, span| {
             if s.contains('.') {
-                s.parse::<f64>()
-                    .map(Literal::Double)
-                    .map_err(|e| Rich::custom(span, e.to_string()))
+                let value = s
+                    .parse::<f64>()
+                    .map_err(|e| Rich::custom(span, e.to_string()))?;
+                if value.is_finite() {
+                    Ok(Literal::Double(value))
+                } else {
+                    Err(Rich::custom(span, "double literal is out of range"))
+                }
             } else {
                 s.parse::<i64>()
                     .map(Literal::Int)

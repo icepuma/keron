@@ -44,6 +44,7 @@ pub(super) fn match_type(
         ));
     }
     let scrut_ty = expr_type(scrutinee, env, fns)?;
+    check_unreachable_arms(arms)?;
 
     let mut body_ty: Option<Type> = None;
     let mut null_handled = false;
@@ -323,4 +324,49 @@ fn check_exhaustive(
 
 const fn is_catch_all(p: &Pattern) -> bool {
     matches!(p, Pattern::Wildcard | Pattern::Bind(_))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum StaticPatternKey {
+    String(String),
+    Int(i64),
+    Bool(bool),
+    Double(u64),
+    Null,
+}
+
+fn check_unreachable_arms(arms: &[MatchArm]) -> Result<(), Diagnostic> {
+    let mut seen_literals: HashSet<StaticPatternKey> = HashSet::new();
+    let mut catch_all_seen = false;
+    for arm in arms {
+        if catch_all_seen {
+            return Err(Diagnostic::new(
+                arm.pattern.span.clone(),
+                "unreachable `match` arm: a previous wildcard or binding pattern matches every remaining value",
+            ));
+        }
+        if let Some(key) = static_pattern_key(&arm.pattern.node)
+            && !seen_literals.insert(key)
+        {
+            return Err(Diagnostic::new(
+                arm.pattern.span.clone(),
+                "unreachable `match` arm: duplicate literal pattern",
+            ));
+        }
+        if is_catch_all(&arm.pattern.node) {
+            catch_all_seen = true;
+        }
+    }
+    Ok(())
+}
+
+fn static_pattern_key(pattern: &Pattern) -> Option<StaticPatternKey> {
+    match pattern {
+        Pattern::Lit(Literal::String(s)) => Some(StaticPatternKey::String(s.clone())),
+        Pattern::Lit(Literal::Int(n)) => Some(StaticPatternKey::Int(*n)),
+        Pattern::Lit(Literal::Boolean(b)) => Some(StaticPatternKey::Bool(*b)),
+        Pattern::Lit(Literal::Double(d)) => Some(StaticPatternKey::Double(d.to_bits())),
+        Pattern::Lit(Literal::Null) => Some(StaticPatternKey::Null),
+        Pattern::Wildcard | Pattern::Bind(_) | Pattern::Struct { .. } => None,
+    }
 }

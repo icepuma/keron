@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: struct pattern names must start with an uppercase letter
+  --> 2:3
+  |
+2 |   point { x } => "point",
+  |   ^

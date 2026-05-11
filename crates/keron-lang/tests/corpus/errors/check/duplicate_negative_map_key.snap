@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: duplicate static map key
+  --> 1:38
+  |
+1 | val xs: Map<Int, String> = {-1: "a", -1: "b"}
+  |                                      ^^

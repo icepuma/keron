@@ -461,6 +461,9 @@ pub fn check_module(program: &Program, imported: &ImportedSymbols) -> Result<(),
         }
         top_names.insert(name.clone(), ItemKind::Val);
     }
+    for name in imported.types.keys() {
+        top_names.entry(name.clone()).or_insert(ItemKind::Val);
+    }
     for item in &program.items {
         match item {
             Item::Val(v) => {
@@ -1510,6 +1513,13 @@ fn static_map_key(expr: &Expr) -> Option<StaticMapKey> {
     match expr {
         Expr::Literal(Literal::String(s)) => Some(StaticMapKey::String(s.clone())),
         Expr::Literal(Literal::Int(n)) => Some(StaticMapKey::Int(*n)),
+        Expr::Unary {
+            op: UnaryOp::Neg,
+            operand,
+        } => match &operand.node {
+            Expr::Literal(Literal::Int(n)) => n.checked_neg().map(StaticMapKey::Int),
+            _ => None,
+        },
         _ => None,
     }
 }

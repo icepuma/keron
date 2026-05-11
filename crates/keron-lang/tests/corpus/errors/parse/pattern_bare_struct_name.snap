@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: bare pattern bindings must start with a lowercase letter or `_`
+  --> 2:3
+  |
+2 |   Color => "color",
+  |   ^

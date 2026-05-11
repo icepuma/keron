@@ -1,0 +1,4 @@
+val label: String = match 1 {
+  point { x } => "point",
+  _ => "other",
+}

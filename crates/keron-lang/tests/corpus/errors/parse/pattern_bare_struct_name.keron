@@ -1,0 +1,4 @@
+val label: String = match "red" {
+  Color => "color",
+  _ => "other",
+}

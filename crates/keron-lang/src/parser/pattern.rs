@@ -66,9 +66,14 @@ fn number_literal<'src>() -> impl Parser<'src, &'src str, Literal, Extra<'src>> 
         .to_slice()
         .try_map(|s: &str, span| {
             if s.contains('.') {
-                s.parse::<f64>()
-                    .map(Literal::Double)
-                    .map_err(|e| Rich::custom(span, e.to_string()))
+                let value = s
+                    .parse::<f64>()
+                    .map_err(|e| Rich::custom(span, e.to_string()))?;
+                if value.is_finite() {
+                    Ok(Literal::Double(value))
+                } else {
+                    Err(Rich::custom(span, "double literal is out of range"))
+                }
             } else {
                 s.parse::<i64>()
                     .map(Literal::Int)
@@ -128,17 +133,35 @@ where
     spanned(ident())
         .padded_by(pad())
         .then(fields.or_not())
-        .map_with(|(name, maybe_fields), e| {
-            let span = span_to_range(e.span());
+        .try_map(|(name, maybe_fields), span| {
+            let range = span_to_range(span);
             match maybe_fields {
-                Some(fields) => Spanned {
+                Some(fields) if starts_with_uppercase(&name.node) => Ok(Spanned {
                     node: Pattern::Struct { name, fields },
+                    span: range,
+                }),
+                Some(_) => Err(Rich::custom(
                     span,
-                },
-                None => Spanned {
+                    "struct pattern names must start with an uppercase letter",
+                )),
+                None if starts_with_bind_char(&name.node) => Ok(Spanned {
                     node: Pattern::Bind(name.node),
+                    span: range,
+                }),
+                None => Err(Rich::custom(
                     span,
-                },
+                    "bare pattern bindings must start with a lowercase letter or `_`",
+                )),
             }
         })
+}
+
+fn starts_with_uppercase(s: &str) -> bool {
+    s.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+}
+
+fn starts_with_bind_char(s: &str) -> bool {
+    s.chars()
+        .next()
+        .is_some_and(|c| c == '_' || c.is_ascii_lowercase())
 }

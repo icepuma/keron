@@ -93,23 +93,13 @@ fn match_on_nullable_narrows_bind_after_null_arm() {
 
 #[test]
 fn match_on_nullable_without_null_arm_first_does_not_narrow() {
-    // If the bind comes first it catches null too (it's a catch-all),
-    // so the bind sees `T?` and the body's `n` is still nullable —
-    // assigning the result to a `String` slot must fail.
     let err = check_src(
         "val maybe: String? = \"hi\"\n\
          val name: String = match maybe { n => n, null => \"anon\" }",
     )
     .expect_err("bind before null arm should not narrow");
-    // After the bind catches everything, the narrowed scrutinee for
-    // the `null` arm becomes `String` — and a `null` literal pattern
-    // doesn't typecheck against `String`. Either diagnostic shape
-    // proves the bind didn't get the inner-type narrowing.
     assert!(
-        err.iter().any(|d| {
-            (d.message.contains("expected `String`") && d.message.contains("found `String?`"))
-                || (d.message.contains("scrutinee is `String`") && d.message.contains("`Null`"))
-        }),
+        err[0].message.contains("unreachable `match` arm"),
         "got: {err:?}",
     );
 }
