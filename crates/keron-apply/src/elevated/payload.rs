@@ -205,6 +205,7 @@ mod tests {
                 to: PathBuf::from(format!("{addr}-target")),
             }),
             requires_elevation: true,
+            requires_force: false,
         }
     }
 

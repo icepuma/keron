@@ -7,10 +7,9 @@
 //! user before applying.
 //!
 //! The executor wires up symlinks, templates, and packages end-to-end
-//! today; directories still bail with a clear "not yet implemented"
-//! diagnostic at apply time. The planner diffs every supported kind
-//! against live filesystem state, so the rendered diff stays truthful
-//! as new kinds come online.
+//! today. The planner diffs desired resources against live filesystem
+//! state, but it does not infer removals from absence because keron
+//! has no persisted ownership state.
 
 mod confirm;
 mod diff;
@@ -102,21 +101,42 @@ where
         return Ok(());
     }
 
+    let summary = plan.summary();
+    if summary.force > 0 {
+        let approved = confirm::prompt_force(stdin, stdout, summary.force)?;
+        if !approved {
+            writeln!(stdout, "Apply cancelled.")?;
+            return Ok(());
+        }
+    }
+
     let (unprivileged, elevated_plan) = plan.partition_by_elevation();
     let unpriv_summary = execute::execute(&unprivileged)?;
-    writeln!(
-        stdout,
-        "Apply complete! Resources: {} added, {} changed, {} destroyed.",
-        unpriv_summary.added, unpriv_summary.changed, unpriv_summary.destroyed
-    )?;
 
-    if !elevated_plan.changes.is_empty() {
+    if elevated_plan.changes.is_empty() {
+        writeln!(
+            stdout,
+            "Apply complete! Resources: {} added, {} changed.",
+            unpriv_summary.added, unpriv_summary.changed
+        )?;
+    } else {
+        writeln!(
+            stdout,
+            "Unprivileged phase complete. Resources: {} added, {} changed.",
+            unpriv_summary.added, unpriv_summary.changed
+        )?;
         writeln!(
             stdout,
             "{} resource(s) require elevated rights; you may be asked for your password.",
             elevated_plan.changes.len(),
         )?;
-        elevated::run_elevated(&elevated_plan)?;
+        let elevated_summary = elevated::run_elevated(&elevated_plan)?;
+        writeln!(
+            stdout,
+            "Apply complete! Resources: {} added, {} changed.",
+            unpriv_summary.added + elevated_summary.added,
+            unpriv_summary.changed + elevated_summary.changed
+        )?;
     }
     Ok(())
 }
@@ -346,6 +366,23 @@ mod tests {
             "missing cancel message: {out}"
         );
         assert!(!out.contains("not yet implemented"), "executor ran: {out}");
+    }
+
+    #[test]
+    fn run_with_execute_requires_force_for_updates() {
+        let proj = TempProject::new("force-update");
+        let dest = proj.root.join("out");
+        fs::write(&dest, "old").unwrap();
+        let src = format!(
+            "reconcile template(path = \"{}\", source = \"tmpl.tpl\", vars = {{\"body\": \"new\"}})\n",
+            dest.display(),
+        );
+        let entry = proj.write("entry.keron", &src);
+        let (res, out) = drive(&entry, true, "yes\n");
+        res.unwrap();
+        assert!(out.contains("Only 'force'"), "force prompt missing: {out}");
+        assert!(out.contains("Apply cancelled"), "cancel missing: {out}");
+        assert_eq!(fs::read_to_string(dest).unwrap(), "old");
     }
 
     #[test]

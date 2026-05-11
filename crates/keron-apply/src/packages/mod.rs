@@ -20,10 +20,8 @@
 //! drive any cache state without a real `brew` / `cargo` / `winget`
 //! on the host. The install side reads
 //! `KERON_TEST_PACKAGE_BIN_<MGR>` to swap the binary path for a spy
-//! script. Production builds bypass both env vars entirely (the test
-//! seam exists in the same code path; setting the var on a
-//! production host would still take effect — that's deliberate, it
-//! lets devs reproduce CI behaviour locally).
+//! script. Both seams require `KERON_ALLOW_TEST_OVERRIDES=1` so stray
+//! environment variables cannot falsify a real run.
 
 pub mod brew;
 pub mod cargo;
@@ -108,6 +106,9 @@ fn fetch_installed(manager: PackageManager) -> Result<HashSet<String>> {
 }
 
 fn test_packages_override(manager: PackageManager) -> Option<HashSet<String>> {
+    if !test_overrides_allowed() {
+        return None;
+    }
     let key = match manager {
         PackageManager::Brew => "KERON_TEST_BREW_PACKAGES",
         PackageManager::Cargo => "KERON_TEST_CARGO_PACKAGES",
@@ -169,12 +170,19 @@ fn install_invocation(manager: PackageManager, name: &str) -> (String, Vec<Strin
 }
 
 fn test_binary_override(manager: PackageManager) -> Option<String> {
+    if !test_overrides_allowed() {
+        return None;
+    }
     let key = match manager {
         PackageManager::Brew => "KERON_TEST_PACKAGE_BIN_BREW",
         PackageManager::Cargo => "KERON_TEST_PACKAGE_BIN_CARGO",
         PackageManager::Winget => "KERON_TEST_PACKAGE_BIN_WINGET",
     };
     std::env::var(key).ok()
+}
+
+fn test_overrides_allowed() -> bool {
+    std::env::var_os("KERON_ALLOW_TEST_OVERRIDES").is_some_and(|v| v == "1")
 }
 
 #[cfg(test)]
@@ -193,12 +201,14 @@ mod tests {
             for k in keys {
                 std::env::remove_var(k);
             }
+            std::env::remove_var("KERON_ALLOW_TEST_OVERRIDES");
         }
     }
 
     fn set_env(key: &str, value: &str) {
         #[allow(unsafe_code)]
         unsafe {
+            std::env::set_var("KERON_ALLOW_TEST_OVERRIDES", "1");
             std::env::set_var(key, value);
         }
     }
@@ -324,5 +334,17 @@ mod tests {
     fn test_packages_override_returns_none_when_unset() {
         clear_env(&["KERON_TEST_WINGET_PACKAGES"]);
         assert!(test_packages_override(PackageManager::Winget).is_none());
+    }
+
+    #[test]
+    fn test_packages_override_requires_allow_gate() {
+        clear_env(&["KERON_TEST_BREW_PACKAGES"]);
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::set_var("KERON_TEST_BREW_PACKAGES", "git");
+        }
+        let got = test_packages_override(PackageManager::Brew);
+        clear_env(&["KERON_TEST_BREW_PACKAGES"]);
+        assert!(got.is_none());
     }
 }

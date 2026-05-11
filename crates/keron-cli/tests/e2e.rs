@@ -255,6 +255,7 @@ fn package_resource_installs_then_no_ops_via_cache_seam() {
 
     let mut first_cmd = keron_apply(&fixture, &home.path);
     first_cmd
+        .env("KERON_ALLOW_TEST_OVERRIDES", "1")
         .env(manager_env.0, manager_env.1)
         .env(cache_env, "")
         .env(bin_env, &noop);
@@ -275,6 +276,7 @@ fn package_resource_installs_then_no_ops_via_cache_seam() {
     // that the NoOp classification truly skips the executor.
     let mut second_cmd = keron_apply(&fixture, &home.path);
     second_cmd
+        .env("KERON_ALLOW_TEST_OVERRIDES", "1")
         .env(manager_env.0, manager_env.1)
         .env(cache_env, package_name_for_manager(manager_env.1))
         .env(bin_env, home.path.join("does-not-exist"));

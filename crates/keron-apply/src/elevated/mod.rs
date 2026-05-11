@@ -58,17 +58,15 @@ pub fn run_elevated(plan: &Plan) -> Result<ExecuteSummary> {
         payload::capture_owner().context("capturing calling user's identity for elevation")?;
     let tempfile =
         payload::write_payload(plan, &owner).context("writing elevated apply payload")?;
+    let summary = plan.summary();
     let exe = current_exe_canonicalized()?;
     let status = invoke_elevator(&exe, tempfile.path())?;
     if !status.success() {
         bail!("elevated apply exited with status {status}; see output above for details");
     }
-    // The child's summary already reached the user via inherited
-    // stdio; v1 doesn't merge counts across the elevation boundary.
     Ok(ExecuteSummary {
-        added: 0,
-        changed: 0,
-        destroyed: 0,
+        added: summary.add,
+        changed: summary.change,
     })
 }
 

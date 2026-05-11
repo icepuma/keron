@@ -28,8 +28,8 @@ pub fn path_requires_elevation(state: &ResourceState, action: Action) -> bool {
         return false;
     }
     match state {
-        // All three actions (create/update/destroy) write to
-        // `from.parent()`; `to` is the link target and never written.
+        // Create/update write to `from.parent()`; `to` is the link
+        // target and never written.
         ResourceState::Symlink { from, .. } => from.parent().is_none_or(|p| !dir_is_writable(p)),
         ResourceState::Template { path, .. } => path.parent().is_none_or(|p| !dir_is_writable(p)),
         // Packages defer to `PackageManager::requires_elevation`;
@@ -151,6 +151,7 @@ mod tests {
         let state = ResourceState::Template {
             path: d.path.join("a.conf"),
             content: "x".into(),
+            sensitive: false,
         };
         assert!(!path_requires_elevation(&state, Action::Create));
     }
@@ -161,6 +162,7 @@ mod tests {
         let state = ResourceState::Template {
             path: d.path.join("a").join("b").join("c"),
             content: "x".into(),
+            sensitive: false,
         };
         assert!(!path_requires_elevation(&state, Action::Create));
     }

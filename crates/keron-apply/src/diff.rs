@@ -1,6 +1,6 @@
 //! Render a `Plan` as an OpenTofu-style diff. Symbols and colors
 //! follow the well-worn convention: `+` create (green), `~` update
-//! (yellow), `-` destroy (red), `#` header (dim).
+//! (yellow), `#` header (dim).
 //!
 //! ANSI escape codes are emitted inline rather than pulled in via a
 //! crate to keep the dep surface small. Color is opt-in per call —
@@ -62,18 +62,23 @@ pub fn render_plan<W: Write>(out: &mut W, plan: &Plan, opts: RenderOptions) -> i
     }
 
     let s = plan.summary();
-    if s.elevated > 0 {
-        writeln!(
+    match (s.elevated, s.force) {
+        (0, 0) => writeln!(out, "Plan: {} to add, {} to change.", s.add, s.change)?,
+        (elevated, 0) => writeln!(
             out,
-            "Plan: {} to add, {} to change, {} to destroy ({} elevated).",
-            s.add, s.change, s.destroy, s.elevated,
-        )?;
-    } else {
-        writeln!(
+            "Plan: {} to add, {} to change ({} elevated).",
+            s.add, s.change, elevated,
+        )?,
+        (0, force) => writeln!(
             out,
-            "Plan: {} to add, {} to change, {} to destroy.",
-            s.add, s.change, s.destroy,
-        )?;
+            "Plan: {} to add, {} to change ({} force).",
+            s.add, s.change, force,
+        )?,
+        (elevated, force) => writeln!(
+            out,
+            "Plan: {} to add, {} to change ({} elevated) ({} force).",
+            s.add, s.change, elevated, force,
+        )?,
     }
     Ok(())
 }
@@ -86,15 +91,15 @@ fn render_change<W: Write>(
     let verb = match change.action {
         Action::Create => "will be created",
         Action::Update => "will be updated in-place",
-        Action::Destroy => "will be destroyed",
         Action::NoOp => return Ok(()),
     };
     let symbol = action_symbol(change.action);
     let color = action_color(change.action);
-    let tag = if change.requires_elevation {
-        "  (elevated)"
-    } else {
-        ""
+    let tag = match (change.requires_elevation, change.requires_force) {
+        (true, true) => "  (elevated, force required)",
+        (true, false) => "  (elevated)",
+        (false, true) => "  (force required)",
+        (false, false) => "",
     };
 
     writeln!(
@@ -130,11 +135,6 @@ fn render_body<W: Write>(
                 render_state_lines(out, state, "+", GREEN, opts)?;
             }
         }
-        Action::Destroy => {
-            if let Some(state) = &change.before {
-                render_state_lines(out, state, "-", RED, opts)?;
-            }
-        }
         Action::Update => {
             if let (Some(before), Some(after)) = (&change.before, &change.after) {
                 render_diff_lines(out, before, after, opts)?;
@@ -154,9 +154,17 @@ fn render_state_lines<W: Write>(
 ) -> io::Result<()> {
     let s = paint(opts.color, color, sign);
     match state {
-        ResourceState::Template { path, content } => {
+        ResourceState::Template {
+            path,
+            content,
+            sensitive,
+        } => {
             writeln!(out, "      {s} path    = \"{}\"", path.display())?;
-            writeln!(out, "      {s} content = \"{}\"", escape_inline(content))?;
+            if *sensitive {
+                writeln!(out, "      {s} content = <sensitive>")?;
+            } else {
+                writeln!(out, "      {s} content = \"{}\"", escape_inline(content))?;
+            }
         }
         ResourceState::Symlink { from, to } => {
             writeln!(out, "      {s} from = \"{}\"", from.display())?;
@@ -182,10 +190,12 @@ fn render_diff_lines<W: Write>(
             ResourceState::Template {
                 path: bp,
                 content: bc,
+                sensitive: bs,
             },
             ResourceState::Template {
                 path: ap,
                 content: ac,
+                sensitive: as_,
             },
         ) => {
             if bp != ap {
@@ -196,7 +206,11 @@ fn render_diff_lines<W: Write>(
                     ap.display()
                 )?;
             }
-            if bc != ac {
+            if *bs || *as_ {
+                if bc != ac {
+                    writeln!(out, "      {s} content = <sensitive> -> <sensitive>")?;
+                }
+            } else if bc != ac {
                 writeln!(
                     out,
                     "      {s} content = \"{}\" -> \"{}\"",
@@ -273,7 +287,6 @@ const fn action_symbol(action: Action) -> &'static str {
     match action {
         Action::Create => "+",
         Action::Update => "~",
-        Action::Destroy => "-",
         Action::NoOp => " ",
     }
 }
@@ -282,7 +295,6 @@ const fn action_color(action: Action) -> &'static str {
     match action {
         Action::Create => GREEN,
         Action::Update => YELLOW,
-        Action::Destroy => RED,
         Action::NoOp => RESET,
     }
 }
@@ -317,11 +329,9 @@ mod tests {
         let out = render(&Plan::sample());
         assert!(out.contains("template.\"~/.zshrc\" will be created"));
         assert!(out.contains("symlink.\"~/.config/nvim\" will be updated in-place"));
-        assert!(out.contains("template.\"/tmp/scratch\" will be destroyed"));
-        assert!(out.contains("Plan: 1 to add, 1 to change, 1 to destroy."));
+        assert!(out.contains("Plan: 1 to add, 1 to change."));
         assert!(out.contains("+ resource \"template\""));
         assert!(out.contains("~ resource \"symlink\""));
-        assert!(out.contains("- resource \"template\""));
         assert!(out.contains("~ to   = \"/old/target\" -> \"/new/target\""));
     }
 
@@ -350,8 +360,10 @@ mod tests {
                 after: Some(ResourceState::Template {
                     path: PathBuf::from("/etc/x"),
                     content: "hi".into(),
+                    sensitive: false,
                 }),
                 requires_elevation: false,
+                requires_force: false,
             }],
         };
         let out = render(&plan);
@@ -378,33 +390,12 @@ mod tests {
                     to: PathBuf::from("/b"),
                 }),
                 requires_elevation: false,
+                requires_force: false,
             }],
         };
         let out = render(&plan);
         assert!(out.contains("+ from = \"/a\""), "missing from line: {out}");
         assert!(out.contains("+ to   = \"/b\""), "missing to line: {out}");
-    }
-
-    #[test]
-    fn destroy_renders_with_minus_sign() {
-        let plan = Plan {
-            changes: vec![ResourceChange {
-                address: "/d".into(),
-                kind: ResourceKind::Template,
-                action: Action::Destroy,
-                before: Some(ResourceState::Template {
-                    path: PathBuf::from("/d"),
-                    content: "old".into(),
-                }),
-                after: None,
-                requires_elevation: false,
-            }],
-        };
-        let out = render(&plan);
-        assert!(
-            out.contains("- path    = \"/d\""),
-            "missing destroy body: {out}"
-        );
     }
 
     #[test]
@@ -417,12 +408,15 @@ mod tests {
                 before: Some(ResourceState::Template {
                     path: PathBuf::from("/x"),
                     content: "old".into(),
+                    sensitive: false,
                 }),
                 after: Some(ResourceState::Template {
                     path: PathBuf::from("/x"),
                     content: "new".into(),
+                    sensitive: false,
                 }),
                 requires_elevation: false,
+                requires_force: false,
             }],
         };
         let out = render(&plan);
@@ -440,12 +434,15 @@ mod tests {
                 before: Some(ResourceState::Template {
                     path: PathBuf::from("/old"),
                     content: "same".into(),
+                    sensitive: false,
                 }),
                 after: Some(ResourceState::Template {
                     path: PathBuf::from("/new"),
                     content: "same".into(),
+                    sensitive: false,
                 }),
                 requires_elevation: false,
+                requires_force: false,
             }],
         };
         let out = render(&plan);
@@ -475,6 +472,7 @@ mod tests {
                     to: PathBuf::from("/t2"),
                 }),
                 requires_elevation: false,
+                requires_force: false,
             }],
         };
         let out = render(&plan);
@@ -483,7 +481,7 @@ mod tests {
     }
 
     #[test]
-    fn update_kind_change_renders_destroy_then_create() {
+    fn update_kind_change_renders_before_then_after() {
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "/x".into(),
@@ -492,18 +490,20 @@ mod tests {
                 before: Some(ResourceState::Template {
                     path: PathBuf::from("/x"),
                     content: "old".into(),
+                    sensitive: false,
                 }),
                 after: Some(ResourceState::Symlink {
                     from: PathBuf::from("/x"),
                     to: PathBuf::from("/y"),
                 }),
                 requires_elevation: false,
+                requires_force: false,
             }],
         };
         let out = render(&plan);
         assert!(
             out.contains("- path    = \"/x\""),
-            "missing destroy half: {out}"
+            "missing before half: {out}"
         );
         assert!(
             out.contains("+ from = \"/x\""),
@@ -515,7 +515,6 @@ mod tests {
     fn action_color_uses_distinct_codes() {
         assert_eq!(action_color(Action::Create), GREEN);
         assert_eq!(action_color(Action::Update), YELLOW);
-        assert_eq!(action_color(Action::Destroy), RED);
         assert_eq!(action_color(Action::NoOp), RESET);
     }
 
@@ -526,7 +525,6 @@ mod tests {
         let out = String::from_utf8(buf).unwrap();
         assert!(out.contains(GREEN), "create should be green: {out}");
         assert!(out.contains(YELLOW), "update should be yellow: {out}");
-        assert!(out.contains(RED), "destroy should be red: {out}");
     }
 
     #[test]
@@ -553,13 +551,94 @@ mod tests {
                 after: Some(ResourceState::Template {
                     path: PathBuf::from("/x"),
                     content: "a\tb\n".into(),
+                    sensitive: false,
                 }),
                 requires_elevation: false,
+                requires_force: false,
             }],
         };
         let out = render(&plan);
         assert!(out.contains("\\t"), "tab not escaped: {out}");
         assert!(out.contains("\\n"), "newline not escaped: {out}");
+    }
+
+    #[test]
+    fn sensitive_template_content_is_redacted() {
+        let plan = Plan {
+            changes: vec![
+                ResourceChange {
+                    address: "/x".into(),
+                    kind: ResourceKind::Template,
+                    action: Action::Create,
+                    before: None,
+                    after: Some(ResourceState::Template {
+                        path: PathBuf::from("/x"),
+                        content: "token=secret-value".into(),
+                        sensitive: true,
+                    }),
+                    requires_elevation: false,
+                    requires_force: false,
+                },
+                ResourceChange {
+                    address: "/y".into(),
+                    kind: ResourceKind::Template,
+                    action: Action::Update,
+                    before: Some(ResourceState::Template {
+                        path: PathBuf::from("/y"),
+                        content: "old-secret".into(),
+                        sensitive: true,
+                    }),
+                    after: Some(ResourceState::Template {
+                        path: PathBuf::from("/y"),
+                        content: "new-secret".into(),
+                        sensitive: true,
+                    }),
+                    requires_elevation: false,
+                    requires_force: true,
+                },
+            ],
+        };
+        let out = render(&plan);
+        assert!(out.contains("+ content = <sensitive>"), "got: {out}");
+        assert!(
+            out.contains("~ content = <sensitive> -> <sensitive>"),
+            "got: {out}"
+        );
+        assert!(
+            out.contains("template.\"/y\" will be updated in-place  (force required)"),
+            "got: {out}"
+        );
+        assert!(!out.contains("secret"), "secret leaked in diff: {out}");
+    }
+
+    #[test]
+    fn template_update_redacts_when_only_after_is_sensitive() {
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/x".into(),
+                kind: ResourceKind::Template,
+                action: Action::Update,
+                before: Some(ResourceState::Template {
+                    path: PathBuf::from("/x"),
+                    content: "old-public".into(),
+                    sensitive: false,
+                }),
+                after: Some(ResourceState::Template {
+                    path: PathBuf::from("/x"),
+                    content: "new-secret".into(),
+                    sensitive: true,
+                }),
+                requires_elevation: false,
+                requires_force: true,
+            }],
+        };
+        let out = render(&plan);
+        assert!(
+            out.contains("~ content = <sensitive> -> <sensitive>"),
+            "got: {out}"
+        );
+        assert!(!out.contains("old-public"), "old content leaked: {out}");
+        assert!(!out.contains("new-secret"), "new content leaked: {out}");
     }
 
     #[test]
@@ -575,6 +654,7 @@ mod tests {
                     name: "ripgrep".into(),
                 }),
                 requires_elevation: false,
+                requires_force: false,
             }],
         };
         let out = render(&plan);
@@ -597,32 +677,6 @@ mod tests {
     }
 
     #[test]
-    fn destroy_package_renders_with_minus_sign() {
-        let plan = Plan {
-            changes: vec![ResourceChange {
-                address: "cargo:sccache".into(),
-                kind: ResourceKind::Package,
-                action: Action::Destroy,
-                before: Some(ResourceState::Package {
-                    manager: PackageManager::Cargo,
-                    name: "sccache".into(),
-                }),
-                after: None,
-                requires_elevation: false,
-            }],
-        };
-        let out = render(&plan);
-        assert!(
-            out.contains("- manager = \"cargo\""),
-            "missing destroy manager: {out}",
-        );
-        assert!(
-            out.contains("- name    = \"sccache\""),
-            "missing destroy name: {out}",
-        );
-    }
-
-    #[test]
     fn update_package_renders_only_changed_fields() {
         let plan = Plan {
             changes: vec![ResourceChange {
@@ -638,6 +692,7 @@ mod tests {
                     name: "git@2".into(),
                 }),
                 requires_elevation: false,
+                requires_force: false,
             }],
         };
         let out = render(&plan);
@@ -667,6 +722,7 @@ mod tests {
                     name: "ripgrep".into(),
                 }),
                 requires_elevation: false,
+                requires_force: false,
             }],
         };
         let out = render(&plan);

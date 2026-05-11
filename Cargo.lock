@@ -618,6 +618,7 @@ dependencies = [
  "ariadne",
  "keron-lang",
  "keron-modules",
+ "libc",
  "mutants",
  "os_info",
  "proptest",

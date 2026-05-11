@@ -2,10 +2,10 @@
 //! do. [`build_plan`] runs the evaluator over a checked module graph
 //! and classifies each produced resource into a [`ResourceChange`].
 //!
-//! Symlinks are diffed against the live filesystem so the rendered
+//! Resources are diffed against the live filesystem so the rendered
 //! plan reflects what `keron apply --execute` will actually perform;
-//! other resource kinds still flow through as `Action::Create` until
-//! their executor support lands.
+//! removals are intentionally out-of-scope until keron has managed
+//! state proving ownership.
 
 #![allow(dead_code)]
 
@@ -24,7 +24,6 @@ use crate::packages::PackageCache;
 pub enum Action {
     Create,
     Update,
-    Destroy,
     NoOp,
 }
 
@@ -90,6 +89,8 @@ pub enum ResourceState {
     Template {
         path: PathBuf,
         content: String,
+        #[serde(default)]
+        sensitive: bool,
     },
     Symlink {
         from: PathBuf,
@@ -115,6 +116,11 @@ pub struct ResourceChange {
     /// [`PackageManager::requires_elevation`] for packages.
     #[serde(default)]
     pub requires_elevation: bool,
+    /// True when applying this change would overwrite or remove a
+    /// pre-existing filesystem object without managed-state proof.
+    /// The executor will only proceed after an explicit force prompt.
+    #[serde(default)]
+    pub requires_force: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -126,11 +132,11 @@ pub struct Plan {
 pub struct PlanSummary {
     pub add: usize,
     pub change: usize,
-    pub destroy: usize,
     /// How many of the above are flagged as requiring elevated rights.
-    /// Sub-total of `add + change + destroy`, surfaced in the diff
+    /// Sub-total of `add + change`, surfaced in the diff
     /// summary as `(N elevated)`.
     pub elevated: usize,
+    pub force: usize,
 }
 
 impl Plan {
@@ -140,11 +146,13 @@ impl Plan {
             match c.action {
                 Action::Create => s.add += 1,
                 Action::Update => s.change += 1,
-                Action::Destroy => s.destroy += 1,
                 Action::NoOp => continue,
             }
             if c.requires_elevation {
                 s.elevated += 1;
+            }
+            if c.requires_force {
+                s.force += 1;
             }
         }
         s
@@ -186,6 +194,18 @@ impl ResourceChange {
             None => false,
         }
     }
+
+    /// Whether this change must be explicitly force-approved because
+    /// keron cannot prove ownership of the existing destination.
+    pub fn compute_requires_force(&self) -> bool {
+        if !matches!(self.action, Action::Update) {
+            return false;
+        }
+        matches!(
+            self.after.as_ref().or(self.before.as_ref()),
+            Some(ResourceState::Symlink { .. } | ResourceState::Template { .. })
+        )
+    }
 }
 
 /// Build a `Plan` from a checked module graph.
@@ -195,10 +215,11 @@ impl ResourceChange {
 /// surfaced to user code through the `keron_root()` builtin so paths
 /// can be expressed relative to the install location.
 ///
-/// Symlinks are diffed against the live filesystem (Create / Update /
-/// `NoOp`, or a hard error when an unrelated file sits at the target).
-/// Other resource kinds are still reported as `Action::Create`; they
-/// land alongside their respective executor support.
+/// Desired resources are diffed against the live filesystem (Create /
+/// Update / `NoOp`, or a hard error when an unrelated file sits at the
+/// target). Resources absent from the desired graph are ignored:
+/// without persisted managed state, keron cannot prove that such paths
+/// are safe to remove.
 pub fn build_plan(graph: &keron_modules::ModuleGraph, keron_root: &Path) -> Result<Plan> {
     let resources = eval::eval_graph(graph, keron_root)?;
     let mut cache = PackageCache::new();
@@ -212,10 +233,11 @@ pub fn build_plan(graph: &keron_modules::ModuleGraph, keron_root: &Path) -> Resu
 fn classify(state: &ResourceState, cache: &mut PackageCache) -> Result<ResourceChange> {
     let mut change = match state {
         ResourceState::Symlink { from, to } => classify_symlink(from, to, state)?,
-        ResourceState::Template { path, content } => classify_template(path, content, state)?,
+        ResourceState::Template { path, content, .. } => classify_template(path, content, state)?,
         ResourceState::Package { manager, name } => classify_package(*manager, name, state, cache)?,
     };
     change.requires_elevation = change.compute_requires_elevation();
+    change.requires_force = change.compute_requires_force();
     Ok(change)
 }
 
@@ -244,6 +266,7 @@ fn classify_package(
         before: if already { Some(state.clone()) } else { None },
         after: Some(state.clone()),
         requires_elevation: false,
+        requires_force: false,
     })
 }
 
@@ -267,6 +290,7 @@ fn classify_symlink(from: &Path, to: &Path, after: &ResourceState) -> Result<Res
             before: None,
             after: Some(after.clone()),
             requires_elevation: false,
+            requires_force: false,
         }),
         Err(e) => Err(anyhow!("reading existing path `{}`: {e}", from.display())),
         Ok(meta) if meta.file_type().is_symlink() => {
@@ -295,6 +319,7 @@ fn classify_symlink(from: &Path, to: &Path, after: &ResourceState) -> Result<Res
                 before: Some(before),
                 after: Some(after.clone()),
                 requires_elevation: false,
+                requires_force: false,
             })
         }
         Ok(_) => bail!(
@@ -327,6 +352,7 @@ fn classify_template(path: &Path, content: &str, after: &ResourceState) -> Resul
             before: None,
             after: Some(after.clone()),
             requires_elevation: false,
+            requires_force: false,
         }),
         Err(e) => Err(anyhow!("reading existing path `{}`: {e}", path.display())),
         Ok(meta) if meta.file_type().is_file() => {
@@ -349,9 +375,11 @@ fn classify_template(path: &Path, content: &str, after: &ResourceState) -> Resul
                 before: Some(ResourceState::Template {
                     path: path.to_path_buf(),
                     content: existing_text,
+                    sensitive: false,
                 }),
                 after: Some(after.clone()),
                 requires_elevation: false,
+                requires_force: false,
             })
         }
         Ok(_) => bail!(
@@ -382,8 +410,10 @@ impl Plan {
                     after: Some(ResourceState::Template {
                         path: PathBuf::from("~/.zshrc"),
                         content: "export PATH=...".into(),
+                        sensitive: false,
                     }),
                     requires_elevation: false,
+                    requires_force: false,
                 },
                 ResourceChange {
                     address: "~/.config/nvim".into(),
@@ -398,17 +428,7 @@ impl Plan {
                         to: PathBuf::from("/new/target"),
                     }),
                     requires_elevation: false,
-                },
-                ResourceChange {
-                    address: "/tmp/scratch".into(),
-                    kind: ResourceKind::Template,
-                    action: Action::Destroy,
-                    before: Some(ResourceState::Template {
-                        path: PathBuf::from("/tmp/scratch"),
-                        content: "old contents\n".into(),
-                    }),
-                    after: None,
-                    requires_elevation: false,
+                    requires_force: false,
                 },
             ],
         }
@@ -425,7 +445,14 @@ mod tests {
         let s = plan.summary();
         assert_eq!(s.add, 1);
         assert_eq!(s.change, 1);
-        assert_eq!(s.destroy, 1);
+    }
+
+    #[test]
+    fn summary_counts_force_changes() {
+        let mut plan = Plan::sample();
+        plan.changes[1].requires_force = true;
+        let s = plan.summary();
+        assert_eq!(s.force, 1);
     }
 
     #[test]
@@ -439,6 +466,7 @@ mod tests {
                 before: None,
                 after: None,
                 requires_elevation: false,
+                requires_force: false,
             }],
         };
         assert!(only_noop.is_empty());
@@ -450,6 +478,7 @@ mod tests {
         let s = ResourceState::Template {
             path: PathBuf::from("/etc/x"),
             content: "y".into(),
+            sensitive: false,
         };
         assert_eq!(address_for(&s), "/etc/x");
     }
@@ -597,6 +626,7 @@ mod tests {
         let state = desired(&from, &new_target);
         let change = classify(&state, &mut PackageCache::new()).unwrap();
         assert_eq!(change.action, Action::Update);
+        assert!(change.requires_force);
         let before = change.before.expect("before populated for update");
         let ResourceState::Symlink { to: bt, .. } = before else {
             panic!("expected Symlink before");
@@ -622,6 +652,7 @@ mod tests {
         ResourceState::Template {
             path: path.to_path_buf(),
             content: content.into(),
+            sensitive: false,
         }
     }
 
@@ -659,6 +690,7 @@ mod tests {
         let state = template(&path, "new\n");
         let change = classify(&state, &mut PackageCache::new()).unwrap();
         assert_eq!(change.action, Action::Update);
+        assert!(change.requires_force);
         let before = change.before.expect("before populated for update");
         let ResourceState::Template { content: bc, .. } = before else {
             panic!("expected Template before");

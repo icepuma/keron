@@ -37,7 +37,10 @@ use crate::plan::{PackageManager, ResourceState};
 
 #[derive(Clone)]
 enum Value {
-    String(String),
+    String {
+        text: String,
+        sensitive: bool,
+    },
     Int(i64),
     Bool(bool),
     Double(f64),
@@ -72,7 +75,13 @@ enum Value {
 impl std::fmt::Debug for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::String(s) => f.debug_tuple("String").field(s).finish(),
+            Self::String { text, sensitive } => {
+                if *sensitive {
+                    write!(f, "String(<sensitive, {} bytes>)", text.len())
+                } else {
+                    f.debug_tuple("String").field(text).finish()
+                }
+            }
             Self::Int(n) => f.debug_tuple("Int").field(n).finish(),
             Self::Bool(b) => f.debug_tuple("Bool").field(b).finish(),
             Self::Double(d) => f.debug_tuple("Double").field(d).finish(),
@@ -92,9 +101,23 @@ impl std::fmt::Debug for Value {
 }
 
 impl Value {
+    fn plain_string(text: impl Into<String>) -> Self {
+        Self::String {
+            text: text.into(),
+            sensitive: false,
+        }
+    }
+
+    fn sensitive_string(text: impl Into<String>) -> Self {
+        Self::String {
+            text: text.into(),
+            sensitive: true,
+        }
+    }
+
     fn type_name(&self) -> String {
         match self {
-            Self::String(_) => "String".into(),
+            Self::String { .. } => "String".into(),
             Self::Int(_) => "Int".into(),
             Self::Bool(_) => "Boolean".into(),
             Self::Double(_) => "Double".into(),
@@ -527,7 +550,7 @@ fn eval_block_value(
 
 fn eval_literal(lit: &Literal) -> Value {
     match lit {
-        Literal::String(s) => Value::String(s.clone()),
+        Literal::String(s) => Value::plain_string(s.clone()),
         Literal::Int(n) => Value::Int(*n),
         Literal::Boolean(b) => Value::Bool(*b),
         Literal::Double(d) => Value::Double(*d),
@@ -547,7 +570,20 @@ fn eval_unary(op: UnaryOp, v: Value) -> Result<Value> {
 fn eval_binop(op: BinOp, l: Value, r: Value) -> Result<Value> {
     use BinOp::{Add, Concat, Div, Eq, Ge, Gt, Le, Lt, Mul, Neq, Pow, Sub};
     match (op, l, r) {
-        (Add, Value::String(a), Value::String(b)) => Ok(Value::String(a + &b)),
+        (
+            Add,
+            Value::String {
+                text: a,
+                sensitive: sa,
+            },
+            Value::String {
+                text: b,
+                sensitive: sb,
+            },
+        ) => Ok(Value::String {
+            text: a + &b,
+            sensitive: sa || sb,
+        }),
         (Add, Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
         (Sub, Value::Int(a), Value::Int(b)) => Ok(Value::Int(a - b)),
         (Mul, Value::Int(a), Value::Int(b)) => Ok(Value::Int(a * b)),
@@ -610,7 +646,8 @@ fn value_eq(a: &Value, b: &Value) -> bool {
         // The checker only admits `Secret == Secret` (no
         // String↔Secret cross-type), so the merged arm is safe even
         // though semantically these are distinct rules.
-        (Value::String(x), Value::String(y)) | (Value::Secret(x), Value::Secret(y)) => x == y,
+        (Value::String { text: x, .. }, Value::String { text: y, .. })
+        | (Value::Secret(x), Value::Secret(y)) => x == y,
         (Value::Int(x), Value::Int(y)) => x == y,
         (Value::Bool(x), Value::Bool(y)) => x == y,
         (Value::Double(x), Value::Double(y)) => x == y,
@@ -640,39 +677,50 @@ fn value_cmp(a: &Value, b: &Value) -> Result<std::cmp::Ordering> {
         (Value::Double(x), Value::Int(y)) => x
             .partial_cmp(&(*y as f64))
             .ok_or_else(|| anyhow!("NaN comparison")),
-        (Value::String(x), Value::String(y)) => Ok(x.cmp(y)),
+        (Value::String { text: x, .. }, Value::String { text: y, .. }) => Ok(x.cmp(y)),
         (a, b) => bail!("ordering on {} / {}", a.type_name(), b.type_name()),
     }
 }
 
 fn eval_interpolation(parts: &[StringPart], env: &Env<'_, '_>) -> Result<Value> {
     let mut out = String::new();
+    let mut sensitive = false;
     for part in parts {
         match part {
             StringPart::Text(s) => out.push_str(s),
             StringPart::Expr(e) => {
                 let v = eval_expr(e, env)?;
-                stringify(&v, &mut out)?;
+                sensitive |= stringify(&v, &mut out)?;
             }
         }
     }
-    Ok(Value::String(out))
+    Ok(Value::String {
+        text: out,
+        sensitive,
+    })
 }
 
-fn stringify(v: &Value, out: &mut String) -> Result<()> {
+fn stringify(v: &Value, out: &mut String) -> Result<bool> {
     use std::fmt::Write as _;
     match v {
-        Value::String(s) => out.push_str(s),
+        Value::String { text, sensitive } => {
+            out.push_str(text);
+            Ok(*sensitive)
+        }
         Value::Int(n) => {
             let _ = write!(out, "{n}");
+            Ok(false)
         }
-        Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+        Value::Bool(b) => {
+            out.push_str(if *b { "true" } else { "false" });
+            Ok(false)
+        }
         Value::Double(d) => {
             let _ = write!(out, "{d}");
+            Ok(false)
         }
         other => bail!("cannot interpolate {}", other.type_name()),
     }
-    Ok(())
 }
 
 /// Resolve a callee through (1) the current module's `from … use …`
@@ -782,11 +830,11 @@ fn dispatch_intrinsic(id: IntrinsicId, args: &[CallArg], env: &Env<'_, '_>) -> R
             }))
         }
         IntrinsicId::Template => dispatch_template(args, env),
-        IntrinsicId::KeronRoot => Ok(Value::String(
+        IntrinsicId::KeronRoot => Ok(Value::plain_string(
             env.graph.keron_root.to_string_lossy().into_owned(),
         )),
-        IntrinsicId::OsType => Ok(Value::String(detect_os_type())),
-        IntrinsicId::OsArch => Ok(Value::String(detect_os_arch())),
+        IntrinsicId::OsType => Ok(Value::plain_string(detect_os_type())),
+        IntrinsicId::OsArch => Ok(Value::plain_string(detect_os_arch())),
         IntrinsicId::Env => {
             let name = call_string(args, env, "name", 0)?;
             // `env::var` errs both for "not present" and for "not
@@ -794,7 +842,7 @@ fn dispatch_intrinsic(id: IntrinsicId, args: &[CallArg], env: &Env<'_, '_>) -> R
             // than surfacing the latter as a hard error: a user
             // who'd want to distinguish them can read the var via a
             // host-side wrapper. Matches what most config DSLs do.
-            Ok(std::env::var(&name).map_or(Value::Null, Value::String))
+            Ok(std::env::var(&name).map_or(Value::Null, Value::plain_string))
         }
         IntrinsicId::Secret => {
             let uri = call_string(args, env, "uri", 0)?;
@@ -810,7 +858,7 @@ fn dispatch_intrinsic(id: IntrinsicId, args: &[CallArg], env: &Env<'_, '_>) -> R
             // panic.
             let v = eval_call_arg(args, env, "s", 0)?;
             match v {
-                Value::Secret(s) => Ok(Value::String(s)),
+                Value::Secret(s) => Ok(Value::sensitive_string(s)),
                 other => bail!(
                     "unwrap_secret expected `Secret`, found `{}`",
                     other.type_name()
@@ -1166,7 +1214,7 @@ fn detect_os_arch() -> String {
 fn dispatch_template(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     let path = call_string(args, env, "path", 0)?;
     let source = call_string(args, env, "source", 1)?;
-    let vars = call_string_map(args, env, "vars", 2)?;
+    let (vars, sensitive) = call_string_map(args, env, "vars", 2)?;
     let resolved = resolve_managed_path(&source, env, "template", "source")?;
     let raw = std::fs::read_to_string(&resolved).with_context(|| {
         format!(
@@ -1179,6 +1227,7 @@ fn dispatch_template(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     Ok(Value::Resource(ResourceState::Template {
         path: PathBuf::from(path),
         content: rendered,
+        sensitive,
     }))
 }
 
@@ -1319,9 +1368,27 @@ fn call_string(
     name: &str,
     positional_idx: usize,
 ) -> Result<String> {
+    let v = call_string_value(args, env, name, positional_idx)?;
+    if v.sensitive {
+        bail!("sensitive String cannot be used for `{name}`");
+    }
+    Ok(v.text)
+}
+
+struct EvalString {
+    text: String,
+    sensitive: bool,
+}
+
+fn call_string_value(
+    args: &[CallArg],
+    env: &Env<'_, '_>,
+    name: &str,
+    positional_idx: usize,
+) -> Result<EvalString> {
     let v = eval_call_arg(args, env, name, positional_idx)?;
     match v {
-        Value::String(s) => Ok(s),
+        Value::String { text, sensitive } => Ok(EvalString { text, sensitive }),
         other => bail!("expected String for `{name}`, got {}", other.type_name()),
     }
 }
@@ -1335,7 +1402,7 @@ fn call_string_map(
     env: &Env<'_, '_>,
     name: &str,
     positional_idx: usize,
-) -> Result<HashMap<String, String>> {
+) -> Result<(HashMap<String, String>, bool)> {
     let v = eval_call_arg(args, env, name, positional_idx)?;
     let Value::Map(entries) = v else {
         bail!(
@@ -1344,13 +1411,28 @@ fn call_string_map(
         );
     };
     let mut out = HashMap::with_capacity(entries.len());
+    let mut sensitive = false;
     for (k, val) in entries {
-        let (Value::String(k), Value::String(val)) = (k, val) else {
+        let (
+            Value::String {
+                text: k,
+                sensitive: key_sensitive,
+            },
+            Value::String {
+                text: val,
+                sensitive: value_sensitive,
+            },
+        ) = (k, val)
+        else {
             bail!("expected Map<String, String> entries for `{name}`");
         };
+        if key_sensitive {
+            bail!("sensitive String cannot be used as a `{name}` key");
+        }
+        sensitive |= value_sensitive;
         out.insert(k, val);
     }
-    Ok(out)
+    Ok((out, sensitive))
 }
 
 /// Resolve a single call arg by name (preferring named over
@@ -1499,7 +1581,7 @@ mod tests {
 
     #[test]
     fn value_type_name_returns_canonical_strings() {
-        assert_eq!(Value::String(String::new()).type_name(), "String");
+        assert_eq!(Value::plain_string(String::new()).type_name(), "String");
         assert_eq!(Value::Int(0).type_name(), "Int");
         assert_eq!(Value::Bool(false).type_name(), "Boolean");
         assert_eq!(Value::Double(0.0).type_name(), "Double");
@@ -1540,7 +1622,7 @@ mod tests {
         Value::Double(d)
     }
     fn s(v: &str) -> Value {
-        Value::String(v.into())
+        Value::plain_string(v)
     }
     fn assert_int(v: &Value, expected: i64) {
         match v {
@@ -1564,7 +1646,7 @@ mod tests {
     }
     fn assert_string(v: &Value, expected: &str) {
         match v {
-            Value::String(s) => assert_eq!(s, expected),
+            Value::String { text, .. } => assert_eq!(text, expected),
             _ => panic!("expected String"),
         }
     }
@@ -2713,15 +2795,21 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         // without an `op` binary.
         let uri = unique_op_uri("ok");
         let _g = secret_test::SecretOverride::ok(&uri, "hunter2");
-        let src = format!(
-            "val token: Secret = secret(\"{uri}\")\n\
-             reconcile template(path = unwrap_secret(token), source = \"tmpl.tpl\", vars = {{\"body\": \"\"}})\n",
+        let states = run_with_templates(
+            &format!(
+                "val token: Secret = secret(\"{uri}\")\n\
+                 reconcile template(path = \"/secret\", source = \"secret.tpl\", vars = {{\"body\": unwrap_secret(token)}})\n",
+            ),
+            &[("secret.tpl", "{{ body }}")],
         );
-        let states = run(&src);
-        let ResourceState::Template { path, .. } = &states[0] else {
+        let ResourceState::Template {
+            content, sensitive, ..
+        } = &states[0]
+        else {
             panic!("expected template, got {:?}", states[0]);
         };
-        assert_eq!(path, &PathBuf::from("hunter2"));
+        assert_eq!(content, "hunter2");
+        assert!(*sensitive);
     }
 
     #[test]
@@ -2731,30 +2819,42 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         // same `secret(...) → unwrap_secret(...)` pipeline as `op://`.
         let uri = unique_secret_uri("infisical", "ok");
         let _g = secret_test::SecretOverride::ok(&uri, "ifs-value");
-        let src = format!(
-            "val token: Secret = secret(\"{uri}\")\n\
-             reconcile template(path = unwrap_secret(token), source = \"tmpl.tpl\", vars = {{\"body\": \"\"}})\n",
+        let states = run_with_templates(
+            &format!(
+                "val token: Secret = secret(\"{uri}\")\n\
+                 reconcile template(path = \"/secret\", source = \"secret.tpl\", vars = {{\"body\": unwrap_secret(token)}})\n",
+            ),
+            &[("secret.tpl", "{{ body }}")],
         );
-        let states = run(&src);
-        let ResourceState::Template { path, .. } = &states[0] else {
+        let ResourceState::Template {
+            content, sensitive, ..
+        } = &states[0]
+        else {
             panic!("expected template, got {:?}", states[0]);
         };
-        assert_eq!(path, &PathBuf::from("ifs-value"));
+        assert_eq!(content, "ifs-value");
+        assert!(*sensitive);
     }
 
     #[test]
     fn secret_bw_scheme_resolves_via_test_override() {
         let uri = unique_secret_uri("bw", "ok");
         let _g = secret_test::SecretOverride::ok(&uri, "bw-value");
-        let src = format!(
-            "val token: Secret = secret(\"{uri}\")\n\
-             reconcile template(path = unwrap_secret(token), source = \"tmpl.tpl\", vars = {{\"body\": \"\"}})\n",
+        let states = run_with_templates(
+            &format!(
+                "val token: Secret = secret(\"{uri}\")\n\
+                 reconcile template(path = \"/secret\", source = \"secret.tpl\", vars = {{\"body\": unwrap_secret(token)}})\n",
+            ),
+            &[("secret.tpl", "{{ body }}")],
         );
-        let states = run(&src);
-        let ResourceState::Template { path, .. } = &states[0] else {
+        let ResourceState::Template {
+            content, sensitive, ..
+        } = &states[0]
+        else {
             panic!("expected template, got {:?}", states[0]);
         };
-        assert_eq!(path, &PathBuf::from("bw-value"));
+        assert_eq!(content, "bw-value");
+        assert!(*sensitive);
     }
 
     #[test]
@@ -2818,9 +2918,9 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
     #[test]
     fn secret_unwrap_round_trips_through_template_vars() {
         // Full pipeline: secret → unwrap_secret → template var. The
-        // user has explicitly opted into the leak by calling
-        // `unwrap_secret`, so the rendered file content equals the
-        // resolved secret value.
+        // user has explicitly opted into using the value by calling
+        // `unwrap_secret`; the rendered content is stored for apply
+        // but marked sensitive so plan/diff rendering can redact it.
         let uri = unique_op_uri("template");
         let _g = secret_test::SecretOverride::ok(&uri, "deploy-key-abc");
         let states = run_with_templates(
@@ -2834,10 +2934,56 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
             ),
             &[("auth.tpl", "TOKEN={{ token }}\n")],
         );
-        let ResourceState::Template { content, .. } = &states[0] else {
+        let ResourceState::Template {
+            content, sensitive, ..
+        } = &states[0]
+        else {
             panic!("expected template, got {:?}", states[0]);
         };
         assert_eq!(content, "TOKEN=deploy-key-abc\n");
+        assert!(*sensitive);
+    }
+
+    #[test]
+    fn secret_taint_survives_string_concat() {
+        let uri = unique_op_uri("concat");
+        let _g = secret_test::SecretOverride::ok(&uri, "deploy-key");
+        let states = run_with_templates(
+            &format!(
+                "val token: Secret = secret(\"{uri}\")\n\
+                 reconcile template(path = \"/etc/auth\", source = \"auth.tpl\", vars = {{\"token\": unwrap_secret(token) + \"-abc\"}})\n",
+            ),
+            &[("auth.tpl", "TOKEN={{ token }}\n")],
+        );
+        let ResourceState::Template {
+            content, sensitive, ..
+        } = &states[0]
+        else {
+            panic!("expected template, got {:?}", states[0]);
+        };
+        assert_eq!(content, "TOKEN=deploy-key-abc\n");
+        assert!(*sensitive);
+    }
+
+    #[test]
+    fn secret_taint_survives_interpolation() {
+        let uri = unique_op_uri("interpolation");
+        let _g = secret_test::SecretOverride::ok(&uri, "deploy-key");
+        let states = run_with_templates(
+            &format!(
+                "val token: Secret = secret(\"{uri}\")\n\
+                 reconcile template(path = \"/etc/auth\", source = \"auth.tpl\", vars = {{\"token\": \"prefix-${{unwrap_secret(token)}}\"}})\n",
+            ),
+            &[("auth.tpl", "TOKEN={{ token }}\n")],
+        );
+        let ResourceState::Template {
+            content, sensitive, ..
+        } = &states[0]
+        else {
+            panic!("expected template, got {:?}", states[0]);
+        };
+        assert_eq!(content, "TOKEN=prefix-deploy-key\n");
+        assert!(*sensitive);
     }
 
     /// Drive a manifest that builds a `secret("<uri>")` resource
@@ -3085,6 +3231,20 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         assert!(
             formatted.contains("15"),
             "Debug should include the byte length: {formatted}",
+        );
+    }
+
+    #[test]
+    fn sensitive_string_debug_redacts_payload() {
+        let v = Value::sensitive_string("deploy-key-abc");
+        let formatted = format!("{v:?}");
+        assert!(
+            !formatted.contains("deploy-key-abc"),
+            "Debug must not leak payload: {formatted}",
+        );
+        assert!(
+            formatted.contains("sensitive"),
+            "Debug should mark the value as sensitive: {formatted}",
         );
     }
 

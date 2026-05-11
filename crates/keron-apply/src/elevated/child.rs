@@ -124,6 +124,7 @@ mod tests {
             before: None,
             after: Some(state),
             requires_elevation: true,
+            requires_force: false,
         }
     }
 
@@ -141,6 +142,7 @@ mod tests {
         let c = change(ResourceState::Template {
             path: PathBuf::from("/c"),
             content: "x".into(),
+            sensitive: false,
         });
         assert_eq!(leaf_path(&c), Some(PathBuf::from("/c")));
     }

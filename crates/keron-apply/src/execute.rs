@@ -2,12 +2,12 @@
 //! effects each [`ResourceChange`] demands.
 //!
 //! v1 supports symlinks, templates, and packages end-to-end (create,
-//! update, destroy, no-op). Other resource kinds bail with a clear
+//! update, no-op). Other resource kinds bail with a clear
 //! "not yet implemented" diagnostic — they land alongside the
 //! planner work that diffs them against live state.
 
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
@@ -19,7 +19,6 @@ use crate::plan::{Action, Plan, ResourceChange, ResourceKind, ResourceState};
 pub struct ExecuteSummary {
     pub added: usize,
     pub changed: usize,
-    pub destroyed: usize,
 }
 
 pub fn execute(plan: &Plan) -> Result<ExecuteSummary> {
@@ -35,7 +34,6 @@ fn apply_change(change: &ResourceChange, summary: &mut ExecuteSummary) -> Result
     match change.action {
         Action::Create => summary.added += 1,
         Action::Update => summary.changed += 1,
-        Action::Destroy => summary.destroyed += 1,
         Action::NoOp => {}
     }
     Ok(())
@@ -46,9 +44,7 @@ fn apply_change(change: &ResourceChange, summary: &mut ExecuteSummary) -> Result
 ///
 /// # Errors
 /// Errors when the underlying filesystem call fails or when the
-/// resource kind has no executor support yet for the action — e.g.
-/// destroying a package, which bails with a clear "not yet
-/// implemented" message that names the kind.
+/// resource kind has no executor support yet for the action.
 pub fn apply_change_one(change: &ResourceChange) -> Result<()> {
     match change.action {
         Action::NoOp => Ok(()),
@@ -70,20 +66,13 @@ pub fn apply_change_one(change: &ResourceChange) -> Result<()> {
                 .with_context(|| format!("update `{}` has no desired state", change.address))?;
             apply_update(before, after).with_context(|| format!("updating `{}`", change.address))
         }
-        Action::Destroy => {
-            let state = change
-                .before
-                .as_ref()
-                .with_context(|| format!("destroy `{}` has no prior state", change.address))?;
-            apply_destroy(state).with_context(|| format!("destroying `{}`", change.address))
-        }
     }
 }
 
 fn apply_create(state: &ResourceState) -> Result<()> {
     match state {
         ResourceState::Symlink { from, to } => create_symlink(from, to),
-        ResourceState::Template { path, content } => write_template(path, content),
+        ResourceState::Template { path, content, .. } => create_template(path, content),
         ResourceState::Package { manager, name } => packages::install(*manager, name),
     }
 }
@@ -105,7 +94,9 @@ fn apply_update(before: &ResourceState, after: &ResourceState) -> Result<()> {
         }
         (
             ResourceState::Template { path: bp, .. },
-            ResourceState::Template { path: ap, content },
+            ResourceState::Template {
+                path: ap, content, ..
+            },
         ) => {
             if bp != ap {
                 bail!(
@@ -114,19 +105,9 @@ fn apply_update(before: &ResourceState, after: &ResourceState) -> Result<()> {
                     ap.display(),
                 );
             }
-            // `fs::write` opens `O_TRUNC | O_CREAT` — not crash-safe
-            // mid-write but matches the dotfile-manager norm.
-            write_template(ap, content)
+            replace_template(ap, content)
         }
         _ => bail!(unsupported_kind(after)),
-    }
-}
-
-fn apply_destroy(state: &ResourceState) -> Result<()> {
-    match state {
-        ResourceState::Symlink { from, .. } => remove_symlink(from),
-        ResourceState::Template { path, .. } => remove_template(path),
-        other @ ResourceState::Package { .. } => bail!(unsupported_kind(other)),
     }
 }
 
@@ -152,29 +133,83 @@ fn remove_symlink(path: &Path) -> Result<()> {
     fs::remove_file(path).with_context(|| format!("removing symlink `{}`", path.display()))
 }
 
-fn write_template(path: &Path, content: &str) -> Result<()> {
+fn create_template(path: &Path, content: &str) -> Result<()> {
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
     {
         fs::create_dir_all(parent)
             .with_context(|| format!("creating parent directory `{}`", parent.display()))?;
     }
-    fs::write(path, content).with_context(|| format!("writing template `{}`", path.display()))
+    let mut file = open_new_leaf_no_follow(path)
+        .with_context(|| format!("creating template `{}`", path.display()))?;
+    file.write_all(content.as_bytes())
+        .with_context(|| format!("writing template `{}`", path.display()))?;
+    file.sync_all()
+        .with_context(|| format!("syncing template `{}`", path.display()))
 }
 
-fn remove_template(path: &Path) -> Result<()> {
-    // Symmetric with `remove_symlink`: a symlink or directory at the
-    // path means the filesystem disagrees with the manifest; refuse
-    // rather than silently destroy unrelated data.
+fn replace_template(path: &Path, content: &str) -> Result<()> {
     let meta =
         fs::symlink_metadata(path).with_context(|| format!("inspecting `{}`", path.display()))?;
     if !meta.file_type().is_file() {
         bail!(
-            "`{}` is not a regular file; refusing to remove",
+            "`{}` is not a regular file; refusing to replace",
             path.display()
         );
     }
-    fs::remove_file(path).with_context(|| format!("removing template `{}`", path.display()))
+    let tmp = temp_sibling(path);
+    let write_res = (|| -> Result<()> {
+        let mut file = open_new_leaf_no_follow(&tmp)
+            .with_context(|| format!("creating temporary template `{}`", tmp.display()))?;
+        file.write_all(content.as_bytes())
+            .with_context(|| format!("writing temporary template `{}`", tmp.display()))?;
+        file.sync_all()
+            .with_context(|| format!("syncing temporary template `{}`", tmp.display()))?;
+        fs::rename(&tmp, path).with_context(|| {
+            format!(
+                "atomically replacing `{}` with `{}`",
+                path.display(),
+                tmp.display()
+            )
+        })
+    })();
+    if write_res.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    write_res
+}
+
+fn temp_sibling(path: &Path) -> std::path::PathBuf {
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let name = path
+        .file_name()
+        .map_or_else(|| "template".into(), std::ffi::OsStr::to_os_string);
+    let mut tmp_name = std::ffi::OsString::from(".");
+    tmp_name.push(name);
+    tmp_name.push(format!(
+        ".keron-tmp-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos())
+    ));
+    parent.join(tmp_name)
+}
+
+fn open_new_leaf_no_follow(path: &Path) -> io::Result<fs::File> {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o666).custom_flags(libc::O_NOFOLLOW);
+    }
+
+    options.open(path)
 }
 
 fn unsupported_kind(state: &ResourceState) -> String {
@@ -241,6 +276,27 @@ mod tests {
         }
     }
 
+    struct CwdFile {
+        path: PathBuf,
+    }
+
+    impl CwdFile {
+        fn new(tag: &str) -> Self {
+            let n = SEQ.fetch_add(1, Ordering::Relaxed);
+            let path = PathBuf::from(format!(".keron-execute-{tag}-{}-{n}", std::process::id()));
+            if path.exists() {
+                fs::remove_file(&path).ok();
+            }
+            Self { path }
+        }
+    }
+
+    impl Drop for CwdFile {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
+
     fn change(
         action: Action,
         before: Option<ResourceState>,
@@ -265,6 +321,7 @@ mod tests {
             before,
             after,
             requires_elevation: false,
+            requires_force: false,
         }
     }
 
@@ -288,7 +345,6 @@ mod tests {
         let summary = execute(&plan).unwrap();
         assert_eq!(summary.added, 1);
         assert_eq!(summary.changed, 0);
-        assert_eq!(summary.destroyed, 0);
         let resolved = fs::read_link(&link).unwrap();
         assert_eq!(resolved, target);
     }
@@ -346,54 +402,6 @@ mod tests {
     }
 
     #[test]
-    fn destroy_symlink_removes_link() {
-        let d = TempDir::new("destroy");
-        let target = d.path.join("real");
-        fs::write(&target, "hi").unwrap();
-        let link = d.path.join("alias");
-        symlink_impl(&target, &link).unwrap();
-
-        let plan = Plan {
-            changes: vec![change(
-                Action::Destroy,
-                Some(ResourceState::Symlink {
-                    from: link.clone(),
-                    to: target.clone(),
-                }),
-                None,
-            )],
-        };
-        let summary = execute(&plan).unwrap();
-        assert_eq!(summary.destroyed, 1);
-        assert!(!link.exists() && !link.is_symlink());
-        assert!(
-            target.exists(),
-            "destroy should leave the link target alone"
-        );
-    }
-
-    #[test]
-    fn destroy_refuses_to_remove_real_files() {
-        let d = TempDir::new("destroy-real");
-        let path = d.path.join("real");
-        fs::write(&path, "data").unwrap();
-        let plan = Plan {
-            changes: vec![change(
-                Action::Destroy,
-                Some(ResourceState::Symlink {
-                    from: path.clone(),
-                    to: PathBuf::from("/whatever"),
-                }),
-                None,
-            )],
-        };
-        let err = execute(&plan).expect_err("destroying a real file must fail");
-        let msg = format!("{err:#}");
-        assert!(msg.contains("not a symlink"), "got: {msg}");
-        assert!(path.exists(), "real file should still exist");
-    }
-
-    #[test]
     fn noop_change_does_nothing() {
         let d = TempDir::new("noop");
         let target = d.path.join("real");
@@ -417,7 +425,6 @@ mod tests {
         let summary = execute(&plan).unwrap();
         assert_eq!(summary.added, 0);
         assert_eq!(summary.changed, 0);
-        assert_eq!(summary.destroyed, 0);
     }
 
     #[test]
@@ -427,11 +434,9 @@ mod tests {
         fs::write(&target, "hi").unwrap();
         let to_create = d.path.join("a");
         let to_update_link = d.path.join("b");
-        let to_destroy = d.path.join("c");
         let old_target = d.path.join("old");
         fs::write(&old_target, "old").unwrap();
         symlink_impl(&old_target, &to_update_link).unwrap();
-        symlink_impl(&target, &to_destroy).unwrap();
 
         let plan = Plan {
             changes: vec![
@@ -451,23 +456,14 @@ mod tests {
                     }),
                     Some(ResourceState::Symlink {
                         from: to_update_link,
-                        to: target.clone(),
-                    }),
-                ),
-                change(
-                    Action::Destroy,
-                    Some(ResourceState::Symlink {
-                        from: to_destroy,
                         to: target,
                     }),
-                    None,
                 ),
             ],
         };
         let summary = execute(&plan).unwrap();
         assert_eq!(summary.added, 1);
         assert_eq!(summary.changed, 1);
-        assert_eq!(summary.destroyed, 1);
     }
 
     #[test]
@@ -481,6 +477,7 @@ mod tests {
                 Some(ResourceState::Template {
                     path: path.clone(),
                     content: "key = \"value\"\n".into(),
+                    sensitive: false,
                 }),
             )],
         };
@@ -501,10 +498,12 @@ mod tests {
                 Some(ResourceState::Template {
                     path: path.clone(),
                     content: "old contents\n".into(),
+                    sensitive: false,
                 }),
                 Some(ResourceState::Template {
                     path: path.clone(),
                     content: "new contents\n".into(),
+                    sensitive: false,
                 }),
             )],
         };
@@ -515,50 +514,42 @@ mod tests {
     }
 
     #[test]
-    fn destroy_template_removes_file() {
-        let d = TempDir::new("template-destroy");
-        let path = d.path.join("config.toml");
-        fs::write(&path, "x").unwrap();
-        let plan = Plan {
-            changes: vec![change(
-                Action::Destroy,
-                Some(ResourceState::Template {
-                    path: path.clone(),
-                    content: "x".into(),
-                }),
-                None,
-            )],
-        };
-        let summary = execute(&plan).unwrap();
-        assert_eq!(summary.destroyed, 1);
-        assert!(!path.exists(), "destroy should remove the file");
+    fn update_template_handles_relative_leaf_paths() {
+        let file = CwdFile::new("relative-template-update");
+        fs::write(&file.path, "old").unwrap();
+        replace_template(&file.path, "new").unwrap();
+        assert_eq!(fs::read_to_string(&file.path).unwrap(), "new");
+    }
+
+    #[test]
+    fn temp_sibling_for_relative_leaf_uses_current_dir_parent() {
+        let tmp = temp_sibling(Path::new("config.toml"));
+        assert_eq!(tmp.parent(), Some(Path::new(".")));
+        let name = tmp.file_name().unwrap().to_string_lossy();
+        assert!(name.starts_with(".config.toml.keron-tmp-"), "got: {tmp:?}");
+    }
+
+    #[test]
+    fn open_new_leaf_creates_the_requested_path() {
+        let d = TempDir::new("open-new-leaf");
+        let path = d.path.join("leaf");
+        let mut file = open_new_leaf_no_follow(&path).unwrap();
+        file.write_all(b"x").unwrap();
+        drop(file);
+        assert_eq!(fs::read_to_string(path).unwrap(), "x");
     }
 
     #[cfg(unix)]
     #[test]
-    fn destroy_template_refuses_to_remove_symlinks() {
-        let d = TempDir::new("template-destroy-symlink");
+    fn open_new_leaf_refuses_symlink_leaf() {
+        let d = TempDir::new("open-new-leaf-symlink");
         let real = d.path.join("real");
-        fs::write(&real, "x").unwrap();
-        let link = d.path.join("alias");
+        fs::write(&real, "original").unwrap();
+        let link = d.path.join("link");
         symlink_impl(&real, &link).unwrap();
-        let plan = Plan {
-            changes: vec![change(
-                Action::Destroy,
-                Some(ResourceState::Template {
-                    path: link.clone(),
-                    content: String::new(),
-                }),
-                None,
-            )],
-        };
-        let err = execute(&plan).expect_err("destroying a symlink-as-template must fail");
-        assert!(
-            format!("{err:#}").contains("not a regular file"),
-            "got: {err:#}",
-        );
-        assert!(link.is_symlink());
-        assert!(real.exists());
+        let err = open_new_leaf_no_follow(&link).expect_err("symlink leaf must not open");
+        assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read_to_string(real).unwrap(), "original");
     }
 
     #[test]
@@ -570,6 +561,7 @@ mod tests {
         // exit.
         #[allow(unsafe_code)]
         unsafe {
+            std::env::set_var("KERON_ALLOW_TEST_OVERRIDES", "1");
             std::env::set_var("KERON_TEST_PACKAGE_BIN_BREW", "/usr/bin/true");
         }
         let plan = Plan {
@@ -586,6 +578,7 @@ mod tests {
         #[allow(unsafe_code)]
         unsafe {
             std::env::remove_var("KERON_TEST_PACKAGE_BIN_BREW");
+            std::env::remove_var("KERON_ALLOW_TEST_OVERRIDES");
         }
         let summary = result.expect("install spy should succeed");
         assert_eq!(summary.added, 1);
@@ -596,7 +589,6 @@ mod tests {
         let summary = execute(&Plan::default()).unwrap();
         assert_eq!(summary.added, 0);
         assert_eq!(summary.changed, 0);
-        assert_eq!(summary.destroyed, 0);
     }
 
     #[test]

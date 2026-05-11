@@ -16,6 +16,25 @@ pub fn prompt_yes_no<R: BufRead, W: Write>(stdin: &mut R, stdout: &mut W) -> io:
     Ok(line.trim() == "yes")
 }
 
+pub fn prompt_force<R: BufRead, W: Write>(
+    stdin: &mut R,
+    stdout: &mut W,
+    count: usize,
+) -> io::Result<bool> {
+    writeln!(stdout)?;
+    writeln!(
+        stdout,
+        "{count} change(s) would overwrite or remove existing filesystem objects that keron cannot prove it owns."
+    )?;
+    writeln!(stdout, "  Only 'force' will be accepted to continue.")?;
+    writeln!(stdout)?;
+    write!(stdout, "  Enter a value: ")?;
+    stdout.flush()?;
+    let mut line = String::new();
+    stdin.read_line(&mut line)?;
+    Ok(line.trim() == "force")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -54,5 +73,16 @@ mod tests {
     #[test]
     fn empty_input_does_not_approve() {
         assert!(!ask(""));
+    }
+
+    #[test]
+    fn force_requires_literal_force() {
+        let mut sin = io::Cursor::new(b"force\n".to_vec());
+        let mut sout = Vec::new();
+        assert!(prompt_force(&mut sin, &mut sout, 1).unwrap());
+
+        let mut sin = io::Cursor::new(b"yes\n".to_vec());
+        let mut sout = Vec::new();
+        assert!(!prompt_force(&mut sin, &mut sout, 1).unwrap());
     }
 }
