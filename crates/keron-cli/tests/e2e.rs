@@ -44,10 +44,30 @@ impl E2eHome {
             let _ = fs::remove_dir_all(&path);
         }
         fs::create_dir_all(&path).expect("create fake HOME");
+        let canonical = fs::canonicalize(&path).expect("canonicalize fake HOME");
         Self {
-            path: fs::canonicalize(path).expect("canonicalize fake HOME"),
+            path: strip_unc_prefix(canonical),
         }
     }
+}
+
+/// On Windows `fs::canonicalize` returns a path with the `\\?\`
+/// extended-length prefix. That prefix specifically rejects forward
+/// slashes, but keron manifests use `/` as their path separator
+/// (`"${home}/.testrc"`), so the post-interpolation path would mix
+/// `\\?\` + `/` and Windows refuses to open it (`os error 123`).
+/// Strip the prefix on Windows so the fake-HOME path keeps Windows
+/// semantics without the UNC trap. No-op on Unix.
+#[cfg(windows)]
+fn strip_unc_prefix(path: PathBuf) -> PathBuf {
+    let s = path.to_string_lossy();
+    s.strip_prefix(r"\\?\")
+        .map_or_else(|| path.clone(), PathBuf::from)
+}
+
+#[cfg(not(windows))]
+fn strip_unc_prefix(path: PathBuf) -> PathBuf {
+    path
 }
 
 impl Drop for E2eHome {
