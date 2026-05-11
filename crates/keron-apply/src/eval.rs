@@ -1202,6 +1202,12 @@ fn dispatch_template(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
 /// - The canonical target replaces the raw user value; the executor
 ///   and the diff renderer both see the absolute, dereferenced path
 ///   so a moved symlink does not silently target a different file.
+/// - **The leaf must be a real file**, not a symlink. Templating from a
+///   symlink or symlinking to another symlink would chain indirection
+///   that the user almost certainly didn't intend; we refuse rather
+///   than silently follow. Intermediate components may still be
+///   symlinks (e.g. a symlinked keron root); only the final component
+///   is rejected.
 fn resolve_managed_path(raw: &str, env: &Env<'_, '_>, kind: &str, arg: &str) -> Result<PathBuf> {
     let candidate = PathBuf::from(raw);
     let absolute = if candidate.is_absolute() {
@@ -1210,6 +1216,19 @@ fn resolve_managed_path(raw: &str, env: &Env<'_, '_>, kind: &str, arg: &str) -> 
         let ModuleId::File(module_path) = &env.current;
         module_path.parent().map_or(candidate, |p| p.join(raw))
     };
+    let leaf_meta = std::fs::symlink_metadata(&absolute).with_context(|| {
+        format!(
+            "resolving {kind} `{arg}` = `{raw}` (looked for `{}`)",
+            absolute.display()
+        )
+    })?;
+    if leaf_meta.file_type().is_symlink() {
+        bail!(
+            "{kind} `{arg}` = `{raw}` is a symlink (`{}`); keron only manages real files — \
+             point at the underlying file instead",
+            absolute.display()
+        );
+    }
     let canonical = std::fs::canonicalize(&absolute).with_context(|| {
         format!(
             "resolving {kind} `{arg}` = `{raw}` (looked for `{}`)",
@@ -3286,6 +3305,71 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         assert!(msg.contains("symlink"), "kind missing: {msg}");
         assert!(msg.contains("`to`"), "arg name missing: {msg}");
         assert!(msg.contains("not-there"), "value missing: {msg}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_to_a_symlink_is_rejected() {
+        // `to = "./alias"` where `alias` is itself a symlink would
+        // chain indirection. Refuse loudly rather than canonicalize
+        // through; the user almost certainly meant to point at the
+        // underlying file.
+        let proj = TempProject::new("symlink-to-symlink");
+        let real = proj.root.join("real.txt");
+        fs::write(&real, "hi").unwrap();
+        std::os::unix::fs::symlink(&real, proj.root.join("alias")).unwrap();
+        let src = "reconcile symlink(from = \"/dest\", to = \"./alias\")\n";
+        let entry = proj.entry(src);
+        let canonical = fs::canonicalize(&entry).unwrap();
+        let base_dir = canonical.parent().unwrap().to_path_buf();
+        let keron_root = base_dir.clone();
+        let graph = resolve(vec![EntrySource {
+            text: src.into(),
+            base_dir,
+            id: keron_modules::ModuleId::File(canonical),
+        }])
+        .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
+        let err = eval_graph(&graph, &keron_root).expect_err("symlink-to-symlink must be refused");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("symlink"), "kind missing: {msg}");
+        assert!(msg.contains("`to`"), "arg name missing: {msg}");
+        assert!(
+            msg.contains("only manages real files"),
+            "real-files-only message missing: {msg}",
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn template_source_that_is_a_symlink_is_rejected() {
+        // Same rule for templates: `source` must be a real file, not
+        // a symlink. Without the leaf check, `canonicalize` would
+        // silently dereference and the user'd never see that they
+        // pointed at a link.
+        let proj = TempProject::new("template-source-symlink");
+        let real = proj.root.join("real.tpl");
+        fs::write(&real, "hi").unwrap();
+        std::os::unix::fs::symlink(&real, proj.root.join("alias.tpl")).unwrap();
+        let src = "reconcile template(path = \"/dest\", source = \"./alias.tpl\", vars = {})\n";
+        let entry = proj.entry(src);
+        let canonical = fs::canonicalize(&entry).unwrap();
+        let base_dir = canonical.parent().unwrap().to_path_buf();
+        let keron_root = base_dir.clone();
+        let graph = resolve(vec![EntrySource {
+            text: src.into(),
+            base_dir,
+            id: keron_modules::ModuleId::File(canonical),
+        }])
+        .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
+        let err =
+            eval_graph(&graph, &keron_root).expect_err("template-from-symlink must be refused");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("template"), "kind missing: {msg}");
+        assert!(msg.contains("`source`"), "arg name missing: {msg}");
+        assert!(
+            msg.contains("only manages real files"),
+            "real-files-only message missing: {msg}",
+        );
     }
 
     #[test]
