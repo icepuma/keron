@@ -156,6 +156,13 @@ fn elevated_subset_runs_under_spy_and_chowns_back() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
+    // Echo the captured transcript so nextest's
+    // --success-output=immediate-final surfaces the plan + apply
+    // output in the CI log on green runs.
+    println!("--- keron stdout ---\n{stdout}");
+    if !stderr.is_empty() {
+        println!("--- keron stderr ---\n{stderr}");
+    }
     assert!(
         output.status.success(),
         "keron exited non-zero: status={:?}\nstdout:\n{stdout}\nstderr:\n{stderr}",

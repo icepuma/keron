@@ -106,6 +106,11 @@ struct Output {
 }
 
 /// Run the prepared command, feeding `stdin_text` to the prompt.
+/// Echoes the captured keron stdout / stderr through the test's own
+/// stdout so `cargo nextest run --success-output=immediate-final`
+/// surfaces the plan + apply transcript in the CI log alongside each
+/// passing test — replaces the separate "demo" step that used to run
+/// keron once for visibility.
 fn run(mut cmd: Command, stdin_text: &str) -> Output {
     let mut child = cmd.spawn().expect("spawning keron");
     child
@@ -115,10 +120,16 @@ fn run(mut cmd: Command, stdin_text: &str) -> Output {
         .write_all(stdin_text.as_bytes())
         .expect("writing prompt input");
     let out = child.wait_with_output().expect("waiting on keron");
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    println!("--- keron stdout ---\n{stdout}");
+    if !stderr.is_empty() {
+        println!("--- keron stderr ---\n{stderr}");
+    }
     Output {
         success: out.status.success(),
-        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+        stdout,
+        stderr,
     }
 }
 

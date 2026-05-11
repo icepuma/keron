@@ -82,6 +82,10 @@ fn package_installs_when_absent_and_noops_when_present() {
         .expect("first keron run");
     let stdout1 = String::from_utf8_lossy(&first.stdout);
     let stderr1 = String::from_utf8_lossy(&first.stderr);
+    println!("--- keron stdout (first run) ---\n{stdout1}");
+    if !stderr1.is_empty() {
+        println!("--- keron stderr (first run) ---\n{stderr1}");
+    }
     assert!(
         first.status.success(),
         "first run failed: {:?}\nstdout:\n{stdout1}\nstderr:\n{stderr1}",
@@ -115,6 +119,10 @@ fn package_installs_when_absent_and_noops_when_present() {
         .expect("second keron run");
     let stdout2 = String::from_utf8_lossy(&second.stdout);
     let stderr2 = String::from_utf8_lossy(&second.stderr);
+    println!("--- keron stdout (second run) ---\n{stdout2}");
+    if !stderr2.is_empty() {
+        println!("--- keron stderr (second run) ---\n{stderr2}");
+    }
     assert!(
         second.status.success(),
         "second run failed: {:?}\nstdout:\n{stdout2}\nstderr:\n{stderr2}",
@@ -150,6 +158,10 @@ fn duplicate_packages_in_one_plan_install_once() {
         .expect("keron run");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
+    println!("--- keron stdout ---\n{stdout}");
+    if !stderr.is_empty() {
+        println!("--- keron stderr ---\n{stderr}");
+    }
     assert!(
         output.status.success(),
         "dupe plan failed: {:?}\nstdout:\n{stdout}\nstderr:\n{stderr}",
