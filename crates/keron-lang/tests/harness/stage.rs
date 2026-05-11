@@ -9,10 +9,10 @@ use keron_lang::{
 use super::render;
 
 /// Pre-resolved imported symbols mirroring the implicit stdlib
-/// builtins (`symlink`, `template`, `directory`, plus the resource
-/// type names). Mirrors `keron-modules::stdlib::fs` by hand because
-/// this harness lives in `keron-lang` and can't depend on
-/// `keron-modules`. Keep in sync if the registry grows.
+/// builtins (`symlink`, `template`, plus the resource type names).
+/// Mirrors `keron-modules::stdlib::fs` by hand because this harness
+/// lives in `keron-lang` and can't depend on `keron-modules`. Keep
+/// in sync if the registry grows.
 fn fs_imports() -> ImportedSymbols {
     let mut imp = ImportedSymbols::default();
     imp.fns.insert(
@@ -58,22 +58,9 @@ fn fs_imports() -> ImportedSymbols {
         },
     );
     imp.builtins.insert("template".into());
-    imp.fns.insert(
-        "directory".into(),
-        FnSig {
-            params: vec![ParamSig {
-                name: "path".into(),
-                ty: Type::String,
-                has_default: false,
-            }],
-            return_type: Type::Directory,
-        },
-    );
-    imp.builtins.insert("directory".into());
     for (name, ty) in [
         ("Symlink", Type::Symlink),
         ("Template", Type::Template),
-        ("Directory", Type::Directory),
         ("Resource", Type::Resource),
     ] {
         imp.types.insert(name.into(), ty);

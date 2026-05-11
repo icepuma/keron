@@ -153,66 +153,23 @@ Program {
                             },
                         ],
                     },
-                    span: 87..165,
+                    span: 87..166,
                 },
-                span: 66..165,
-            },
-        ),
-        Val(
-            ValDecl {
-                name: Spanned {
-                    node: "data",
-                    span: 169..173,
-                },
-                ty: Some(
-                    Spanned {
-                        node: Directory,
-                        span: 175..184,
-                    },
-                ),
-                value: Spanned {
-                    node: Call {
-                        callee: Spanned {
-                            node: "directory",
-                            span: 187..196,
-                        },
-                        args: [
-                            CallArg {
-                                name: Some(
-                                    Spanned {
-                                        node: "path",
-                                        span: 197..201,
-                                    },
-                                ),
-                                value: Spanned {
-                                    node: Literal(
-                                        String(
-                                            "~/data",
-                                        ),
-                                    ),
-                                    span: 204..212,
-                                },
-                                span: 197..212,
-                            },
-                        ],
-                    },
-                    span: 187..215,
-                },
-                span: 165..215,
+                span: 66..166,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "mixed",
-                    span: 219..224,
+                    span: 170..175,
                 },
                 ty: Some(
                     Spanned {
                         node: List(
                             Resource,
                         ),
-                        span: 226..241,
+                        span: 177..192,
                     },
                 ),
                 value: Spanned {
@@ -222,25 +179,19 @@ Program {
                                 node: Var(
                                     "zshrc",
                                 ),
-                                span: 244..249,
+                                span: 195..200,
                             },
                             Spanned {
                                 node: Var(
                                     "motd",
                                 ),
-                                span: 251..255,
-                            },
-                            Spanned {
-                                node: Var(
-                                    "data",
-                                ),
-                                span: 257..261,
+                                span: 202..206,
                             },
                         ],
                     ),
-                    span: 243..264,
+                    span: 194..209,
                 },
-                span: 215..264,
+                span: 166..209,
             },
         ),
         Reconcile(
@@ -251,11 +202,11 @@ Program {
                             node: Var(
                                 "mixed",
                             ),
-                            span: 274..279,
+                            span: 219..224,
                         },
                     ],
                 ],
-                span: 264..280,
+                span: 209..225,
             },
         ),
     ],

@@ -2,7 +2,7 @@
 val rs: List<Resource> = [
   symlink(from = "df/zsh", to = "~/.zshrc"),
   template(path = "/etc/motd", source = "tmpl.tpl", vars = {"body": "welcome"}),
-  directory(path = "~/data"),
+  template(path = "/etc/issue", source = "tmpl.tpl", vars = {"body": "welcome"}),
 ]
 
 for r in rs {

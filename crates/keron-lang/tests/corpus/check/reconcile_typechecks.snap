@@ -153,52 +153,9 @@ Program {
                             },
                         ],
                     },
-                    span: 91..171,
+                    span: 91..172,
                 },
-                span: 68..171,
-            },
-        ),
-        Val(
-            ValDecl {
-                name: Spanned {
-                    node: "xdgcfg",
-                    span: 175..181,
-                },
-                ty: Some(
-                    Spanned {
-                        node: Directory,
-                        span: 183..192,
-                    },
-                ),
-                value: Spanned {
-                    node: Call {
-                        callee: Spanned {
-                            node: "directory",
-                            span: 195..204,
-                        },
-                        args: [
-                            CallArg {
-                                name: Some(
-                                    Spanned {
-                                        node: "path",
-                                        span: 205..209,
-                                    },
-                                ),
-                                value: Spanned {
-                                    node: Literal(
-                                        String(
-                                            "~/.config",
-                                        ),
-                                    ),
-                                    span: 212..223,
-                                },
-                                span: 205..223,
-                            },
-                        ],
-                    },
-                    span: 195..226,
-                },
-                span: 171..226,
+                span: 68..172,
             },
         ),
         Reconcile(
@@ -209,11 +166,11 @@ Program {
                             node: Var(
                                 "zshrc",
                             ),
-                            span: 236..241,
+                            span: 182..187,
                         },
                     ],
                 ],
-                span: 226..242,
+                span: 172..188,
             },
         ),
         Reconcile(
@@ -224,26 +181,11 @@ Program {
                             node: Var(
                                 "gitcfg",
                             ),
-                            span: 252..258,
+                            span: 198..204,
                         },
                     ],
                 ],
-                span: 242..259,
-            },
-        ),
-        Reconcile(
-            ReconcileDecl {
-                chains: [
-                    [
-                        Spanned {
-                            node: Var(
-                                "xdgcfg",
-                            ),
-                            span: 269..275,
-                        },
-                    ],
-                ],
-                span: 259..277,
+                span: 188..206,
             },
         ),
         Reconcile(
@@ -257,14 +199,14 @@ Program {
                                         node: Call {
                                             callee: Spanned {
                                                 node: "symlink",
-                                                span: 291..298,
+                                                span: 220..227,
                                             },
                                             args: [
                                                 CallArg {
                                                     name: Some(
                                                         Spanned {
                                                             node: "from",
-                                                            span: 299..303,
+                                                            span: 228..232,
                                                         },
                                                     ),
                                                     value: Spanned {
@@ -273,15 +215,15 @@ Program {
                                                                 "~/df/vimrc",
                                                             ),
                                                         ),
-                                                        span: 306..318,
+                                                        span: 235..247,
                                                     },
-                                                    span: 299..318,
+                                                    span: 228..247,
                                                 },
                                                 CallArg {
                                                     name: Some(
                                                         Spanned {
                                                             node: "to",
-                                                            span: 320..322,
+                                                            span: 249..251,
                                                         },
                                                     ),
                                                     value: Spanned {
@@ -290,26 +232,26 @@ Program {
                                                                 "~/.vimrc",
                                                             ),
                                                         ),
-                                                        span: 325..335,
+                                                        span: 254..264,
                                                     },
-                                                    span: 320..335,
+                                                    span: 249..264,
                                                 },
                                             ],
                                         },
-                                        span: 291..336,
+                                        span: 220..265,
                                     },
                                     Spanned {
                                         node: Call {
                                             callee: Spanned {
                                                 node: "symlink",
-                                                span: 340..347,
+                                                span: 269..276,
                                             },
                                             args: [
                                                 CallArg {
                                                     name: Some(
                                                         Spanned {
                                                             node: "from",
-                                                            span: 348..352,
+                                                            span: 277..281,
                                                         },
                                                     ),
                                                     value: Spanned {
@@ -318,15 +260,15 @@ Program {
                                                                 "~/df/tmux.conf",
                                                             ),
                                                         ),
-                                                        span: 355..371,
+                                                        span: 284..300,
                                                     },
-                                                    span: 348..371,
+                                                    span: 277..300,
                                                 },
                                                 CallArg {
                                                     name: Some(
                                                         Spanned {
                                                             node: "to",
-                                                            span: 373..375,
+                                                            span: 302..304,
                                                         },
                                                     ),
                                                     value: Spanned {
@@ -335,21 +277,21 @@ Program {
                                                                 "~/.tmux.conf",
                                                             ),
                                                         ),
-                                                        span: 378..392,
+                                                        span: 307..321,
                                                     },
-                                                    span: 373..392,
+                                                    span: 302..321,
                                                 },
                                             ],
                                         },
-                                        span: 340..393,
+                                        span: 269..322,
                                     },
                                 ],
                             ),
-                            span: 287..397,
+                            span: 216..326,
                         },
                     ],
                 ],
-                span: 277..397,
+                span: 206..326,
             },
         ),
     ],

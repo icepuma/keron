@@ -1,4 +1,4 @@
-//! Resource builtin function tests: `symlink`, `file`, `directory`.
+//! Resource builtin function tests: `symlink`, `template`.
 
 use super::check_src;
 
@@ -17,11 +17,6 @@ fn template_typechecks() {
         )
         .is_ok()
     );
-}
-
-#[test]
-fn directory_typechecks() {
-    assert!(check_src(r#"val d: Directory = directory(path = "x")"#).is_ok());
 }
 
 #[test]
@@ -59,7 +54,7 @@ fn resource_type_inside_if_branch_resolves() {
                     val a: Template = template(path = "/a", source = "tmpl.tpl", vars = {"body": ""})
                     symlink(from = "x", to = "y")
                 } else {
-                    val b: Directory = directory(path = "/b")
+                    val b: Template = template(path = "/b", source = "tmpl.tpl", vars = {"body": ""})
                     symlink(from = "u", to = "v")
                 }
             }"#
@@ -210,18 +205,6 @@ fn user_val_collides_with_template_builtin() {
     );
 }
 
-#[test]
-fn user_val_collides_with_directory_builtin() {
-    let err = check_src(r"val directory = 1").expect_err("should fail");
-    assert!(
-        err[0]
-            .message
-            .contains("`directory` is a builtin and cannot be redefined"),
-        "got: {}",
-        err[0].message,
-    );
-}
-
 // ---------- Resource supertype ----------
 
 #[test]
@@ -238,28 +221,9 @@ fn template_satisfies_resource_annotation() {
 }
 
 #[test]
-fn directory_satisfies_resource_annotation() {
-    let src = r#"val r: Resource = directory(path = "p")"#;
-    assert!(check_src(src).is_ok());
-}
-
-#[test]
 fn mixed_resource_list_inferred_to_list_of_resource() {
     let src = r#"
         val xs = [symlink(from = "a", to = "b"), template(path = "p", source = "tmpl.tpl", vars = {"body": "c"})]
-        val ys: List<Resource> = xs
-    "#;
-    assert!(check_src(src).is_ok());
-}
-
-#[test]
-fn mixed_resource_list_with_three_kinds_inferred_to_list_of_resource() {
-    let src = r#"
-        val xs = [
-          symlink(from = "a", to = "b"),
-          template(path = "p", source = "tmpl.tpl", vars = {"body": "c"}),
-          directory(path = "d"),
-        ]
         val ys: List<Resource> = xs
     "#;
     assert!(check_src(src).is_ok());
@@ -271,7 +235,6 @@ fn list_of_resource_annotation_accepts_mixed_elements() {
         val xs: List<Resource> = [
           symlink(from = "a", to = "b"),
           template(path = "p", source = "tmpl.tpl", vars = {"body": "c"}),
-          directory(path = "d"),
         ]
     "#;
     assert!(check_src(src).is_ok());
@@ -312,8 +275,7 @@ fn reconcile_chain_mixes_kinds_via_resource() {
     let src = r#"
         val s: Symlink = symlink(from = "a", to = "b")
         val f: Template = template(path = "p", source = "tmpl.tpl", vars = {"body": "c"})
-        val d: Directory = directory(path = "d")
-        reconcile s -> f -> d
+        reconcile s -> f
     "#;
     assert!(check_src(src).is_ok());
 }
@@ -341,17 +303,6 @@ fn resource_does_not_narrow_to_template() {
     "#;
     let err = check_src(src).expect_err("should fail");
     assert!(err[0].message.contains("expected `Template`"));
-    assert!(err[0].message.contains("found `Resource`"));
-}
-
-#[test]
-fn resource_does_not_narrow_to_directory() {
-    let src = r#"
-        val r: Resource = directory(path = "p")
-        val d: Directory = r
-    "#;
-    let err = check_src(src).expect_err("should fail");
-    assert!(err[0].message.contains("expected `Directory`"));
     assert!(err[0].message.contains("found `Resource`"));
 }
 
@@ -473,12 +424,11 @@ fn empty_list_with_resource_annotation_typechecks() {
 #[test]
 fn map_with_resource_value_annotation_accepts_mix() {
     // The map's value bidirectional check pushes `Resource` into each
-    // entry; `Symlink`, `File`, `Directory` all satisfy that slot.
+    // entry; `Symlink` and `Template` both satisfy that slot.
     let src = r#"
         val m: Map<String, Resource> = {
           "shell": symlink(from = "df/zsh", to = "~/.zshrc"),
           "motd": template(path = "/etc/motd", source = "tmpl.tpl", vars = {"body": "welcome"}),
-          "data": directory(path = "~/data"),
         }
     "#;
     assert!(check_src(src).is_ok());

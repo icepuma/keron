@@ -13,11 +13,11 @@ pub(super) type Extra<'src> = extra::Err<Rich<'src, char>>;
 // can keep parameter names like `from` (as in `symlink(from = ...)`)
 // without conflict.
 //
-// The resource-type names (`Symlink`, `File`, `Directory`,
-// `Resource`) are also intentionally NOT reserved: they are imported
-// from `std:fs` like ordinary names. The parser produces
-// `Type::Named(...)` for capitalized identifiers in type position
-// and the module loader resolves them against imported types.
+// The resource-type names (`Symlink`, `Template`, `Resource`) are
+// also intentionally NOT reserved: they are imported from `std:fs`
+// like ordinary names. The parser produces `Type::Named(...)` for
+// capitalized identifiers in type position and the module loader
+// resolves them against imported types.
 const KEYWORDS: &[&str] = &[
     "val",
     "fn",

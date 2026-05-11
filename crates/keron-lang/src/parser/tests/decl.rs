@@ -149,16 +149,6 @@ fn val_template_annotation_parses() {
 }
 
 #[test]
-fn val_directory_annotation_parses() {
-    let prog = ok(r#"val d: Directory = directory(path = "p")"#);
-    let v = first_val(&prog);
-    assert_eq!(
-        v.ty.as_ref().expect("annotation").node,
-        Type::Named("Directory".into()),
-    );
-}
-
-#[test]
 fn val_list_of_resources_parses() {
     let prog = ok(r"val xs: List<Template> = []");
     let v = first_val(&prog);

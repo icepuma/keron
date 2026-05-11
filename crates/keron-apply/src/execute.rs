@@ -1,10 +1,10 @@
 //! Apply phase. Walks the [`Plan`] in order and performs the side
 //! effects each [`ResourceChange`] demands.
 //!
-//! v1 supports symlinks end-to-end (create, update, destroy, no-op).
-//! Other resource kinds bail with a clear "not yet implemented"
-//! diagnostic — they land alongside the planner work that diffs them
-//! against live state.
+//! v1 supports symlinks, templates, and packages end-to-end (create,
+//! update, destroy, no-op). Other resource kinds bail with a clear
+//! "not yet implemented" diagnostic — they land alongside the
+//! planner work that diffs them against live state.
 
 use std::fs;
 use std::io;
@@ -46,9 +46,9 @@ fn apply_change(change: &ResourceChange, summary: &mut ExecuteSummary) -> Result
 ///
 /// # Errors
 /// Errors when the underlying filesystem call fails or when the
-/// resource kind has no executor support yet (templates, directories,
-/// packages — they bail with a clear "not yet implemented" message
-/// that names the kind).
+/// resource kind has no executor support yet for the action — e.g.
+/// destroying a package, which bails with a clear "not yet
+/// implemented" message that names the kind.
 pub fn apply_change_one(change: &ResourceChange) -> Result<()> {
     match change.action {
         Action::NoOp => Ok(()),
@@ -85,7 +85,6 @@ fn apply_create(state: &ResourceState) -> Result<()> {
         ResourceState::Symlink { from, to } => create_symlink(from, to),
         ResourceState::Template { path, content } => write_template(path, content),
         ResourceState::Package { manager, name } => packages::install(*manager, name),
-        directory @ ResourceState::Directory { .. } => bail!(unsupported_kind(directory)),
     }
 }
 
@@ -127,9 +126,7 @@ fn apply_destroy(state: &ResourceState) -> Result<()> {
     match state {
         ResourceState::Symlink { from, .. } => remove_symlink(from),
         ResourceState::Template { path, .. } => remove_template(path),
-        other @ (ResourceState::Directory { .. } | ResourceState::Package { .. }) => {
-            bail!(unsupported_kind(other))
-        }
+        other @ ResourceState::Package { .. } => bail!(unsupported_kind(other)),
     }
 }
 
@@ -184,7 +181,6 @@ fn unsupported_kind(state: &ResourceState) -> String {
     let kind = match state {
         ResourceState::Symlink { .. } => ResourceKind::Symlink,
         ResourceState::Template { .. } => ResourceKind::Template,
-        ResourceState::Directory { .. } => ResourceKind::Directory,
         ResourceState::Package { .. } => ResourceKind::Package,
     };
     format!(
@@ -257,15 +253,12 @@ mod tests {
         ResourceChange {
             address: match probe {
                 ResourceState::Symlink { from, .. } => from.display().to_string(),
-                ResourceState::Template { path, .. } | ResourceState::Directory { path } => {
-                    path.display().to_string()
-                }
+                ResourceState::Template { path, .. } => path.display().to_string(),
                 ResourceState::Package { manager, name } => format!("{}:{}", manager.label(), name),
             },
             kind: match probe {
                 ResourceState::Symlink { .. } => ResourceKind::Symlink,
                 ResourceState::Template { .. } => ResourceKind::Template,
-                ResourceState::Directory { .. } => ResourceKind::Directory,
                 ResourceState::Package { .. } => ResourceKind::Package,
             },
             action,
@@ -566,23 +559,6 @@ mod tests {
         );
         assert!(link.is_symlink());
         assert!(real.exists());
-    }
-
-    #[test]
-    fn create_directory_returns_not_implemented_error() {
-        let plan = Plan {
-            changes: vec![change(
-                Action::Create,
-                None,
-                Some(ResourceState::Directory {
-                    path: PathBuf::from("/d"),
-                }),
-            )],
-        };
-        let err = execute(&plan).unwrap_err();
-        let msg = format!("{err:#}");
-        assert!(msg.contains("not yet implemented"));
-        assert!(msg.contains("directory"));
     }
 
     #[test]

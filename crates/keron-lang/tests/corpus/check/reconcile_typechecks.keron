@@ -1,11 +1,9 @@
 
 val zshrc: Symlink = symlink(from = "~/df/zshrc", to = "~/.zshrc")
 val gitcfg: Template = template(path = "~/.gitconfig", source = "tmpl.tpl", vars = {"body": "[user]"})
-val xdgcfg: Directory = directory(path = "~/.config")
 
 reconcile zshrc
 reconcile gitcfg
-reconcile xdgcfg
 
 reconcile [
   symlink(from = "~/df/vimrc", to = "~/.vimrc"),

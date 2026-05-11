@@ -158,9 +158,6 @@ fn render_state_lines<W: Write>(
             writeln!(out, "      {s} path    = \"{}\"", path.display())?;
             writeln!(out, "      {s} content = \"{}\"", escape_inline(content))?;
         }
-        ResourceState::Directory { path } => {
-            writeln!(out, "      {s} path = \"{}\"", path.display())?;
-        }
         ResourceState::Symlink { from, to } => {
             writeln!(out, "      {s} from = \"{}\"", from.display())?;
             writeln!(out, "      {s} to   = \"{}\"", to.display())?;
@@ -205,16 +202,6 @@ fn render_diff_lines<W: Write>(
                     "      {s} content = \"{}\" -> \"{}\"",
                     escape_inline(bc),
                     escape_inline(ac)
-                )?;
-            }
-        }
-        (ResourceState::Directory { path: bp }, ResourceState::Directory { path: ap }) => {
-            if bp != ap {
-                writeln!(
-                    out,
-                    "      {s} path = \"{}\" -> \"{}\"",
-                    bp.display(),
-                    ap.display()
                 )?;
             }
         }
@@ -330,11 +317,11 @@ mod tests {
         let out = render(&Plan::sample());
         assert!(out.contains("template.\"~/.zshrc\" will be created"));
         assert!(out.contains("symlink.\"~/.config/nvim\" will be updated in-place"));
-        assert!(out.contains("directory.\"/tmp/scratch\" will be destroyed"));
+        assert!(out.contains("template.\"/tmp/scratch\" will be destroyed"));
         assert!(out.contains("Plan: 1 to add, 1 to change, 1 to destroy."));
         assert!(out.contains("+ resource \"template\""));
         assert!(out.contains("~ resource \"symlink\""));
-        assert!(out.contains("- resource \"directory\""));
+        assert!(out.contains("- resource \"template\""));
         assert!(out.contains("~ to   = \"/old/target\" -> \"/new/target\""));
     }
 
@@ -379,24 +366,6 @@ mod tests {
     }
 
     #[test]
-    fn create_directory_renders_single_path_line() {
-        let plan = Plan {
-            changes: vec![ResourceChange {
-                address: "/d".into(),
-                kind: ResourceKind::Directory,
-                action: Action::Create,
-                before: None,
-                after: Some(ResourceState::Directory {
-                    path: PathBuf::from("/d"),
-                }),
-                requires_elevation: false,
-            }],
-        };
-        let out = render(&plan);
-        assert!(out.contains("+ path = \"/d\""), "missing path line: {out}");
-    }
-
-    #[test]
     fn create_symlink_renders_from_and_to_lines() {
         let plan = Plan {
             changes: vec![ResourceChange {
@@ -421,10 +390,11 @@ mod tests {
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "/d".into(),
-                kind: ResourceKind::Directory,
+                kind: ResourceKind::Template,
                 action: Action::Destroy,
-                before: Some(ResourceState::Directory {
+                before: Some(ResourceState::Template {
                     path: PathBuf::from("/d"),
+                    content: "old".into(),
                 }),
                 after: None,
                 requires_elevation: false,
@@ -432,7 +402,7 @@ mod tests {
         };
         let out = render(&plan);
         assert!(
-            out.contains("- path = \"/d\""),
+            out.contains("- path    = \"/d\""),
             "missing destroy body: {out}"
         );
     }
@@ -490,46 +460,6 @@ mod tests {
     }
 
     #[test]
-    fn update_directory_renders_path_change() {
-        let plan = Plan {
-            changes: vec![ResourceChange {
-                address: "/old".into(),
-                kind: ResourceKind::Directory,
-                action: Action::Update,
-                before: Some(ResourceState::Directory {
-                    path: PathBuf::from("/old"),
-                }),
-                after: Some(ResourceState::Directory {
-                    path: PathBuf::from("/new"),
-                }),
-                requires_elevation: false,
-            }],
-        };
-        let out = render(&plan);
-        assert!(out.contains("~ path = \"/old\" -> \"/new\""), "got: {out}");
-    }
-
-    #[test]
-    fn update_directory_with_unchanged_path_renders_no_path_line() {
-        let plan = Plan {
-            changes: vec![ResourceChange {
-                address: "/d".into(),
-                kind: ResourceKind::Directory,
-                action: Action::Update,
-                before: Some(ResourceState::Directory {
-                    path: PathBuf::from("/d"),
-                }),
-                after: Some(ResourceState::Directory {
-                    path: PathBuf::from("/d"),
-                }),
-                requires_elevation: false,
-            }],
-        };
-        let out = render(&plan);
-        assert!(!out.contains("~ path"), "should be no path diff: {out}");
-    }
-
-    #[test]
     fn update_symlink_renders_only_changed_field() {
         let plan = Plan {
             changes: vec![ResourceChange {
@@ -563,8 +493,9 @@ mod tests {
                     path: PathBuf::from("/x"),
                     content: "old".into(),
                 }),
-                after: Some(ResourceState::Directory {
-                    path: PathBuf::from("/x"),
+                after: Some(ResourceState::Symlink {
+                    from: PathBuf::from("/x"),
+                    to: PathBuf::from("/y"),
                 }),
                 requires_elevation: false,
             }],
@@ -575,7 +506,7 @@ mod tests {
             "missing destroy half: {out}"
         );
         assert!(
-            out.contains("+ path = \"/x\""),
+            out.contains("+ from = \"/x\""),
             "missing create half: {out}"
         );
     }

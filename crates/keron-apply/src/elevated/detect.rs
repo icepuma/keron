@@ -31,9 +31,7 @@ pub fn path_requires_elevation(state: &ResourceState, action: Action) -> bool {
         // All three actions (create/update/destroy) write to
         // `from.parent()`; `to` is the link target and never written.
         ResourceState::Symlink { from, .. } => from.parent().is_none_or(|p| !dir_is_writable(p)),
-        ResourceState::Template { path, .. } | ResourceState::Directory { path } => {
-            path.parent().is_none_or(|p| !dir_is_writable(p))
-        }
+        ResourceState::Template { path, .. } => path.parent().is_none_or(|p| !dir_is_writable(p)),
         // Packages defer to `PackageManager::requires_elevation`;
         // returning false here lets that policy stay authoritative.
         ResourceState::Package { .. } => false,
@@ -158,10 +156,11 @@ mod tests {
     }
 
     #[test]
-    fn directory_walks_up_to_find_anchor() {
+    fn template_walks_up_to_find_anchor() {
         let d = TempDir::new("nested");
-        let state = ResourceState::Directory {
+        let state = ResourceState::Template {
             path: d.path.join("a").join("b").join("c"),
+            content: "x".into(),
         };
         assert!(!path_requires_elevation(&state, Action::Create));
     }

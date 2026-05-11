@@ -22,7 +22,7 @@ fn winget_returns_a_package() {
 
 #[test]
 fn package_widens_to_resource() {
-    // Same widening rule as Symlink/Template/Directory: a `Package`
+    // Same widening rule as Symlink/Template: a `Package`
     // fits a `Resource` slot. Lets reconcile arms and list elements
     // mix package and filesystem resources without per-kind plumbing.
     assert!(check_src("val r: Resource = brew(\"git\")").is_ok());

@@ -772,12 +772,6 @@ fn builtin_fn(name: &str) -> Option<&'static FnDecl> {
 
 fn dispatch_intrinsic(id: IntrinsicId, args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     match id {
-        IntrinsicId::Directory => {
-            let path = call_string(args, env, "path", 0)?;
-            Ok(Value::Resource(ResourceState::Directory {
-                path: PathBuf::from(path),
-            }))
-        }
         IntrinsicId::Symlink => {
             let from = call_string(args, env, "from", 0)?;
             let to = call_string(args, env, "to", 1)?;
@@ -1463,7 +1457,7 @@ mod tests {
 
     fn first_file_path(states: &[ResourceState]) -> &PathBuf {
         match &states[0] {
-            ResourceState::Template { path, .. } | ResourceState::Directory { path } => path,
+            ResourceState::Template { path, .. } => path,
             ResourceState::Symlink { from, .. } => from,
             // The helper is for filesystem-shaped resources; package
             // resources don't have a path, so callers shouldn't reach
@@ -1493,8 +1487,9 @@ mod tests {
         assert_eq!(Value::List(Vec::new()).type_name(), "List");
         assert_eq!(Value::Map(Vec::new()).type_name(), "Map");
         assert_eq!(
-            Value::Resource(ResourceState::Directory {
-                path: PathBuf::from("/tmp"),
+            Value::Resource(ResourceState::Symlink {
+                from: PathBuf::from("/tmp/a"),
+                to: PathBuf::from("/tmp/b"),
             })
             .type_name(),
             "Resource"
@@ -2348,20 +2343,24 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
     fn keron_root_intrinsic_returns_the_root_path_threaded_through_eval() {
         // End-to-end pin: the value `keron_root()` returns must equal
         // whatever `eval_graph` was called with. We park the result in
-        // a `directory` resource so we can read the path back.
-        let (states, root) = run_with_root("reconcile directory(path = keron_root())\n");
+        // a `template` resource so we can read the path back.
+        let (states, root) = run_with_root(
+            "reconcile template(path = keron_root(), source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n",
+        );
         assert_eq!(states.len(), 1);
-        let ResourceState::Directory { path } = &states[0] else {
-            panic!("expected directory, got {:?}", states[0]);
+        let ResourceState::Template { path, .. } = &states[0] else {
+            panic!("expected template, got {:?}", states[0]);
         };
         assert_eq!(path, &root);
     }
 
     #[test]
     fn keron_root_interpolates_into_paths() {
-        let (states, root) = run_with_root("reconcile directory(path = \"${keron_root()}/sub\")\n");
-        let ResourceState::Directory { path } = &states[0] else {
-            panic!("expected directory, got {:?}", states[0]);
+        let (states, root) = run_with_root(
+            "reconcile template(path = \"${keron_root()}/sub\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n",
+        );
+        let ResourceState::Template { path, .. } = &states[0] else {
+            panic!("expected template, got {:?}", states[0]);
         };
         let expected = root.join("sub");
         assert_eq!(path, &expected);
@@ -2373,9 +2372,11 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         // the four-variant `OsType` union — anything else means the
         // dispatcher's fallback was bypassed or a new os_info variant
         // is leaking through.
-        let states = run("reconcile directory(path = os_type())\n");
-        let ResourceState::Directory { path } = &states[0] else {
-            panic!("expected directory, got {:?}", states[0]);
+        let states = run(
+            "reconcile template(path = os_type(), source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n",
+        );
+        let ResourceState::Template { path, .. } = &states[0] else {
+            panic!("expected template, got {:?}", states[0]);
         };
         let value = path.to_string_lossy().into_owned();
         assert!(
@@ -2387,9 +2388,11 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
 
     #[test]
     fn os_arch_intrinsic_returns_one_of_the_documented_variants() {
-        let states = run("reconcile directory(path = os_arch())\n");
-        let ResourceState::Directory { path } = &states[0] else {
-            panic!("expected directory, got {:?}", states[0]);
+        let states = run(
+            "reconcile template(path = os_arch(), source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n",
+        );
+        let ResourceState::Template { path, .. } = &states[0] else {
+            panic!("expected template, got {:?}", states[0]);
         };
         let value = path.to_string_lossy().into_owned();
         assert!(
@@ -2521,17 +2524,17 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
     #[test]
     fn nullable_match_extracts_inhabitant_end_to_end() {
         // End-to-end: a `String?` is destructured via match, and the
-        // non-null arm's bind threads the inhabitant into a directory
+        // non-null arm's bind threads the inhabitant into a template
         // path. Pins the whole path Literal::Null → Value::Null →
         // pattern dispatch → bind narrowing → resource construction.
         let states = run("val maybe_path: String? = \"/opt/app\"\n\
              reconcile match maybe_path {\n\
-                 null => directory(path = \"/opt/fallback\"),\n\
-                 p => directory(path = p),\n\
+                 null => template(path = \"/opt/fallback\", source = \"tmpl.tpl\", vars = {\"body\": \"\"}),\n\
+                 p => template(path = p, source = \"tmpl.tpl\", vars = {\"body\": \"\"}),\n\
              }\n");
         assert_eq!(states.len(), 1);
-        let ResourceState::Directory { path } = &states[0] else {
-            panic!("expected directory, got {:?}", states[0]);
+        let ResourceState::Template { path, .. } = &states[0] else {
+            panic!("expected template, got {:?}", states[0]);
         };
         assert_eq!(path, &PathBuf::from("/opt/app"));
     }
@@ -2540,11 +2543,11 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
     fn nullable_match_takes_null_arm_when_value_is_null() {
         let states = run("val maybe_path: String? = null\n\
              reconcile match maybe_path {\n\
-                 null => directory(path = \"/opt/fallback\"),\n\
-                 p => directory(path = p),\n\
+                 null => template(path = \"/opt/fallback\", source = \"tmpl.tpl\", vars = {\"body\": \"\"}),\n\
+                 p => template(path = p, source = \"tmpl.tpl\", vars = {\"body\": \"\"}),\n\
              }\n");
-        let ResourceState::Directory { path } = &states[0] else {
-            panic!("expected directory, got {:?}", states[0]);
+        let ResourceState::Template { path, .. } = &states[0] else {
+            panic!("expected template, got {:?}", states[0]);
         };
         assert_eq!(path, &PathBuf::from("/opt/fallback"));
     }
@@ -2552,17 +2555,17 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
     #[test]
     fn nullable_eq_null_is_true_when_value_is_null() {
         // The one ergonomic exception (`x == null`) end-to-end: the
-        // result must be `Boolean(true)` for a null value. A
-        // directory path is the easiest carrier — we drive the
-        // boolean into a string-typed branch via `if`.
+        // result must be `Boolean(true)` for a null value. A template
+        // path is the easiest carrier — we drive the boolean into a
+        // string-typed branch via `if`.
         let states = run("val maybe: String? = null\n\
              reconcile if maybe == null {\n\
-                 directory(path = \"/missing\")\n\
+                 template(path = \"/missing\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
              } else {\n\
-                 directory(path = \"/present\")\n\
+                 template(path = \"/present\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
              }\n");
-        let ResourceState::Directory { path } = &states[0] else {
-            panic!("expected directory, got {:?}", states[0]);
+        let ResourceState::Template { path, .. } = &states[0] else {
+            panic!("expected template, got {:?}", states[0]);
         };
         assert_eq!(path, &PathBuf::from("/missing"));
     }
@@ -2598,13 +2601,13 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         set_env(&name, "hello");
         let src = format!(
             "reconcile match env(\"{name}\") {{\n\
-                 null => directory(path = \"/missing\"),\n\
-                 v => directory(path = v),\n\
+                 null => template(path = \"/missing\", source = \"tmpl.tpl\", vars = {{\"body\": \"\"}}),\n\
+                 v => template(path = v, source = \"tmpl.tpl\", vars = {{\"body\": \"\"}}),\n\
              }}\n",
         );
         let states = run(&src);
-        let ResourceState::Directory { path } = &states[0] else {
-            panic!("expected directory, got {:?}", states[0]);
+        let ResourceState::Template { path, .. } = &states[0] else {
+            panic!("expected template, got {:?}", states[0]);
         };
         assert_eq!(path, &PathBuf::from("hello"));
     }
@@ -2614,13 +2617,13 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         let name = unique_env_name("ENV_UNSET");
         let src = format!(
             "reconcile match env(\"{name}\") {{\n\
-                 null => directory(path = \"/missing\"),\n\
-                 v => directory(path = v),\n\
+                 null => template(path = \"/missing\", source = \"tmpl.tpl\", vars = {{\"body\": \"\"}}),\n\
+                 v => template(path = v, source = \"tmpl.tpl\", vars = {{\"body\": \"\"}}),\n\
              }}\n",
         );
         let states = run(&src);
-        let ResourceState::Directory { path } = &states[0] else {
-            panic!("expected directory, got {:?}", states[0]);
+        let ResourceState::Template { path, .. } = &states[0] else {
+            panic!("expected template, got {:?}", states[0]);
         };
         assert_eq!(path, &PathBuf::from("/missing"));
     }
@@ -2635,13 +2638,13 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         set_env(&name, "");
         let src = format!(
             "reconcile match env(\"{name}\") {{\n\
-                 null => directory(path = \"/unset\"),\n\
-                 v => directory(path = \"/set\"),\n\
+                 null => template(path = \"/unset\", source = \"tmpl.tpl\", vars = {{\"body\": \"\"}}),\n\
+                 v => template(path = \"/set\", source = \"tmpl.tpl\", vars = {{\"body\": \"\"}}),\n\
              }}\n",
         );
         let states = run(&src);
-        let ResourceState::Directory { path } = &states[0] else {
-            panic!("expected directory, got {:?}", states[0]);
+        let ResourceState::Template { path, .. } = &states[0] else {
+            panic!("expected template, got {:?}", states[0]);
         };
         assert_eq!(path, &PathBuf::from("/set"));
     }
@@ -2655,14 +2658,14 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         set_env(&name, "x");
         let src = format!(
             "reconcile if env(\"{name}\") == null {{\n\
-                 directory(path = \"/missing\")\n\
+                 template(path = \"/missing\", source = \"tmpl.tpl\", vars = {{\"body\": \"\"}})\n\
              }} else {{\n\
-                 directory(path = \"/present\")\n\
+                 template(path = \"/present\", source = \"tmpl.tpl\", vars = {{\"body\": \"\"}})\n\
              }}\n",
         );
         let states = run(&src);
-        let ResourceState::Directory { path } = &states[0] else {
-            panic!("expected directory, got {:?}", states[0]);
+        let ResourceState::Template { path, .. } = &states[0] else {
+            panic!("expected template, got {:?}", states[0]);
         };
         assert_eq!(path, &PathBuf::from("/present"));
     }
@@ -2693,11 +2696,11 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         let _g = secret_test::SecretOverride::ok(&uri, "hunter2");
         let src = format!(
             "val token: Secret = secret(\"{uri}\")\n\
-             reconcile directory(path = unwrap_secret(token))\n",
+             reconcile template(path = unwrap_secret(token), source = \"tmpl.tpl\", vars = {{\"body\": \"\"}})\n",
         );
         let states = run(&src);
-        let ResourceState::Directory { path } = &states[0] else {
-            panic!("expected directory, got {:?}", states[0]);
+        let ResourceState::Template { path, .. } = &states[0] else {
+            panic!("expected template, got {:?}", states[0]);
         };
         assert_eq!(path, &PathBuf::from("hunter2"));
     }
@@ -2711,11 +2714,11 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         let _g = secret_test::SecretOverride::ok(&uri, "ifs-value");
         let src = format!(
             "val token: Secret = secret(\"{uri}\")\n\
-             reconcile directory(path = unwrap_secret(token))\n",
+             reconcile template(path = unwrap_secret(token), source = \"tmpl.tpl\", vars = {{\"body\": \"\"}})\n",
         );
         let states = run(&src);
-        let ResourceState::Directory { path } = &states[0] else {
-            panic!("expected directory, got {:?}", states[0]);
+        let ResourceState::Template { path, .. } = &states[0] else {
+            panic!("expected template, got {:?}", states[0]);
         };
         assert_eq!(path, &PathBuf::from("ifs-value"));
     }
@@ -2726,11 +2729,11 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         let _g = secret_test::SecretOverride::ok(&uri, "bw-value");
         let src = format!(
             "val token: Secret = secret(\"{uri}\")\n\
-             reconcile directory(path = unwrap_secret(token))\n",
+             reconcile template(path = unwrap_secret(token), source = \"tmpl.tpl\", vars = {{\"body\": \"\"}})\n",
         );
         let states = run(&src);
-        let ResourceState::Directory { path } = &states[0] else {
-            panic!("expected directory, got {:?}", states[0]);
+        let ResourceState::Template { path, .. } = &states[0] else {
+            panic!("expected template, got {:?}", states[0]);
         };
         assert_eq!(path, &PathBuf::from("bw-value"));
     }
@@ -2744,7 +2747,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         let proj = TempProject::new("secret-fail");
         let src = format!(
             "val token: Secret = secret(\"{uri}\")\n\
-             reconcile directory(path = unwrap_secret(token))\n",
+             reconcile template(path = unwrap_secret(token), source = \"tmpl.tpl\", vars = {{\"body\": \"\"}})\n",
         );
         let entry = proj.entry(&src);
         let canonical = fs::canonicalize(&entry).unwrap();
@@ -2769,7 +2772,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
     fn secret_unsupported_scheme_is_rejected() {
         let proj = TempProject::new("secret-bad-scheme");
         let src = "val tok: Secret = secret(\"file:///etc/secret\")\n\
-                   reconcile directory(path = unwrap_secret(tok))\n";
+                   reconcile template(path = unwrap_secret(tok), source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n";
         let entry = proj.entry(src);
         let canonical = fs::canonicalize(&entry).unwrap();
         let base_dir = canonical.parent().unwrap().to_path_buf();
@@ -2828,7 +2831,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         let proj = TempProject::new(project_label);
         let src = format!(
             "val tok: Secret = secret(\"{uri}\")\n\
-             reconcile directory(path = unwrap_secret(tok))\n",
+             reconcile template(path = unwrap_secret(tok), source = \"tmpl.tpl\", vars = {{\"body\": \"\"}})\n",
         );
         let entry = proj.entry(&src);
         let canonical = fs::canonicalize(&entry).unwrap();

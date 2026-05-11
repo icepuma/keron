@@ -42,10 +42,8 @@ fn fs_imports() -> ImportedSymbols {
     for name in [
         "symlink",
         "template",
-        "directory",
         "Symlink",
         "Template",
-        "Directory",
         "Resource",
         "secret",
         "unwrap_secret",
@@ -97,13 +95,8 @@ fn seed_fs(imp: &mut ImportedSymbols) {
             Type::Template,
         ),
     );
-    imp.fns.insert(
-        "directory".into(),
-        fn_sig(vec![param("path", Type::String)], Type::Directory),
-    );
     imp.types.insert("Symlink".into(), Type::Symlink);
     imp.types.insert("Template".into(), Type::Template);
-    imp.types.insert("Directory".into(), Type::Directory);
     imp.types.insert("Resource".into(), Type::Resource);
 }
 

@@ -78,8 +78,8 @@ fn rejects_fn_named_reconcile() {
     assert!(parse("fn reconcile(): Int { 1 }").is_err());
 }
 
-// Resource type names (`Symlink`, `File`, `Directory`, `Resource`)
-// are no longer reserved at the parser level — they're imported from
+// Resource type names (`Symlink`, `Template`, `Resource`) are no
+// longer reserved at the parser level — they're imported from
 // `std:fs` like ordinary names. Tests that asserted parser-level
 // rejection have been removed; the corresponding "shadowing" cases
 // are instead validated at module-load time when the import would

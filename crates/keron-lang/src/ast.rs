@@ -127,7 +127,6 @@ pub struct TypeAliasDecl {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntrinsicId {
     Symlink,
-    Directory,
     /// `template(path, source, vars)` — render a templated file. At
     /// apply time, `source` is read (resolved relative to the
     /// importing module's directory), `${name}` placeholders are
@@ -437,9 +436,6 @@ pub enum Type {
     /// substituted text lands at `path`. A "plain" file is just a
     /// template with an empty `vars` map.
     Template,
-    /// Directory ensure-existence. Constructed via the builtin
-    /// `directory(...)` fn.
-    Directory,
     /// A package-manager-managed package (brew formula, `cargo
     /// install` binary, winget package, etc.). Constructed via the
     /// per-manager builtins (`brew(...)`, `cargo(...)`,
@@ -448,7 +444,7 @@ pub enum Type {
     /// executor can pick the right CLI at apply time.
     Package,
     /// Common supertype of [`Self::Symlink`], [`Self::Template`], and
-    /// [`Self::Directory`]. There is no constructor — the type only
+    /// [`Self::Package`]. There is no constructor — the type only
     /// shows up via annotation (`val r: Resource = symlink(...)`),
     /// list inference for mixed elements
     /// (`[symlink(...), template(...)]` has type `List<Resource>`),
@@ -487,7 +483,7 @@ pub enum Type {
     /// identifier in type position that isn't a primitive keyword
     /// (`String`/`Int`/`Boolean`/`Double`/`Void`/`List`/`Map`); the
     /// module loader rewrites it to the canonical variant via the
-    /// builtin registry (`Symlink`/`File`/`Directory`/`Resource`) or
+    /// builtin registry (`Symlink`/`Template`/`Resource`) or
     /// the local module's `struct`/`type` declarations. After
     /// loading, this variant should never appear — the type checker
     /// treats any leftover `Named` as an error.
@@ -513,7 +509,6 @@ impl fmt::Display for Type {
             Self::Map(k, v) => write!(f, "Map<{k}, {v}>"),
             Self::Symlink => f.write_str("Symlink"),
             Self::Template => f.write_str("Template"),
-            Self::Directory => f.write_str("Directory"),
             Self::Resource => f.write_str("Resource"),
             Self::Secret => f.write_str("Secret"),
             Self::Package => f.write_str("Package"),

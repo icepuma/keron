@@ -31,7 +31,6 @@ pub enum Action {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ResourceKind {
     Template,
-    Directory,
     Symlink,
     Package,
 }
@@ -40,7 +39,6 @@ impl ResourceKind {
     pub const fn label(self) -> &'static str {
         match self {
             Self::Template => "template",
-            Self::Directory => "directory",
             Self::Symlink => "symlink",
             Self::Package => "package",
         }
@@ -92,9 +90,6 @@ pub enum ResourceState {
     Template {
         path: PathBuf,
         content: String,
-    },
-    Directory {
-        path: PathBuf,
     },
     Symlink {
         from: PathBuf,
@@ -208,27 +203,17 @@ pub fn build_plan(graph: &keron_modules::ModuleGraph, keron_root: &Path) -> Resu
     let resources = eval::eval_graph(graph, keron_root)?;
     let mut cache = PackageCache::new();
     let changes = resources
-        .into_iter()
+        .iter()
         .map(|state| classify(state, &mut cache))
         .collect::<Result<Vec<_>>>()?;
     Ok(Plan { changes })
 }
 
-fn classify(state: ResourceState, cache: &mut PackageCache) -> Result<ResourceChange> {
-    let mut change = match &state {
-        ResourceState::Symlink { from, to } => classify_symlink(from, to, &state)?,
-        ResourceState::Template { path, content } => classify_template(path, content, &state)?,
-        ResourceState::Package { manager, name } => {
-            classify_package(*manager, name, &state, cache)?
-        }
-        ResourceState::Directory { .. } => ResourceChange {
-            address: address_for(&state),
-            kind: kind_for(&state),
-            action: Action::Create,
-            before: None,
-            after: Some(state),
-            requires_elevation: false,
-        },
+fn classify(state: &ResourceState, cache: &mut PackageCache) -> Result<ResourceChange> {
+    let mut change = match state {
+        ResourceState::Symlink { from, to } => classify_symlink(from, to, state)?,
+        ResourceState::Template { path, content } => classify_template(path, content, state)?,
+        ResourceState::Package { manager, name } => classify_package(*manager, name, state, cache)?,
     };
     change.requires_elevation = change.compute_requires_elevation();
     Ok(change)
@@ -378,20 +363,9 @@ fn classify_template(path: &Path, content: &str, after: &ResourceState) -> Resul
 
 fn address_for(state: &ResourceState) -> String {
     match state {
-        ResourceState::Template { path, .. } | ResourceState::Directory { path } => {
-            path.display().to_string()
-        }
+        ResourceState::Template { path, .. } => path.display().to_string(),
         ResourceState::Symlink { from, .. } => from.display().to_string(),
         ResourceState::Package { manager, name } => format!("{}:{}", manager.label(), name),
-    }
-}
-
-const fn kind_for(state: &ResourceState) -> ResourceKind {
-    match state {
-        ResourceState::Template { .. } => ResourceKind::Template,
-        ResourceState::Directory { .. } => ResourceKind::Directory,
-        ResourceState::Symlink { .. } => ResourceKind::Symlink,
-        ResourceState::Package { .. } => ResourceKind::Package,
     }
 }
 
@@ -427,10 +401,11 @@ impl Plan {
                 },
                 ResourceChange {
                     address: "/tmp/scratch".into(),
-                    kind: ResourceKind::Directory,
+                    kind: ResourceKind::Template,
                     action: Action::Destroy,
-                    before: Some(ResourceState::Directory {
+                    before: Some(ResourceState::Template {
                         path: PathBuf::from("/tmp/scratch"),
+                        content: "old contents\n".into(),
                     }),
                     after: None,
                     requires_elevation: false,
@@ -477,14 +452,6 @@ mod tests {
             content: "y".into(),
         };
         assert_eq!(address_for(&s), "/etc/x");
-    }
-
-    #[test]
-    fn address_for_directory_uses_path() {
-        let s = ResourceState::Directory {
-            path: PathBuf::from("/d"),
-        };
-        assert_eq!(address_for(&s), "/d");
     }
 
     #[test]
@@ -592,7 +559,7 @@ mod tests {
         let from = d.path.join("alias");
         let to = d.path.join("real");
         let state = desired(&from, &to);
-        let change = classify(state.clone(), &mut PackageCache::new()).unwrap();
+        let change = classify(&state, &mut PackageCache::new()).unwrap();
         assert_eq!(change.action, Action::Create);
         assert!(change.before.is_none());
         assert_eq!(change.after, Some(state));
@@ -607,7 +574,7 @@ mod tests {
         make_symlink(&to, &from).unwrap();
 
         let state = desired(&from, &to);
-        let change = classify(state, &mut PackageCache::new()).unwrap();
+        let change = classify(&state, &mut PackageCache::new()).unwrap();
         assert_eq!(change.action, Action::NoOp);
         let before = change.before.expect("before populated for noop");
         let ResourceState::Symlink { from: bf, to: bt } = before else {
@@ -628,7 +595,7 @@ mod tests {
         make_symlink(&old_target, &from).unwrap();
 
         let state = desired(&from, &new_target);
-        let change = classify(state, &mut PackageCache::new()).unwrap();
+        let change = classify(&state, &mut PackageCache::new()).unwrap();
         assert_eq!(change.action, Action::Update);
         let before = change.before.expect("before populated for update");
         let ResourceState::Symlink { to: bt, .. } = before else {
@@ -644,22 +611,11 @@ mod tests {
         fs::write(&from, "user data").unwrap();
         let to = d.path.join("target");
 
-        let err = classify(desired(&from, &to), &mut PackageCache::new())
+        let err = classify(&desired(&from, &to), &mut PackageCache::new())
             .expect_err("real file must be refused");
         let msg = format!("{err:#}");
         assert!(msg.contains("not a symlink"), "got: {msg}");
         assert!(msg.contains("refusing to overwrite"), "got: {msg}");
-    }
-
-    #[test]
-    fn classify_directory_still_defaults_to_create() {
-        let state = ResourceState::Directory {
-            path: PathBuf::from("/whatever-keron-dir"),
-        };
-        let change = classify(state.clone(), &mut PackageCache::new()).unwrap();
-        assert_eq!(change.action, Action::Create);
-        assert!(change.before.is_none());
-        assert_eq!(change.after, Some(state));
     }
 
     fn template(path: &Path, content: &str) -> ResourceState {
@@ -674,7 +630,7 @@ mod tests {
         let d = TempDir::new("template-missing");
         let path = d.path.join("config.toml");
         let state = template(&path, "x = 1\n");
-        let change = classify(state.clone(), &mut PackageCache::new()).unwrap();
+        let change = classify(&state, &mut PackageCache::new()).unwrap();
         assert_eq!(change.action, Action::Create);
         assert!(change.before.is_none());
         assert_eq!(change.after, Some(state));
@@ -686,7 +642,7 @@ mod tests {
         let path = d.path.join("config.toml");
         fs::write(&path, "hello\n").unwrap();
         let state = template(&path, "hello\n");
-        let change = classify(state, &mut PackageCache::new()).unwrap();
+        let change = classify(&state, &mut PackageCache::new()).unwrap();
         assert_eq!(change.action, Action::NoOp);
         let before = change.before.expect("before populated for noop");
         let ResourceState::Template { content: bc, .. } = before else {
@@ -701,7 +657,7 @@ mod tests {
         let path = d.path.join("config.toml");
         fs::write(&path, "old\n").unwrap();
         let state = template(&path, "new\n");
-        let change = classify(state, &mut PackageCache::new()).unwrap();
+        let change = classify(&state, &mut PackageCache::new()).unwrap();
         assert_eq!(change.action, Action::Update);
         let before = change.before.expect("before populated for update");
         let ResourceState::Template { content: bc, .. } = before else {
@@ -716,7 +672,7 @@ mod tests {
         let path = d.path.join("binary");
         fs::write(&path, [0xFFu8, 0xFE, 0xFD]).unwrap();
         let state = template(&path, "ascii only\n");
-        let change = classify(state, &mut PackageCache::new()).unwrap();
+        let change = classify(&state, &mut PackageCache::new()).unwrap();
         assert_eq!(change.action, Action::Update);
         assert!(change.before.is_some());
     }
@@ -728,7 +684,7 @@ mod tests {
         fs::write(&real, "x").unwrap();
         let path = d.path.join("alias");
         make_symlink(&real, &path).unwrap();
-        let err = classify(template(&path, "y"), &mut PackageCache::new())
+        let err = classify(&template(&path, "y"), &mut PackageCache::new())
             .expect_err("symlink should not be treated as a template target");
         let msg = format!("{err:#}");
         assert!(msg.contains("not a regular file"), "got: {msg}");

@@ -69,20 +69,8 @@ fn fs_imports() -> ImportedSymbols {
             return_type: Type::Template,
         },
     );
-    imp.fns.insert(
-        "directory".into(),
-        FnSig {
-            params: vec![ParamSig {
-                name: "path".into(),
-                ty: Type::String,
-                has_default: false,
-            }],
-            return_type: Type::Directory,
-        },
-    );
     imp.types.insert("Symlink".into(), Type::Symlink);
     imp.types.insert("Template".into(), Type::Template);
-    imp.types.insert("Directory".into(), Type::Directory);
     imp.types.insert("Resource".into(), Type::Resource);
     imp
 }
@@ -109,14 +97,12 @@ const KEYWORDS: &[&str] = &[
     "Map",
     "Symlink",
     "Template",
-    "Directory",
     "Resource",
     "Void",
     // Builtin function names — collide with `val`/`fn` declarations
     // even though they aren't parser keywords.
     "symlink",
     "template",
-    "directory",
 ];
 
 fn ident_strategy() -> impl Strategy<Value = String> {
@@ -162,7 +148,6 @@ fn literal_source_for(ty: &Type) -> BoxedStrategy<(String, Type)> {
         | Type::Map(_, _)
         | Type::Symlink
         | Type::Template
-        | Type::Directory
         | Type::Resource
         | Type::Secret
         | Type::Package
@@ -709,7 +694,7 @@ proptest! {
 
     #[test]
     fn arbitrary_mix_of_resource_kinds_in_chain_typechecks(
-        kinds in prop::collection::vec(0u8..3, 1..6),
+        kinds in prop::collection::vec(0u8..2, 1..6),
     ) {
         // Bind each step as a `Resource` val and chain them with `->`.
         // The chain checker walks each step against `is_reconcilable`,
@@ -720,8 +705,7 @@ proptest! {
             let name = format!("r{i}");
             let value = match k {
                 0 => format!("symlink(from = \"a{i}\", to = \"b{i}\")"),
-                1 => format!("template(path = \"p{i}\", source = \"tmpl.tpl\", vars = {{\"body\": \"c{i}\"}})"),
-                _ => format!("directory(path = \"d{i}\")"),
+                _ => format!("template(path = \"p{i}\", source = \"tmpl.tpl\", vars = {{\"body\": \"c{i}\"}})"),
             };
             writeln!(decls, "val {name}: Resource = {value}").expect("write to String");
             names.push(name);
@@ -733,9 +717,9 @@ proptest! {
 
     #[test]
     fn arbitrary_mix_of_resource_kinds_infers_list_of_resource(
-        kinds in prop::collection::vec(0u8..3, 2..6),
+        kinds in prop::collection::vec(0u8..2, 2..6),
     ) {
-        // Build a list literal with elements drawn from the three
+        // Build a list literal with elements drawn from the two
         // resource kinds. As long as at least two kinds appear, the
         // inferred element type must be `Resource` and the list must
         // satisfy a `List<Resource>` annotation. Homogeneous draws are
@@ -748,8 +732,7 @@ proptest! {
         for (i, k) in kinds.iter().enumerate() {
             let frag = match k {
                 0 => format!("symlink(from = \"a{i}\", to = \"b{i}\")"),
-                1 => format!("template(path = \"p{i}\", source = \"tmpl.tpl\", vars = {{\"body\": \"c{i}\"}})"),
-                _ => format!("directory(path = \"d{i}\")"),
+                _ => format!("template(path = \"p{i}\", source = \"tmpl.tpl\", vars = {{\"body\": \"c{i}\"}})"),
             };
             entries.push_str(&frag);
             entries.push_str(", ");

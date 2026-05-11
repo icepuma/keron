@@ -1,18 +1,11 @@
 
-# Realistic dotfile workflow: declare configs, packages-style file
-# placements, and ensure-existence directories. All values are built
-# purely first; the trailing `reconcile` directives are the only acts of
-# intent.
+# Realistic dotfile workflow: declare configs and packages-style file
+# placements. All values are built purely first; the trailing
+# `reconcile` directives are the only acts of intent.
 
 fn link(name: String): Symlink {
   symlink(from = "~/dotfiles/${name}", to = "~/.${name}")
 }
-
-val home_dirs: List<Directory> = [
-  directory(path = "~/.config"),
-  directory(path = "~/.local/bin"),
-  directory(path = "~/.local/share"),
-]
 
 val shell_links: List<Symlink> = [
   link("zshrc"),
@@ -31,9 +24,6 @@ val gitconfig: Template = template(
   vars = {"body": "[user]\n  email = me@example.com\n  name = Me"},
 )
 
-# Order matters at apply time: directories first, then symlinks into
-# them, then the gitconfig file.
-reconcile home_dirs
 reconcile shell_links
 reconcile editor_links
 reconcile gitconfig

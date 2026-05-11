@@ -71,7 +71,7 @@ pub const OS_TYPE_VARIANTS: &[&str] = &["Linux", "Macos", "Windows", "Unknown"];
 pub const OS_ARCH_VARIANTS: &[&str] = &["x86_64", "aarch64", "arm", "x86", "Unknown"];
 
 /// `std:fs` builtins — the resource constructors plus the
-/// `Resource`/`Symlink`/`Template`/`Directory` types they produce.
+/// `Resource`/`Symlink`/`Template` types they produce.
 ///
 /// `template(path, source, vars)` is the only file-producing form:
 /// `source` is a path to an external template file (resolved
@@ -106,19 +106,9 @@ fn build_fs() -> StdModule {
             IntrinsicId::Template,
         ),
     );
-    fns.insert(
-        "directory".into(),
-        intrinsic_fn(
-            "directory",
-            &[("path", Type::String)],
-            Type::Directory,
-            IntrinsicId::Directory,
-        ),
-    );
     let mut types = BTreeMap::new();
     types.insert("Symlink".into(), Type::Symlink);
     types.insert("Template".into(), Type::Template);
-    types.insert("Directory".into(), Type::Directory);
     types.insert("Resource".into(), Type::Resource);
     StdModule { fns, types }
 }
@@ -305,7 +295,7 @@ mod tests {
                 _ => String::new(),
             })
             .collect();
-        assert_eq!(names, vec!["directory", "symlink", "template"]);
+        assert_eq!(names, vec!["symlink", "template"]);
     }
 
     #[test]
@@ -314,7 +304,6 @@ mod tests {
         let fs = reg.get("fs").expect("fs module present");
         assert!(fs.fns.contains_key("symlink"));
         assert!(fs.fns.contains_key("template"));
-        assert!(fs.fns.contains_key("directory"));
         assert!(!fs.fns.contains_key("file"));
     }
 
@@ -323,7 +312,6 @@ mod tests {
         let fs = build_fs();
         assert_eq!(fs.fns["symlink"].intrinsic, Some(IntrinsicId::Symlink));
         assert_eq!(fs.fns["template"].intrinsic, Some(IntrinsicId::Template));
-        assert_eq!(fs.fns["directory"].intrinsic, Some(IntrinsicId::Directory));
     }
 
     #[test]

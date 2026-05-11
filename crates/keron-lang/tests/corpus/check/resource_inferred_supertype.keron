@@ -2,7 +2,7 @@
 val xs = [
   symlink(from = "df/zsh", to = "~/.zshrc"),
   template(path = "/etc/motd", source = "tmpl.tpl", vars = {"body": "welcome"}),
-  directory(path = "~/data"),
+  template(path = "/etc/issue", source = "tmpl.tpl", vars = {"body": "hello"}),
 ]
 
 reconcile xs

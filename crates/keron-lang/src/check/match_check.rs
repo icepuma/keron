@@ -111,10 +111,7 @@ fn unify_arm_types(prev: &Type, this: &Type, arm: &MatchArm) -> Result<Type, Dia
 }
 
 const fn is_resource_singleton(ty: &Type) -> bool {
-    matches!(
-        ty,
-        Type::Symlink | Type::Template | Type::Directory | Type::Resource
-    )
+    matches!(ty, Type::Symlink | Type::Template | Type::Resource)
 }
 
 /// Check `pat` against `scrut_ty` and accumulate bindings the pattern

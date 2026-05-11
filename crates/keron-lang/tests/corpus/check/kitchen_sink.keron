@@ -105,7 +105,7 @@ fn link(name: String): Symlink {
 
 val zshrc: Symlink = link("zshrc")
 val gitcfg: Template = template(path = "~/.gitconfig", source = "tmpl.tpl", vars = {"body": "[user]\n  email = me"})
-val xdgcfg: Directory = directory(path = "~/.config")
+val xdgcfg: Template = template(path = "~/.config/keron.toml", source = "tmpl.tpl", vars = {"body": "key = \"value\""})
 
 val all_links: List<Symlink> = [
   link("vimrc"),
@@ -224,8 +224,8 @@ reconcile {
 
 # --- `Resource` supertype ---
 #
-# `Resource` is the common supertype of `Symlink`, `File`, and
-# `Directory`. Subtyping is one-way: a specific kind satisfies a
+# `Resource` is the common supertype of `Symlink`, `Template`, and
+# `Package`. Subtyping is one-way: a specific kind satisfies a
 # `Resource` slot, but `Resource` does not auto-narrow back. Use it
 # when the kind doesn't matter — e.g. to bundle mixed resources or
 # to express dependencies between heterogeneous values.
@@ -235,7 +235,7 @@ val any_resource: Resource = link("vimrc")
 val mixed_resources: List<Resource> = [
   link("tmux.conf"),
   template(path = "/etc/motd", source = "tmpl.tpl", vars = {"body": "welcome"}),
-  directory(path = "~/data"),
+  template(path = "/etc/issue", source = "tmpl.tpl", vars = {"body": "welcome"}),
 ]
 
 # Heterogeneous list literals infer to `List<Resource>` automatically.

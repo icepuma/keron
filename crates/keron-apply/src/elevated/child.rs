@@ -98,9 +98,7 @@ fn leaf_path(change: &ResourceChange) -> Option<PathBuf> {
     let state = change.after.as_ref().or(change.before.as_ref())?;
     match state {
         ResourceState::Symlink { from, .. } => Some(from.clone()),
-        ResourceState::Template { path, .. } | ResourceState::Directory { path } => {
-            Some(path.clone())
-        }
+        ResourceState::Template { path, .. } => Some(path.clone()),
         ResourceState::Package { .. } => None,
     }
 }
@@ -145,14 +143,6 @@ mod tests {
             content: "x".into(),
         });
         assert_eq!(leaf_path(&c), Some(PathBuf::from("/c")));
-    }
-
-    #[test]
-    fn leaf_path_for_directory_returns_path() {
-        let c = change(ResourceState::Directory {
-            path: PathBuf::from("/d"),
-        });
-        assert_eq!(leaf_path(&c), Some(PathBuf::from("/d")));
     }
 
     #[test]
