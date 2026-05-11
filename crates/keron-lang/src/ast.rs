@@ -136,6 +136,46 @@ pub enum IntrinsicId {
     /// constructor: a non-templating file is just a `template` with
     /// an empty `vars` map.
     Template,
+    /// `keron_root()` — absolute path to the directory the user passed
+    /// to `keron apply` (or the file's parent for the single-file
+    /// case). Returned as a `String` so it can be interpolated into
+    /// other path arguments.
+    KeronRoot,
+    /// `os_type()` — current OS as one of the [`OsType`] string-union
+    /// variants (`"Linux"`, `"Macos"`, `"Windows"`, `"Unknown"`).
+    /// Anything outside that set collapses to `"Unknown"`.
+    OsType,
+    /// `os_arch()` — current CPU architecture as one of the [`OsArch`]
+    /// string-union variants. Falls back to `"Unknown"` when the host
+    /// reports something we don't enumerate.
+    OsArch,
+    /// `env(name)` — read an environment variable. Returns `String?`:
+    /// the value when the variable is set (even if empty), or `null`
+    /// when it is unset. Distinguishing "unset" from "empty" is the
+    /// whole reason the return type is nullable rather than `String`.
+    Env,
+    /// `secret(uri)` — resolve an external secret URI (currently
+    /// `op://` only) into a `Secret` value. Eager: the URI is read
+    /// at plan-build time and any resolution failure is a hard
+    /// error. The returned `Secret` cannot flow into any String sink
+    /// without an explicit [`Self::UnwrapSecret`] call.
+    Secret,
+    /// `unwrap_secret(s)` — convert a `Secret` to a `String`. The
+    /// only legal way to extract; every call site is an audit
+    /// breadcrumb for "here is where the secret leaves the marker
+    /// type and becomes plain text."
+    UnwrapSecret,
+    /// `brew(name)` — declares a Homebrew formula or cask the apply
+    /// step should `brew install`. v1 carries only the name; taps
+    /// can be encoded inline (`brew("home/repo/formula")`).
+    Brew,
+    /// `cargo(name)` — declares a `cargo install` binary. v1
+    /// carries only the crate name.
+    Cargo,
+    /// `winget(name)` — declares a winget package id (e.g.
+    /// `"Microsoft.PowerShell"`). v1 carries only the id; sources
+    /// can be added later as a second arg.
+    Winget,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -400,6 +440,13 @@ pub enum Type {
     /// Directory ensure-existence. Constructed via the builtin
     /// `directory(...)` fn.
     Directory,
+    /// A package-manager-managed package (brew formula, `cargo
+    /// install` binary, winget package, etc.). Constructed via the
+    /// per-manager builtins (`brew(...)`, `cargo(...)`,
+    /// `winget(...)`); the manager identity is preserved on the
+    /// resulting [`crate::IntrinsicId`]-tagged resource so the
+    /// executor can pick the right CLI at apply time.
+    Package,
     /// Common supertype of [`Self::Symlink`], [`Self::Template`], and
     /// [`Self::Directory`]. There is no constructor — the type only
     /// shows up via annotation (`val r: Resource = symlink(...)`),
@@ -409,6 +456,13 @@ pub enum Type {
     /// specific resource fits a `Resource` slot, but `Resource` does
     /// not auto-narrow to a specific kind.
     Resource,
+    /// A value sourced from an external secret store (e.g.
+    /// `secret("op://...")`). `Secret` is **not** a subtype of
+    /// `String`: interpolation, concat, and cross-type equality with
+    /// `String` are rejected, so a secret cannot accidentally land
+    /// in a sink without explicit `unwrap_secret(...)`. The only
+    /// non-reflexive operation allowed is `Secret == Secret`.
+    Secret,
     /// "No value." The type of an empty block, of a `Void`-returning
     /// function's body, and of an `if` expression used as control
     /// flow. Writable in source as the annotation `Void`.
@@ -438,6 +492,14 @@ pub enum Type {
     /// loading, this variant should never appear — the type checker
     /// treats any leftover `Named` as an error.
     Named(String),
+    /// The singleton type of the `null` literal. Only appears as the
+    /// payload of a [`Self::Nullable`] (post-parser normalization) or
+    /// as the inferred type of a bare `null` literal.
+    Null,
+    /// A nullable wrapper. Spelled `T?` in source. The parser collapses
+    /// `T??` to `T?` so this never nests; the type checker treats
+    /// `Null` and `Nullable(_)` as the only types `null` can flow into.
+    Nullable(Box<Self>),
 }
 
 impl fmt::Display for Type {
@@ -453,6 +515,8 @@ impl fmt::Display for Type {
             Self::Template => f.write_str("Template"),
             Self::Directory => f.write_str("Directory"),
             Self::Resource => f.write_str("Resource"),
+            Self::Secret => f.write_str("Secret"),
+            Self::Package => f.write_str("Package"),
             Self::Void => f.write_str("Void"),
             // Structs and string unions are nominal: print just the
             // declared name. The full field/variant list is only
@@ -460,6 +524,8 @@ impl fmt::Display for Type {
             Self::Struct { name, .. } | Self::StringUnion { name, .. } | Self::Named(name) => {
                 f.write_str(name)
             }
+            Self::Null => f.write_str("Null"),
+            Self::Nullable(inner) => write!(f, "{inner}?"),
         }
     }
 }
@@ -470,6 +536,9 @@ pub enum Literal {
     Int(i64),
     Boolean(bool),
     Double(f64),
+    /// `null`. Type-checks against [`Type::Null`] and against any
+    /// [`Type::Nullable`] slot via the subtyping rules.
+    Null,
 }
 
 impl Literal {
@@ -480,6 +549,7 @@ impl Literal {
             Self::Int(_) => Type::Int,
             Self::Boolean(_) => Type::Boolean,
             Self::Double(_) => Type::Double,
+            Self::Null => Type::Null,
         }
     }
 }

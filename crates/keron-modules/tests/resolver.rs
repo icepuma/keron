@@ -408,8 +408,8 @@ fn multi_root_loads_every_root_into_the_graph() {
         resolve(TempProject::roots(&[(&a_path, &a_src), (&b_path, &b_src)])).expect("resolve ok");
     let a_id = ModuleId::File(fs::canonicalize(&a_path).unwrap());
     let b_id = ModuleId::File(fs::canonicalize(&b_path).unwrap());
-    assert!(graph.modules.contains_key(&a_id), "a missing from modules",);
-    assert!(graph.modules.contains_key(&b_id), "b missing from modules",);
+    assert!(graph.modules.contains_key(&a_id), "a missing from modules");
+    assert!(graph.modules.contains_key(&b_id), "b missing from modules");
     assert_eq!(graph.entries.len(), 2);
     assert!(graph.entries.contains(&a_id) && graph.entries.contains(&b_id));
 }

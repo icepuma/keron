@@ -1,0 +1,2 @@
+val maybe_name: String? = "alice"
+val name: String = maybe_name

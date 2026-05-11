@@ -1,7 +1,8 @@
 //! Type-annotation parser. Supports the four value primitives, the
-//! generic constructors `List<T>` and `Map<K, V>`, `Void`, and a
-//! `Named` fallback for capitalized identifiers (e.g. `Symlink`)
-//! that the module loader resolves against imported types.
+//! generic constructors `List<T>` and `Map<K, V>`, `Void`, postfix
+//! `?` for nullable wrappers, and a `Named` fallback for capitalized
+//! identifiers (e.g. `Symlink`) that the module loader resolves
+//! against imported types.
 
 use chumsky::prelude::*;
 
@@ -39,6 +40,24 @@ pub(super) fn type_annotation<'src>() -> impl Parser<'src, &'src str, Type, Extr
         let named = text::ident()
             .filter(|s: &&str| s.chars().next().is_some_and(|c| c.is_ascii_uppercase()))
             .map(|s: &str| Type::Named(s.to_string()));
-        choice((list, map, primitive, named))
+        let base = choice((list, map, primitive, named));
+        // Postfix `?` makes a type nullable. We absorb a run of one or
+        // more `?`s and emit a single `Type::Nullable` wrapper —
+        // `T??` collapses to `T?` so the AST never carries nested
+        // nullables. Padding is allowed between the type and the
+        // first `?` (e.g. `String ?`) but not within the run, since
+        // `String? ?` reads as a stuttered annotation rather than a
+        // single normalized form.
+        base.then(just('?').padded_by(pad()).repeated().count())
+            .map(|(inner, count)| {
+                // No `?`s, or the inner is already nullable / `Null`
+                // (where another wrapper would be a no-op): pass it
+                // through unchanged. Otherwise wrap exactly once.
+                if count == 0 || matches!(inner, Type::Null | Type::Nullable(_)) {
+                    inner
+                } else {
+                    Type::Nullable(Box::new(inner))
+                }
+            })
     })
 }

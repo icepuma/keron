@@ -1,0 +1,5 @@
+val maybe_name: String? = "alice"
+
+val name: String = match maybe_name {
+  "alice" => "ok",
+}

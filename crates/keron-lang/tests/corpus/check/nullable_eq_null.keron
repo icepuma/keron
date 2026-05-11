@@ -1,0 +1,4 @@
+val maybe_name: String? = null
+
+val is_set: Boolean = maybe_name == null
+val also_set: Boolean = null != maybe_name

@@ -1,0 +1,3 @@
+val x: String? = null
+val y: List<Int>? = null
+val z: Boolean? = null

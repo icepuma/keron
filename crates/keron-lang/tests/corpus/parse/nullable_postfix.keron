@@ -1,0 +1,3 @@
+val x: String? = null
+val y: Int? = 7
+val z: List<Boolean?> = [true, null, false]

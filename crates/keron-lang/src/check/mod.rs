@@ -307,7 +307,9 @@ fn resolve_type_in_place(
                 format!("unknown type `{name}`"),
             )),
         },
-        Type::List(inner) => resolve_type_in_place(inner, span, scope, diags),
+        Type::List(inner) | Type::Nullable(inner) => {
+            resolve_type_in_place(inner, span, scope, diags);
+        }
         Type::Map(k, v) => {
             resolve_type_in_place(k, span, scope, diags);
             resolve_type_in_place(v, span, scope, diags);
@@ -326,7 +328,10 @@ fn resolve_type_in_place(
         | Type::Template
         | Type::Directory
         | Type::Resource
-        | Type::Void => {}
+        | Type::Secret
+        | Type::Package
+        | Type::Void
+        | Type::Null => {}
     }
 }
 
@@ -932,6 +937,13 @@ fn switch_to_synth(
 /// satisfy a `Symlink`/`File`/`Directory` slot. Going from `Resource`
 /// back to a specific kind would require an explicit construct
 /// (pattern match or cast); none exists today, by design.
+// The recursive arms below have structurally identical bodies after
+// alpha-renaming, but each pair of bound names is a distinct semantic
+// rule (resource widening vs list covariance vs the two nullable
+// rules) and merging them would obscure that. Pinning `_ => is_subtype(...)`
+// to a single arm would also disable the type-checked exhaustiveness
+// of new `Type` variants when they're added.
+#[allow(clippy::match_same_arms)]
 fn is_subtype(child: &Type, parent: &Type) -> bool {
     if child == parent {
         return true;
@@ -942,10 +954,27 @@ fn is_subtype(child: &Type, parent: &Type) -> bool {
         // The reverse direction (auto-narrowing `String` to a union
         // slot) is intentionally not allowed; assignments from a
         // string literal are admitted in `check_expr` only when the
-        // literal is in the variant set.
-        (Type::Symlink | Type::Template | Type::Directory, Type::Resource)
-        | (Type::StringUnion { .. }, Type::String) => true,
+        // literal is in the variant set. `Null` flows into any
+        // nullable slot (`Null <: T?`), and reflexively into itself.
+        (Type::Symlink | Type::Template | Type::Directory | Type::Package, Type::Resource)
+        | (Type::StringUnion { .. }, Type::String)
+        | (Type::Null, Type::Nullable(_)) => true,
         (Type::List(c), Type::List(p)) => is_subtype(c, p),
+        // Nullability: `T <: T?` (any non-nullable value fits a
+        // nullable slot), and `T? <: U?` iff `T <: U`. One arm
+        // handles both cases by peeling at most one `Nullable`
+        // wrapper off the LHS before recursing — `T <: U` for plain
+        // `T`, `is_subtype(c, p)` for `Nullable(c) <: Nullable(p)`.
+        // Going the other way (using a `T?` where `T` is required)
+        // must pass through `match` to extract the inhabitant and is
+        // intentionally *not* expressible here.
+        (other, Type::Nullable(inner)) => {
+            let lhs = match other {
+                Type::Nullable(c) => c.as_ref(),
+                x => x,
+            };
+            is_subtype(lhs, inner)
+        }
         _ => false,
     }
 }
@@ -953,7 +982,7 @@ fn is_subtype(child: &Type, parent: &Type) -> bool {
 const fn is_resource_singleton(ty: &Type) -> bool {
     matches!(
         ty,
-        Type::Symlink | Type::Template | Type::Directory | Type::Resource
+        Type::Symlink | Type::Template | Type::Directory | Type::Package | Type::Resource
     )
 }
 
@@ -986,7 +1015,22 @@ fn expr_type(e: &Spanned<Expr>, env: &Env, fns: &FnEnv) -> Result<Type, Diagnost
         Expr::Interpolation(parts) => {
             for part in parts {
                 if let StringPart::Expr(inner) = part {
-                    expr_type(inner, env, fns)?;
+                    let ty = expr_type(inner, env, fns)?;
+                    if matches!(ty, Type::Nullable(_)) {
+                        return Err(Diagnostic::new(
+                            inner.span.clone(),
+                            format!(
+                                "cannot interpolate a `{ty}` directly; `match` it to extract the inhabitant first",
+                            ),
+                        ));
+                    }
+                    if matches!(ty, Type::Secret) {
+                        return Err(Diagnostic::new(
+                            inner.span.clone(),
+                            "cannot interpolate a `Secret` directly; call `unwrap_secret(...)` to opt into a String first"
+                                .to_string(),
+                        ));
+                    }
                 }
             }
             Ok(Type::String)
@@ -1314,9 +1358,12 @@ fn walk_type(ty: &Type, span: &Span, diags: &mut Vec<Diagnostic>) {
         | Type::Template
         | Type::Directory
         | Type::Resource
+        | Type::Secret
+        | Type::Package
         | Type::Void
+        | Type::Null
         | Type::StringUnion { .. } => {}
-        Type::List(inner) => walk_type(inner, span, diags),
+        Type::List(inner) | Type::Nullable(inner) => walk_type(inner, span, diags),
         Type::Map(k, v) => {
             if !is_valid_map_key(k) {
                 diags.push(Diagnostic::new(
@@ -1368,10 +1415,10 @@ fn check_reconcile_decl(r: &ReconcileDecl, env: &Env, fns: &FnEnv, diags: &mut V
 
 const fn is_reconcilable(ty: &Type) -> bool {
     match ty {
-        Type::Symlink | Type::Template | Type::Directory | Type::Resource => true,
+        Type::Symlink | Type::Template | Type::Directory | Type::Package | Type::Resource => true,
         Type::List(inner) => matches!(
             **inner,
-            Type::Symlink | Type::Template | Type::Directory | Type::Resource
+            Type::Symlink | Type::Template | Type::Directory | Type::Package | Type::Resource
         ),
         _ => false,
     }
@@ -1464,8 +1511,20 @@ const fn equality_result(lhs: &Type, rhs: &Type) -> Option<Type> {
     if is_string_or_union(lhs) && is_string_or_union(rhs) {
         return Some(Type::Boolean);
     }
+    // Nullable equality: comparing a `T?` against `null` (or two
+    // nulls) is the canonical "is it set?" idiom and is allowed even
+    // though `T?` is otherwise opaque without `match`. Comparing a
+    // `T?` against a non-null value is rejected so the user is
+    // forced into a `match` arm where the inhabitant has type `T`.
     match (lhs, rhs) {
-        (Type::Boolean, Type::Boolean) => Some(Type::Boolean),
+        (Type::Boolean, Type::Boolean)
+        | (Type::Null, Type::Null | Type::Nullable(_))
+        | (Type::Nullable(_), Type::Null)
+        // Secrets compare to other secrets only — no String
+        // cross-comparison so a leaked literal can't be probed via
+        // the type system (e.g. `secret(...) == "guess"` is not
+        // legal; the user has to `unwrap_secret` and own the leak).
+        | (Type::Secret, Type::Secret) => Some(Type::Boolean),
         _ => None,
     }
 }

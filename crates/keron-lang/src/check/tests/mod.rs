@@ -7,8 +7,11 @@ mod fns;
 mod lists;
 mod literals;
 mod maps;
+mod nullable;
+mod packages;
 mod reconcile;
 mod resources;
+mod secrets;
 mod strings;
 mod vars;
 
@@ -20,11 +23,10 @@ use crate::{
 };
 
 /// Type-check a snippet with the stdlib resource constructors and
-/// types (`symlink`/`file`/`directory` plus
-/// `Symlink`/`File`/`Directory`/`Resource`) pre-seeded as builtins.
-/// Mirrors what the resolver injects into every user module — these
-/// unit tests exercise checker behavior in isolation, so they hand-
-/// seed rather than going through the resolver.
+/// types pre-seeded as builtins. Mirrors what the resolver injects
+/// into every user module — these unit tests exercise checker
+/// behavior in isolation, so they hand-seed rather than going through
+/// the resolver.
 pub(super) fn check_src(src: &str) -> Result<(), Vec<Diagnostic>> {
     let mut prog = parse(src).expect("parse should succeed");
     let imp = fs_imports();
@@ -34,62 +36,9 @@ pub(super) fn check_src(src: &str) -> Result<(), Vec<Diagnostic>> {
 
 fn fs_imports() -> ImportedSymbols {
     let mut imp = ImportedSymbols::default();
-    imp.fns.insert(
-        "symlink".into(),
-        FnSig {
-            params: vec![
-                ParamSig {
-                    name: "from".into(),
-                    ty: Type::String,
-                    has_default: false,
-                },
-                ParamSig {
-                    name: "to".into(),
-                    ty: Type::String,
-                    has_default: false,
-                },
-            ],
-            return_type: Type::Symlink,
-        },
-    );
-    imp.fns.insert(
-        "template".into(),
-        FnSig {
-            params: vec![
-                ParamSig {
-                    name: "path".into(),
-                    ty: Type::String,
-                    has_default: false,
-                },
-                ParamSig {
-                    name: "source".into(),
-                    ty: Type::String,
-                    has_default: false,
-                },
-                ParamSig {
-                    name: "vars".into(),
-                    ty: Type::Map(Box::new(Type::String), Box::new(Type::String)),
-                    has_default: false,
-                },
-            ],
-            return_type: Type::Template,
-        },
-    );
-    imp.fns.insert(
-        "directory".into(),
-        FnSig {
-            params: vec![ParamSig {
-                name: "path".into(),
-                ty: Type::String,
-                has_default: false,
-            }],
-            return_type: Type::Directory,
-        },
-    );
-    imp.types.insert("Symlink".into(), Type::Symlink);
-    imp.types.insert("Template".into(), Type::Template);
-    imp.types.insert("Directory".into(), Type::Directory);
-    imp.types.insert("Resource".into(), Type::Resource);
+    seed_fs(&mut imp);
+    seed_secrets(&mut imp);
+    seed_packages(&mut imp);
     for name in [
         "symlink",
         "template",
@@ -98,8 +47,88 @@ fn fs_imports() -> ImportedSymbols {
         "Template",
         "Directory",
         "Resource",
+        "secret",
+        "unwrap_secret",
+        "Secret",
+        "brew",
+        "cargo",
+        "winget",
+        "Package",
     ] {
         imp.builtins.insert(name.into());
     }
     imp
+}
+
+fn param(name: &str, ty: Type) -> ParamSig {
+    ParamSig {
+        name: name.into(),
+        ty,
+        has_default: false,
+    }
+}
+
+fn fn_sig(params: Vec<ParamSig>, return_type: Type) -> FnSig {
+    FnSig {
+        params,
+        return_type,
+    }
+}
+
+fn seed_fs(imp: &mut ImportedSymbols) {
+    imp.fns.insert(
+        "symlink".into(),
+        fn_sig(
+            vec![param("from", Type::String), param("to", Type::String)],
+            Type::Symlink,
+        ),
+    );
+    imp.fns.insert(
+        "template".into(),
+        fn_sig(
+            vec![
+                param("path", Type::String),
+                param("source", Type::String),
+                param(
+                    "vars",
+                    Type::Map(Box::new(Type::String), Box::new(Type::String)),
+                ),
+            ],
+            Type::Template,
+        ),
+    );
+    imp.fns.insert(
+        "directory".into(),
+        fn_sig(vec![param("path", Type::String)], Type::Directory),
+    );
+    imp.types.insert("Symlink".into(), Type::Symlink);
+    imp.types.insert("Template".into(), Type::Template);
+    imp.types.insert("Directory".into(), Type::Directory);
+    imp.types.insert("Resource".into(), Type::Resource);
+}
+
+fn seed_secrets(imp: &mut ImportedSymbols) {
+    imp.fns.insert(
+        "secret".into(),
+        fn_sig(vec![param("uri", Type::String)], Type::Secret),
+    );
+    imp.fns.insert(
+        "unwrap_secret".into(),
+        fn_sig(vec![param("s", Type::Secret)], Type::String),
+    );
+    imp.types.insert("Secret".into(), Type::Secret);
+}
+
+fn seed_packages(imp: &mut ImportedSymbols) {
+    // Each manager constructor takes a `name: String` and returns
+    // the unified `Package` resource; the manager identity (brew /
+    // cargo / winget) is carried by the `IntrinsicId` tag, not the
+    // type.
+    for fn_name in ["brew", "cargo", "winget"] {
+        imp.fns.insert(
+            fn_name.into(),
+            fn_sig(vec![param("name", Type::String)], Type::Package),
+        );
+    }
+    imp.types.insert("Package".into(), Type::Package);
 }

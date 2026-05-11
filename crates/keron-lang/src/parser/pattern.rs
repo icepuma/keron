@@ -46,9 +46,10 @@ fn literal_pattern<'src>() -> impl Parser<'src, &'src str, Spanned<Pattern>, Ext
         text::keyword("true").to(Literal::Boolean(true)),
         text::keyword("false").to(Literal::Boolean(false)),
     ));
+    let null_lit = text::keyword("null").to(Literal::Null);
     let num_lit = number_literal();
     let string_lit = plain_string().map(Literal::String);
-    choice((bool_lit, num_lit, string_lit))
+    choice((bool_lit, null_lit, num_lit, string_lit))
         .map_with(|lit, e| Spanned {
             node: Pattern::Lit(lit),
             span: span_to_range(e.span()),

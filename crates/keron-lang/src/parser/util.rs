@@ -31,6 +31,7 @@ const KEYWORDS: &[&str] = &[
     "type",
     "true",
     "false",
+    "null",
     "String",
     "Int",
     "Boolean",

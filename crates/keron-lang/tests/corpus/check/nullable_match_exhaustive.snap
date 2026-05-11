@@ -1,0 +1,93 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "maybe_name",
+                    span: 4..14,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Nullable(
+                            String,
+                        ),
+                        span: 16..24,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        String(
+                            "alice",
+                        ),
+                    ),
+                    span: 26..33,
+                },
+                span: 0..35,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "name",
+                    span: 39..43,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 45..51,
+                    },
+                ),
+                value: Spanned {
+                    node: Match {
+                        scrutinee: Spanned {
+                            node: Var(
+                                "maybe_name",
+                            ),
+                            span: 60..70,
+                        },
+                        arms: [
+                            MatchArm {
+                                pattern: Spanned {
+                                    node: Lit(
+                                        Null,
+                                    ),
+                                    span: 75..79,
+                                },
+                                body: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "anonymous",
+                                        ),
+                                    ),
+                                    span: 83..94,
+                                },
+                                span: 75..94,
+                            },
+                            MatchArm {
+                                pattern: Spanned {
+                                    node: Bind(
+                                        "n",
+                                    ),
+                                    span: 98..100,
+                                },
+                                body: Spanned {
+                                    node: Var(
+                                        "n",
+                                    ),
+                                    span: 103..104,
+                                },
+                                span: 98..104,
+                            },
+                        ],
+                    },
+                    span: 54..108,
+                },
+                span: 35..108,
+            },
+        ),
+    ],
+}

@@ -1,0 +1,9 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
+---
+error: non-exhaustive `match` on `String?`: missing a `null` arm (or a wildcard `_`)
+  --> 3:26
+  |
+3 | val name: String = match maybe_name {
+  |                          ^^^^^^^^^^

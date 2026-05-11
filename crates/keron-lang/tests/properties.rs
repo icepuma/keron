@@ -164,10 +164,14 @@ fn literal_source_for(ty: &Type) -> BoxedStrategy<(String, Type)> {
         | Type::Template
         | Type::Directory
         | Type::Resource
+        | Type::Secret
+        | Type::Package
         | Type::Void
         | Type::Struct { .. }
         | Type::StringUnion { .. }
-        | Type::Named(_) => {
+        | Type::Named(_)
+        | Type::Null
+        | Type::Nullable(_) => {
             unreachable!("structured/resource/void types are not used in literal_source_for")
         }
     }

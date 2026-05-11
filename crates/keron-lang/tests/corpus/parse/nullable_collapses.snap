@@ -1,0 +1,77 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "a",
+                    span: 4..5,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Nullable(
+                            String,
+                        ),
+                        span: 7..15,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        Null,
+                    ),
+                    span: 17..21,
+                },
+                span: 0..22,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "b",
+                    span: 26..27,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Nullable(
+                            String,
+                        ),
+                        span: 29..38,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        Null,
+                    ),
+                    span: 40..44,
+                },
+                span: 22..45,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "c",
+                    span: 49..50,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Nullable(
+                            String,
+                        ),
+                        span: 52..62,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        Null,
+                    ),
+                    span: 64..68,
+                },
+                span: 45..69,
+            },
+        ),
+    ],
+}

@@ -1,0 +1,104 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "x",
+                    span: 4..5,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Nullable(
+                            String,
+                        ),
+                        span: 7..15,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        Null,
+                    ),
+                    span: 17..21,
+                },
+                span: 0..22,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "y",
+                    span: 26..27,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Nullable(
+                            Int,
+                        ),
+                        span: 29..34,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        Int(
+                            7,
+                        ),
+                    ),
+                    span: 36..37,
+                },
+                span: 22..38,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "z",
+                    span: 42..43,
+                },
+                ty: Some(
+                    Spanned {
+                        node: List(
+                            Nullable(
+                                Boolean,
+                            ),
+                        ),
+                        span: 45..60,
+                    },
+                ),
+                value: Spanned {
+                    node: List(
+                        [
+                            Spanned {
+                                node: Literal(
+                                    Boolean(
+                                        true,
+                                    ),
+                                ),
+                                span: 63..67,
+                            },
+                            Spanned {
+                                node: Literal(
+                                    Null,
+                                ),
+                                span: 69..73,
+                            },
+                            Spanned {
+                                node: Literal(
+                                    Boolean(
+                                        false,
+                                    ),
+                                ),
+                                span: 75..80,
+                            },
+                        ],
+                    ),
+                    span: 62..82,
+                },
+                span: 38..82,
+            },
+        ),
+    ],
+}

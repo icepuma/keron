@@ -1,0 +1,9 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
+---
+error: `String?` is not a valid `Map` key type; allowed keys are `String` and `Int`
+  --> 1:8
+  |
+1 | val m: Map<String?, Int> = {}
+  |        ^^^^^^^^^^^^^^^^^^

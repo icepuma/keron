@@ -1,0 +1,97 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "maybe_name",
+                    span: 4..14,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Nullable(
+                            String,
+                        ),
+                        span: 16..24,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        Null,
+                    ),
+                    span: 26..30,
+                },
+                span: 0..32,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "is_set",
+                    span: 36..42,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 44..51,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Eq,
+                        lhs: Spanned {
+                            node: Var(
+                                "maybe_name",
+                            ),
+                            span: 54..64,
+                        },
+                        rhs: Spanned {
+                            node: Literal(
+                                Null,
+                            ),
+                            span: 68..72,
+                        },
+                    },
+                    span: 54..72,
+                },
+                span: 32..73,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "also_set",
+                    span: 77..85,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 87..94,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Neq,
+                        lhs: Spanned {
+                            node: Literal(
+                                Null,
+                            ),
+                            span: 97..101,
+                        },
+                        rhs: Spanned {
+                            node: Var(
+                                "maybe_name",
+                            ),
+                            span: 105..115,
+                        },
+                    },
+                    span: 97..115,
+                },
+                span: 73..116,
+            },
+        ),
+    ],
+}

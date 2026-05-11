@@ -1,0 +1,71 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "m",
+                    span: 4..5,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Map(
+                            String,
+                            Nullable(
+                                String,
+                            ),
+                        ),
+                        span: 7..28,
+                    },
+                ),
+                value: Spanned {
+                    node: Map(
+                        [
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "alice",
+                                        ),
+                                    ),
+                                    span: 31..38,
+                                },
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "engineer",
+                                        ),
+                                    ),
+                                    span: 40..50,
+                                },
+                                span: 31..50,
+                            },
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "bob",
+                                        ),
+                                    ),
+                                    span: 52..57,
+                                },
+                                value: Spanned {
+                                    node: Literal(
+                                        Null,
+                                    ),
+                                    span: 59..63,
+                                },
+                                span: 52..63,
+                            },
+                        ],
+                    ),
+                    span: 30..65,
+                },
+                span: 0..65,
+            },
+        ),
+    ],
+}

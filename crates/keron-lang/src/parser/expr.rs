@@ -359,8 +359,9 @@ fn non_string_literal_expr<'src>()
         text::keyword("true").to(Literal::Boolean(true)),
         text::keyword("false").to(Literal::Boolean(false)),
     ));
+    let null_lit = text::keyword("null").to(Literal::Null);
     let num_lit = number_literal();
-    choice((bool_lit, num_lit))
+    choice((bool_lit, null_lit, num_lit))
         .map_with(|lit, e| Spanned {
             node: Expr::Literal(lit),
             span: span_to_range(e.span()),
