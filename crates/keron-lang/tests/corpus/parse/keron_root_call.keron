@@ -1,0 +1,2 @@
+val root: String = keron_root()
+val nested: String = "${keron_root()}/dotfiles"

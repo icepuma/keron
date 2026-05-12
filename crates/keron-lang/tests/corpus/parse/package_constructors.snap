@@ -1,0 +1,127 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "ripgrep",
+                    span: 4..11,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Named(
+                            "Package",
+                        ),
+                        span: 13..20,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "brew",
+                            span: 23..27,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "ripgrep",
+                                        ),
+                                    ),
+                                    span: 28..37,
+                                },
+                                span: 28..37,
+                            },
+                        ],
+                    },
+                    span: 23..39,
+                },
+                span: 0..39,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "just_tool",
+                    span: 43..52,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Named(
+                            "Package",
+                        ),
+                        span: 54..61,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "cargo",
+                            span: 64..69,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "just",
+                                        ),
+                                    ),
+                                    span: 70..76,
+                                },
+                                span: 70..76,
+                            },
+                        ],
+                    },
+                    span: 64..78,
+                },
+                span: 39..78,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "pwsh",
+                    span: 82..86,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Named(
+                            "Package",
+                        ),
+                        span: 88..95,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "winget",
+                            span: 98..104,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "Microsoft.PowerShell",
+                                        ),
+                                    ),
+                                    span: 105..127,
+                                },
+                                span: 105..127,
+                            },
+                        ],
+                    },
+                    span: 98..129,
+                },
+                span: 78..129,
+            },
+        ),
+    ],
+}

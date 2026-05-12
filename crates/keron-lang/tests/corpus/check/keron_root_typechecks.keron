@@ -1,0 +1,13 @@
+# `keron_root()` returns `String` so it composes with concat and
+# interpolation just like any other string-producing call.
+
+val root: String = keron_root()
+val dotfiles: String = root + "/dotfiles"
+val rendered: String = "rooted at ${keron_root()}"
+
+# Flows through fn boundaries.
+fn under_root(rel: String): String {
+  "${keron_root()}/${rel}"
+}
+
+val zsh_path: String = under_root("zsh/.zshrc")

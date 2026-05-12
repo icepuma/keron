@@ -1,0 +1,2 @@
+val home: String? = env("HOME")
+val missing: String? = env(name = "DEFINITELY_UNSET_XYZ")

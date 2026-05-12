@@ -1,0 +1,69 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "root",
+                    span: 4..8,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 10..16,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "keron_root",
+                            span: 19..29,
+                        },
+                        args: [],
+                    },
+                    span: 19..32,
+                },
+                span: 0..32,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "nested",
+                    span: 36..42,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 44..50,
+                    },
+                ),
+                value: Spanned {
+                    node: Interpolation(
+                        [
+                            Expr(
+                                Spanned {
+                                    node: Call {
+                                        callee: Spanned {
+                                            node: "keron_root",
+                                            span: 56..66,
+                                        },
+                                        args: [],
+                                    },
+                                    span: 56..68,
+                                },
+                            ),
+                            Text(
+                                "/dotfiles",
+                            ),
+                        ],
+                    ),
+                    span: 53..79,
+                },
+                span: 32..80,
+            },
+        ),
+    ],
+}

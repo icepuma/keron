@@ -1,0 +1,28 @@
+# `env(name)` returns `String?`. The nullable forces consumers to
+# either compare with `null` or extract the inhabitant via `match`.
+
+val raw_home: String? = env("HOME")
+val raw_via_named: String? = env(name = "EDITOR")
+
+# `T? == null` / `null != T?` are the canonical "is it set" idioms;
+# both directions are accepted by the equality rule.
+val home_set: Boolean = raw_home == null
+val editor_unset: Boolean = null != raw_via_named
+
+# `match` is the only way to land on a plain `String` — the wildcard
+# arm covers every non-null payload because the inhabitant has type
+# `String` (an infinite domain).
+val home: String = match raw_home {
+  null => "/tmp",
+  value => value,
+}
+
+# Match arms can also recover via a constant fallback for both arms.
+fn editor_label(): String {
+  match env("EDITOR") {
+    null => "(unset)",
+    name => "editor=${name}",
+  }
+}
+
+val editor: String = editor_label()

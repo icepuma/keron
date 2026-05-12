@@ -14,11 +14,13 @@ val tag = "wip"
 val seed = 42
 val warm = true
 
-# --- arithmetic with PEMDAS ---
+# --- arithmetic with PEMDAS, including `/` (integer division) ---
 val area: Int = 4 * 5 + 2
 val cube: Int = 2 ** 10
 val signed: Int = -7 * 3 + 1
 val rms: Double = (3 ** 2 + 4 ** 2) * 0.5
+val per_node: Int = 1024 / 32
+val gradient: Double = (4 + 6) / 2.0 - 1
 
 # --- mixed Int/Double promotion inside expressions ---
 val mixed: Double = 1 + 2.5 * 3
@@ -98,6 +100,32 @@ val by_name: Map<String, Int> = {"alice": 1, "bob": 2, "carol": 3}
 val codes: Map<Int, String> = {200: "ok", 404: "missing"}
 val nested_map: Map<String, List<Int>> = {"primes": [2, 3, 5, 7], "evens": [2, 4]}
 
+# --- nullable types & the `null` literal ---
+#
+# `T?` is a nullable wrapper. `null` is the only inhabitant of the
+# `Null` singleton type, and flows into any `T?` slot. The parser
+# collapses `T??` to `T?` so the wrapper never nests. Operations on
+# the inhabitant are blocked behind a `match` — `T?` cannot directly
+# concat, interpolate, or arithmetic.
+
+val maybe_alias: String? = "shorthand"
+val maybe_missing: String? = null
+val maybe_int: Int? = 42
+val maybe_list: List<Int>? = null
+val nullable_elems: List<Boolean?> = [true, null, false]
+
+# `==` / `!=` are admitted for `T? <-> null` only; comparing against a
+# concrete payload requires a `match`.
+val alias_set: Boolean = maybe_alias != null
+val missing_unset: Boolean = maybe_missing == null
+
+# `match` is the canonical extractor: the `null` arm and a wildcard
+# (binding the inhabitant) make the value flow into a plain `T`.
+val alias_or_default: String = match maybe_alias {
+  null => "(none)",
+  value => value,
+}
+
 # --- resources & reconcile ---
 fn link(name: String): Symlink {
   symlink(from = "~/dotfiles/${name}", to = "~/.${name}")
@@ -155,6 +183,17 @@ val rounded: String = if ratio < 1.5 {
   "phi"
 } else {
   "large"
+}
+
+# `!=` and `<=` round out the comparison surface. Equality works on
+# `String`, numeric (with promotion), `Boolean`, and `StringUnion`.
+val not_released: Boolean = released != true
+val small_seed: Boolean = seed <= 42
+val name_mismatch: Boolean = app_name != "other"
+val gate: String = if version_minor <= 0 {
+  "preview"
+} else {
+  "shipping"
 }
 
 # --- `Void` and `if` as control flow (no `else`) ---
@@ -388,8 +427,98 @@ val mode_marker: String = "mode-${match current_mode {
   "auto" => "watching",
 }}"
 
+# --- stdlib intrinsics: environment & host info ---
+#
+# The stdlib is implicitly in scope — no `from "std:..."` import is
+# required. `keron_root()` returns the absolute path the user pointed
+# at; `env(name)` reads a process variable and returns `String?` so
+# the consumer must `match` to decide on a fallback.
+
+val keron_home: String = keron_root()
+val editor: String = match env("EDITOR") {
+  null => "vi",
+  name => name,
+}
+val shell_var: String? = env(name = "SHELL")
+val shell_set: Boolean = shell_var != null
+
+# `os_type()` and `os_arch()` return closed string-union types
+# (`OsType` and `OsArch`), so a `match` over them is exhaustive
+# without a wildcard.
+val host_os: OsType = os_type()
+val host_arch: OsArch = os_arch()
+
+val os_label: String = match host_os {
+  "Linux"   => "linux",
+  "Macos"   => "macos",
+  "Windows" => "windows",
+  "Unknown" => "?",
+}
+
+val arch_label: String = match host_arch {
+  "x86_64"  => "amd64",
+  "aarch64" => "arm64",
+  "arm"     => "armv7",
+  "x86"     => "i686",
+  "Unknown" => "?",
+}
+
+val platform: String = "${os_label}/${arch_label}"
+
+# A union variant equality powers an `if` without going through
+# `match`.
+val on_mac: Boolean = host_os == "Macos"
+
+# --- stdlib intrinsics: secrets ---
+#
+# `Secret` is a marker type: it flows through fn boundaries, equality-
+# compares with other `Secret`s, and exits to `String` only via an
+# explicit `unwrap_secret(...)` call (one audit breadcrumb per leak
+# point). Interpolation, concat, and cross-type equality with `String`
+# are rejected by the checker.
+
+val gh_token: Secret = secret("op://vault/github/token")
+val npm_token: Secret = secret(uri = "op://vault/npm/token")
+val tokens_match: Boolean = gh_token == npm_token
+
+fn route_token(prefer_npm: Boolean): Secret {
+  if prefer_npm { npm_token } else { gh_token }
+}
+
+val chosen_token: Secret = route_token(false)
+val auth_header: String = "Authorization: Bearer ${unwrap_secret(chosen_token)}"
+
+# --- stdlib intrinsics: packages ---
+#
+# `brew`, `cargo`, and `winget` each produce a unified `Package`
+# value. Per-manager identity is preserved on the resource so the
+# executor picks the right CLI at apply time; the type system sees
+# one shape. `Package <: Resource`, so packages compose with symlinks
+# and templates in mixed lists, `++` chains, and `reconcile` blocks.
+
+val ripgrep: Package = brew("ripgrep")
+val starship: Package = brew(name = "starship")
+val just_bin: Package = cargo("just")
+val pwsh: Package = winget("Microsoft.PowerShell")
+
+val brew_tools: List<Package> = [ripgrep, starship]
+val all_managers: List<Resource> = [ripgrep, just_bin, pwsh]
+val tooling: List<Resource> = brew_tools ++ [just_bin]
+
+reconcile ripgrep
+reconcile just_bin -> pwsh
+reconcile {
+  starship;
+  brew_tools;
+  all_managers
+}
+
+for p in brew_tools {
+  reconcile p
+}
+
 reconcile template(
   path = "~/.config/keron/state",
   source = "tmpl.tpl",
-  vars = {"body": "${mode_marker}\nrole=${origin_role}\nlevel=${level_summary}\n"},
+  vars = {"body": "${mode_marker}\nrole=${origin_role}\nlevel=${level_summary}\nplatform=${platform}\nhome=${keron_home}\neditor=${editor}\n"},
 )

@@ -1,0 +1,61 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "host",
+                    span: 4..8,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Named(
+                            "OsType",
+                        ),
+                        span: 10..16,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "os_type",
+                            span: 19..26,
+                        },
+                        args: [],
+                    },
+                    span: 19..29,
+                },
+                span: 0..29,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "arch",
+                    span: 33..37,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Named(
+                            "OsArch",
+                        ),
+                        span: 39..45,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "os_arch",
+                            span: 48..55,
+                        },
+                        args: [],
+                    },
+                    span: 48..58,
+                },
+                span: 29..58,
+            },
+        ),
+    ],
+}

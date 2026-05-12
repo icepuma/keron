@@ -1,0 +1,490 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "host",
+                    span: 294..298,
+                },
+                ty: Some(
+                    Spanned {
+                        node: StringUnion {
+                            name: "OsType",
+                            variants: [
+                                "Linux",
+                                "Macos",
+                                "Windows",
+                                "Unknown",
+                            ],
+                        },
+                        span: 300..306,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "os_type",
+                            span: 309..316,
+                        },
+                        args: [],
+                    },
+                    span: 309..319,
+                },
+                span: 290..319,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "arch",
+                    span: 323..327,
+                },
+                ty: Some(
+                    Spanned {
+                        node: StringUnion {
+                            name: "OsArch",
+                            variants: [
+                                "x86_64",
+                                "aarch64",
+                                "arm",
+                                "x86",
+                                "Unknown",
+                            ],
+                        },
+                        span: 329..335,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "os_arch",
+                            span: 338..345,
+                        },
+                        args: [],
+                    },
+                    span: 338..349,
+                },
+                span: 319..349,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "label",
+                    span: 353..358,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 360..366,
+                    },
+                ),
+                value: Spanned {
+                    node: Match {
+                        scrutinee: Spanned {
+                            node: Var(
+                                "host",
+                            ),
+                            span: 375..379,
+                        },
+                        arms: [
+                            MatchArm {
+                                pattern: Spanned {
+                                    node: Lit(
+                                        String(
+                                            "Linux",
+                                        ),
+                                    ),
+                                    span: 384..391,
+                                },
+                                body: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "linux box",
+                                        ),
+                                    ),
+                                    span: 397..408,
+                                },
+                                span: 384..408,
+                            },
+                            MatchArm {
+                                pattern: Spanned {
+                                    node: Lit(
+                                        String(
+                                            "Macos",
+                                        ),
+                                    ),
+                                    span: 412..419,
+                                },
+                                body: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "mac",
+                                        ),
+                                    ),
+                                    span: 425..430,
+                                },
+                                span: 412..430,
+                            },
+                            MatchArm {
+                                pattern: Spanned {
+                                    node: Lit(
+                                        String(
+                                            "Windows",
+                                        ),
+                                    ),
+                                    span: 434..443,
+                                },
+                                body: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "windows box",
+                                        ),
+                                    ),
+                                    span: 447..460,
+                                },
+                                span: 434..460,
+                            },
+                            MatchArm {
+                                pattern: Spanned {
+                                    node: Lit(
+                                        String(
+                                            "Unknown",
+                                        ),
+                                    ),
+                                    span: 464..473,
+                                },
+                                body: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "?",
+                                        ),
+                                    ),
+                                    span: 477..480,
+                                },
+                                span: 464..480,
+                            },
+                        ],
+                    },
+                    span: 369..485,
+                },
+                span: 349..485,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "arch_label",
+                    span: 489..499,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 501..507,
+                    },
+                ),
+                value: Spanned {
+                    node: Match {
+                        scrutinee: Spanned {
+                            node: Var(
+                                "arch",
+                            ),
+                            span: 516..520,
+                        },
+                        arms: [
+                            MatchArm {
+                                pattern: Spanned {
+                                    node: Lit(
+                                        String(
+                                            "x86_64",
+                                        ),
+                                    ),
+                                    span: 525..533,
+                                },
+                                body: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "amd64",
+                                        ),
+                                    ),
+                                    span: 538..545,
+                                },
+                                span: 525..545,
+                            },
+                            MatchArm {
+                                pattern: Spanned {
+                                    node: Lit(
+                                        String(
+                                            "aarch64",
+                                        ),
+                                    ),
+                                    span: 549..558,
+                                },
+                                body: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "arm64",
+                                        ),
+                                    ),
+                                    span: 562..569,
+                                },
+                                span: 549..569,
+                            },
+                            MatchArm {
+                                pattern: Spanned {
+                                    node: Lit(
+                                        String(
+                                            "arm",
+                                        ),
+                                    ),
+                                    span: 573..578,
+                                },
+                                body: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "armv7",
+                                        ),
+                                    ),
+                                    span: 586..593,
+                                },
+                                span: 573..593,
+                            },
+                            MatchArm {
+                                pattern: Spanned {
+                                    node: Lit(
+                                        String(
+                                            "x86",
+                                        ),
+                                    ),
+                                    span: 597..602,
+                                },
+                                body: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "i686",
+                                        ),
+                                    ),
+                                    span: 610..616,
+                                },
+                                span: 597..616,
+                            },
+                            MatchArm {
+                                pattern: Spanned {
+                                    node: Lit(
+                                        String(
+                                            "Unknown",
+                                        ),
+                                    ),
+                                    span: 620..629,
+                                },
+                                body: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "?",
+                                        ),
+                                    ),
+                                    span: 633..636,
+                                },
+                                span: 620..636,
+                            },
+                        ],
+                    },
+                    span: 510..697,
+                },
+                span: 485..697,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "is_mac",
+                    span: 701..707,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 709..716,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Eq,
+                        lhs: Spanned {
+                            node: Var(
+                                "host",
+                            ),
+                            span: 719..723,
+                        },
+                        rhs: Spanned {
+                            node: Literal(
+                                String(
+                                    "Macos",
+                                ),
+                            ),
+                            span: 727..734,
+                        },
+                    },
+                    span: 719..734,
+                },
+                span: 697..735,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "tier",
+                    span: 739..743,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 745..751,
+                    },
+                ),
+                value: Spanned {
+                    node: If {
+                        cond: Spanned {
+                            node: Binary {
+                                op: Eq,
+                                lhs: Spanned {
+                                    node: Var(
+                                        "arch",
+                                    ),
+                                    span: 757..761,
+                                },
+                                rhs: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "aarch64",
+                                        ),
+                                    ),
+                                    span: 765..774,
+                                },
+                            },
+                            span: 757..774,
+                        },
+                        then_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: Literal(
+                                        String(
+                                            "fast",
+                                        ),
+                                    ),
+                                    span: 779..785,
+                                },
+                            ),
+                            span: 775..788,
+                        },
+                        else_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: If {
+                                        cond: Spanned {
+                                            node: Binary {
+                                                op: Eq,
+                                                lhs: Spanned {
+                                                    node: Var(
+                                                        "arch",
+                                                    ),
+                                                    span: 796..800,
+                                                },
+                                                rhs: Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "x86_64",
+                                                        ),
+                                                    ),
+                                                    span: 804..812,
+                                                },
+                                            },
+                                            span: 796..812,
+                                        },
+                                        then_branch: Block {
+                                            stmts: [],
+                                            trailing: Some(
+                                                Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "normal",
+                                                        ),
+                                                    ),
+                                                    span: 817..825,
+                                                },
+                                            ),
+                                            span: 813..828,
+                                        },
+                                        else_branch: Block {
+                                            stmts: [],
+                                            trailing: Some(
+                                                Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "exotic",
+                                                        ),
+                                                    ),
+                                                    span: 837..845,
+                                                },
+                                            ),
+                                            span: 833..974,
+                                        },
+                                    },
+                                    span: 793..974,
+                                },
+                            ),
+                            span: 793..974,
+                        },
+                    },
+                    span: 754..974,
+                },
+                span: 735..974,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "summary",
+                    span: 978..985,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 987..993,
+                    },
+                ),
+                value: Spanned {
+                    node: Interpolation(
+                        [
+                            Expr(
+                                Spanned {
+                                    node: Var(
+                                        "host",
+                                    ),
+                                    span: 999..1003,
+                                },
+                            ),
+                            Text(
+                                "/",
+                            ),
+                            Expr(
+                                Spanned {
+                                    node: Var(
+                                        "arch",
+                                    ),
+                                    span: 1007..1011,
+                                },
+                            ),
+                        ],
+                    ),
+                    span: 996..1013,
+                },
+                span: 974..1014,
+            },
+        ),
+    ],
+}

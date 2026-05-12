@@ -1,0 +1,41 @@
+# `Package` is the unified type produced by `brew`, `cargo`, and
+# `winget`. The manager identity is preserved on the value (via the
+# intrinsic tag) — the type system sees one `Package` regardless of
+# which constructor produced it.
+
+val ripgrep: Package = brew("ripgrep")
+val starship: Package = brew("starship")
+val just_bin: Package = cargo("just")
+val pwsh: Package = winget("Microsoft.PowerShell")
+
+# `Package <: Resource` — a `Package` flows into a `Resource` slot
+# without a cast, exactly like `Symlink` and `Template`.
+val any_pkg: Resource = ripgrep
+
+# Lists of packages.
+val brew_tools: List<Package> = [ripgrep, starship]
+
+# Mixed-kind lists inferred as `List<Resource>` — packages widen the
+# same way symlinks and templates do.
+val mixed: List<Resource> = [
+  brew("fzf"),
+  symlink(from = "~/dotfiles/.zshrc", to = "~/.zshrc"),
+  cargo("ripgrep"),
+]
+
+# `++` lifts to `List<Resource>` when the element kinds differ.
+val together: List<Resource> = brew_tools ++ [symlink(from = "a", to = "b")]
+
+# Packages are reconcilable like any other resource.
+reconcile ripgrep
+reconcile just_bin -> pwsh
+reconcile {
+  starship;
+  brew_tools;
+  mixed
+}
+
+# `for` over packages: a list iteration with a `reconcile` body.
+for p in brew_tools {
+  reconcile p
+}

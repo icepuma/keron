@@ -1,0 +1,206 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "root",
+                    span: 129..133,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 135..141,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "keron_root",
+                            span: 144..154,
+                        },
+                        args: [],
+                    },
+                    span: 144..157,
+                },
+                span: 125..157,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "dotfiles",
+                    span: 161..169,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 171..177,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Add,
+                        lhs: Spanned {
+                            node: Var(
+                                "root",
+                            ),
+                            span: 180..184,
+                        },
+                        rhs: Spanned {
+                            node: Literal(
+                                String(
+                                    "/dotfiles",
+                                ),
+                            ),
+                            span: 187..198,
+                        },
+                    },
+                    span: 180..198,
+                },
+                span: 157..199,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "rendered",
+                    span: 203..211,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 213..219,
+                    },
+                ),
+                value: Spanned {
+                    node: Interpolation(
+                        [
+                            Text(
+                                "rooted at ",
+                            ),
+                            Expr(
+                                Spanned {
+                                    node: Call {
+                                        callee: Spanned {
+                                            node: "keron_root",
+                                            span: 235..245,
+                                        },
+                                        args: [],
+                                    },
+                                    span: 235..247,
+                                },
+                            ),
+                        ],
+                    ),
+                    span: 222..249,
+                },
+                span: 199..282,
+            },
+        ),
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "under_root",
+                    span: 285..295,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "rel",
+                            span: 296..299,
+                        },
+                        ty: Spanned {
+                            node: String,
+                            span: 301..307,
+                        },
+                        default: None,
+                        span: 296..307,
+                    },
+                ],
+                return_type: Spanned {
+                    node: String,
+                    span: 310..316,
+                },
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Interpolation(
+                                [
+                                    Expr(
+                                        Spanned {
+                                            node: Call {
+                                                callee: Spanned {
+                                                    node: "keron_root",
+                                                    span: 324..334,
+                                                },
+                                                args: [],
+                                            },
+                                            span: 324..336,
+                                        },
+                                    ),
+                                    Text(
+                                        "/",
+                                    ),
+                                    Expr(
+                                        Spanned {
+                                            node: Var(
+                                                "rel",
+                                            ),
+                                            span: 340..343,
+                                        },
+                                    ),
+                                ],
+                            ),
+                            span: 321..345,
+                        },
+                    ),
+                    span: 317..349,
+                },
+                span: 282..349,
+                intrinsic: None,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "zsh_path",
+                    span: 353..361,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 363..369,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "under_root",
+                            span: 372..382,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "zsh/.zshrc",
+                                        ),
+                                    ),
+                                    span: 383..395,
+                                },
+                                span: 383..395,
+                            },
+                        ],
+                    },
+                    span: 372..397,
+                },
+                span: 349..397,
+            },
+        ),
+    ],
+}

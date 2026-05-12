@@ -1,0 +1,519 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "ripgrep",
+                    span: 241..248,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Package,
+                        span: 250..257,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "brew",
+                            span: 260..264,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "ripgrep",
+                                        ),
+                                    ),
+                                    span: 265..274,
+                                },
+                                span: 265..274,
+                            },
+                        ],
+                    },
+                    span: 260..276,
+                },
+                span: 237..276,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "starship",
+                    span: 280..288,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Package,
+                        span: 290..297,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "brew",
+                            span: 300..304,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "starship",
+                                        ),
+                                    ),
+                                    span: 305..315,
+                                },
+                                span: 305..315,
+                            },
+                        ],
+                    },
+                    span: 300..317,
+                },
+                span: 276..317,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "just_bin",
+                    span: 321..329,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Package,
+                        span: 331..338,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "cargo",
+                            span: 341..346,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "just",
+                                        ),
+                                    ),
+                                    span: 347..353,
+                                },
+                                span: 347..353,
+                            },
+                        ],
+                    },
+                    span: 341..355,
+                },
+                span: 317..355,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "pwsh",
+                    span: 359..363,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Package,
+                        span: 365..372,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "winget",
+                            span: 375..381,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "Microsoft.PowerShell",
+                                        ),
+                                    ),
+                                    span: 382..404,
+                                },
+                                span: 382..404,
+                            },
+                        ],
+                    },
+                    span: 375..533,
+                },
+                span: 355..533,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "any_pkg",
+                    span: 537..544,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Resource,
+                        span: 546..554,
+                    },
+                ),
+                value: Spanned {
+                    node: Var(
+                        "ripgrep",
+                    ),
+                    span: 557..564,
+                },
+                span: 533..587,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "brew_tools",
+                    span: 591..601,
+                },
+                ty: Some(
+                    Spanned {
+                        node: List(
+                            Package,
+                        ),
+                        span: 603..617,
+                    },
+                ),
+                value: Spanned {
+                    node: List(
+                        [
+                            Spanned {
+                                node: Var(
+                                    "ripgrep",
+                                ),
+                                span: 620..627,
+                            },
+                            Spanned {
+                                node: Var(
+                                    "starship",
+                                ),
+                                span: 629..637,
+                            },
+                        ],
+                    ),
+                    span: 619..749,
+                },
+                span: 587..749,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "mixed",
+                    span: 753..758,
+                },
+                ty: Some(
+                    Spanned {
+                        node: List(
+                            Resource,
+                        ),
+                        span: 760..775,
+                    },
+                ),
+                value: Spanned {
+                    node: List(
+                        [
+                            Spanned {
+                                node: Call {
+                                    callee: Spanned {
+                                        node: "brew",
+                                        span: 781..785,
+                                    },
+                                    args: [
+                                        CallArg {
+                                            name: None,
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "fzf",
+                                                    ),
+                                                ),
+                                                span: 786..791,
+                                            },
+                                            span: 786..791,
+                                        },
+                                    ],
+                                },
+                                span: 781..792,
+                            },
+                            Spanned {
+                                node: Call {
+                                    callee: Spanned {
+                                        node: "symlink",
+                                        span: 796..803,
+                                    },
+                                    args: [
+                                        CallArg {
+                                            name: Some(
+                                                Spanned {
+                                                    node: "from",
+                                                    span: 804..808,
+                                                },
+                                            ),
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "~/dotfiles/.zshrc",
+                                                    ),
+                                                ),
+                                                span: 811..830,
+                                            },
+                                            span: 804..830,
+                                        },
+                                        CallArg {
+                                            name: Some(
+                                                Spanned {
+                                                    node: "to",
+                                                    span: 832..834,
+                                                },
+                                            ),
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "~/.zshrc",
+                                                    ),
+                                                ),
+                                                span: 837..847,
+                                            },
+                                            span: 832..847,
+                                        },
+                                    ],
+                                },
+                                span: 796..848,
+                            },
+                            Spanned {
+                                node: Call {
+                                    callee: Spanned {
+                                        node: "cargo",
+                                        span: 852..857,
+                                    },
+                                    args: [
+                                        CallArg {
+                                            name: None,
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "ripgrep",
+                                                    ),
+                                                ),
+                                                span: 858..867,
+                                            },
+                                            span: 858..867,
+                                        },
+                                    ],
+                                },
+                                span: 852..868,
+                            },
+                        ],
+                    ),
+                    span: 777..937,
+                },
+                span: 749..937,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "together",
+                    span: 941..949,
+                },
+                ty: Some(
+                    Spanned {
+                        node: List(
+                            Resource,
+                        ),
+                        span: 951..966,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Concat,
+                        lhs: Spanned {
+                            node: Var(
+                                "brew_tools",
+                            ),
+                            span: 968..978,
+                        },
+                        rhs: Spanned {
+                            node: List(
+                                [
+                                    Spanned {
+                                        node: Call {
+                                            callee: Spanned {
+                                                node: "symlink",
+                                                span: 983..990,
+                                            },
+                                            args: [
+                                                CallArg {
+                                                    name: Some(
+                                                        Spanned {
+                                                            node: "from",
+                                                            span: 991..995,
+                                                        },
+                                                    ),
+                                                    value: Spanned {
+                                                        node: Literal(
+                                                            String(
+                                                                "a",
+                                                            ),
+                                                        ),
+                                                        span: 998..1001,
+                                                    },
+                                                    span: 991..1001,
+                                                },
+                                                CallArg {
+                                                    name: Some(
+                                                        Spanned {
+                                                            node: "to",
+                                                            span: 1003..1005,
+                                                        },
+                                                    ),
+                                                    value: Spanned {
+                                                        node: Literal(
+                                                            String(
+                                                                "b",
+                                                            ),
+                                                        ),
+                                                        span: 1008..1011,
+                                                    },
+                                                    span: 1003..1011,
+                                                },
+                                            ],
+                                        },
+                                        span: 983..1012,
+                                    },
+                                ],
+                            ),
+                            span: 982..1068,
+                        },
+                    },
+                    span: 968..1068,
+                },
+                span: 937..1068,
+            },
+        ),
+        Reconcile(
+            ReconcileDecl {
+                chains: [
+                    [
+                        Spanned {
+                            node: Var(
+                                "ripgrep",
+                            ),
+                            span: 1078..1085,
+                        },
+                    ],
+                ],
+                span: 1068..1086,
+            },
+        ),
+        Reconcile(
+            ReconcileDecl {
+                chains: [
+                    [
+                        Spanned {
+                            node: Var(
+                                "just_bin",
+                            ),
+                            span: 1096..1104,
+                        },
+                        Spanned {
+                            node: Var(
+                                "pwsh",
+                            ),
+                            span: 1108..1112,
+                        },
+                    ],
+                ],
+                span: 1086..1113,
+            },
+        ),
+        Reconcile(
+            ReconcileDecl {
+                chains: [
+                    [
+                        Spanned {
+                            node: Var(
+                                "starship",
+                            ),
+                            span: 1127..1135,
+                        },
+                    ],
+                    [
+                        Spanned {
+                            node: Var(
+                                "brew_tools",
+                            ),
+                            span: 1139..1149,
+                        },
+                    ],
+                    [
+                        Spanned {
+                            node: Var(
+                                "mixed",
+                            ),
+                            span: 1153..1158,
+                        },
+                    ],
+                ],
+                span: 1113..1227,
+            },
+        ),
+        ExprStmt(
+            Spanned {
+                node: For {
+                    pattern: Elem(
+                        Spanned {
+                            node: "p",
+                            span: 1231..1232,
+                        },
+                    ),
+                    iter_expr: Spanned {
+                        node: Var(
+                            "brew_tools",
+                        ),
+                        span: 1236..1246,
+                    },
+                    body: Block {
+                        stmts: [
+                            Reconcile(
+                                ReconcileDecl {
+                                    chains: [
+                                        [
+                                            Spanned {
+                                                node: Var(
+                                                    "p",
+                                                ),
+                                                span: 1261..1262,
+                                            },
+                                        ],
+                                    ],
+                                    span: 1251..1263,
+                                },
+                            ),
+                        ],
+                        trailing: None,
+                        span: 1247..1265,
+                    },
+                },
+                span: 1227..1265,
+            },
+        ),
+    ],
+}

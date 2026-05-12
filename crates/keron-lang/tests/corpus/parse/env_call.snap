@@ -1,0 +1,92 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "home",
+                    span: 4..8,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Nullable(
+                            String,
+                        ),
+                        span: 10..18,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "env",
+                            span: 20..23,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "HOME",
+                                        ),
+                                    ),
+                                    span: 24..30,
+                                },
+                                span: 24..30,
+                            },
+                        ],
+                    },
+                    span: 20..32,
+                },
+                span: 0..32,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "missing",
+                    span: 36..43,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Nullable(
+                            String,
+                        ),
+                        span: 45..53,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "env",
+                            span: 55..58,
+                        },
+                        args: [
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "name",
+                                        span: 59..63,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "DEFINITELY_UNSET_XYZ",
+                                        ),
+                                    ),
+                                    span: 66..88,
+                                },
+                                span: 59..88,
+                            },
+                        ],
+                    },
+                    span: 55..90,
+                },
+                span: 32..90,
+            },
+        ),
+    ],
+}
