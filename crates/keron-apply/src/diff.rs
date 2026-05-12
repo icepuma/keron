@@ -9,6 +9,7 @@
 use std::io::{self, Write};
 
 use crate::plan::{Action, Plan, ResourceChange, ResourceState};
+use crate::terminal_safe::{escape_inline, show_path, show_str};
 
 const RESET: &str = "\x1b[0m";
 const GREEN: &str = "\x1b[32m";
@@ -107,14 +108,14 @@ fn render_change<W: Write>(
         "  {hash} {kind}.\"{addr}\" {verb}{tag}",
         hash = paint(opts.color, DIM, "#"),
         kind = change.kind.label(),
-        addr = change.address,
+        addr = show_str(&change.address),
     )?;
     writeln!(
         out,
         "  {sym} resource \"{kind}\" \"{addr}\" {{",
         sym = paint(opts.color, color, symbol),
         kind = change.kind.label(),
-        addr = change.address,
+        addr = show_str(&change.address),
     )?;
 
     render_body(out, change, opts)?;
@@ -159,7 +160,7 @@ fn render_state_lines<W: Write>(
             content,
             sensitive,
         } => {
-            writeln!(out, "      {s} path    = \"{}\"", path.display())?;
+            writeln!(out, "      {s} path    = \"{}\"", show_path(path))?;
             if *sensitive {
                 writeln!(out, "      {s} content = <sensitive>")?;
             } else {
@@ -167,8 +168,8 @@ fn render_state_lines<W: Write>(
             }
         }
         ResourceState::Symlink { from, to } => {
-            writeln!(out, "      {s} from = \"{}\"", from.display())?;
-            writeln!(out, "      {s} to   = \"{}\"", to.display())?;
+            writeln!(out, "      {s} from = \"{}\"", show_path(from))?;
+            writeln!(out, "      {s} to   = \"{}\"", show_path(to))?;
         }
         ResourceState::Package { manager, name } => {
             writeln!(out, "      {s} manager = \"{}\"", manager.label())?;
@@ -202,8 +203,8 @@ fn render_diff_lines<W: Write>(
                 writeln!(
                     out,
                     "      {s} path    = \"{}\" -> \"{}\"",
-                    bp.display(),
-                    ap.display()
+                    show_path(bp),
+                    show_path(ap)
                 )?;
             }
             if *bs || *as_ {
@@ -227,16 +228,16 @@ fn render_diff_lines<W: Write>(
                 writeln!(
                     out,
                     "      {s} from = \"{}\" -> \"{}\"",
-                    bf.display(),
-                    af.display()
+                    show_path(bf),
+                    show_path(af)
                 )?;
             }
             if bt != at {
                 writeln!(
                     out,
                     "      {s} to   = \"{}\" -> \"{}\"",
-                    bt.display(),
-                    at.display()
+                    show_path(bt),
+                    show_path(at)
                 )?;
             }
         }
@@ -297,13 +298,6 @@ const fn action_color(action: Action) -> &'static str {
         Action::Update => YELLOW,
         Action::NoOp => RESET,
     }
-}
-
-fn escape_inline(s: &str) -> String {
-    s.replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\t', "\\t")
 }
 
 #[cfg(test)]
@@ -538,6 +532,55 @@ mod tests {
     #[test]
     fn escape_inline_passes_plain_text_unchanged() {
         assert_eq!(escape_inline("hello world"), "hello world");
+    }
+
+    #[test]
+    fn escape_inline_neutralizes_ansi_and_carriage_returns() {
+        // A hostile `.keron` could otherwise embed `\r` or `\x1b[A`
+        // to cursor-up and overwrite the rendered diff so the user
+        // sees a benign-looking plan while the planner has queued
+        // writes to a different target.
+        assert_eq!(escape_inline("safe\rmalicious"), "safe\\rmalicious");
+        assert_eq!(escape_inline("\x1b[2K"), "\\u{001b}[2K");
+        assert_eq!(escape_inline("\0null"), "\\u{0000}null");
+    }
+
+    #[test]
+    fn escape_inline_neutralizes_bidi_overrides() {
+        // U+202E (Right-to-Left Override) and similar bidi controls
+        // are not ASCII-control but can rewrite the apparent order
+        // of subsequent characters in a terminal.
+        let bidi = "good\u{202e}lave";
+        assert_eq!(escape_inline(bidi), "good\\u{202e}lave");
+    }
+
+    #[test]
+    fn diff_render_neutralizes_control_chars_in_address_and_path() {
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/etc/passwd\r/safe".into(),
+                kind: ResourceKind::Symlink,
+                action: Action::Create,
+                before: None,
+                after: Some(ResourceState::Symlink {
+                    from: PathBuf::from("/etc/passwd\r/safe"),
+                    to: PathBuf::from("/var/target\x1b[2K"),
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        let out = render(&plan);
+        assert!(
+            !out.contains('\r'),
+            "carriage return leaked through render: {out:?}"
+        );
+        assert!(!out.contains('\x1b'), "ESC leaked through render: {out:?}");
+        assert!(out.contains("\\r"), "expected \\r escape: {out}");
+        assert!(
+            out.contains("\\u{001b}"),
+            "expected \\u{{001b}} escape: {out}"
+        );
     }
 
     #[test]

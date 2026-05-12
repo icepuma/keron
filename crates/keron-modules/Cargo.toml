@@ -11,7 +11,6 @@ authors.workspace = true
 [dependencies]
 keron-lang.workspace = true
 
-anyhow.workspace = true
 petgraph.workspace = true
 
 [lints]

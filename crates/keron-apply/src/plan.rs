@@ -300,9 +300,22 @@ fn classify_symlink(from: &Path, to: &Path, after: &ResourceState) -> Result<Res
             // the evaluator). A broken link is always Update.
             let current_literal = fs::read_link(from)
                 .with_context(|| format!("reading existing symlink `{}`", from.display()))?;
-            let resolves_to_same = fs::canonicalize(from)
-                .ok()
-                .is_some_and(|resolved| resolved == to);
+            let resolves_to_same = match fs::canonicalize(from) {
+                Ok(resolved) => resolved == to,
+                // A dangling symlink (target missing) legitimately
+                // canonicalizes-to-error; classify as Update. Any
+                // other error (EACCES on an intermediate dir, EIO,
+                // …) would silently look like "different target"
+                // and let apply fail later with worse context, so
+                // bail with the underlying error attached.
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+                Err(e) => {
+                    return Err(anyhow!(
+                        "canonicalizing existing symlink `{}`: {e}",
+                        from.display()
+                    ));
+                }
+            };
             let before = ResourceState::Symlink {
                 from: from.to_path_buf(),
                 to: current_literal,
@@ -512,7 +525,7 @@ mod tests {
         let graph = resolve(vec![EntrySource {
             text: src.into(),
             base_dir: canonical.parent().unwrap().to_path_buf(),
-            id: ModuleId::File(canonical),
+            id: ModuleId(canonical),
         }])
         .unwrap();
         let plan = build_plan(&graph, &keron_root).unwrap();
@@ -632,6 +645,68 @@ mod tests {
             panic!("expected Symlink before");
         };
         assert_eq!(bt, old_target, "before should record the *current* target");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn classify_symlink_dangling_link_is_update() {
+        // Dangling link: canonicalize(from) returns ENOENT. The
+        // ENOENT branch must classify as Update (not bail), so the
+        // user can re-point the alias. Pins the
+        // `NotFound`-guard match in classify_symlink against
+        // mutations that flip it to false / != / always-true.
+        let d = TempDir::new("dangling");
+        let missing = d.path.join("not-here");
+        let from = d.path.join("alias");
+        make_symlink(&missing, &from).unwrap();
+        // Sanity: target genuinely missing.
+        assert!(
+            !missing.exists(),
+            "fixture invariant: target must be absent"
+        );
+
+        let new_target = d.path.join("new");
+        fs::write(&new_target, "new").unwrap();
+        let change = classify(&desired(&from, &new_target), &mut PackageCache::new())
+            .expect("dangling symlink must classify, not bail");
+        assert_eq!(change.action, Action::Update);
+        let before = change.before.expect("before populated for dangling update");
+        let ResourceState::Symlink { to: bt, .. } = before else {
+            panic!("expected Symlink before");
+        };
+        assert_eq!(
+            bt, missing,
+            "before should record the dangling target literally"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn classify_symlink_bails_on_non_enoent_canonicalize_error() {
+        // ELOOP from a symlink cycle is not NotFound; the second
+        // `Err(e)` arm must bail rather than silently treat it as
+        // "diverging target". Pins the `replace match guard … with
+        // true` mutation, which would funnel all errors through the
+        // dangling-link path and quietly return Update.
+        let d = TempDir::new("loop");
+        let a = d.path.join("a");
+        let b = d.path.join("b");
+        // a -> b, b -> a forms a 2-cycle. canonicalize(a) returns
+        // ELOOP, which has io::ErrorKind::FilesystemLoop on modern
+        // Rust (mapped to Uncategorized on older toolchains) — in
+        // either case, NOT NotFound.
+        make_symlink(&b, &a).unwrap();
+        make_symlink(&a, &b).unwrap();
+
+        let new_target = d.path.join("target");
+        fs::write(&new_target, "x").unwrap();
+        let err = classify(&desired(&a, &new_target), &mut PackageCache::new())
+            .expect_err("symlink loop must surface a canonicalize error, not be papered over");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("canonicalizing existing symlink"),
+            "got: {msg}"
+        );
     }
 
     #[test]

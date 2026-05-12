@@ -37,10 +37,18 @@ pub(super) fn struct_decl<'src>() -> impl Parser<'src, &'src str, StructDecl, Ex
     kw_struct
         .ignore_then(spanned(ident()).padded_by(pad()))
         .then(fields)
-        .map_with(|(name, fields), e| StructDecl {
-            name,
-            fields,
-            span: span_to_range(e.span()),
+        .try_map(|(name, fields), span| {
+            if !name.node.starts_with(|c: char| c.is_ascii_uppercase()) {
+                return Err(Rich::custom(
+                    span,
+                    "struct names must start with an uppercase letter",
+                ));
+            }
+            Ok(StructDecl {
+                name,
+                fields,
+                span: span_to_range(span),
+            })
         })
 }
 

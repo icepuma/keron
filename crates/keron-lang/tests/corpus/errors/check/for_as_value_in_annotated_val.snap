@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `for` has type `Void` and does not produce a value; expected `Int`. Use `for` at statement position (top level, or inside a `Void`-bodied block) rather than as a value.
+  --> 1:14
+  |
+1 | val x: Int = for k in [1, 2] {}
+  |              ^^^^^^^^^^^^^^^^^^^

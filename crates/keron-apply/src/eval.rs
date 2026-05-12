@@ -156,6 +156,45 @@ struct GraphTop<'p> {
     /// Canonical absolute path the user passed to `keron apply` —
     /// surfaced to user code through the `keron_root()` builtin.
     keron_root: PathBuf,
+    /// Active call depth. Incremented on every user-fn body entry,
+    /// decremented when [`CallDepthGuard`] drops. Caps runaway
+    /// recursion at [`MAX_CALL_DEPTH`] so `fn loop(): Int { loop() }`
+    /// surfaces as a bailed error instead of blowing the Rust stack.
+    call_depth: RefCell<usize>,
+}
+
+/// Hard cap on synchronous user-fn call depth. Generous enough to
+/// admit any sensible hand-written recursion; far below the Rust
+/// stack size at the default 8 MiB / 1 MiB-per-frame envelope.
+const MAX_CALL_DEPTH: usize = 256;
+
+/// RAII drop-guard that clears `ModuleTop::in_progress` if the
+/// caller's `Ok` path didn't already do so. Lives at module scope
+/// because Clippy's `items_after_statements` forbids declaring
+/// types mid-function. See `Env::lookup` for the user.
+struct InProgressGuard<'m, 'p> {
+    module: &'m ModuleTop<'p>,
+    key: String,
+    armed: bool,
+}
+
+impl Drop for InProgressGuard<'_, '_> {
+    // `#[mutants::skip]` because the cleanup this guard performs is
+    // only observable on the *error* path inside `Env::lookup`: the
+    // success path explicitly disarms the guard (sets `armed=false`)
+    // and clears `in_progress` itself before the drop runs. To catch
+    // a "drop is a no-op" mutation we would need (a) a val whose
+    // initializer fails mid-evaluation AND (b) a subsequent re-entry
+    // into the same `lookup`. Top-level eval bails on the first
+    // error, so (b) is unreachable without bespoke harness rewiring.
+    // The guard exists as defensive RAII against future panics /
+    // early-exits, not for any currently-observable code path.
+    #[cfg_attr(test, mutants::skip)]
+    fn drop(&mut self) {
+        if self.armed {
+            self.module.in_progress.borrow_mut().remove(&self.key);
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -207,7 +246,20 @@ impl<'a, 'p> Env<'a, 'p> {
                 bail!("cycle while evaluating `val {name}`");
             }
             let module_env = Env::new(self.graph, self.current.clone());
+            // RAII so a panic / `?` early-exit from `eval_expr` still
+            // clears the in-progress marker. The previous straight-line
+            // sequence skipped the `remove` on error and a subsequent
+            // lookup of the same val (reachable when two reconciles
+            // both reference `x`) reported a spurious cycle.
+            let mut guard = InProgressGuard {
+                module,
+                key: key.clone(),
+                armed: true,
+            };
             let v = eval_expr(expr, &module_env)?;
+            // Success path: hand the cleanup off to the cache insert
+            // below so we don't double-borrow.
+            guard.armed = false;
             module.in_progress.borrow_mut().remove(&key);
             module.cache.borrow_mut().insert(key, v.clone());
             return Ok(v);
@@ -227,6 +279,7 @@ pub fn eval_graph(graph: &ModuleGraph, keron_root: &Path) -> Result<Vec<Resource
     let mut graph_top = GraphTop {
         modules: HashMap::new(),
         keron_root: keron_root.to_path_buf(),
+        call_depth: RefCell::new(0),
     };
     for (id, module) in &graph.modules {
         let mut top = ModuleTop {
@@ -560,7 +613,10 @@ fn eval_literal(lit: &Literal) -> Value {
 
 fn eval_unary(op: UnaryOp, v: Value) -> Result<Value> {
     match (op, v) {
-        (UnaryOp::Neg, Value::Int(n)) => Ok(Value::Int(-n)),
+        (UnaryOp::Neg, Value::Int(n)) => n
+            .checked_neg()
+            .map(Value::Int)
+            .ok_or_else(|| anyhow!("integer overflow in `-{n}` (negating i64::MIN)")),
         (UnaryOp::Neg, Value::Double(d)) => Ok(Value::Double(-d)),
         (op, v) => bail!("unary `{}` on {}", op.symbol(), v.type_name()),
     }
@@ -584,18 +640,31 @@ fn eval_binop(op: BinOp, l: Value, r: Value) -> Result<Value> {
             text: a + &b,
             sensitive: sa || sb,
         }),
-        (Add, Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
-        (Sub, Value::Int(a), Value::Int(b)) => Ok(Value::Int(a - b)),
-        (Mul, Value::Int(a), Value::Int(b)) => Ok(Value::Int(a * b)),
+        (Add, Value::Int(a), Value::Int(b)) => a
+            .checked_add(b)
+            .map(Value::Int)
+            .ok_or_else(|| anyhow!("integer overflow in `{a} + {b}`")),
+        (Sub, Value::Int(a), Value::Int(b)) => a
+            .checked_sub(b)
+            .map(Value::Int)
+            .ok_or_else(|| anyhow!("integer overflow in `{a} - {b}`")),
+        (Mul, Value::Int(a), Value::Int(b)) => a
+            .checked_mul(b)
+            .map(Value::Int)
+            .ok_or_else(|| anyhow!("integer overflow in `{a} * {b}`")),
         (Div, Value::Int(a), Value::Int(b)) => {
             if b == 0 {
                 bail!("division by zero");
             }
-            Ok(Value::Int(a / b))
+            a.checked_div(b)
+                .map(Value::Int)
+                .ok_or_else(|| anyhow!("integer overflow in `{a} / {b}` (i64::MIN / -1)"))
         }
         (Pow, Value::Int(a), Value::Int(b)) => {
             let exp = u32::try_from(b).context("`**` exponent does not fit in u32")?;
-            Ok(Value::Int(a.pow(exp)))
+            a.checked_pow(exp)
+                .map(Value::Int)
+                .ok_or_else(|| anyhow!("integer overflow in `{a} ** {b}`"))
         }
         (Add, Value::Double(a), Value::Double(b)) => Ok(Value::Double(a + b)),
         (Sub, Value::Double(a), Value::Double(b)) => Ok(Value::Double(a - b)),
@@ -611,8 +680,11 @@ fn eval_binop(op: BinOp, l: Value, r: Value) -> Result<Value> {
         (Div, Value::Int(a), Value::Double(b)) => Ok(Value::Double(a as f64 / b)),
         (Div, Value::Double(a), Value::Int(b)) => Ok(Value::Double(a / b as f64)),
         (Pow, Value::Int(a), Value::Double(b)) => Ok(Value::Double((a as f64).powf(b))),
-        #[allow(clippy::cast_possible_truncation)]
-        (Pow, Value::Double(a), Value::Int(b)) => Ok(Value::Double(a.powi(b as i32))),
+        (Pow, Value::Double(a), Value::Int(b)) => {
+            let exp = i32::try_from(b)
+                .with_context(|| format!("`{a} ** {b}` exponent does not fit in i32"))?;
+            Ok(Value::Double(a.powi(exp)))
+        }
 
         (Concat, Value::List(mut a), Value::List(b)) => {
             a.extend(b);
@@ -775,9 +847,38 @@ fn eval_call(name: &str, args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     let mut call_env = Env::new(env.graph, origin_id);
     bind_params(fn_decl, args, env, &mut call_env)?;
 
+    let _depth = CallDepthGuard::enter(env.graph)?;
     let mut sink = Vec::new();
     let v = eval_block_value(&fn_decl.body, &call_env, &mut sink)?;
     Ok(v)
+}
+
+/// RAII guard around `GraphTop::call_depth`. Increments on
+/// construction (bailing if [`MAX_CALL_DEPTH`] would be exceeded),
+/// decrements on drop. Using RAII so a `?` early-exit or panic from
+/// `eval_block_value` still restores the counter, keeping subsequent
+/// recursion budgets accurate.
+struct CallDepthGuard<'g, 'p> {
+    graph: &'g GraphTop<'p>,
+}
+
+impl<'g, 'p> CallDepthGuard<'g, 'p> {
+    fn enter(graph: &'g GraphTop<'p>) -> Result<Self> {
+        let mut depth = graph.call_depth.borrow_mut();
+        if *depth >= MAX_CALL_DEPTH {
+            bail!(
+                "user function call depth exceeded {MAX_CALL_DEPTH} — likely unbounded recursion"
+            );
+        }
+        *depth += 1;
+        Ok(Self { graph })
+    }
+}
+
+impl Drop for CallDepthGuard<'_, '_> {
+    fn drop(&mut self) {
+        *self.graph.call_depth.borrow_mut() -= 1;
+    }
 }
 
 /// Construct a struct value: bind each declared field by name (named
@@ -876,9 +977,7 @@ fn dispatch_intrinsic(id: IntrinsicId, args: &[CallArg], env: &Env<'_, '_>) -> R
 /// package name, validated by the type checker as a `String`.
 fn dispatch_package(args: &[CallArg], env: &Env<'_, '_>, manager: PackageManager) -> Result<Value> {
     let name = call_string(args, env, "name", 0)?;
-    if name.is_empty() {
-        bail!("{} package name must not be empty", manager.label());
-    }
+    crate::packages::validate_package_name(manager, &name)?;
     Ok(Value::Resource(ResourceState::Package { manager, name }))
 }
 
@@ -967,12 +1066,21 @@ fn real_resolve_infisical(uri: &str, rest: &str) -> Result<String> {
 }
 
 /// Pull `(env, name)` out of an `infisical://<env>/<name>` URI.
-/// Both halves must be non-empty; anything else is a parse error
-/// before any CLI is invoked.
+/// Both halves must be non-empty and must not begin with `-`,
+/// because both are forwarded as positional args to the
+/// `infisical` CLI; a leading `-` would be parsed as a flag and
+/// could exfiltrate or overwrite arbitrary state.
 fn parse_infisical_uri<'a>(uri: &str, rest: &'a str) -> Result<(&'a str, &'a str)> {
-    rest.split_once('/')
+    let (env, name) = rest
+        .split_once('/')
         .filter(|(env, name)| !env.is_empty() && !name.is_empty())
-        .ok_or_else(|| anyhow!("infisical URI must be `infisical://<env>/<name>`, got `{uri}`"))
+        .ok_or_else(|| anyhow!("infisical URI must be `infisical://<env>/<name>`, got `{uri}`"))?;
+    if env.starts_with('-') || name.starts_with('-') {
+        bail!(
+            "infisical URI components must not begin with `-` (would be parsed as a CLI flag), got `{uri}`"
+        );
+    }
+    Ok((env, name))
 }
 
 /// Decode the `Output` of `infisical secrets get` into the secret
@@ -1017,7 +1125,9 @@ fn real_resolve_bw(uri: &str, rest: &str) -> Result<String> {
 
 /// Pull `(item, field)` out of a `bw://<item>[/<field>]` URI. The
 /// field defaults to `"password"` when only the item is given.
-/// Empty item or empty field is an error.
+/// Empty item or empty field is an error. Neither may begin with
+/// `-` — both are forwarded as positional args to `bw get` and a
+/// leading dash would be parsed as a flag.
 fn parse_bw_uri<'a>(uri: &str, rest: &'a str) -> Result<(&'a str, &'a str)> {
     if rest.is_empty() {
         bail!("bitwarden URI must be `bw://<item>[/<field>]`, got `{uri}`");
@@ -1027,6 +1137,11 @@ fn parse_bw_uri<'a>(uri: &str, rest: &'a str) -> Result<(&'a str, &'a str)> {
         .map_or((rest, "password"), |(item, field)| (item, field));
     if item.is_empty() || field.is_empty() {
         bail!("bitwarden URI must be `bw://<item>[/<field>]`, got `{uri}`");
+    }
+    if item.starts_with('-') || field.starts_with('-') {
+        bail!(
+            "bitwarden URI components must not begin with `-` (would be parsed as a CLI flag), got `{uri}`"
+        );
     }
     Ok((item, field))
 }
@@ -1221,8 +1336,8 @@ fn dispatch_template(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
             resolved.display()
         )
     })?;
-    let rendered =
-        render_template(&raw, &vars).with_context(|| format!("rendering template `{source}`"))?;
+    let rendered = render_template(&source, &raw, &vars)
+        .with_context(|| format!("rendering template `{source}`"))?;
     Ok(Value::Resource(ResourceState::Template {
         path: PathBuf::from(path),
         content: rendered,
@@ -1261,7 +1376,7 @@ fn resolve_managed_path(raw: &str, env: &Env<'_, '_>, kind: &str, arg: &str) -> 
     let absolute = if candidate.is_absolute() {
         candidate
     } else {
-        let ModuleId::File(module_path) = &env.current;
+        let ModuleId(module_path) = &env.current;
         module_path.parent().map_or(candidate, |p| p.join(raw))
     };
     let leaf_meta = std::fs::symlink_metadata(&absolute).with_context(|| {
@@ -1306,18 +1421,17 @@ fn resolve_managed_path(raw: &str, env: &Env<'_, '_>, kind: &str, arg: &str) -> 
 /// applies only to `.html` / `.htm` / `.xml` extensions — we
 /// register the template under an extension-less name and clear the
 /// autoescape list defensively in case that ever changes.
-fn render_template(src: &str, vars: &HashMap<String, String>) -> Result<String> {
-    const NAME: &str = "__keron_inline__";
+fn render_template(name: &str, src: &str, vars: &HashMap<String, String>) -> Result<String> {
     let mut tera = tera::Tera::default();
     tera.functions.clear();
     tera.autoescape_on(Vec::new());
-    tera.add_raw_template(NAME, src)
+    tera.add_raw_template(name, src)
         .map_err(|e| anyhow!("parsing template: {}", format_tera_error(&e)))?;
     let mut ctx = tera::Context::new();
     for (k, v) in vars {
         ctx.insert(k, v);
     }
-    tera.render(NAME, &ctx)
+    tera.render(name, &ctx)
         .map_err(|e| anyhow!("rendering template: {}", format_tera_error(&e)))
 }
 
@@ -1531,7 +1645,7 @@ mod tests {
         let graph = resolve(vec![EntrySource {
             text: src.to_string(),
             base_dir,
-            id: keron_modules::ModuleId::File(canonical),
+            id: keron_modules::ModuleId(canonical),
         }])
         .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
         let states = eval_graph(&graph, &keron_root).unwrap_or_else(|e| panic!("eval failed: {e}"));
@@ -1557,7 +1671,7 @@ mod tests {
         let graph = resolve(vec![EntrySource {
             text: src.to_string(),
             base_dir,
-            id: keron_modules::ModuleId::File(canonical),
+            id: keron_modules::ModuleId(canonical),
         }])
         .map_err(|errs| anyhow!("resolve failed: {errs:?}"))?;
         eval_graph(&graph, &keron_root)
@@ -1676,6 +1790,42 @@ mod tests {
     fn eval_binop_int_div_by_zero_errors() {
         let e = eval_binop(BinOp::Div, int(1), int(0)).unwrap_err();
         assert!(e.to_string().contains("division by zero"));
+    }
+
+    #[test]
+    fn eval_binop_int_add_overflow_errors() {
+        let e = eval_binop(BinOp::Add, int(i64::MAX), int(1)).unwrap_err();
+        assert!(e.to_string().contains("overflow"), "got: {e}");
+    }
+
+    #[test]
+    fn eval_binop_int_sub_overflow_errors() {
+        let e = eval_binop(BinOp::Sub, int(i64::MIN), int(1)).unwrap_err();
+        assert!(e.to_string().contains("overflow"), "got: {e}");
+    }
+
+    #[test]
+    fn eval_binop_int_mul_overflow_errors() {
+        let e = eval_binop(BinOp::Mul, int(i64::MAX), int(2)).unwrap_err();
+        assert!(e.to_string().contains("overflow"), "got: {e}");
+    }
+
+    #[test]
+    fn eval_binop_int_div_min_by_neg_one_errors() {
+        let e = eval_binop(BinOp::Div, int(i64::MIN), int(-1)).unwrap_err();
+        assert!(e.to_string().contains("overflow"), "got: {e}");
+    }
+
+    #[test]
+    fn eval_binop_int_pow_overflow_errors() {
+        let e = eval_binop(BinOp::Pow, int(2), int(64)).unwrap_err();
+        assert!(e.to_string().contains("overflow"), "got: {e}");
+    }
+
+    #[test]
+    fn eval_unary_neg_int_min_errors() {
+        let e = eval_unary(UnaryOp::Neg, Value::Int(i64::MIN)).unwrap_err();
+        assert!(e.to_string().contains("overflow"), "got: {e}");
     }
 
     #[test]
@@ -1809,6 +1959,48 @@ mod tests {
         let mut out = String::new();
         let err = stringify(&Value::List(Vec::new()), &mut out).unwrap_err();
         assert!(err.to_string().contains("cannot interpolate"));
+    }
+
+    #[test]
+    fn call_depth_resets_between_sequential_top_level_calls() {
+        // Pins CallDepthGuard::drop: without the `-= 1` on drop (or
+        // with it flipped to `+=`/`*=`/no-op), depth would grow
+        // monotonically across sequential user-fn calls and the
+        // 257th call would bail with the recursion limit. 300
+        // independent reconciles each invoke one user fn at depth 1;
+        // with the guard restored, depth returns to 0 between calls
+        // and all 300 succeed.
+        use std::fmt::Write as _;
+        let mut src = String::from("fn one(): Int { 1 }\n");
+        for i in 0..300 {
+            writeln!(
+                src,
+                "reconcile template(path = \"/k{i}-${{one()}}\", source = \"tmpl.tpl\", vars = {{\"body\": \"\"}})",
+            )
+            .unwrap();
+        }
+        let states = run_result_with_templates(&src, &[("tmpl.tpl", "")])
+            .expect("300 sequential top-level user-fn calls must succeed within MAX_CALL_DEPTH");
+        assert_eq!(states.len(), 300, "expected one state per reconcile");
+    }
+
+    #[test]
+    fn runtime_recursion_bails_before_blowing_the_stack() {
+        // `fn loop(): Symlink { loop() }` is well-typed (the body's
+        // recursive call has the right return type), but evaluating
+        // it without the depth guard would unwind the Rust stack.
+        // The guard surfaces a clean error well below the OS limit.
+        let err = run_result_with_templates(
+            "fn loop(): Symlink { loop() }\n\
+             reconcile loop()\n",
+            &[],
+        )
+        .expect_err("unbounded recursion must error, not panic");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("call depth exceeded"),
+            "expected depth-guard message, got: {msg}"
+        );
     }
 
     #[test]
@@ -2304,7 +2496,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         let graph = resolve(vec![EntrySource {
             text: fs::read_to_string(&entry).unwrap(),
             base_dir,
-            id: keron_modules::ModuleId::File(canonical),
+            id: keron_modules::ModuleId(canonical),
         }])
         .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
         let err = eval_graph(&graph, &keron_root).expect_err("missing var should fail");
@@ -2364,7 +2556,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         let graph = resolve(vec![EntrySource {
             text: fs::read_to_string(&entry).unwrap(),
             base_dir,
-            id: keron_modules::ModuleId::File(canonical),
+            id: keron_modules::ModuleId(canonical),
         }])
         .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
         let err = eval_graph(&graph, &keron_root).expect_err("unterminated should fail");
@@ -2379,7 +2571,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
     fn render_template_substitutes_known_var() {
         let mut vars = HashMap::new();
         vars.insert("name".into(), "alice".into());
-        let out = render_template("hello {{ name }}!", &vars).unwrap();
+        let out = render_template("tmpl.tpl", "hello {{ name }}!", &vars).unwrap();
         assert_eq!(out, "hello alice!");
     }
 
@@ -2389,7 +2581,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         // text. Pin so a `$`-flavoured engine can never sneak back
         // in and turn dotfile shell snippets into rendering errors.
         let vars = HashMap::new();
-        let out = render_template("$5 and $$", &vars).unwrap();
+        let out = render_template("tmpl.tpl", "$5 and $$", &vars).unwrap();
         assert_eq!(out, "$5 and $$");
     }
 
@@ -2400,7 +2592,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         // renderer leaves them alone.
         let mut vars = HashMap::new();
         vars.insert("payload".into(), "a < b && c > d \"q\"".into());
-        let out = render_template("{{ payload }}", &vars).unwrap();
+        let out = render_template("tmpl.tpl", "{{ payload }}", &vars).unwrap();
         assert_eq!(out, "a < b && c > d \"q\"");
     }
 
@@ -2411,8 +2603,26 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         // accidental flip to a no-filters build is loud.
         let mut vars = HashMap::new();
         vars.insert("user".into(), "alice".into());
-        let out = render_template("{{ user | upper }}", &vars).unwrap();
+        let out = render_template("tmpl.tpl", "{{ user | upper }}", &vars).unwrap();
         assert_eq!(out, "ALICE");
+    }
+
+    #[test]
+    fn render_template_error_message_names_the_user_template() {
+        // Pre-fix: error mentioned only the internal placeholder
+        // `__keron_inline__`. Now it names the user-visible source.
+        let vars = HashMap::new();
+        let err =
+            render_template("dotfiles/zshrc.tpl", "{{ missing }}", &vars).expect_err("missing var");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("dotfiles/zshrc.tpl"),
+            "error should name the user template: {msg}"
+        );
+        assert!(
+            !msg.contains("__keron_inline__"),
+            "internal placeholder leaked: {msg}"
+        );
     }
 
     #[test]
@@ -2429,7 +2639,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         let graph = resolve(vec![EntrySource {
             text: fs::read_to_string(&entry).unwrap(),
             base_dir,
-            id: keron_modules::ModuleId::File(canonical),
+            id: keron_modules::ModuleId(canonical),
         }])
         .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
         let err = eval_graph(&graph, &keron_root).expect_err("missing source should fail");
@@ -2904,7 +3114,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         let graph = resolve(vec![EntrySource {
             text: src,
             base_dir,
-            id: keron_modules::ModuleId::File(canonical),
+            id: keron_modules::ModuleId(canonical),
         }])
         .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
         let err = eval_graph(&graph, &keron_root).expect_err("op failure should bubble up");
@@ -2928,7 +3138,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         let graph = resolve(vec![EntrySource {
             text: src.to_string(),
             base_dir,
-            id: keron_modules::ModuleId::File(canonical),
+            id: keron_modules::ModuleId(canonical),
         }])
         .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
         let err = eval_graph(&graph, &keron_root).expect_err("unsupported scheme should fail");
@@ -3034,7 +3244,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         let graph = resolve(vec![EntrySource {
             text: src,
             base_dir,
-            id: keron_modules::ModuleId::File(canonical),
+            id: keron_modules::ModuleId(canonical),
         }])
         .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
         let err = eval_graph(&graph, &keron_root).expect_err("URI should fail validation");
@@ -3174,6 +3384,24 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
     }
 
     #[test]
+    fn parse_infisical_uri_rejects_leading_dash_in_components() {
+        for (uri, rest) in [
+            ("infisical://-evil/api-key", "-evil/api-key"),
+            (
+                "infisical://prod/--output-file=/tmp/dump",
+                "prod/--output-file=/tmp/dump",
+            ),
+        ] {
+            let err = parse_infisical_uri(uri, rest).expect_err("flag-shaped component");
+            let msg = format!("{err:#}");
+            assert!(
+                msg.contains("must not begin with `-`"),
+                "expected flag rejection, got: {msg}",
+            );
+        }
+    }
+
+    #[test]
     fn decode_infisical_output_returns_stdout_on_success() {
         let out = make_output(true, b"infisical-value\n", b"");
         let v = decode_infisical_output("prod", "api-key", out).expect("ok");
@@ -3217,6 +3445,22 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
             assert!(
                 msg.contains("bw://<item>"),
                 "missing canonical shape for `{uri}`: {msg}",
+            );
+        }
+    }
+
+    #[test]
+    fn parse_bw_uri_rejects_leading_dash_in_components() {
+        for (uri, rest) in [
+            ("bw://--help", "--help"),
+            ("bw://item/-flag", "item/-flag"),
+            ("bw://-evil/password", "-evil/password"),
+        ] {
+            let err = parse_bw_uri(uri, rest).expect_err("flag-shaped component");
+            let msg = format!("{err:#}");
+            assert!(
+                msg.contains("must not begin with `-`"),
+                "expected flag rejection, got: {msg}",
             );
         }
     }
@@ -3324,7 +3568,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         let graph = resolve(vec![EntrySource {
             text: src.to_string(),
             base_dir,
-            id: keron_modules::ModuleId::File(canonical),
+            id: keron_modules::ModuleId(canonical),
         }])
         .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
         let err = eval_graph(&graph, &keron_root).expect_err("empty name should fail");
@@ -3392,7 +3636,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         let graph = resolve(vec![EntrySource {
             text: src.into(),
             base_dir,
-            id: keron_modules::ModuleId::File(canonical),
+            id: keron_modules::ModuleId(canonical),
         }])
         .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
         let states = eval_graph(&graph, &keron_root).unwrap();
@@ -3421,7 +3665,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         let graph = resolve(vec![EntrySource {
             text: src.into(),
             base_dir,
-            id: keron_modules::ModuleId::File(canonical),
+            id: keron_modules::ModuleId(canonical),
         }])
         .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
         let err = eval_graph(&graph, &keron_root).expect_err("path outside root must be refused");
@@ -3459,7 +3703,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         let graph = resolve(vec![EntrySource {
             text: src.into(),
             base_dir,
-            id: keron_modules::ModuleId::File(canonical),
+            id: keron_modules::ModuleId(canonical),
         }])
         .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
         let err = eval_graph(&graph, &keron_root).expect_err("dotdot escape must be refused");
@@ -3486,7 +3730,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         let graph = resolve(vec![EntrySource {
             text: src.into(),
             base_dir,
-            id: keron_modules::ModuleId::File(canonical),
+            id: keron_modules::ModuleId(canonical),
         }])
         .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
         let err = eval_graph(&graph, &keron_root).expect_err("missing target must error");
@@ -3515,7 +3759,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         let graph = resolve(vec![EntrySource {
             text: src.into(),
             base_dir,
-            id: keron_modules::ModuleId::File(canonical),
+            id: keron_modules::ModuleId(canonical),
         }])
         .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
         let err = eval_graph(&graph, &keron_root).expect_err("symlink-to-symlink must be refused");
@@ -3547,7 +3791,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         let graph = resolve(vec![EntrySource {
             text: src.into(),
             base_dir,
-            id: keron_modules::ModuleId::File(canonical),
+            id: keron_modules::ModuleId(canonical),
         }])
         .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
         let err =
@@ -3575,7 +3819,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         let graph = resolve(vec![EntrySource {
             text: src.into(),
             base_dir,
-            id: keron_modules::ModuleId::File(canonical),
+            id: keron_modules::ModuleId(canonical),
         }])
         .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
         let err =

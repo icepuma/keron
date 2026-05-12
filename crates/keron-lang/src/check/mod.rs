@@ -118,12 +118,6 @@ pub struct ImportedSymbols {
     pub builtins: HashSet<String>,
 }
 
-#[derive(Clone, Copy)]
-enum ItemKind {
-    Val,
-    Fn,
-}
-
 /// Rewrite every `Type::Named(name)` in `program` to its canonical
 /// variant, in place.
 ///
@@ -416,68 +410,45 @@ fn resolve_type_in_place(
     }
 }
 
-/// Type-check a program with no imported symbols.
+/// Type-check a single module against pre-resolved imported symbols.
 ///
-/// Convenience wrapper around [`check_module`]; useful for
-/// parser/checker unit tests where no module loader is involved.
-/// Programs that contain `use` items will fail with "unknown
-/// function/name" errors when called through this entry point —
-/// production callers should go through the module loader and use
-/// [`check_module`] instead.
+/// The loader populates `imported` from this module's `use` items;
+/// the checker does not look at `Item::Use` itself beyond skipping
+/// it in both passes. Tests with no imports pass
+/// `&ImportedSymbols::default()`.
 ///
 /// # Errors
 /// Returns one [`Diagnostic`] per type problem; a sub-expression
 /// error short-circuits the rest of *that* declaration but sibling
 /// items are still checked.
-pub fn check(program: &Program) -> Result<(), Vec<Diagnostic>> {
-    check_module(program, &ImportedSymbols::default())
-}
-
-/// Type-check a single module against pre-resolved imported symbols.
-///
-/// The loader populates `imported` from this module's `use` items;
-/// the checker does not look at `Item::Use` itself beyond skipping
-/// it in both passes.
-///
-/// # Errors
-/// See [`check`].
 pub fn check_module(program: &Program, imported: &ImportedSymbols) -> Result<(), Vec<Diagnostic>> {
     let mut diags = Vec::new();
 
-    let mut top_names: HashMap<String, ItemKind> = HashMap::new();
+    let mut top_names: HashSet<String> = HashSet::new();
     let mut fn_env: FnEnv = imported.fns.clone();
     for name in fn_env.keys() {
-        top_names.insert(name.clone(), ItemKind::Fn);
+        top_names.insert(name.clone());
     }
     for name in imported.vals.keys() {
-        // Imported vals collide with imported fns of the same name.
-        // The loader can also detect this earlier, but the checker
-        // remains correct standalone.
-        if top_names.contains_key(name) {
-            // Best-effort: no span available here. Report against the
-            // first local item that collides, or skip — keep silent
-            // and rely on local collision below.
-            continue;
-        }
-        top_names.insert(name.clone(), ItemKind::Val);
+        top_names.insert(name.clone());
     }
     for name in imported.types.keys() {
-        top_names.entry(name.clone()).or_insert(ItemKind::Val);
+        top_names.insert(name.clone());
     }
     for item in &program.items {
         match item {
             Item::Val(v) => {
-                if top_names.contains_key(&v.name.node) {
+                if top_names.contains(&v.name.node) {
                     diags.push(Diagnostic::new(
                         v.name.span.clone(),
                         redefine_message(&v.name.node, imported),
                     ));
                 } else {
-                    top_names.insert(v.name.node.clone(), ItemKind::Val);
+                    top_names.insert(v.name.node.clone());
                 }
             }
             Item::Fn(f) => {
-                if top_names.contains_key(&f.name.node) {
+                if top_names.contains(&f.name.node) {
                     diags.push(Diagnostic::new(
                         f.name.span.clone(),
                         redefine_message(&f.name.node, imported),
@@ -485,12 +456,12 @@ pub fn check_module(program: &Program, imported: &ImportedSymbols) -> Result<(),
                     continue;
                 }
                 if let Some(sig) = build_sig(f, &mut diags) {
-                    top_names.insert(f.name.node.clone(), ItemKind::Fn);
+                    top_names.insert(f.name.node.clone());
                     fn_env.insert(f.name.node.clone(), sig);
                 }
             }
             Item::Struct(s) => {
-                if top_names.contains_key(&s.name.node) {
+                if top_names.contains(&s.name.node) {
                     diags.push(Diagnostic::new(
                         s.name.span.clone(),
                         redefine_message(&s.name.node, imported),
@@ -498,12 +469,12 @@ pub fn check_module(program: &Program, imported: &ImportedSymbols) -> Result<(),
                     continue;
                 }
                 if let Some(sig) = build_struct_sig(s, &mut diags) {
-                    top_names.insert(s.name.node.clone(), ItemKind::Fn);
+                    top_names.insert(s.name.node.clone());
                     fn_env.insert(s.name.node.clone(), sig);
                 }
             }
             Item::TypeAlias(t) => {
-                if top_names.contains_key(&t.name.node) {
+                if top_names.contains(&t.name.node) {
                     diags.push(Diagnostic::new(
                         t.name.span.clone(),
                         redefine_message(&t.name.node, imported),
@@ -511,7 +482,7 @@ pub fn check_module(program: &Program, imported: &ImportedSymbols) -> Result<(),
                     continue;
                 }
                 validate_type_alias(t, &mut diags);
-                top_names.insert(t.name.node.clone(), ItemKind::Val);
+                top_names.insert(t.name.node.clone());
             }
             Item::Use(_) | Item::Reconcile(_) | Item::ExprStmt(_) => {}
         }
@@ -648,6 +619,11 @@ fn build_sig(f: &FnDecl, diags: &mut Vec<Diagnostic>) -> Option<FnSig> {
 }
 
 fn check_val_decl(v: &ValDecl, env: &mut Env, fns: &FnEnv, diags: &mut Vec<Diagnostic>) {
+    // A `val` initializer is a value-producing expression: any
+    // `reconcile` nested inside it would be evaluated into a sink
+    // that gets dropped (see `eval_block_value` allocating a fresh
+    // sink per branch). Reject before we even synthesise types.
+    reject_reconcile_in_value_expr(&v.value, diags);
     if let Some(annot) = &v.ty {
         validate_type_annotation(annot, diags);
     }
@@ -694,7 +670,7 @@ fn check_fn_decl(f: &FnDecl, outer_env: &Env, fns: &FnEnv, diags: &mut Vec<Diagn
         }
     }
 
-    reject_reconcile_in_fn_block(&f.body, diags);
+    reject_reconcile_in_value_block(&f.body, diags);
     check_top_block(&f.body, &f.return_type.node, scope, fns, diags);
 }
 
@@ -706,50 +682,50 @@ fn check_param_default(p: &Param, env: &Env, fns: &FnEnv, diags: &mut Vec<Diagno
     }
 }
 
-fn reject_reconcile_in_fn_block(block: &Block, diags: &mut Vec<Diagnostic>) {
+fn reject_reconcile_in_value_block(block: &Block, diags: &mut Vec<Diagnostic>) {
     for stmt in &block.stmts {
         match stmt {
-            Stmt::Val(v) => reject_reconcile_in_fn_expr(&v.value, diags),
+            Stmt::Val(v) => reject_reconcile_in_value_expr(&v.value, diags),
             Stmt::Reconcile(r) => diags.push(Diagnostic::new(
                 r.span.clone(),
-                "`reconcile` is not allowed inside `fn` bodies; return resources and reconcile them at top level",
+                "`reconcile` is not allowed inside a value expression; resources emitted here would be silently dropped — move it to a top-level `reconcile` or to a top-level `for` / `if` statement",
             )),
         }
     }
     if let Some(expr) = &block.trailing {
-        reject_reconcile_in_fn_expr(expr, diags);
+        reject_reconcile_in_value_expr(expr, diags);
     }
 }
 
-fn reject_reconcile_in_fn_expr(expr: &Spanned<Expr>, diags: &mut Vec<Diagnostic>) {
+fn reject_reconcile_in_value_expr(expr: &Spanned<Expr>, diags: &mut Vec<Diagnostic>) {
     match &expr.node {
         Expr::Literal(_) | Expr::Var(_) => {}
-        Expr::Unary { operand, .. } => reject_reconcile_in_fn_expr(operand, diags),
+        Expr::Unary { operand, .. } => reject_reconcile_in_value_expr(operand, diags),
         Expr::Binary { lhs, rhs, .. } => {
-            reject_reconcile_in_fn_expr(lhs, diags);
-            reject_reconcile_in_fn_expr(rhs, diags);
+            reject_reconcile_in_value_expr(lhs, diags);
+            reject_reconcile_in_value_expr(rhs, diags);
         }
         Expr::Interpolation(parts) => {
             for part in parts {
                 if let StringPart::Expr(inner) = part {
-                    reject_reconcile_in_fn_expr(inner, diags);
+                    reject_reconcile_in_value_expr(inner, diags);
                 }
             }
         }
         Expr::List(items) => {
             for item in items {
-                reject_reconcile_in_fn_expr(item, diags);
+                reject_reconcile_in_value_expr(item, diags);
             }
         }
         Expr::Map(entries) => {
             for entry in entries {
-                reject_reconcile_in_fn_expr(&entry.key, diags);
-                reject_reconcile_in_fn_expr(&entry.value, diags);
+                reject_reconcile_in_value_expr(&entry.key, diags);
+                reject_reconcile_in_value_expr(&entry.value, diags);
             }
         }
         Expr::Call { args, .. } => {
             for arg in args {
-                reject_reconcile_in_fn_expr(&arg.value, diags);
+                reject_reconcile_in_value_expr(&arg.value, diags);
             }
         }
         Expr::If {
@@ -757,21 +733,21 @@ fn reject_reconcile_in_fn_expr(expr: &Spanned<Expr>, diags: &mut Vec<Diagnostic>
             then_branch,
             else_branch,
         } => {
-            reject_reconcile_in_fn_expr(cond, diags);
-            reject_reconcile_in_fn_block(then_branch, diags);
-            reject_reconcile_in_fn_block(else_branch, diags);
+            reject_reconcile_in_value_expr(cond, diags);
+            reject_reconcile_in_value_block(then_branch, diags);
+            reject_reconcile_in_value_block(else_branch, diags);
         }
         Expr::For {
             iter_expr, body, ..
         } => {
-            reject_reconcile_in_fn_expr(iter_expr, diags);
-            reject_reconcile_in_fn_block(body, diags);
+            reject_reconcile_in_value_expr(iter_expr, diags);
+            reject_reconcile_in_value_block(body, diags);
         }
-        Expr::Field { receiver, .. } => reject_reconcile_in_fn_expr(receiver, diags),
+        Expr::Field { receiver, .. } => reject_reconcile_in_value_expr(receiver, diags),
         Expr::Match { scrutinee, arms } => {
-            reject_reconcile_in_fn_expr(scrutinee, diags);
+            reject_reconcile_in_value_expr(scrutinee, diags);
             for arm in arms {
-                reject_reconcile_in_fn_expr(&arm.body, diags);
+                reject_reconcile_in_value_expr(&arm.body, diags);
             }
         }
     }
@@ -861,6 +837,7 @@ fn check_local_val_collecting(
         ));
         return;
     }
+    reject_reconcile_in_value_expr(&binding.value, diags);
     if let Some(annot) = &binding.ty {
         validate_type_annotation(annot, diags);
     }
@@ -927,6 +904,13 @@ fn process_block_stmts_strict(
             Stmt::Val(v) => check_local_val_strict(v, env, fns)?,
             Stmt::Reconcile(r) => {
                 for step in r.chains.iter().flatten() {
+                    // Chain steps are evaluated in value position;
+                    // see comment in `check_reconcile_decl`.
+                    let mut sub = Vec::new();
+                    reject_reconcile_in_value_expr(step, &mut sub);
+                    if let Some(first) = sub.into_iter().next() {
+                        return Err(first);
+                    }
                     let ty = expr_type(step, env, fns)?;
                     if !is_reconcilable(&ty) {
                         return Err(Diagnostic::new(
@@ -957,6 +941,14 @@ fn check_local_val_strict(binding: &ValDecl, env: &mut Env, fns: &FnEnv) -> Resu
                 binding.name.node
             ),
         ));
+    }
+    // Same reasoning as `check_val_decl`: reconciles nested inside a
+    // val initializer are evaluated into a dropped sink. Surface the
+    // first such reconcile.
+    let mut sub = Vec::new();
+    reject_reconcile_in_value_expr(&binding.value, &mut sub);
+    if let Some(first) = sub.into_iter().next() {
+        return Err(first);
     }
     let ty = match &binding.ty {
         Some(annot) => {
@@ -1055,6 +1047,25 @@ fn check_expr(
             check_block(else_branch, expected, env, fns)?;
             Ok(())
         }
+        // `for` produces no value; it only flows at statement position
+        // where `Void` is expected. Anywhere else (val initializer,
+        // match scrutinee, fn argument with a non-`Void` parameter)
+        // produces a type error at check time rather than a runtime
+        // `for is not a value expression` from the evaluator.
+        Expr::For {
+            pattern,
+            iter_expr,
+            body,
+        } if matches!(expected, Type::Void) => {
+            for_type(pattern, iter_expr, body, env, fns)?;
+            Ok(())
+        }
+        Expr::For { .. } => Err(Diagnostic::new(
+            e.span.clone(),
+            format!(
+                "`for` has type `Void` and does not produce a value; expected `{expected}`. Use `for` at statement position (top level, or inside a `Void`-bodied block) rather than as a value."
+            ),
+        )),
         _ => switch_to_synth(e, expected, env, fns),
     }
 }
@@ -1191,11 +1202,17 @@ fn expr_type(e: &Spanned<Expr>, env: &Env, fns: &FnEnv) -> Result<Type, Diagnost
             then_branch,
             else_branch,
         } => if_type(cond, then_branch, else_branch, env, fns),
-        Expr::For {
-            pattern,
-            iter_expr,
-            body,
-        } => for_type(pattern, iter_expr, body, env, fns),
+        Expr::For { .. } => {
+            // Synthesis mode means a value is expected; `for` has type
+            // `Void` and produces none. The dedicated arm in
+            // `check_expr` admits `for` only when the surrounding
+            // context is `Void` (top-level statement, Void-bodied
+            // block trailing). Anything else lands here.
+            Err(Diagnostic::new(
+                e.span.clone(),
+                "`for` has type `Void` and does not produce a value; use it at statement position rather than in a value position (match scrutinee, val initializer, argument)",
+            ))
+        }
         Expr::Field { receiver, field } => field_type(receiver, field, env, fns),
         Expr::Match { scrutinee, arms } => match_check::match_type(scrutinee, arms, env, fns),
     }
@@ -1579,6 +1596,12 @@ fn walk_type(ty: &Type, span: &Span, diags: &mut Vec<Diagnostic>) {
 
 fn check_reconcile_decl(r: &ReconcileDecl, env: &Env, fns: &FnEnv, diags: &mut Vec<Diagnostic>) {
     for step in r.chains.iter().flatten() {
+        // A chain step is evaluated in *value position* (its
+        // `Resource`/`List<Resource>` value is what gets reconciled).
+        // Any nested `Stmt::Reconcile` inside an `if`/`match`/etc.
+        // branch is therefore evaluated via `eval_block_value`, which
+        // allocates a local sink that gets dropped. Reject upfront.
+        reject_reconcile_in_value_expr(step, diags);
         match expr_type(step, env, fns) {
             Ok(ty) => {
                 if !is_reconcilable(&ty) {

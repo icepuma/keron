@@ -293,15 +293,46 @@ pub mod windows {
     /// # Errors
     /// Errors if `ShellExecuteExW` fails, if waiting fails, or if
     /// `GetExitCodeProcess` fails.
+    // `#[mutants::skip]` because the function calls Win32
+    // `ShellExecuteExW`/`WaitForSingleObject`/`GetExitCodeProcess` —
+    // there is no in-process test harness for that on macOS / Linux
+    // (where mutants runs). The argv-smuggling refusal paths above
+    // are guarded by unit tests on the shared input-validation
+    // helpers, not by re-executing the Win32 binding.
+    #[cfg_attr(test, mutants::skip)]
     pub fn shell_execute_runas(exe: &Path, payload: &Path) -> Result<std::process::ExitStatus> {
         use std::os::windows::process::ExitStatusExt;
         use windows_sys::Win32::System::Threading::{
             GetExitCodeProcess, INFINITE, WaitForSingleObject,
         };
 
+        // The payload path is interpolated into the command line we
+        // hand to `ShellExecuteExW`, surrounded by `"`. A path that
+        // itself contains a `"` would break out of the quoting; one
+        // that ends in `\` would cause the closing quote to be
+        // escaped (Win32 argv parsing treats `\"` as a literal `"`
+        // when preceded by an odd number of backslashes). Refuse
+        // both rather than risk argv smuggling — the unprivileged
+        // parent picks the path under `temp_dir`, so a poisoned
+        // `TEMP`/`USERPROFILE` is the only way these characters can
+        // appear and it would already indicate environment tampering.
+        let display = payload.display().to_string();
+        if display.chars().any(|c| c == '"' || c.is_control()) {
+            bail!(
+                "refusing to elevate: payload path `{}` contains a quote or control character",
+                display
+            );
+        }
+        if display.ends_with('\\') {
+            bail!(
+                "refusing to elevate: payload path `{}` ends with `\\` (would escape the closing quote)",
+                display
+            );
+        }
+
         let verb = to_wide("runas");
         let exe_w = to_wide(exe);
-        let params: PathBuf = format!("__apply-elevated \"{}\"", payload.display()).into();
+        let params: PathBuf = format!("__apply-elevated \"{display}\"").into();
         let params_w = to_wide(&params);
 
         // SAFETY: `SHELLEXECUTEINFOW` contains an anonymous union;

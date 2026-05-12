@@ -54,6 +54,23 @@ pub(super) fn match_type(
         check_pattern(&arm.pattern, &arm_scrut_ty, &mut bindings)?;
         let mut arm_env = env.clone();
         for (n, t) in bindings {
+            // Pattern binds are body-locals; like `val` and `for`
+            // they must not shadow a param, outer val, or earlier
+            // body-local (per the "no shadowing" rule documented in
+            // `check/mod.rs`). Without this guard a pattern like
+            // `match … { x => … }` inside `fn pick(x: Int) { … }`
+            // would silently rebind `x` to the scrutinee value.
+            if let Some(kind) = arm_env.lookup_kind(&n) {
+                let what = match kind {
+                    BindingKind::Param => "parameter",
+                    BindingKind::OuterVal => "outer `val`",
+                    BindingKind::BodyLocal => "previous body `val`",
+                };
+                return Err(Diagnostic::new(
+                    arm.pattern.span.clone(),
+                    format!("pattern binding `{n}` would shadow a {what} in this scope"),
+                ));
+            }
             arm_env.bind(n, t, BindingKind::BodyLocal);
         }
         let this = expr_type(&arm.body, &arm_env, fns)?;
@@ -94,21 +111,61 @@ const fn handles_null(p: &Pattern) -> bool {
 /// Pick the common type of two arms via mutual subtyping. Mirrors the
 /// list-element widening done elsewhere: heterogeneous resource
 /// singletons lift to `Resource` so a `match` returning a mix of
-/// `Symlink` and `File` types as `Resource`.
+/// `Symlink` and `File` types as `Resource`. Also lifts `Null + T`
+/// to `T?` so the canonical `match n { null => null, x => x }` idiom
+/// over a nullable scrutinee type-checks.
 fn unify_arm_types(prev: &Type, this: &Type, arm: &MatchArm) -> Result<Type, Diagnostic> {
-    if is_subtype(this, prev) {
-        return Ok(prev.clone());
+    join_arm_types(prev, this).ok_or_else(|| {
+        Diagnostic::new(
+            arm.body.span.clone(),
+            format!("`match` arm body type `{this}` does not match earlier arm type `{prev}`"),
+        )
+    })
+}
+
+fn join_arm_types(a: &Type, b: &Type) -> Option<Type> {
+    if is_subtype(b, a) {
+        return Some(a.clone());
     }
-    if is_subtype(prev, this) {
-        return Ok(this.clone());
+    if is_subtype(a, b) {
+        return Some(b.clone());
     }
-    if is_resource_singleton(prev) && is_resource_singleton(this) {
-        return Ok(Type::Resource);
+    if is_resource_singleton(a) && is_resource_singleton(b) {
+        return Some(Type::Resource);
     }
-    Err(Diagnostic::new(
-        arm.body.span.clone(),
-        format!("`match` arm body type `{this}` does not match earlier arm type `{prev}`"),
-    ))
+    // `Null` joined with `T` becomes `T?`. The reverse direction is
+    // already caught by `is_subtype(Null, Nullable(_))` above.
+    if matches!(a, Type::Null) {
+        return Some(Type::Nullable(Box::new(b.clone())));
+    }
+    if matches!(b, Type::Null) {
+        return Some(Type::Nullable(Box::new(a.clone())));
+    }
+    // `T? + U` (with neither side `Null` and no subtype relation):
+    // peel the wrapper, join the inner types, re-wrap. Covers
+    // `Symlink? + Template? → Resource?` and similar. Re-wrap is
+    // guarded against `Nullable(Nullable(_))` because the recursive
+    // peel may itself produce a `Nullable` (e.g. `Null + Nullable<T>`).
+    if let Type::Nullable(inner_a) = a {
+        let other = match b {
+            Type::Nullable(inner_b) => inner_b.as_ref(),
+            other => other,
+        };
+        let inner = join_arm_types(inner_a, other)?;
+        return Some(wrap_nullable(inner));
+    }
+    if let Type::Nullable(inner_b) = b {
+        let inner = join_arm_types(a, inner_b)?;
+        return Some(wrap_nullable(inner));
+    }
+    None
+}
+
+fn wrap_nullable(inner: Type) -> Type {
+    match inner {
+        already @ Type::Nullable(_) => already,
+        other => Type::Nullable(Box::new(other)),
+    }
 }
 
 const fn is_resource_singleton(ty: &Type) -> bool {
@@ -365,8 +422,24 @@ fn static_pattern_key(pattern: &Pattern) -> Option<StaticPatternKey> {
         Pattern::Lit(Literal::String(s)) => Some(StaticPatternKey::String(s.clone())),
         Pattern::Lit(Literal::Int(n)) => Some(StaticPatternKey::Int(*n)),
         Pattern::Lit(Literal::Boolean(b)) => Some(StaticPatternKey::Bool(*b)),
-        Pattern::Lit(Literal::Double(d)) => Some(StaticPatternKey::Double(d.to_bits())),
+        Pattern::Lit(Literal::Double(d)) => Some(StaticPatternKey::Double(canonical_f64_bits(*d))),
         Pattern::Lit(Literal::Null) => Some(StaticPatternKey::Null),
         Pattern::Wildcard | Pattern::Bind(_) | Pattern::Struct { .. } => None,
     }
+}
+
+/// Bit pattern used to dedup `Double` literal arms. Plain `to_bits`
+/// distinguishes `0.0` from `-0.0` (they have different sign bits)
+/// even though they compare equal at runtime, so a `0.0` arm
+/// followed by a `-0.0` arm would silently leave the second
+/// unreachable. Normalize `-0.0 → 0.0` and route every NaN through
+/// a single canonical encoding so `NaN` arms also collide.
+fn canonical_f64_bits(d: f64) -> u64 {
+    if d == 0.0 {
+        return 0.0_f64.to_bits();
+    }
+    if d.is_nan() {
+        return f64::NAN.to_bits();
+    }
+    d.to_bits()
 }

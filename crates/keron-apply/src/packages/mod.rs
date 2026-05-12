@@ -133,9 +133,7 @@ fn test_packages_override(manager: PackageManager) -> Option<HashSet<String>> {
 /// Errors when the manager binary is missing, fails to spawn, or
 /// exits non-zero.
 pub fn install(manager: PackageManager, name: &str) -> Result<()> {
-    if name.is_empty() {
-        bail!("{} package name must not be empty", manager.label());
-    }
+    validate_package_name(manager, name)?;
     let (binary, args) = install_invocation(manager, name);
     let status = Command::new(&binary)
         .args(&args)
@@ -146,6 +144,35 @@ pub fn install(manager: PackageManager, name: &str) -> Result<()> {
         .with_context(|| format!("spawning `{binary} {}` to install `{name}`", args.join(" ")))?;
     if !status.success() {
         bail!("`{binary} {}` exited with status {status}", args.join(" "));
+    }
+    Ok(())
+}
+
+/// Reject package names that would be parsed as CLI flags or
+/// otherwise smuggle behavior into the manager invocation.
+/// The package-manager invocations pass `name` as a positional
+/// argument; a name beginning with `-` becomes a flag the CLI
+/// interprets — e.g. `cargo install --git=…` would run arbitrary
+/// build scripts as the user. Also forbid embedded NUL since
+/// argv can't carry it.
+///
+/// # Errors
+/// Errors when `name` is empty, begins with `-`, or contains a NUL byte.
+pub fn validate_package_name(manager: PackageManager, name: &str) -> Result<()> {
+    if name.is_empty() {
+        bail!("{} package name must not be empty", manager.label());
+    }
+    if name.starts_with('-') {
+        bail!(
+            "{} package name must not begin with `-`: `{name}`",
+            manager.label()
+        );
+    }
+    if name.contains('\0') {
+        bail!(
+            "{} package name must not contain a NUL byte",
+            manager.label()
+        );
     }
     Ok(())
 }
@@ -318,6 +345,42 @@ mod tests {
             format!("{err:#}").contains("must not be empty"),
             "got: {err:#}",
         );
+    }
+
+    #[test]
+    fn validate_package_name_rejects_leading_dash() {
+        for mgr in [
+            PackageManager::Brew,
+            PackageManager::Cargo,
+            PackageManager::Winget,
+        ] {
+            let err = validate_package_name(mgr, "--git=https://attacker/evil").unwrap_err();
+            assert!(
+                format!("{err:#}").contains("must not begin with `-`"),
+                "got: {err:#}",
+            );
+        }
+    }
+
+    #[test]
+    fn validate_package_name_rejects_single_dash_prefix() {
+        let err = validate_package_name(PackageManager::Cargo, "-foo").unwrap_err();
+        assert!(
+            format!("{err:#}").contains("must not begin with `-`"),
+            "got: {err:#}",
+        );
+    }
+
+    #[test]
+    fn validate_package_name_rejects_nul_byte() {
+        let err = validate_package_name(PackageManager::Brew, "rip\0grep").unwrap_err();
+        assert!(format!("{err:#}").contains("NUL byte"), "got: {err:#}");
+    }
+
+    #[test]
+    fn validate_package_name_accepts_dash_in_interior() {
+        validate_package_name(PackageManager::Brew, "git-lfs").unwrap();
+        validate_package_name(PackageManager::Cargo, "cargo-edit").unwrap();
     }
 
     #[test]

@@ -20,6 +20,9 @@ mod load;
 mod packages;
 mod plan;
 mod report;
+mod terminal_safe;
+
+pub use terminal_safe::sanitize_terminal_message;
 
 pub use elevated::child::run as run_elevated_child;
 
@@ -28,15 +31,84 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use keron_modules::{EntrySource, ModuleId, resolve};
+use thiserror::Error;
 
 use crate::diff::RenderOptions;
+
+/// Category of a non-cancel failure from [`run`].
+///
+/// The CLI binary maps each variant to a distinct exit code so a CI
+/// script can act on the category. The variants intentionally only
+/// distinguish phases the user can do something different about:
+/// "fix your manifest" (pre-apply) vs "the apply itself failed"
+/// (apply) vs "the elevated re-exec failed" (elevation).
+///
+/// Inner type stays `anyhow::Error` so existing `.context(...)`
+/// chains thread through unmodified.
+#[derive(Debug, Error)]
+pub enum RunError {
+    /// Refused to run as root / Administrator directly.
+    #[error("{0}")]
+    DirectElevation(#[source] anyhow::Error),
+    /// Module loading, parsing, type-checking, or plan-building
+    /// failed — i.e. anything before the executor.
+    #[error("{0}")]
+    PreApply(#[source] anyhow::Error),
+    /// The unprivileged executor or one of its IO calls failed.
+    #[error("{0}")]
+    Apply(#[source] anyhow::Error),
+    /// The elevated re-exec failed: missing elevator, password
+    /// denied, child crashed, partial chown failures.
+    #[error("{0}")]
+    Elevation(#[source] anyhow::Error),
+    /// stdin/stdout failure while rendering the diff or running a
+    /// confirmation prompt.
+    #[error("{0}")]
+    Io(#[source] io::Error),
+}
+
+impl RunError {
+    /// Stable exit-code mapping. Distinct codes let CI scripts
+    /// distinguish "fix your manifest" from "the apply broke" from
+    /// "elevation refused/failed". 130 is reserved for
+    /// `Outcome::Cancelled` (SIGINT convention).
+    #[must_use]
+    pub const fn exit_code(&self) -> u8 {
+        match self {
+            Self::DirectElevation(_) => 4,
+            Self::PreApply(_) => 2,
+            Self::Apply(_) => 3,
+            Self::Elevation(_) => 5,
+            Self::Io(_) => 1,
+        }
+    }
+}
+
+/// Result of a [`run`] invocation.
+///
+/// Carries the distinction between "we did the requested work" and
+/// "the user declined at the confirmation prompt", so the CLI
+/// binary can exit with a code scripts can act on (`Cancelled` →
+/// exit 130, matching the SIGINT convention; everything else →
+/// exit 0). Without this, a scripted
+/// `keron apply --execute && deploy` would run `deploy` even when
+/// the operator answered "no".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outcome {
+    /// The plan was rendered, the prompts (if any) were answered
+    /// affirmatively, and any requested execution completed.
+    Applied,
+    /// The user declined at the value prompt or the force prompt.
+    Cancelled,
+}
 
 /// Plan a keron program at `path`. With `execute`, prompt and apply.
 ///
 /// # Errors
-/// Returns an error if loading, parsing, type-checking, plan building,
-/// or (when `execute`) the executor fails.
-pub fn run(path: &Path, execute: bool) -> Result<()> {
+/// Returns a [`RunError`] tagged with the failure phase so the CLI
+/// can map each phase to a distinct exit code (see
+/// [`RunError::exit_code`]).
+pub fn run(path: &Path, execute: bool) -> std::result::Result<Outcome, RunError> {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let color = stdout.is_terminal();
@@ -55,15 +127,15 @@ pub(crate) fn run_with_io<R, W>(
     stdin: &mut R,
     stdout: &mut W,
     color: bool,
-) -> Result<()>
+) -> std::result::Result<Outcome, RunError>
 where
     R: BufRead,
     W: Write,
 {
-    refuse_direct_elevation()?;
+    refuse_direct_elevation().map_err(RunError::DirectElevation)?;
 
-    let source = load::load(path)?;
-    let keron_root = keron_root_for(path, &source)?;
+    let source = load::load(path).map_err(RunError::PreApply)?;
+    let keron_root = keron_root_for(path, &source).map_err(RunError::PreApply)?;
     let roots: Vec<EntrySource> = source
         .files
         .into_iter()
@@ -75,70 +147,75 @@ where
             EntrySource {
                 text: f.text,
                 base_dir,
-                id: ModuleId::File(f.path),
+                id: ModuleId(f.path),
             }
         })
         .collect();
 
     let graph = resolve(roots).map_err(|bundle| {
-        anyhow::anyhow!(
+        RunError::PreApply(anyhow::anyhow!(
             "module resolution failed:\n{}",
             report::render(&bundle, color)
-        )
+        ))
     })?;
 
-    let plan = plan::build_plan(&graph, &keron_root)?;
+    let plan = plan::build_plan(&graph, &keron_root).map_err(RunError::PreApply)?;
 
-    diff::render_plan(stdout, &plan, RenderOptions { color })?;
+    diff::render_plan(stdout, &plan, RenderOptions { color }).map_err(RunError::Io)?;
 
     if !execute || plan.is_empty() {
-        return Ok(());
+        return Ok(Outcome::Applied);
     }
 
-    let approved = confirm::prompt_yes_no(stdin, stdout)?;
+    let approved = confirm::prompt_yes_no(stdin, stdout).map_err(RunError::Io)?;
     if !approved {
-        writeln!(stdout, "Apply cancelled.")?;
-        return Ok(());
+        writeln!(stdout, "Apply cancelled.").map_err(RunError::Io)?;
+        return Ok(Outcome::Cancelled);
     }
 
     let summary = plan.summary();
     if summary.force > 0 {
-        let approved = confirm::prompt_force(stdin, stdout, summary.force)?;
+        let approved = confirm::prompt_force(stdin, stdout, summary.force).map_err(RunError::Io)?;
         if !approved {
-            writeln!(stdout, "Apply cancelled.")?;
-            return Ok(());
+            writeln!(stdout, "Apply cancelled.").map_err(RunError::Io)?;
+            return Ok(Outcome::Cancelled);
         }
     }
 
     let (unprivileged, elevated_plan) = plan.partition_by_elevation();
-    let unpriv_summary = execute::execute(&unprivileged)?;
+    let unpriv_summary = execute::execute(&unprivileged).map_err(RunError::Apply)?;
 
     if elevated_plan.changes.is_empty() {
         writeln!(
             stdout,
             "Apply complete! Resources: {} added, {} changed.",
             unpriv_summary.added, unpriv_summary.changed
-        )?;
+        )
+        .map_err(RunError::Io)?;
     } else {
         writeln!(
             stdout,
             "Unprivileged phase complete. Resources: {} added, {} changed.",
             unpriv_summary.added, unpriv_summary.changed
-        )?;
+        )
+        .map_err(RunError::Io)?;
         writeln!(
             stdout,
             "{} resource(s) require elevated rights; you may be asked for your password.",
             elevated_plan.changes.len(),
-        )?;
-        let elevated_summary = elevated::run_elevated(&elevated_plan)?;
+        )
+        .map_err(RunError::Io)?;
+        let elevated_summary =
+            elevated::run_elevated(&elevated_plan).map_err(RunError::Elevation)?;
         writeln!(
             stdout,
             "Apply complete! Resources: {} added, {} changed.",
             unpriv_summary.added + elevated_summary.added,
             unpriv_summary.changed + elevated_summary.changed
-        )?;
+        )
+        .map_err(RunError::Io)?;
     }
-    Ok(())
+    Ok(Outcome::Applied)
 }
 
 /// Bail loudly when `keron apply` is run as root / Administrator
@@ -147,12 +224,24 @@ where
 /// whole manifest as root, leaving `~/.config` files owned by root
 /// (the home-manager #4019 footgun). Mirrors rustup-init's elevation
 /// guard on Windows.
+///
+/// The elevated child (`keron __apply-elevated <payload>`) enters
+/// through `run_elevated_child` and bypasses this guard by
+/// construction — `main.rs` dispatches the two subcommands to
+/// distinct entry points so the child never traverses
+/// [`run_with_io`].
+// `#[mutants::skip]` because this guard's "bail when running as
+// root" path can only be reached when the test process itself is
+// uid 0 — which CI test runners deliberately are not. The unprivileged
+// fall-through path is exercised by every existing keron-apply test,
+// but no test can flip euid to 0 without re-execing under sudo.
+#[cfg_attr(test, mutants::skip)]
 fn refuse_direct_elevation() -> Result<()> {
     #[cfg(unix)]
     {
         let euid = unix_effective_uid();
         let sudo_uid_set = std::env::var_os("SUDO_UID").is_some();
-        if euid == 0 && std::env::var_os("KERON_ELEVATED_CHILD").is_none() {
+        if euid == 0 {
             anyhow::bail!(
                 "keron should not be invoked under elevated rights directly. \
                  Run as your normal user; keron will prompt for elevation \
@@ -168,32 +257,21 @@ fn refuse_direct_elevation() -> Result<()> {
     Ok(())
 }
 
+// `#[mutants::skip]` because this is a one-line FFI wrapper around
+// `libc::geteuid()`. A mutation `replace -> u32 with 1` would only be
+// caught by a test that knows the host's actual euid — but CI test
+// runners run as a non-root uid that varies by host (501 on macOS
+// dev, 1000 on Linux CI), so any concrete-value assertion is brittle.
 #[cfg(unix)]
+#[cfg_attr(test, mutants::skip)]
 fn unix_effective_uid() -> u32 {
-    // No libc in the workspace deps and `MetadataExt::uid()` reports
-    // *file* uid not process — so create a temp file and read its uid
-    // back; created files inherit the effective uid.
-    use std::os::unix::fs::MetadataExt;
-    let probe = std::env::temp_dir().join(format!(
-        ".keron-euid-probe-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.subsec_nanos())
-    ));
-    let Ok(f) = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&probe)
-    else {
-        // Probe failed: conservatively assume non-root so we don't
-        // refuse to run on weird hosts.
-        return 1;
-    };
-    let uid = f.metadata().map_or(1, |m| m.uid());
-    drop(f);
-    let _ = std::fs::remove_file(&probe);
-    uid
+    // Platform FFI for the elevated-rights guard: `geteuid` is the
+    // authoritative source. Heuristic fallbacks (tempfile probes,
+    // CWD stat) failed open on locked-down hosts.
+    #[allow(unsafe_code)]
+    unsafe {
+        libc::geteuid()
+    }
 }
 
 /// Resolve the canonical "keron root" for the run — the path the user
@@ -256,7 +334,11 @@ mod tests {
     }
 
     /// Drives `run_with_io` and returns (result, captured stdout).
-    fn drive(path: &Path, execute: bool, stdin: &str) -> (Result<()>, String) {
+    fn drive(
+        path: &Path,
+        execute: bool,
+        stdin: &str,
+    ) -> (std::result::Result<Outcome, RunError>, String) {
         let mut sin = Cursor::new(stdin.as_bytes().to_vec());
         let mut sout: Vec<u8> = Vec::new();
         let res = run_with_io(path, execute, &mut sin, &mut sout, false);
@@ -296,7 +378,14 @@ mod tests {
     fn run_returns_err_for_missing_entry() {
         let missing = PathBuf::from("/no/such/keron-test-entry.keron");
         let (res, _) = drive(&missing, false, "");
-        assert!(res.is_err());
+        let err = res.expect_err("missing entry should fail");
+        // A missing entry is a pre-apply failure (load failed) and
+        // must map to exit code 2 so CI can act on the category.
+        assert!(
+            matches!(err, RunError::PreApply(_)),
+            "expected PreApply category, got: {err:?}"
+        );
+        assert_eq!(err.exit_code(), 2, "exit code for {err:?}");
     }
 
     #[test]
@@ -360,7 +449,12 @@ mod tests {
             "reconcile template(path = \"/x\", source = \"tmpl.tpl\", vars = {\"body\": \"y\"})\n",
         );
         let (res, out) = drive(&entry, true, "no\n");
-        res.unwrap();
+        let outcome = res.unwrap();
+        assert_eq!(
+            outcome,
+            Outcome::Cancelled,
+            "user-no should surface as Cancelled so the CLI can exit 130"
+        );
         assert!(
             out.contains("Apply cancelled"),
             "missing cancel message: {out}"
@@ -378,8 +472,17 @@ mod tests {
             dest.display(),
         );
         let entry = proj.write("entry.keron", &src);
-        let (res, out) = drive(&entry, true, "yes\n");
-        res.unwrap();
+        // First "yes" approves the value prompt; "no" cancels the
+        // follow-up force prompt. (Pre-fix, an empty second line
+        // would EOF-cancel; that path now errors loudly, so we feed
+        // an explicit "no".)
+        let (res, out) = drive(&entry, true, "yes\nno\n");
+        let outcome = res.unwrap();
+        assert_eq!(
+            outcome,
+            Outcome::Cancelled,
+            "force-prompt no should also surface as Cancelled"
+        );
         assert!(out.contains("Only 'force'"), "force prompt missing: {out}");
         assert!(out.contains("Apply cancelled"), "cancel missing: {out}");
         assert_eq!(fs::read_to_string(dest).unwrap(), "old");

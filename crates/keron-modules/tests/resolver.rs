@@ -46,7 +46,7 @@ impl TempProject {
         vec![EntrySource {
             text: content.to_string(),
             base_dir,
-            id: ModuleId::File(canonical),
+            id: ModuleId(canonical),
         }]
     }
 
@@ -63,7 +63,7 @@ impl TempProject {
                 EntrySource {
                     text: (*src).to_string(),
                     base_dir,
-                    id: ModuleId::File(canonical),
+                    id: ModuleId(canonical),
                 }
             })
             .collect()
@@ -85,7 +85,7 @@ fn builtins_are_implicitly_in_scope() {
                reconcile s\n";
     let entry = proj.write("entry.keron", src);
     let graph = resolve(TempProject::entry_source(&entry, src)).expect("resolve ok");
-    let entry_id = ModuleId::File(fs::canonicalize(&entry).unwrap());
+    let entry_id = ModuleId(fs::canonicalize(&entry).unwrap());
     assert_eq!(graph.entries, vec![entry_id]);
     assert_eq!(graph.modules.len(), 1, "stdlib does not enter the graph");
 }
@@ -247,14 +247,14 @@ fn imported_val_with_annotation_resolves() {
                      val msg: String = greeting\n";
     let entry = proj.write("entry.keron", entry_src);
     let graph = resolve(TempProject::entry_source(&entry, entry_src)).expect("resolve ok");
-    let entry_id = ModuleId::File(fs::canonicalize(&entry).unwrap());
+    let entry_id = ModuleId(fs::canonicalize(&entry).unwrap());
     let entry_mod = graph.modules.get(&entry_id).expect("entry module present");
     let (origin, original) = entry_mod
         .imports
         .get("greeting")
         .expect("greeting in imports");
     assert_eq!(original, "greeting");
-    let helpers_id = ModuleId::File(fs::canonicalize(proj.root.join("helpers.keron")).unwrap());
+    let helpers_id = ModuleId(fs::canonicalize(proj.root.join("helpers.keron")).unwrap());
     assert_eq!(origin, &helpers_id);
 }
 
@@ -307,8 +307,8 @@ fn imports_override_alphanumeric_order() {
     let z_src = fs::read_to_string(&z_path).unwrap();
     let graph =
         resolve(TempProject::roots(&[(&a_path, &a_src), (&z_path, &z_src)])).expect("resolve ok");
-    let a_id = ModuleId::File(fs::canonicalize(&a_path).unwrap());
-    let z_id = ModuleId::File(fs::canonicalize(&z_path).unwrap());
+    let a_id = ModuleId(fs::canonicalize(&a_path).unwrap());
+    let z_id = ModuleId(fs::canonicalize(&z_path).unwrap());
     let pos_a = graph
         .topo_order
         .iter()
@@ -348,9 +348,9 @@ fn alphanumeric_tie_break_when_no_imports() {
         (&b_path, &b_src),
     ]))
     .expect("resolve ok");
-    let a_id = ModuleId::File(fs::canonicalize(&a_path).unwrap());
-    let b_id = ModuleId::File(fs::canonicalize(&b_path).unwrap());
-    let c_id = ModuleId::File(fs::canonicalize(&c_path).unwrap());
+    let a_id = ModuleId(fs::canonicalize(&a_path).unwrap());
+    let b_id = ModuleId(fs::canonicalize(&b_path).unwrap());
+    let c_id = ModuleId(fs::canonicalize(&c_path).unwrap());
     assert_eq!(
         graph.topo_order,
         vec![a_id, b_id, c_id],
@@ -405,8 +405,8 @@ fn multi_root_loads_every_root_into_the_graph() {
     let b_src = fs::read_to_string(&b_path).unwrap();
     let graph =
         resolve(TempProject::roots(&[(&a_path, &a_src), (&b_path, &b_src)])).expect("resolve ok");
-    let a_id = ModuleId::File(fs::canonicalize(&a_path).unwrap());
-    let b_id = ModuleId::File(fs::canonicalize(&b_path).unwrap());
+    let a_id = ModuleId(fs::canonicalize(&a_path).unwrap());
+    let b_id = ModuleId(fs::canonicalize(&b_path).unwrap());
     assert!(graph.modules.contains_key(&a_id), "a missing from modules");
     assert!(graph.modules.contains_key(&b_id), "b missing from modules");
     assert_eq!(graph.entries.len(), 2);

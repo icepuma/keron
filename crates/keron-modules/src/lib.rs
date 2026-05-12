@@ -30,16 +30,12 @@ use petgraph::graph::NodeIndex;
 /// canonicalized filesystem path; stdlib items are exposed as
 /// builtins and don't participate in the graph.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum ModuleId {
-    File(PathBuf),
-}
+pub struct ModuleId(pub PathBuf);
 
 impl ModuleId {
     #[must_use]
     pub fn display(&self) -> String {
-        match self {
-            Self::File(p) => p.display().to_string(),
-        }
+        self.0.display().to_string()
     }
 }
 
@@ -123,7 +119,7 @@ pub struct EntrySource {
     /// Directory used as the resolution root for relative `use`
     /// paths in this module. Always the file's parent directory.
     pub base_dir: PathBuf,
-    /// Stable identity for this module: `ModuleId::File(canonical_path)`.
+    /// Stable identity for this module: `ModuleId(canonical_path)`.
     pub id: ModuleId,
 }
 
@@ -207,7 +203,7 @@ impl ResolveState {
             .unwrap_or_default();
         match resolve_path(&u.source.node, &importer_dir) {
             Ok(path) => {
-                let id = ModuleId::File(path.clone());
+                let id = ModuleId(path.clone());
                 if self.raw.contains_key(&id) {
                     return;
                 }
@@ -225,7 +221,7 @@ impl ResolveState {
                     }
                 };
                 let dir = path.parent().unwrap_or(&path).to_path_buf();
-                self.load_module(ModuleId::File(path), text, &dir);
+                self.load_module(ModuleId(path), text, &dir);
             }
             Err(msg) => {
                 self.errors.push(ResolveError {
@@ -367,7 +363,7 @@ impl ResolveState {
                 if let Item::Use(u) = item
                     && let Ok(path) = resolve_path(&u.source.node, &raw.base_dir)
                 {
-                    let dep_id = ModuleId::File(path);
+                    let dep_id = ModuleId(path);
                     if let Some(&from) = idx.get(&dep_id) {
                         graph.add_edge(from, to, ());
                     }
@@ -392,7 +388,7 @@ impl ResolveState {
         for item in &program.items {
             let Item::Use(u) = item else { continue };
             let dep_id = match resolve_path(&u.source.node, base_dir) {
-                Ok(path) => ModuleId::File(path),
+                Ok(path) => ModuleId(path),
                 // Already reported during queue_dep.
                 Err(_) => continue,
             };
@@ -704,7 +700,7 @@ mod tests {
     #[test]
     fn module_id_display_file_uses_path() {
         assert_eq!(
-            ModuleId::File(PathBuf::from("/abs/x.keron")).display(),
+            ModuleId(PathBuf::from("/abs/x.keron")).display(),
             "/abs/x.keron"
         );
     }
@@ -773,7 +769,7 @@ mod tests {
     #[test]
     fn reconstruct_cycle_returns_singleton_when_no_self_path() {
         let mut g: Graph<ModuleId, ()> = Graph::new();
-        let a = ModuleId::File(PathBuf::from("/recon-a.keron"));
+        let a = ModuleId(PathBuf::from("/recon-a.keron"));
         let n = g.add_node(a.clone());
         let cycle = reconstruct_cycle(&g, n);
         assert_eq!(cycle, vec![a]);
@@ -782,8 +778,8 @@ mod tests {
     #[test]
     fn reconstruct_cycle_returns_full_path_when_present() {
         let mut g: Graph<ModuleId, ()> = Graph::new();
-        let a = ModuleId::File(PathBuf::from("/recon-cycle-a.keron"));
-        let b = ModuleId::File(PathBuf::from("/recon-cycle-b.keron"));
+        let a = ModuleId(PathBuf::from("/recon-cycle-a.keron"));
+        let b = ModuleId(PathBuf::from("/recon-cycle-b.keron"));
         let na = g.add_node(a.clone());
         let nb = g.add_node(b.clone());
         g.add_edge(na, nb, ());
@@ -810,7 +806,7 @@ mod tests {
         let prog = parse("val s: String = \"hi\"\nval n: Int = 0\n").unwrap();
         let (fns, vals, _types) = collect_exports(&prog);
         let module = CheckedModule {
-            id: ModuleId::File(PathBuf::from("/val-type-for-test.keron")),
+            id: ModuleId(PathBuf::from("/val-type-for-test.keron")),
             source: String::new(),
             program: prog,
             imports: HashMap::new(),
@@ -828,7 +824,7 @@ mod tests {
         let prog = parse("val v = 5\n").unwrap();
         let (fns, vals, _types) = collect_exports(&prog);
         let module = CheckedModule {
-            id: ModuleId::File(PathBuf::from("/val-type-for-test.keron")),
+            id: ModuleId(PathBuf::from("/val-type-for-test.keron")),
             source: String::new(),
             program: prog,
             imports: HashMap::new(),
@@ -883,7 +879,7 @@ mod tests {
         .unwrap();
         let (fns, vals, types) = collect_exports(&prog);
         let module = CheckedModule {
-            id: ModuleId::File(PathBuf::from("/sig-for-test.keron")),
+            id: ModuleId(PathBuf::from("/sig-for-test.keron")),
             source: String::new(),
             program: prog,
             imports: HashMap::new(),

@@ -17,7 +17,7 @@ use anyhow::{Context, Result, bail};
 
 #[derive(Debug)]
 pub struct LoadedFile {
-    /// Canonicalized absolute path. Used as the `ModuleId::File` key.
+    /// Canonicalized absolute path. Wrapped as the `ModuleId` key.
     pub path: PathBuf,
     pub text: String,
 }
@@ -78,7 +78,7 @@ fn load_dir(root: &Path) -> Result<Vec<LoadedFile>> {
     for path in paths {
         // Canonicalize so two entries pointing at the same real file
         // (e.g. via a symlinked subdir) collapse to one module; the
-        // resolver also keys `ModuleId::File` by canonical path.
+        // resolver also keys `ModuleId` by canonical path.
         let canonical = fs::canonicalize(&path)
             .with_context(|| format!("canonicalizing `{}`", path.display()))?;
         if !seen.insert(canonical.clone()) {

@@ -625,6 +625,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tera",
+ "thiserror",
  "windows-sys",
 ]
 
@@ -655,7 +656,6 @@ dependencies = [
 name = "keron-modules"
 version = "0.0.0"
 dependencies = [
- "anyhow",
  "keron-lang",
  "petgraph",
 ]

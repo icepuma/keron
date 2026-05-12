@@ -1,7 +1,14 @@
 //! List typing, list concat, and bidirectional checking against `List<T>`.
 
 use super::check_src;
-use crate::{check::check, parser::parse};
+use crate::{
+    check::{ImportedSymbols, check_module},
+    parser::parse,
+};
+
+fn check(program: &crate::ast::Program) -> Result<(), Vec<crate::diagnostic::Diagnostic>> {
+    check_module(program, &ImportedSymbols::default())
+}
 
 #[test]
 fn list_int_typechecks() {

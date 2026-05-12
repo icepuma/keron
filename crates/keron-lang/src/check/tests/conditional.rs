@@ -244,7 +244,9 @@ fn void_fn_with_conditional_reconcile_errors() {
     "#;
     let err = check_src(src).expect_err("functions must not reconcile resources");
     assert!(
-        err[0].message.contains("not allowed inside `fn` bodies"),
+        err[0]
+            .message
+            .contains("not allowed inside a value expression"),
         "got: {}",
         err[0].message
     );

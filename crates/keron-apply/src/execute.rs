@@ -23,10 +23,45 @@ pub struct ExecuteSummary {
 
 pub fn execute(plan: &Plan) -> Result<ExecuteSummary> {
     let mut summary = ExecuteSummary::default();
+    let mut applied_addresses: Vec<&str> = Vec::new();
     for change in &plan.changes {
-        apply_change(change, &mut summary)?;
+        if let Err(e) = apply_change(change, &mut summary) {
+            // Surface what already landed before the failure so the
+            // user knows the post-mortem state of their tree rather
+            // than seeing a single error with no context.
+            return Err(annotate_partial_apply(
+                e,
+                change.address.as_str(),
+                &applied_addresses,
+                plan.changes.len(),
+            ));
+        }
+        applied_addresses.push(change.address.as_str());
     }
     Ok(summary)
+}
+
+fn annotate_partial_apply(
+    err: anyhow::Error,
+    failed_address: &str,
+    applied: &[&str],
+    total: usize,
+) -> anyhow::Error {
+    if applied.is_empty() {
+        return err.context(format!(
+            "apply failed at resource 1 of {total} (`{failed_address}`); nothing was applied"
+        ));
+    }
+    let mut summary = format!(
+        "apply failed at resource {} of {total} (`{failed_address}`); {} resource(s) already applied:",
+        applied.len() + 1,
+        applied.len(),
+    );
+    for addr in applied {
+        summary.push_str("\n  - ");
+        summary.push_str(addr);
+    }
+    err.context(summary)
 }
 
 fn apply_change(change: &ResourceChange, summary: &mut ExecuteSummary) -> Result<()> {
@@ -39,6 +74,21 @@ fn apply_change(change: &ResourceChange, summary: &mut ExecuteSummary) -> Result
     Ok(())
 }
 
+/// Privilege context in which a change is being applied.
+///
+/// The elevated child routes Create actions through `openat`-based
+/// component walks so a concurrent symlink swap in an intermediate
+/// directory can't redirect a root-owned write. Unprivileged
+/// execution uses the simpler `fs::create_dir_all` + leaf-write
+/// dance because the user can't escalate via their own writes.
+#[derive(Debug, Clone, Copy)]
+pub enum ApplyContext {
+    /// Run by the user themselves.
+    Unprivileged,
+    /// Run by the elevated child (sudo / `ShellExecuteExW`).
+    Elevated,
+}
+
 /// Apply a single change. Shared between the in-process executor and
 /// the elevated child entry point so the two stay in lockstep.
 ///
@@ -46,6 +96,17 @@ fn apply_change(change: &ResourceChange, summary: &mut ExecuteSummary) -> Result
 /// Errors when the underlying filesystem call fails or when the
 /// resource kind has no executor support yet for the action.
 pub fn apply_change_one(change: &ResourceChange) -> Result<()> {
+    apply_change_one_in(change, ApplyContext::Unprivileged)
+}
+
+/// Apply a single change with an explicit privilege context. The
+/// elevated child should always pass [`ApplyContext::Elevated`] so
+/// Create actions route through the TOCTOU-safe `openat` walk
+/// (`elevated::safe_write`).
+///
+/// # Errors
+/// See [`apply_change_one`].
+pub fn apply_change_one_in(change: &ResourceChange, ctx: ApplyContext) -> Result<()> {
     match change.action {
         Action::NoOp => Ok(()),
         Action::Create => {
@@ -53,7 +114,7 @@ pub fn apply_change_one(change: &ResourceChange) -> Result<()> {
                 .after
                 .as_ref()
                 .with_context(|| format!("create `{}` has no desired state", change.address))?;
-            apply_create(state).with_context(|| format!("creating `{}`", change.address))
+            apply_create(state, ctx).with_context(|| format!("creating `{}`", change.address))
         }
         Action::Update => {
             let before = change
@@ -64,15 +125,25 @@ pub fn apply_change_one(change: &ResourceChange) -> Result<()> {
                 .after
                 .as_ref()
                 .with_context(|| format!("update `{}` has no desired state", change.address))?;
+            // Update reuses the existing fs::* path on both Unix and
+            // Windows. The `before` state proves the leaf already
+            // existed at plan time; the residual TOCTOU window (stat
+            // ↔ rename, or stat ↔ remove+create) is narrower than
+            // Create's mkdir-then-symlink race and is documented in
+            // the elevated/child.rs ancestor pre-check.
             apply_update(before, after).with_context(|| format!("updating `{}`", change.address))
         }
     }
 }
 
-fn apply_create(state: &ResourceState) -> Result<()> {
+fn apply_create(state: &ResourceState, ctx: ApplyContext) -> Result<()> {
     match state {
-        ResourceState::Symlink { from, to } => create_symlink(from, to),
-        ResourceState::Template { path, content, .. } => create_template(path, content),
+        ResourceState::Symlink { from, to } => create_symlink(from, to, ctx),
+        ResourceState::Template {
+            path,
+            content,
+            sensitive,
+        } => create_template(path, content, *sensitive, ctx),
         ResourceState::Package { manager, name } => packages::install(*manager, name),
     }
 }
@@ -90,12 +161,14 @@ fn apply_update(before: &ResourceState, after: &ResourceState) -> Result<()> {
                 );
             }
             remove_symlink(bf)?;
-            create_symlink(af, at)
+            create_symlink(af, at, ApplyContext::Unprivileged)
         }
         (
             ResourceState::Template { path: bp, .. },
             ResourceState::Template {
-                path: ap, content, ..
+                path: ap,
+                content,
+                sensitive,
             },
         ) => {
             if bp != ap {
@@ -105,13 +178,33 @@ fn apply_update(before: &ResourceState, after: &ResourceState) -> Result<()> {
                     ap.display(),
                 );
             }
-            replace_template(ap, content)
+            replace_template(ap, content, *sensitive)
         }
         _ => bail!(unsupported_kind(after)),
     }
 }
 
-fn create_symlink(from: &Path, to: &Path) -> Result<()> {
+fn create_symlink(from: &Path, to: &Path, ctx: ApplyContext) -> Result<()> {
+    #[cfg(unix)]
+    if matches!(ctx, ApplyContext::Elevated)
+        && let Some(parent_path) = from.parent()
+        && let Some(leaf) = from.file_name()
+    {
+        // Walk each ancestor with O_NOFOLLOW; symlinkat onto the
+        // resulting parent fd. Closes the TOCTOU window between
+        // `mkdir_all(parent)` and `symlink(2)` that the elevated
+        // child would otherwise be racing.
+        let parent = crate::elevated::safe_write::ParentDir::open(parent_path)
+            .with_context(|| format!("opening elevated parent of `{}`", from.display()))?;
+        return crate::elevated::safe_write::symlink_at(&parent, leaf, to).with_context(|| {
+            format!(
+                "symlinking `{}` -> `{}` (elevated)",
+                from.display(),
+                to.display()
+            )
+        });
+    }
+    let _ = ctx;
     if let Some(parent) = from.parent()
         && !parent.as_os_str().is_empty()
     {
@@ -133,14 +226,31 @@ fn remove_symlink(path: &Path) -> Result<()> {
     fs::remove_file(path).with_context(|| format!("removing symlink `{}`", path.display()))
 }
 
-fn create_template(path: &Path, content: &str) -> Result<()> {
+fn create_template(path: &Path, content: &str, sensitive: bool, ctx: ApplyContext) -> Result<()> {
+    let mode = create_mode(sensitive);
+    #[cfg(unix)]
+    if matches!(ctx, ApplyContext::Elevated)
+        && let Some(parent_path) = path.parent()
+        && let Some(leaf) = path.file_name()
+    {
+        let parent = crate::elevated::safe_write::ParentDir::open(parent_path)
+            .with_context(|| format!("opening elevated parent of `{}`", path.display()))?;
+        let mut file = crate::elevated::safe_write::create_file_at(&parent, leaf, mode)
+            .with_context(|| format!("creating template `{}` (elevated)", path.display()))?;
+        file.write_all(content.as_bytes())
+            .with_context(|| format!("writing template `{}`", path.display()))?;
+        return file
+            .sync_all()
+            .with_context(|| format!("syncing template `{}`", path.display()));
+    }
+    let _ = ctx;
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
     {
         fs::create_dir_all(parent)
             .with_context(|| format!("creating parent directory `{}`", parent.display()))?;
     }
-    let mut file = open_new_leaf_no_follow(path)
+    let mut file = open_new_leaf_no_follow(path, mode)
         .with_context(|| format!("creating template `{}`", path.display()))?;
     file.write_all(content.as_bytes())
         .with_context(|| format!("writing template `{}`", path.display()))?;
@@ -148,7 +258,7 @@ fn create_template(path: &Path, content: &str) -> Result<()> {
         .with_context(|| format!("syncing template `{}`", path.display()))
 }
 
-fn replace_template(path: &Path, content: &str) -> Result<()> {
+fn replace_template(path: &Path, content: &str, sensitive: bool) -> Result<()> {
     let meta =
         fs::symlink_metadata(path).with_context(|| format!("inspecting `{}`", path.display()))?;
     if !meta.file_type().is_file() {
@@ -158,25 +268,89 @@ fn replace_template(path: &Path, content: &str) -> Result<()> {
         );
     }
     let tmp = temp_sibling(path);
-    let write_res = (|| -> Result<()> {
-        let mut file = open_new_leaf_no_follow(&tmp)
-            .with_context(|| format!("creating temporary template `{}`", tmp.display()))?;
-        file.write_all(content.as_bytes())
-            .with_context(|| format!("writing temporary template `{}`", tmp.display()))?;
-        file.sync_all()
-            .with_context(|| format!("syncing temporary template `{}`", tmp.display()))?;
-        fs::rename(&tmp, path).with_context(|| {
-            format!(
-                "atomically replacing `{}` with `{}`",
-                path.display(),
-                tmp.display()
-            )
-        })
-    })();
-    if write_res.is_err() {
-        let _ = fs::remove_file(&tmp);
+    let mode = replace_mode(sensitive, &meta);
+    let guard = TmpFileGuard::new(tmp.clone());
+    let mut file = open_new_leaf_no_follow(&tmp, mode)
+        .with_context(|| format!("creating temporary template `{}`", tmp.display()))?;
+    file.write_all(content.as_bytes())
+        .with_context(|| format!("writing temporary template `{}`", tmp.display()))?;
+    file.sync_all()
+        .with_context(|| format!("syncing temporary template `{}`", tmp.display()))?;
+    drop(file);
+    fs::rename(&tmp, path).with_context(|| {
+        format!(
+            "atomically replacing `{}` with `{}`",
+            path.display(),
+            tmp.display()
+        )
+    })?;
+    guard.disarm();
+    Ok(())
+}
+
+/// Removes `path` on drop unless [`Self::disarm`] is called first.
+/// Used by [`replace_template`] so every failure path between the
+/// `open(.tmp)` and the final `rename` cleans up the sibling temp
+/// — including panic unwinding, where the previous
+/// `let _ = fs::remove_file(&tmp)` would never have run.
+struct TmpFileGuard {
+    path: std::path::PathBuf,
+    disarmed: bool,
+}
+
+impl TmpFileGuard {
+    const fn new(path: std::path::PathBuf) -> Self {
+        Self {
+            path,
+            disarmed: false,
+        }
     }
-    write_res
+
+    fn disarm(mut self) {
+        self.disarmed = true;
+    }
+}
+
+impl Drop for TmpFileGuard {
+    fn drop(&mut self) {
+        if !self.disarmed {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
+}
+
+/// Permission bits to use when creating a fresh template file.
+/// Sensitive content (rendered with `unwrap_secret(...)` anywhere
+/// in `vars`) lands at `0o600` so a secret-bearing render of e.g.
+/// `~/.netrc` doesn't briefly exist world-readable. Non-sensitive
+/// templates keep the standard `0o644`-after-umask behavior.
+#[cfg_attr(not(unix), allow(clippy::needless_pass_by_value))]
+const fn create_mode(sensitive: bool) -> u32 {
+    if sensitive { 0o600 } else { 0o644 }
+}
+
+/// Mode for the replacement tempfile. Preserves the existing file's
+/// permissions so `chmod 600 ~/.ssh/config` survives an idempotent
+/// update; if sensitive, additionally clamps group/other bits off.
+#[cfg(unix)]
+fn replace_mode(sensitive: bool, existing: &fs::Metadata) -> u32 {
+    use std::os::unix::fs::MetadataExt;
+    let existing_mode = existing.mode() & 0o777;
+    if sensitive {
+        existing_mode & 0o700
+    } else {
+        existing_mode
+    }
+}
+
+// `#[mutants::skip]` because this branch only compiles on non-unix
+// hosts (Windows ignores the mode argument when opening files), and
+// the CI mutant runner is unix-only — no test on a unix host can
+// execute it.
+#[cfg(not(unix))]
+#[cfg_attr(test, mutants::skip)]
+const fn replace_mode(_sensitive: bool, _existing: &fs::Metadata) -> u32 {
+    0
 }
 
 fn temp_sibling(path: &Path) -> std::path::PathBuf {
@@ -199,14 +373,19 @@ fn temp_sibling(path: &Path) -> std::path::PathBuf {
     parent.join(tmp_name)
 }
 
-fn open_new_leaf_no_follow(path: &Path) -> io::Result<fs::File> {
+fn open_new_leaf_no_follow(path: &Path, mode: u32) -> io::Result<fs::File> {
     let mut options = fs::OpenOptions::new();
     options.write(true).create_new(true);
 
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o666).custom_flags(libc::O_NOFOLLOW);
+        options.mode(mode).custom_flags(libc::O_NOFOLLOW);
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = mode;
     }
 
     options.open(path)
@@ -517,8 +696,51 @@ mod tests {
     fn update_template_handles_relative_leaf_paths() {
         let file = CwdFile::new("relative-template-update");
         fs::write(&file.path, "old").unwrap();
-        replace_template(&file.path, "new").unwrap();
+        replace_template(&file.path, "new", false).unwrap();
         assert_eq!(fs::read_to_string(&file.path).unwrap(), "new");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_template_sensitive_writes_mode_0600() {
+        use std::os::unix::fs::MetadataExt;
+        let d = TempDir::new("sensitive-create");
+        let path = d.path.join("creds");
+        create_template(&path, "TOKEN=hunter2\n", true, ApplyContext::Unprivileged).unwrap();
+        let mode = fs::metadata(&path).unwrap().mode() & 0o777;
+        assert_eq!(
+            mode, 0o600,
+            "sensitive template must be owner-only: {mode:o}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn replace_template_preserves_existing_mode() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let d = TempDir::new("preserve-mode");
+        let path = d.path.join("config");
+        fs::write(&path, "old").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        replace_template(&path, "new", false).unwrap();
+        let mode = fs::metadata(&path).unwrap().mode() & 0o777;
+        assert_eq!(mode, 0o600, "existing mode should be preserved: {mode:o}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn replace_template_sensitive_clamps_group_other_bits() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let d = TempDir::new("clamp-mode");
+        let path = d.path.join("creds");
+        fs::write(&path, "old").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        replace_template(&path, "new", true).unwrap();
+        let mode = fs::metadata(&path).unwrap().mode() & 0o777;
+        assert_eq!(
+            mode, 0o600,
+            "sensitive replace must drop group/other bits: {mode:o}"
+        );
     }
 
     #[test]
@@ -533,7 +755,7 @@ mod tests {
     fn open_new_leaf_creates_the_requested_path() {
         let d = TempDir::new("open-new-leaf");
         let path = d.path.join("leaf");
-        let mut file = open_new_leaf_no_follow(&path).unwrap();
+        let mut file = open_new_leaf_no_follow(&path, 0o644).unwrap();
         file.write_all(b"x").unwrap();
         drop(file);
         assert_eq!(fs::read_to_string(path).unwrap(), "x");
@@ -547,7 +769,7 @@ mod tests {
         fs::write(&real, "original").unwrap();
         let link = d.path.join("link");
         symlink_impl(&real, &link).unwrap();
-        let err = open_new_leaf_no_follow(&link).expect_err("symlink leaf must not open");
+        let err = open_new_leaf_no_follow(&link, 0o644).expect_err("symlink leaf must not open");
         assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
         assert_eq!(fs::read_to_string(real).unwrap(), "original");
     }
@@ -582,6 +804,46 @@ mod tests {
         }
         let summary = result.expect("install spy should succeed");
         assert_eq!(summary.added, 1);
+    }
+
+    #[test]
+    fn tmp_file_guard_removes_file_on_drop_when_armed() {
+        // Pins `Drop::drop with ()` mutation: if drop is a no-op,
+        // an interrupted `replace_template` would leak its sibling
+        // tempfile. Also pins `delete ! in drop`: with the inversion,
+        // an armed guard would skip removal.
+        let d = TempDir::new("guard-armed");
+        let path = d.path.join("leaked-tmp");
+        fs::write(&path, "scratch").unwrap();
+        assert!(path.exists(), "fixture invariant");
+        {
+            let _g = TmpFileGuard::new(path.clone());
+        } // drop here
+        assert!(
+            !path.exists(),
+            "armed guard's drop must delete the tempfile: {path:?}"
+        );
+    }
+
+    #[test]
+    fn tmp_file_guard_disarm_prevents_removal_on_drop() {
+        // Pins `TmpFileGuard::disarm with ()`: if disarm fails to set
+        // the flag, the drop path still fires and silently removes
+        // the file the caller just renamed into place — losing the
+        // template content. Also pins `delete ! in drop`: with the
+        // inversion, a disarmed guard would still remove the file.
+        let d = TempDir::new("guard-disarmed");
+        let path = d.path.join("survives");
+        fs::write(&path, "kept").unwrap();
+        {
+            let g = TmpFileGuard::new(path.clone());
+            g.disarm();
+        }
+        assert!(
+            path.exists(),
+            "disarmed guard must NOT delete the file: {path:?}"
+        );
+        assert_eq!(fs::read_to_string(&path).unwrap(), "kept");
     }
 
     #[test]

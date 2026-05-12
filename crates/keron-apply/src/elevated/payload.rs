@@ -158,26 +158,23 @@ pub fn capture_owner() -> Result<OwnerId> {
 }
 
 #[cfg(unix)]
+// Symmetric shape with `capture_owner_windows` which is fallible;
+// keep the Result so `capture_owner` dispatches both arms uniformly.
+#[allow(clippy::unnecessary_wraps)]
 fn capture_owner_unix() -> Result<OwnerId> {
-    use std::os::unix::fs::MetadataExt;
-    // Prefer SUDO_UID/GID if a script plumbed it in (direct-sudo is
-    // refused at the entry point, but tests/oddities can set it).
-    if let (Ok(uid), Ok(gid)) = (std::env::var("SUDO_UID"), std::env::var("SUDO_GID"))
-        && let (Ok(uid), Ok(gid)) = (uid.parse(), gid.parse())
-    {
-        return Ok(OwnerId::Posix { uid, gid });
-    }
-    // No libc in the workspace, so stat the cwd as a stand-in for
-    // `geteuid()` — the CWD belongs to the calling user in any
-    // reasonable shell, and is correct even when the binary itself
-    // is root-owned (system-wide install).
-    let probe = std::env::current_dir().context("locating the calling user via cwd")?;
-    let meta = fs::metadata(&probe)
-        .with_context(|| format!("stat-ing `{}` for uid/gid", probe.display()))?;
-    Ok(OwnerId::Posix {
-        uid: meta.uid(),
-        gid: meta.gid(),
-    })
+    // Platform FFI for the elevated-rights flow: the calling user is
+    // the effective uid/gid of this (unprivileged) parent process.
+    // Don't infer ownership from CWD — `cd /etc; keron apply ...`
+    // would otherwise chown every created file to root. Don't read
+    // SUDO_UID/SUDO_GID either: an attacker who can plant env vars
+    // in the unprivileged parent (shell rc, wrapper script,
+    // `env SUDO_UID=0 keron apply`) would otherwise direct the
+    // root child to chown user files to arbitrary uids. The legit
+    // SUDO_UID use case (direct `sudo keron apply`) is already
+    // refused by `refuse_direct_elevation`.
+    #[allow(unsafe_code)]
+    let (uid, gid) = unsafe { (libc::geteuid(), libc::getegid()) };
+    Ok(OwnerId::Posix { uid, gid })
 }
 
 #[cfg(windows)]

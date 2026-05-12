@@ -405,7 +405,8 @@ fn elevated_symlink_into_protected_dir_is_owned_by_calling_user() {
     let my_group = fs::metadata(&fixture_root).unwrap().gid();
 
     let mut cmd = keron_apply(&fixture_root, &home.path);
-    cmd.env("KERON_TEST_ELEVATOR", &spy)
+    cmd.env("KERON_ALLOW_TEST_OVERRIDES", "1")
+        .env("KERON_TEST_ELEVATOR", &spy)
         .env("KERON_TEST_UNLOCK_DIR", &protected);
     let out = run(cmd, "yes\n");
 

@@ -81,7 +81,15 @@ pub fn parse(text: &str) -> HashSet<String> {
         if line.len() <= col {
             continue;
         }
-        let rest = &line[col..];
+        // The header is ASCII so `col` is both a byte and char
+        // offset, but data rows may contain multi-byte Unicode
+        // (localized package descriptions). Slicing at a non-char
+        // boundary would panic; advance to the next valid boundary
+        // — at worst we drop one column of payload.
+        let Some(start) = line.char_indices().map(|(i, _)| i).find(|&i| i >= col) else {
+            continue;
+        };
+        let rest = &line[start..];
         let Some(id) = rest.split_whitespace().next() else {
             continue;
         };
@@ -138,6 +146,48 @@ Foo                   Foo.Bar             1.0
 ";
         let got = parse(input);
         assert!(got.contains("Foo.Bar"), "got: {got:?}");
+    }
+
+    #[test]
+    fn parse_does_not_panic_on_multibyte_chars_at_id_column() {
+        // The Name column carries a localized description with
+        // multi-byte UTF-8; the Id-column byte index lands inside
+        // the multi-byte sequence. Pre-fix this panicked with
+        // "byte index N is not a char boundary".
+        let input = "\
+Name                       Id                       Version
+-------------------------------------------------------------------------
+Кириллица описание длиннее Foo.Cyrillic              1.0
+";
+        let got = parse(input);
+        // We don't care exactly what fell out — only that we did
+        // not panic. The parser may drop the row or extract a
+        // partial column; both are acceptable for the fallback.
+        let _ = got;
+    }
+
+    #[test]
+    fn parse_advances_forward_past_multibyte_char_boundary() {
+        // Pins the FORWARD direction of the char-boundary walk: with
+        // col=5 landing mid-"γ", a correct walk lands at byte 6
+        // (start of " FOO"), so the extracted Id is "FOO". A
+        // backward walk would land at byte 4 (start of "γ") and
+        // extract "γFOO" or similar garbage. Catches mutations that
+        // search backward / never advance.
+        let input = "\
+Name Id    Version
+------------------
+αβγ  FOO   1.0
+";
+        let got = parse(input);
+        assert!(
+            got.contains("FOO"),
+            "must advance forward to next char boundary, got: {got:?}"
+        );
+        assert!(
+            !got.iter().any(|s| s.contains('γ')),
+            "must not retreat into the multibyte char, got: {got:?}"
+        );
     }
 
     #[test]

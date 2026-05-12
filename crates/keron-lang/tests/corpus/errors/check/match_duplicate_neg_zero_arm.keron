@@ -1,0 +1,7 @@
+fn pick(d: Double): Int {
+  match d {
+    0.0 => 1,
+    -0.0 => 2,
+    _ => 3,
+  }
+}

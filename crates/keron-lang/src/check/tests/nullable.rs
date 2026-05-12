@@ -203,6 +203,27 @@ fn null_arm_plus_exhaustive_inner_typechecks_without_catch_all() {
 }
 
 #[test]
+fn match_arm_join_lifts_null_and_inner_to_nullable() {
+    // Canonical "yield null when missing, otherwise the value" idiom.
+    // Pre-fix: `unify_arm_types` rejected this because neither `Null`
+    // nor `Int` is a subtype of the other. Now joins to `Int?`.
+    assert!(
+        check_src(
+            "val maybe: Int? = 7\n\
+             val r: Int? = match maybe { null => null, x => x }",
+        )
+        .is_ok()
+    );
+    assert!(
+        check_src(
+            "val maybe: String? = \"hi\"\n\
+             val r: String? = match maybe { null => null, s => s }",
+        )
+        .is_ok()
+    );
+}
+
+#[test]
 fn nullable_nullable_widens_through_inner_subtyping() {
     // `is_subtype` needs an explicit `(Nullable, Nullable) => recurse`
     // arm because the general `(other, Nullable(inner))` fallback

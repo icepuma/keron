@@ -1,0 +1,5 @@
+fn pick(x: Int): Int {
+  match 99 {
+    x => x + 1,
+  }
+}

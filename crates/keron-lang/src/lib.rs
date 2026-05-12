@@ -11,8 +11,7 @@ pub use ast::{
     StructField, StructPatternField, Type, TypeAliasDecl, UnaryOp, UseDecl, ValDecl,
 };
 pub use check::{
-    FnEnv, FnSig, ImportedSymbols, ParamSig, StructEnv, StructSig, check, check_module,
-    resolve_type_names,
+    FnEnv, FnSig, ImportedSymbols, ParamSig, StructEnv, StructSig, check_module, resolve_type_names,
 };
 pub use diagnostic::Diagnostic;
 pub use parser::parse;

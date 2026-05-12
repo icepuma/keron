@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: pattern binding `x` would shadow a parameter in this scope
+  --> 3:5
+  |
+3 |     x => x + 1,
+  |     ^^

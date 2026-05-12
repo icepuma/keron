@@ -89,7 +89,7 @@ mod tests {
     fn render_includes_message_and_line_marker_for_file_module() {
         let src = "val x = 1\nval y = 2\n";
         let bundle = bundle_with(
-            ModuleId::File("/tmp/foo.keron".into()),
+            ModuleId("/tmp/foo.keron".into()),
             src,
             vec![Diagnostic::new(14..15, "bad token")],
         );
@@ -104,7 +104,7 @@ mod tests {
     #[test]
     fn render_falls_back_for_module_without_source() {
         let bundle = bundle_with(
-            ModuleId::File("/synth.keron".into()),
+            ModuleId("/synth.keron".into()),
             "",
             vec![Diagnostic::new(0..0, "synthesized error")],
         );
@@ -116,7 +116,7 @@ mod tests {
     #[test]
     fn render_iterates_each_diagnostic() {
         let bundle = bundle_with(
-            ModuleId::File("/x.keron".into()),
+            ModuleId("/x.keron".into()),
             "val x = 1\n",
             vec![
                 Diagnostic::new(0..3, "first"),
@@ -133,7 +133,7 @@ mod tests {
     #[test]
     fn render_clamps_span_past_source_end() {
         let bundle = bundle_with(
-            ModuleId::File("/y.keron".into()),
+            ModuleId("/y.keron".into()),
             "val x = 1\n",
             vec![Diagnostic::new(999..1001, "out of range")],
         );

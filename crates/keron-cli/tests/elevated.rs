@@ -127,6 +127,7 @@ fn elevated_subset_runs_under_spy_and_chowns_back() {
     let output = Command::new(&keron)
         .args(["apply", "--execute"])
         .arg(&entry)
+        .env("KERON_ALLOW_TEST_OVERRIDES", "1")
         .env("KERON_TEST_ELEVATOR", &spy)
         .env("KERON_TEST_UNLOCK_DIR", &protected_dir)
         .env_remove("SUDO_UID")

@@ -1,0 +1,9 @@
+val t: Symlink = symlink(from = "x", to = "y")
+val s: Symlink = symlink(from = "a", to = "b")
+
+reconcile if true {
+  reconcile t
+  s
+} else {
+  s
+}

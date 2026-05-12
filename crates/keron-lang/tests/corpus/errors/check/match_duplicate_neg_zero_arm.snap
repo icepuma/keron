@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: unreachable `match` arm: duplicate literal pattern
+  --> 4:5
+  |
+4 |     -0.0 => 2,
+  |     ^^^^
