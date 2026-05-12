@@ -181,8 +181,12 @@ fn open_or_create_subdir(parent: &OwnedFd, name: &OsStr) -> io::Result<OwnedFd> 
         return mkdir_and_open(parent_fd, &cname);
     }
 
-    let mode = u32::from(statbuf.st_mode);
-    if mode & u32::from(libc::S_IFMT) == u32::from(libc::S_IFLNK) {
+    // `mode_t` is `u32` on Linux and `u16` on macOS; comparing
+    // `st_mode` against `S_IF*` masks in the native type works on
+    // both platforms without a `u32::from(...)` round-trip that
+    // would be a self-cast on Linux.
+    let mode = statbuf.st_mode;
+    if mode & libc::S_IFMT == libc::S_IFLNK {
         // Symlink: follow only if the link itself is root-owned.
         // macOS ships `/var -> /private/var`, `/tmp -> /private/tmp`,
         // `/etc -> /private/etc`; these are owned by uid 0 and a
@@ -234,7 +238,7 @@ fn open_or_create_subdir(parent: &OwnedFd, name: &OsStr) -> io::Result<OwnedFd> 
         #[allow(unsafe_code)]
         return Ok(unsafe { OwnedFd::from_raw_fd(fd) });
     }
-    if mode & u32::from(libc::S_IFMT) != u32::from(libc::S_IFDIR) {
+    if mode & libc::S_IFMT != libc::S_IFDIR {
         return Err(io::Error::other(format!(
             "elevated apply refuses: ancestor `{}` is neither a directory nor a symlink",
             name.to_string_lossy()
