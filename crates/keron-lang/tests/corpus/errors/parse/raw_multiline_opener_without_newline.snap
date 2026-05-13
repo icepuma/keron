@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: found '"' expected something else, '#', '(', '.', '*', '/', '+', '-', '=', '!', '<', '>', '"from"', '"struct"', '"type"', '"val"', '"fn"', '"reconcile"', '"if"', '"for"', or end of input
+  --> 1:12
+  |
+1 | val bad = r"""nope"""
+  |            ^

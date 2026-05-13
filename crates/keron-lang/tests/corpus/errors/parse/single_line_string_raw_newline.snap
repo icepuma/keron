@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: single-line string literal cannot contain a raw newline
+  --> 1:11
+  |
+1 | val bad = "hello
+  |           ^

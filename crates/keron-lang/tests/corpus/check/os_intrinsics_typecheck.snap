@@ -460,25 +460,27 @@ Program {
                 value: Spanned {
                     node: Interpolation(
                         [
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Var(
                                         "host",
                                     ),
                                     span: 999..1003,
                                 },
-                            ),
+                                indent: None,
+                            },
                             Text(
                                 "/",
                             ),
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Var(
                                         "arch",
                                     ),
                                     span: 1007..1011,
                                 },
-                            ),
+                                indent: None,
+                            },
                         ],
                     ),
                     span: 996..1013,

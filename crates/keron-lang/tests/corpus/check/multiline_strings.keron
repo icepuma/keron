@@ -1,0 +1,20 @@
+val cooked: String = """
+  [user]
+    email = me@example.com
+    name = Me
+  """
+
+val raw: String = r#"""
+  export PATH="${HOME}/bin:$PATH"
+  echo \n
+  """#
+
+val body: String = """
+  first
+  second
+  """
+
+val nested: String = """
+  block:
+    ${body}
+  """

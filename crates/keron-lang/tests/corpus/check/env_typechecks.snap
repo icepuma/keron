@@ -284,14 +284,15 @@ Program {
                                                     Text(
                                                         "editor=",
                                                     ),
-                                                    Expr(
-                                                        Spanned {
+                                                    Expr {
+                                                        expr: Spanned {
                                                             node: Var(
                                                                 "name",
                                                             ),
                                                             span: 848..852,
                                                         },
-                                                    ),
+                                                        indent: None,
+                                                    },
                                                 ],
                                             ),
                                             span: 838..854,

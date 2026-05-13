@@ -1,8 +1,8 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
 ---
-error: `reconcile` is a reserved keyword
-  --> 2:12
+error: found 'e' expected '#', or '"'
+  --> 2:13
   |
 2 | for x in { reconcile x }
-  |            ^
+  |             ^

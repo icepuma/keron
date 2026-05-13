@@ -13,8 +13,8 @@ Program {
                 value: Spanned {
                     node: Interpolation(
                         [
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Literal(
                                         Int(
                                             1,
@@ -22,12 +22,13 @@ Program {
                                     ),
                                     span: 11..12,
                                 },
-                            ),
+                                indent: None,
+                            },
                             Text(
                                 " + ",
                             ),
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Literal(
                                         Int(
                                             2,
@@ -35,12 +36,13 @@ Program {
                                     ),
                                     span: 18..19,
                                 },
-                            ),
+                                indent: None,
+                            },
                             Text(
                                 " = ",
                             ),
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Binary {
                                         op: Add,
                                         lhs: Spanned {
@@ -62,7 +64,8 @@ Program {
                                     },
                                     span: 25..30,
                                 },
-                            ),
+                                indent: None,
+                            },
                         ],
                     ),
                     span: 8..32,

@@ -24,7 +24,10 @@ use chumsky::prelude::*;
 
 use crate::ast::{Literal, Pattern, Spanned, StructPatternField};
 
-use super::util::{Extra, ident, pad, span_to_range, spanned};
+use super::{
+    string::plain_string,
+    util::{Extra, ident, pad, span_to_range, spanned},
+};
 
 pub(super) fn pattern<'src>() -> impl Parser<'src, &'src str, Spanned<Pattern>, Extra<'src>> + Clone
 {
@@ -80,24 +83,6 @@ fn number_literal<'src>() -> impl Parser<'src, &'src str, Literal, Extra<'src>> 
                     .map_err(|e| Rich::custom(span, e.to_string()))
             }
         })
-}
-
-/// Plain string literal — same as in `type_alias`, no interpolation.
-fn plain_string<'src>() -> impl Parser<'src, &'src str, String, Extra<'src>> + Clone {
-    let escape = just('\\').ignore_then(choice((
-        just('"').to('"'),
-        just('\\').to('\\'),
-        just('n').to('\n'),
-        just('r').to('\r'),
-        just('t').to('\t'),
-        just('$').to('$'),
-    )));
-    let bare_dollar = just('$').and_is(just("${").not()).to('$');
-    let normal = any().filter(|c: &char| *c != '"' && *c != '\\' && *c != '$');
-    let ch = choice((escape, bare_dollar, normal));
-    ch.repeated()
-        .collect::<String>()
-        .delimited_by(just('"'), just('"'))
 }
 
 /// `Capitalized { … }` is a struct pattern; a bare lowercase

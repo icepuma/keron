@@ -52,14 +52,15 @@ Program {
                                                     Text(
                                                         "~/dotfiles/",
                                                     ),
-                                                    Expr(
-                                                        Spanned {
+                                                    Expr {
+                                                        expr: Spanned {
                                                             node: Var(
                                                                 "name",
                                                             ),
                                                             span: 65..69,
                                                         },
-                                                    ),
+                                                        indent: None,
+                                                    },
                                                 ],
                                             ),
                                             span: 51..71,
@@ -79,14 +80,15 @@ Program {
                                                     Text(
                                                         "~/.",
                                                     ),
-                                                    Expr(
-                                                        Spanned {
+                                                    Expr {
+                                                        expr: Spanned {
                                                             node: Var(
                                                                 "name",
                                                             ),
                                                             span: 84..88,
                                                         },
-                                                    ),
+                                                        indent: None,
+                                                    },
                                                 ],
                                             ),
                                             span: 78..90,

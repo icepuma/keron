@@ -99,25 +99,27 @@ Program {
                                     Text(
                                         " v",
                                     ),
-                                    Expr(
-                                        Spanned {
+                                    Expr {
+                                        expr: Spanned {
                                             node: Var(
                                                 "major",
                                             ),
                                             span: 99..104,
                                         },
-                                    ),
+                                        indent: None,
+                                    },
                                     Text(
                                         ".",
                                     ),
-                                    Expr(
-                                        Spanned {
+                                    Expr {
+                                        expr: Spanned {
                                             node: Var(
                                                 "minor",
                                             ),
                                             span: 108..113,
                                         },
-                                    ),
+                                        indent: None,
+                                    },
                                 ],
                             ),
                             span: 94..115,

@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: multiline string content must use the closing delimiter indentation
+  --> 1:11
+  |
+1 | val bad = """
+  |           ^

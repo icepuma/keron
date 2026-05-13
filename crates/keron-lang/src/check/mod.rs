@@ -300,7 +300,7 @@ fn resolve_expr_types(
         }
         Expr::Interpolation(parts) => {
             for part in parts {
-                if let StringPart::Expr(expr) = part {
+                if let StringPart::Expr { expr, .. } = part {
                     resolve_expr_types(&mut expr.node, scope, diags);
                 }
             }
@@ -707,7 +707,7 @@ fn reject_reconcile_in_value_expr(expr: &Spanned<Expr>, diags: &mut Vec<Diagnost
         }
         Expr::Interpolation(parts) => {
             for part in parts {
-                if let StringPart::Expr(inner) = part {
+                if let StringPart::Expr { expr: inner, .. } = part {
                     reject_reconcile_in_value_expr(inner, diags);
                 }
             }
@@ -1173,7 +1173,7 @@ fn expr_type(e: &Spanned<Expr>, env: &Env, fns: &FnEnv) -> Result<Type, Diagnost
         }
         Expr::Interpolation(parts) => {
             for part in parts {
-                if let StringPart::Expr(inner) = part {
+                if let StringPart::Expr { expr: inner, .. } = part {
                     let ty = expr_type(inner, env, fns)?;
                     if matches!(ty, Type::Nullable(_)) {
                         return Err(Diagnostic::new(

@@ -50,14 +50,15 @@ Program {
                                                     Text(
                                                         "~/dotfiles/",
                                                     ),
-                                                    Expr(
-                                                        Spanned {
+                                                    Expr {
+                                                        expr: Spanned {
                                                             node: Var(
                                                                 "name",
                                                             ),
                                                             span: 127..131,
                                                         },
-                                                    ),
+                                                        indent: None,
+                                                    },
                                                 ],
                                             ),
                                             span: 113..133,
@@ -77,14 +78,15 @@ Program {
                                                     Text(
                                                         "~/.",
                                                     ),
-                                                    Expr(
-                                                        Spanned {
+                                                    Expr {
+                                                        expr: Spanned {
                                                             node: Var(
                                                                 "name",
                                                             ),
                                                             span: 146..150,
                                                         },
-                                                    ),
+                                                        indent: None,
+                                                    },
                                                 ],
                                             ),
                                             span: 140..152,
@@ -407,14 +409,15 @@ Program {
                                                 Text(
                                                     "seed-",
                                                 ),
-                                                Expr(
-                                                    Spanned {
+                                                Expr {
+                                                    expr: Spanned {
                                                         node: Var(
                                                             "s",
                                                         ),
                                                         span: 618..619,
                                                     },
-                                                ),
+                                                    indent: None,
+                                                },
                                             ],
                                         ),
                                         span: 610..621,

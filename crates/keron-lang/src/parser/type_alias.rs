@@ -15,7 +15,10 @@ use chumsky::prelude::*;
 
 use crate::ast::{Spanned, TypeAliasDecl};
 
-use super::util::{Extra, ident, pad, span_to_range, spanned};
+use super::{
+    string::plain_string,
+    util::{Extra, ident, pad, span_to_range, spanned},
+};
 
 pub(super) fn type_alias_decl<'src>()
 -> impl Parser<'src, &'src str, TypeAliasDecl, Extra<'src>> + Clone {
@@ -23,7 +26,7 @@ pub(super) fn type_alias_decl<'src>()
     let eq = just('=').padded_by(pad());
     let pipe = just('|').padded_by(pad());
 
-    let variants = spanned(plain_string_payload())
+    let variants = spanned(plain_string())
         .padded_by(pad())
         .separated_by(pipe)
         .at_least(1)
@@ -38,24 +41,4 @@ pub(super) fn type_alias_decl<'src>()
             variants,
             span: span_to_range(e.span()),
         })
-}
-
-/// Plain double-quoted string with the same escapes as the regular
-/// string literal, but no `${...}` interpolation. Variants must be
-/// compile-time constants.
-fn plain_string_payload<'src>() -> impl Parser<'src, &'src str, String, Extra<'src>> + Clone {
-    let escape = just('\\').ignore_then(choice((
-        just('"').to('"'),
-        just('\\').to('\\'),
-        just('n').to('\n'),
-        just('r').to('\r'),
-        just('t').to('\t'),
-        just('$').to('$'),
-    )));
-    let bare_dollar = just('$').and_is(just("${").not()).to('$');
-    let normal = any().filter(|c: &char| *c != '"' && *c != '\\' && *c != '$');
-    let ch = choice((escape, bare_dollar, normal));
-    ch.repeated()
-        .collect::<String>()
-        .delimited_by(just('"'), just('"'))
 }

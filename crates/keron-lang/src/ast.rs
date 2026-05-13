@@ -356,7 +356,10 @@ pub enum ForPattern {
 #[derive(Debug, Clone, PartialEq)]
 pub enum StringPart {
     Text(String),
-    Expr(Box<Spanned<Expr>>),
+    Expr {
+        expr: Box<Spanned<Expr>>,
+        indent: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

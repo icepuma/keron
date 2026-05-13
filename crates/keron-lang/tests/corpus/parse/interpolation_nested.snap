@@ -16,15 +16,15 @@ Program {
                             Text(
                                 "outer ",
                             ),
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Interpolation(
                                         [
                                             Text(
                                                 "inner ",
                                             ),
-                                            Expr(
-                                                Spanned {
+                                            Expr {
+                                                expr: Spanned {
                                                     node: Literal(
                                                         Int(
                                                             42,
@@ -32,12 +32,14 @@ Program {
                                                     ),
                                                     span: 26..28,
                                                 },
-                                            ),
+                                                indent: None,
+                                            },
                                         ],
                                     ),
                                     span: 17..30,
                                 },
-                            ),
+                                indent: None,
+                            },
                             Text(
                                 " done",
                             ),

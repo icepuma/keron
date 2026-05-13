@@ -1,8 +1,7 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
-error: found '>' expected something else, '#', '-', '"', '"true"', '"false"', '"null"', int, '[', '{', '"if"', '"for"', '"match"', identifier, or '('
+error: found '>' expected something else, '#', '-', 'r', '"', '"true"', '"false"', '"null"', int, '[', '{', '"if"', '"for"', '"match"', identifier, or '('
   --> 3:12
   |
 3 | val c = a -> b

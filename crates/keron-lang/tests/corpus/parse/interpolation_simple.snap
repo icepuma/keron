@@ -16,8 +16,8 @@ Program {
                             Text(
                                 "x = ",
                             ),
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Binary {
                                         op: Add,
                                         lhs: Spanned {
@@ -39,7 +39,8 @@ Program {
                                     },
                                     span: 15..20,
                                 },
-                            ),
+                                indent: None,
+                            },
                         ],
                     ),
                     span: 8..22,

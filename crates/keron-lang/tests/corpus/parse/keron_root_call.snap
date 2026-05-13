@@ -43,8 +43,8 @@ Program {
                 value: Spanned {
                     node: Interpolation(
                         [
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Call {
                                         callee: Spanned {
                                             node: "keron_root",
@@ -54,7 +54,8 @@ Program {
                                     },
                                     span: 56..68,
                                 },
-                            ),
+                                indent: None,
+                            },
                             Text(
                                 "/dotfiles",
                             ),

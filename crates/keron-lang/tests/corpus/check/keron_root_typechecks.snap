@@ -81,8 +81,8 @@ Program {
                             Text(
                                 "rooted at ",
                             ),
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Call {
                                         callee: Spanned {
                                             node: "keron_root",
@@ -92,7 +92,8 @@ Program {
                                     },
                                     span: 235..247,
                                 },
-                            ),
+                                indent: None,
+                            },
                         ],
                     ),
                     span: 222..249,
@@ -130,8 +131,8 @@ Program {
                         Spanned {
                             node: Interpolation(
                                 [
-                                    Expr(
-                                        Spanned {
+                                    Expr {
+                                        expr: Spanned {
                                             node: Call {
                                                 callee: Spanned {
                                                     node: "keron_root",
@@ -141,18 +142,20 @@ Program {
                                             },
                                             span: 324..336,
                                         },
-                                    ),
+                                        indent: None,
+                                    },
                                     Text(
                                         "/",
                                     ),
-                                    Expr(
-                                        Spanned {
+                                    Expr {
+                                        expr: Spanned {
                                             node: Var(
                                                 "rel",
                                             ),
                                             span: 340..343,
                                         },
-                                    ),
+                                        indent: None,
+                                    },
                                 ],
                             ),
                             span: 321..345,

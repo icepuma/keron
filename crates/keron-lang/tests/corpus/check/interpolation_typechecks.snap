@@ -21,8 +21,8 @@ Program {
                             Text(
                                 "n = ",
                             ),
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Binary {
                                         op: Add,
                                         lhs: Spanned {
@@ -44,7 +44,8 @@ Program {
                                     },
                                     span: 31..36,
                                 },
-                            ),
+                                indent: None,
+                            },
                         ],
                     ),
                     span: 24..38,
@@ -62,8 +63,8 @@ Program {
                 value: Spanned {
                     node: Interpolation(
                         [
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Literal(
                                         Boolean(
                                             true,
@@ -71,12 +72,13 @@ Program {
                                     ),
                                     span: 57..61,
                                 },
-                            ),
+                                indent: None,
+                            },
                             Text(
                                 " and ",
                             ),
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Binary {
                                         op: Mul,
                                         lhs: Spanned {
@@ -98,7 +100,8 @@ Program {
                                     },
                                     span: 69..76,
                                 },
-                            ),
+                                indent: None,
+                            },
                         ],
                     ),
                     span: 54..78,
@@ -116,15 +119,15 @@ Program {
                 value: Spanned {
                     node: Interpolation(
                         [
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Interpolation(
                                         [
                                             Text(
                                                 "nested ",
                                             ),
-                                            Expr(
-                                                Spanned {
+                                            Expr {
+                                                expr: Spanned {
                                                     node: Literal(
                                                         Int(
                                                             10,
@@ -132,12 +135,14 @@ Program {
                                                     ),
                                                     span: 104..106,
                                                 },
-                                            ),
+                                                indent: None,
+                                            },
                                         ],
                                     ),
                                     span: 94..108,
                                 },
-                            ),
+                                indent: None,
+                            },
                             Text(
                                 " done",
                             ),

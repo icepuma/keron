@@ -62,14 +62,15 @@ Program {
                                                     Text(
                                                         "~/state/",
                                                     ),
-                                                    Expr(
-                                                        Spanned {
+                                                    Expr {
+                                                        expr: Spanned {
                                                             node: Var(
                                                                 "key",
                                                             ),
                                                             span: 160..163,
                                                         },
-                                                    ),
+                                                        indent: None,
+                                                    },
                                                 ],
                                             ),
                                             span: 149..165,
@@ -115,14 +116,15 @@ Program {
                                                         value: Spanned {
                                                             node: Interpolation(
                                                                 [
-                                                                    Expr(
-                                                                        Spanned {
+                                                                    Expr {
+                                                                        expr: Spanned {
                                                                             node: Var(
                                                                                 "count",
                                                                             ),
                                                                             span: 207..212,
                                                                         },
-                                                                    ),
+                                                                        indent: None,
+                                                                    },
                                                                 ],
                                                             ),
                                                             span: 204..214,
@@ -386,14 +388,15 @@ Program {
                                                                         Text(
                                                                             "/tmp/",
                                                                         ),
-                                                                        Expr(
-                                                                            Spanned {
+                                                                        Expr {
+                                                                            expr: Spanned {
                                                                                 node: Var(
                                                                                     "code",
                                                                                 ),
                                                                                 span: 538..542,
                                                                             },
-                                                                        ),
+                                                                            indent: None,
+                                                                        },
                                                                     ],
                                                                 ),
                                                                 span: 530..544,
@@ -566,25 +569,27 @@ Program {
                                     value: Spanned {
                                         node: Interpolation(
                                             [
-                                                Expr(
-                                                    Spanned {
+                                                Expr {
+                                                    expr: Spanned {
                                                         node: Var(
                                                             "user",
                                                         ),
                                                         span: 796..800,
                                                     },
-                                                ),
+                                                    indent: None,
+                                                },
                                                 Text(
                                                     "=",
                                                 ),
-                                                Expr(
-                                                    Spanned {
+                                                Expr {
+                                                    expr: Spanned {
                                                         node: Var(
                                                             "enabled",
                                                         ),
                                                         span: 804..811,
                                                     },
-                                                ),
+                                                    indent: None,
+                                                },
                                             ],
                                         ),
                                         span: 793..813,
@@ -616,14 +621,15 @@ Program {
                                                                         Text(
                                                                             "/tmp/",
                                                                         ),
-                                                                        Expr(
-                                                                            Spanned {
+                                                                        Expr {
+                                                                            expr: Spanned {
                                                                                 node: Var(
                                                                                     "user",
                                                                                 ),
                                                                                 span: 850..854,
                                                                             },
-                                                                        ),
+                                                                            indent: None,
+                                                                        },
                                                                     ],
                                                                 ),
                                                                 span: 842..856,

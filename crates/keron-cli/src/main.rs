@@ -311,11 +311,94 @@ fn normalize_source(src: &str) -> String {
         return String::new();
     }
     let mut out = String::new();
+    let mut multiline = None;
     for line in src.lines() {
-        out.push_str(line.trim_end_matches([' ', '\t']));
+        if let Some(close) = multiline {
+            out.push_str(line);
+            if is_multiline_close(line, close) {
+                multiline = None;
+            }
+        } else {
+            let trimmed = line.trim_end_matches([' ', '\t']);
+            out.push_str(trimmed);
+            multiline = multiline_open(trimmed);
+        }
         out.push('\n');
     }
     out
+}
+
+#[derive(Clone, Copy)]
+enum MultilineClose {
+    Cooked,
+    Raw(usize),
+}
+
+fn multiline_open(line: &str) -> Option<MultilineClose> {
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for (i, c) in line.char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            match c {
+                '\\' => escaped = true,
+                '"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+
+        match c {
+            '#' => break,
+            '"' => {
+                if &line[i..] == "\"\"\"" {
+                    return Some(MultilineClose::Cooked);
+                }
+                in_string = true;
+            }
+            'r' => {
+                if let Some(hashes) = raw_multiline_open_at(line, i) {
+                    return Some(MultilineClose::Raw(hashes));
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn raw_multiline_open_at(line: &str, start: usize) -> Option<usize> {
+    let mut rest = line.get(start..)?.strip_prefix('r')?;
+    let mut hashes = 0usize;
+    while let Some(next) = rest.strip_prefix('#') {
+        hashes += 1;
+        rest = next;
+    }
+    let rest = rest.strip_prefix("\"\"\"")?;
+    if !rest.is_empty() {
+        return None;
+    }
+    Some(hashes)
+}
+
+fn is_multiline_close(line: &str, close: MultilineClose) -> bool {
+    let trimmed = line.trim_start_matches([' ', '\t']);
+    match close {
+        MultilineClose::Cooked => trimmed == "\"\"\"",
+        MultilineClose::Raw(hashes) => {
+            let Some(suffix) = trimmed.strip_prefix("\"\"\"") else {
+                return false;
+            };
+            if suffix.len() != hashes {
+                return false;
+            }
+            suffix.bytes().all(|b| b == b'#')
+        }
+    }
 }
 
 #[cfg(test)]
@@ -421,6 +504,59 @@ mod tests {
             "val x: Int = 1\n\n"
         );
         assert_eq!(normalize_source("val x: Int = 1"), "val x: Int = 1\n");
+    }
+
+    #[test]
+    fn normalize_source_preserves_multiline_string_trailing_whitespace() {
+        let src = "val x = \"\"\"\n  keep  \n  trim\n  \"\"\"\nval y = 1  ";
+        assert_eq!(
+            normalize_source(src),
+            "val x = \"\"\"\n  keep  \n  trim\n  \"\"\"\nval y = 1\n"
+        );
+    }
+
+    #[test]
+    fn normalize_source_preserves_raw_multiline_string_trailing_whitespace() {
+        let src = "val x = r#\"\"\"\n  keep  \n  \"\"\"#\nval y = 1  ";
+        assert_eq!(
+            normalize_source(src),
+            "val x = r#\"\"\"\n  keep  \n  \"\"\"#\nval y = 1\n"
+        );
+    }
+
+    #[test]
+    fn normalize_source_ignores_openers_in_comments_and_single_line_strings() {
+        assert_eq!(
+            normalize_source("# \"\"\"\nval y = 1  "),
+            "# \"\"\"\nval y = 1\n"
+        );
+        assert_eq!(
+            normalize_source("val s = \"\\\"\\\"\\\"\"  \nval y = 1  "),
+            "val s = \"\\\"\\\"\\\"\"\nval y = 1\n",
+        );
+    }
+
+    #[test]
+    fn normalize_source_requires_exact_raw_multiline_delimiters() {
+        assert_eq!(
+            normalize_source("val x = r#\"\"\" junk\nval y = 1  "),
+            "val x = r#\"\"\" junk\nval y = 1\n",
+        );
+
+        let src = "val x = r#\"\"\"\nkeep  \n\"\"\"##  \nstill  \n\"\"\"#\nval y = 1  ";
+        assert_eq!(
+            normalize_source(src),
+            "val x = r#\"\"\"\nkeep  \n\"\"\"##  \nstill  \n\"\"\"#\nval y = 1\n",
+        );
+    }
+
+    #[test]
+    fn multiline_open_skips_single_line_string_contents() {
+        assert!(multiline_open(r#"val s = "\"""""#).is_none());
+        assert!(matches!(
+            multiline_open(r#"val s = "done" """"#),
+            Some(MultilineClose::Cooked)
+        ));
     }
 
     #[test]

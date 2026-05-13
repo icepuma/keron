@@ -760,9 +760,9 @@ fn eval_interpolation(parts: &[StringPart], env: &Env<'_, '_>) -> Result<Value> 
     for part in parts {
         match part {
             StringPart::Text(s) => out.push_str(s),
-            StringPart::Expr(e) => {
-                let v = eval_expr(e, env)?;
-                sensitive |= stringify(&v, &mut out)?;
+            StringPart::Expr { expr, indent } => {
+                let v = eval_expr(expr, env)?;
+                sensitive |= stringify_with_indent(&v, indent.as_deref(), &mut out)?;
             }
         }
     }
@@ -770,6 +770,31 @@ fn eval_interpolation(parts: &[StringPart], env: &Env<'_, '_>) -> Result<Value> 
         text: out,
         sensitive,
     })
+}
+
+fn stringify_with_indent(v: &Value, indent: Option<&str>, out: &mut String) -> Result<bool> {
+    let mut text = String::new();
+    let sensitive = stringify(v, &mut text)?;
+    append_with_indent(out, &text, indent.unwrap_or(""));
+    Ok(sensitive)
+}
+
+fn append_with_indent(out: &mut String, text: &str, indent: &str) {
+    if !text.contains('\n') {
+        out.push_str(text);
+        return;
+    }
+    let mut lines = text.split('\n');
+    if let Some(first) = lines.next() {
+        out.push_str(first);
+    }
+    for line in lines {
+        out.push('\n');
+        if !indent.is_empty() && !line.is_empty() {
+            out.push_str(indent);
+        }
+        out.push_str(line);
+    }
 }
 
 fn stringify(v: &Value, out: &mut String) -> Result<bool> {
@@ -2415,6 +2440,67 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         assert_eq!(states.len(), 1);
         assert_eq!(first_file_path(&states), &PathBuf::from("/etc/passwd"));
         assert_eq!(first_file_content(&states), "alice:x:1000:/bin/zsh\n");
+    }
+
+    #[test]
+    fn multiline_string_flows_into_template_vars() {
+        let states = run(r#"val body = """
+  alpha
+    beta
+  """
+
+reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
+"#);
+        assert_eq!(first_file_content(&states), "alpha\n  beta");
+    }
+
+    #[test]
+    fn multiline_interpolation_indents_continuation_lines() {
+        let states = run(r#"val chunk = """
+  one
+  two
+  """
+
+val body = """
+  block:
+    ${chunk}
+  """
+
+reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
+"#);
+        assert_eq!(first_file_content(&states), "block:\n  one\n  two");
+    }
+
+    #[test]
+    fn multiline_interpolation_preserves_empty_continuation_lines() {
+        let states = run(concat!(
+            "val chunk = \"\"\"\n",
+            "  one\n",
+            "    \n",
+            "  two\n",
+            "  \"\"\"\n\n",
+            "val body = \"\"\"\n",
+            "  block:\n",
+            "    ${chunk}\n",
+            "  \"\"\"\n\n",
+            "reconcile template(path = \"/msg\", source = \"tmpl.tpl\", vars = {\"body\": body})\n",
+        ));
+        assert_eq!(first_file_content(&states), "block:\n  one\n\n  two");
+    }
+
+    #[test]
+    fn raw_multiline_string_keeps_shell_syntax_literal() {
+        let states = run(r##"val body = r#"""
+  export PATH="${HOME}/bin:$PATH"
+  line\n
+  """#
+
+reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
+"##);
+        assert_eq!(
+            first_file_content(&states),
+            "export PATH=\"${HOME}/bin:$PATH\"\nline\\n"
+        );
     }
 
     #[test]

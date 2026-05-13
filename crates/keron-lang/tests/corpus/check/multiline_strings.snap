@@ -1,0 +1,112 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "cooked",
+                    span: 4..10,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 12..18,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        String(
+                            "[user]\n  email = me@example.com\n  name = Me",
+                        ),
+                    ),
+                    span: 21..80,
+                },
+                span: 0..82,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "raw",
+                    span: 86..89,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 91..97,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        String(
+                            "export PATH=\"${HOME}/bin:$PATH\"\necho \\n",
+                        ),
+                    ),
+                    span: 100..156,
+                },
+                span: 82..158,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "body",
+                    span: 162..166,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 168..174,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        String(
+                            "first\nsecond",
+                        ),
+                    ),
+                    span: 177..203,
+                },
+                span: 158..205,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "nested",
+                    span: 209..215,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 217..223,
+                    },
+                ),
+                value: Spanned {
+                    node: Interpolation(
+                        [
+                            Text(
+                                "block:\n  ",
+                            ),
+                            Expr {
+                                expr: Spanned {
+                                    node: Var(
+                                        "body",
+                                    ),
+                                    span: 245..249,
+                                },
+                                indent: Some(
+                                    "  ",
+                                ),
+                            },
+                        ],
+                    ),
+                    span: 226..256,
+                },
+                span: 205..257,
+            },
+        ),
+    ],
+}

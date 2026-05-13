@@ -618,8 +618,8 @@ Program {
                             Text(
                                 "5 squared is ",
                             ),
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Binary {
                                         op: Mul,
                                         lhs: Spanned {
@@ -641,12 +641,13 @@ Program {
                                     },
                                     span: 969..974,
                                 },
-                            ),
+                                indent: None,
+                            },
                             Text(
                                 ", and 1 + 2 is ",
                             ),
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Binary {
                                         op: Add,
                                         lhs: Spanned {
@@ -668,7 +669,8 @@ Program {
                                     },
                                     span: 992..997,
                                 },
-                            ),
+                                indent: None,
+                            },
                         ],
                     ),
                     span: 953..999,
@@ -694,8 +696,8 @@ Program {
                             Text(
                                 "active = ",
                             ),
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Literal(
                                         Boolean(
                                             true,
@@ -703,7 +705,8 @@ Program {
                                     ),
                                     span: 1031..1035,
                                 },
-                            ),
+                                indent: None,
+                            },
                         ],
                     ),
                     span: 1019..1037,
@@ -726,15 +729,15 @@ Program {
                 value: Spanned {
                     node: Interpolation(
                         [
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Interpolation(
                                         [
                                             Text(
                                                 "inner ",
                                             ),
-                                            Expr(
-                                                Spanned {
+                                            Expr {
+                                                expr: Spanned {
                                                     node: Literal(
                                                         Int(
                                                             42,
@@ -742,12 +745,14 @@ Program {
                                                     ),
                                                     span: 1071..1073,
                                                 },
-                                            ),
+                                                indent: None,
+                                            },
                                         ],
                                     ),
                                     span: 1062..1075,
                                 },
-                            ),
+                                indent: None,
+                            },
                         ],
                     ),
                     span: 1059..1077,
@@ -1574,25 +1579,27 @@ Program {
                 value: Spanned {
                     node: Interpolation(
                         [
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Var(
                                         "version_major",
                                     ),
                                     span: 2190..2203,
                                 },
-                            ),
+                                indent: None,
+                            },
                             Text(
                                 ".",
                             ),
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Var(
                                         "version_minor",
                                     ),
                                     span: 2207..2220,
                                 },
-                            ),
+                                indent: None,
+                            },
                         ],
                     ),
                     span: 2187..2222,
@@ -1728,14 +1735,15 @@ Program {
                                     Text(
                                         " (build ",
                                     ),
-                                    Expr(
-                                        Spanned {
+                                    Expr {
+                                        expr: Spanned {
                                             node: Var(
                                                 "build_id",
                                             ),
                                             span: 2355..2363,
                                         },
-                                    ),
+                                        indent: None,
+                                    },
                                     Text(
                                         ")",
                                     ),
@@ -2792,14 +2800,15 @@ Program {
                                                     Text(
                                                         "~/dotfiles/",
                                                     ),
-                                                    Expr(
-                                                        Spanned {
+                                                    Expr {
+                                                        expr: Spanned {
                                                             node: Var(
                                                                 "name",
                                                             ),
                                                             span: 4082..4086,
                                                         },
-                                                    ),
+                                                        indent: None,
+                                                    },
                                                 ],
                                             ),
                                             span: 4068..4088,
@@ -2819,14 +2828,15 @@ Program {
                                                     Text(
                                                         "~/.",
                                                     ),
-                                                    Expr(
-                                                        Spanned {
+                                                    Expr {
+                                                        expr: Spanned {
                                                             node: Var(
                                                                 "name",
                                                             ),
                                                             span: 4101..4105,
                                                         },
-                                                    ),
+                                                        indent: None,
+                                                    },
                                                 ],
                                             ),
                                             span: 4095..4107,
@@ -4105,14 +4115,15 @@ Program {
                                                                         Text(
                                                                             "~/.priority/",
                                                                         ),
-                                                                        Expr(
-                                                                            Spanned {
+                                                                        Expr {
+                                                                            expr: Spanned {
                                                                                 node: Var(
                                                                                     "name",
                                                                                 ),
                                                                                 span: 6958..6962,
                                                                             },
-                                                                        ),
+                                                                            indent: None,
+                                                                        },
                                                                     ],
                                                                 ),
                                                                 span: 6943..6964,
@@ -4158,14 +4169,15 @@ Program {
                                                                             value: Spanned {
                                                                                 node: Interpolation(
                                                                                     [
-                                                                                        Expr(
-                                                                                            Spanned {
+                                                                                        Expr {
+                                                                                            expr: Spanned {
                                                                                                 node: Var(
                                                                                                     "priority",
                                                                                                 ),
                                                                                                 span: 7006..7014,
                                                                                             },
-                                                                                        ),
+                                                                                            indent: None,
+                                                                                        },
                                                                                     ],
                                                                                 ),
                                                                                 span: 7003..7016,
@@ -4814,14 +4826,15 @@ Program {
                                                                     Text(
                                                                         "~/.config/",
                                                                     ),
-                                                                    Expr(
-                                                                        Spanned {
+                                                                    Expr {
+                                                                        expr: Spanned {
                                                                             node: Var(
                                                                                 "name",
                                                                             ),
                                                                             span: 8927..8931,
                                                                         },
-                                                                    ),
+                                                                        indent: None,
+                                                                    },
                                                                 ],
                                                             ),
                                                             span: 8914..8933,
@@ -5439,8 +5452,8 @@ Program {
                 value: Spanned {
                     node: Interpolation(
                         [
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Field {
                                         receiver: Spanned {
                                             node: Var(
@@ -5455,12 +5468,13 @@ Program {
                                     },
                                     span: 10108..10124,
                                 },
-                            ),
+                                indent: None,
+                            },
                             Text(
                                 ":",
                             ),
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Field {
                                         receiver: Spanned {
                                             node: Var(
@@ -5475,7 +5489,8 @@ Program {
                                     },
                                     span: 10128..10144,
                                 },
-                            ),
+                                indent: None,
+                            },
                         ],
                     ),
                     span: 10105..10146,
@@ -5626,8 +5641,8 @@ Program {
                             Text(
                                 "https://",
                             ),
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Field {
                                         receiver: Spanned {
                                             node: Field {
@@ -5651,12 +5666,13 @@ Program {
                                     },
                                     span: 10352..10364,
                                 },
-                            ),
+                                indent: None,
+                            },
                             Text(
                                 ":",
                             ),
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Field {
                                         receiver: Spanned {
                                             node: Field {
@@ -5680,9 +5696,10 @@ Program {
                                     },
                                     span: 10368..10380,
                                 },
-                            ),
-                            Expr(
-                                Spanned {
+                                indent: None,
+                            },
+                            Expr {
+                                expr: Spanned {
                                     node: Field {
                                         receiver: Spanned {
                                             node: Var(
@@ -5697,7 +5714,8 @@ Program {
                                     },
                                     span: 10383..10390,
                                 },
-                            ),
+                                indent: None,
+                            },
                         ],
                     ),
                     span: 10341..10392,
@@ -6173,14 +6191,15 @@ Program {
                                                     Text(
                                                         "unknown: ",
                                                     ),
-                                                    Expr(
-                                                        Spanned {
+                                                    Expr {
+                                                        expr: Spanned {
                                                             node: Var(
                                                                 "other",
                                                             ),
                                                             span: 11762..11767,
                                                         },
-                                                    ),
+                                                        indent: None,
+                                                    },
                                                 ],
                                             ),
                                             span: 11750..11769,
@@ -6583,25 +6602,27 @@ Program {
                                                     Text(
                                                         "ssh-",
                                                     ),
-                                                    Expr(
-                                                        Spanned {
+                                                    Expr {
+                                                        expr: Spanned {
                                                             node: Var(
                                                                 "name",
                                                             ),
                                                             span: 12304..12308,
                                                         },
-                                                    ),
+                                                        indent: None,
+                                                    },
                                                     Text(
                                                         "-tls=",
                                                     ),
-                                                    Expr(
-                                                        Spanned {
+                                                    Expr {
+                                                        expr: Spanned {
                                                             node: Var(
                                                                 "tls",
                                                             ),
                                                             span: 12316..12319,
                                                         },
-                                                    ),
+                                                        indent: None,
+                                                    },
                                                 ],
                                             ),
                                             span: 12297..12321,
@@ -6647,36 +6668,39 @@ Program {
                                         body: Spanned {
                                             node: Interpolation(
                                                 [
-                                                    Expr(
-                                                        Spanned {
+                                                    Expr {
+                                                        expr: Spanned {
                                                             node: Var(
                                                                 "name",
                                                             ),
                                                             span: 12362..12366,
                                                         },
-                                                    ),
+                                                        indent: None,
+                                                    },
                                                     Text(
                                                         ":",
                                                     ),
-                                                    Expr(
-                                                        Spanned {
+                                                    Expr {
+                                                        expr: Spanned {
                                                             node: Var(
                                                                 "port",
                                                             ),
                                                             span: 12370..12374,
                                                         },
-                                                    ),
+                                                        indent: None,
+                                                    },
                                                     Text(
                                                         "/tls=",
                                                     ),
-                                                    Expr(
-                                                        Spanned {
+                                                    Expr {
+                                                        expr: Spanned {
                                                             node: Var(
                                                                 "tls",
                                                             ),
                                                             span: 12382..12385,
                                                         },
-                                                    ),
+                                                        indent: None,
+                                                    },
                                                 ],
                                             ),
                                             span: 12359..12387,
@@ -6799,8 +6823,8 @@ Program {
                             Text(
                                 "mode-",
                             ),
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Match {
                                         scrutinee: Spanned {
                                             node: Var(
@@ -6870,7 +6894,8 @@ Program {
                                     },
                                     span: 12670..12758,
                                 },
-                            ),
+                                indent: None,
+                            },
                         ],
                     ),
                     span: 12662..12760,
@@ -7367,25 +7392,27 @@ Program {
                 value: Spanned {
                     node: Interpolation(
                         [
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Var(
                                         "os_label",
                                     ),
                                     span: 13822..13830,
                                 },
-                            ),
+                                indent: None,
+                            },
                             Text(
                                 "/",
                             ),
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Var(
                                         "arch_label",
                                     ),
                                     span: 13834..13844,
                                 },
-                            ),
+                                indent: None,
+                            },
                         ],
                     ),
                     span: 13819..13846,
@@ -7667,8 +7694,8 @@ Program {
                             Text(
                                 "Authorization: Bearer ",
                             ),
-                            Expr(
-                                Spanned {
+                            Expr {
+                                expr: Spanned {
                                     node: Call {
                                         callee: Spanned {
                                             node: "unwrap_secret",
@@ -7689,7 +7716,8 @@ Program {
                                     },
                                     span: 14676..14703,
                                 },
-                            ),
+                                indent: None,
+                            },
                         ],
                     ),
                     span: 14651..14705,
@@ -8148,69 +8176,75 @@ Program {
                                                         value: Spanned {
                                                             node: Interpolation(
                                                                 [
-                                                                    Expr(
-                                                                        Spanned {
+                                                                    Expr {
+                                                                        expr: Spanned {
                                                                             node: Var(
                                                                                 "mode_marker",
                                                                             ),
                                                                             span: 15669..15680,
                                                                         },
-                                                                    ),
+                                                                        indent: None,
+                                                                    },
                                                                     Text(
                                                                         "\nrole=",
                                                                     ),
-                                                                    Expr(
-                                                                        Spanned {
+                                                                    Expr {
+                                                                        expr: Spanned {
                                                                             node: Var(
                                                                                 "origin_role",
                                                                             ),
                                                                             span: 15690..15701,
                                                                         },
-                                                                    ),
+                                                                        indent: None,
+                                                                    },
                                                                     Text(
                                                                         "\nlevel=",
                                                                     ),
-                                                                    Expr(
-                                                                        Spanned {
+                                                                    Expr {
+                                                                        expr: Spanned {
                                                                             node: Var(
                                                                                 "level_summary",
                                                                             ),
                                                                             span: 15712..15725,
                                                                         },
-                                                                    ),
+                                                                        indent: None,
+                                                                    },
                                                                     Text(
                                                                         "\nplatform=",
                                                                     ),
-                                                                    Expr(
-                                                                        Spanned {
+                                                                    Expr {
+                                                                        expr: Spanned {
                                                                             node: Var(
                                                                                 "platform",
                                                                             ),
                                                                             span: 15739..15747,
                                                                         },
-                                                                    ),
+                                                                        indent: None,
+                                                                    },
                                                                     Text(
                                                                         "\nhome=",
                                                                     ),
-                                                                    Expr(
-                                                                        Spanned {
+                                                                    Expr {
+                                                                        expr: Spanned {
                                                                             node: Var(
                                                                                 "keron_home",
                                                                             ),
                                                                             span: 15757..15767,
                                                                         },
-                                                                    ),
+                                                                        indent: None,
+                                                                    },
                                                                     Text(
                                                                         "\neditor=",
                                                                     ),
-                                                                    Expr(
-                                                                        Spanned {
+                                                                    Expr {
+                                                                        expr: Spanned {
                                                                             node: Var(
                                                                                 "editor",
                                                                             ),
                                                                             span: 15779..15785,
                                                                         },
-                                                                    ),
+                                                                        indent: None,
+                                                                    },
                                                                     Text(
                                                                         "\n",
                                                                     ),

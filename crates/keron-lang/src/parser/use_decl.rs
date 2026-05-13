@@ -17,7 +17,10 @@ use chumsky::prelude::*;
 
 use crate::ast::UseDecl;
 
-use super::util::{Extra, ident, pad, span_to_range, spanned};
+use super::{
+    string::plain_string,
+    util::{Extra, ident, pad, span_to_range, spanned},
+};
 
 pub(super) fn use_decl<'src>() -> impl Parser<'src, &'src str, UseDecl, Extra<'src>> + Clone {
     let kw_from = text::keyword("from").padded_by(pad());
@@ -39,30 +42,4 @@ pub(super) fn use_decl<'src>() -> impl Parser<'src, &'src str, UseDecl, Extra<'s
             names,
             span: span_to_range(e.span()),
         })
-}
-
-/// Plain double-quoted string: accepts the same escapes as the
-/// interpolating string parser but rejects `${`. Returns the unescaped
-/// payload.
-fn plain_string<'src>() -> impl Parser<'src, &'src str, String, Extra<'src>> + Clone {
-    let escape = just('\\').ignore_then(choice((
-        just('"').to('"'),
-        just('\\').to('\\'),
-        just('n').to('\n'),
-        just('r').to('\r'),
-        just('t').to('\t'),
-        just('$').to('$'),
-    )));
-
-    // Reject `${` — import paths cannot interpolate. Bare `$` (not
-    // followed by `{`) is allowed as a literal char so paths like
-    // `"./$tag.keron"` would still parse if anyone needed them.
-    let bare_dollar = just('$').and_is(just("${").not()).to('$');
-
-    let normal = any().filter(|c: &char| *c != '"' && *c != '\\' && *c != '$');
-    let ch = choice((escape, bare_dollar, normal));
-
-    ch.repeated()
-        .collect::<String>()
-        .delimited_by(just('"'), just('"'))
 }
