@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: type mismatch: expected `String`, found `Int`
+  --> 1:68
+  |
+1 | val refresh: Shell = shell(kind = "sh", name = "refresh", script = 1)
+  |                                                                    ^

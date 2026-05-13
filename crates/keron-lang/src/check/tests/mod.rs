@@ -12,6 +12,7 @@ mod packages;
 mod reconcile;
 mod resources;
 mod secrets;
+mod shell;
 mod strings;
 mod vars;
 
@@ -39,12 +40,15 @@ fn fs_imports() -> ImportedSymbols {
     seed_fs(&mut imp);
     seed_secrets(&mut imp);
     seed_packages(&mut imp);
+    seed_shell(&mut imp);
     for name in [
         "symlink",
         "template",
         "Symlink",
         "Template",
         "Resource",
+        "Shell",
+        "ShellKind",
         "secret",
         "unwrap_secret",
         "Secret",
@@ -52,6 +56,7 @@ fn fs_imports() -> ImportedSymbols {
         "cargo",
         "winget",
         "Package",
+        "shell",
     ] {
         imp.builtins.insert(name.into());
     }
@@ -124,4 +129,27 @@ fn seed_packages(imp: &mut ImportedSymbols) {
         );
     }
     imp.types.insert("Package".into(), Type::Package);
+}
+
+fn seed_shell(imp: &mut ImportedSymbols) {
+    let shell_kind = Type::StringUnion {
+        name: "ShellKind".into(),
+        variants: ["sh", "bash", "zsh", "pwsh", "powershell"]
+            .into_iter()
+            .map(String::from)
+            .collect(),
+    };
+    imp.fns.insert(
+        "shell".into(),
+        fn_sig(
+            vec![
+                param("kind", shell_kind.clone()),
+                param("name", Type::String),
+                param("script", Type::String),
+            ],
+            Type::Shell,
+        ),
+    );
+    imp.types.insert("Shell".into(), Type::Shell);
+    imp.types.insert("ShellKind".into(), shell_kind);
 }

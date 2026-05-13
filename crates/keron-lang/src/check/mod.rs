@@ -402,6 +402,7 @@ fn resolve_type_in_place(
         | Type::Double
         | Type::Symlink
         | Type::Template
+        | Type::Shell
         | Type::Resource
         | Type::Secret
         | Type::Package
@@ -1089,11 +1090,12 @@ fn switch_to_synth(
 
 /// Subtyping judgment used wherever a synthesised type meets an
 /// expected type. Reflexive on every kind. The only non-trivial rule
-/// is one-way: `Symlink|Template|Package <: Resource`. List subtyping
-/// is covariant in the element type so `List<Symlink> <: List<Resource>`.
-/// `Map` stays invariant — keys and values are matched exactly. There
-/// is **no auto-narrowing** — a `Resource`-typed value does not
-/// satisfy a `Symlink`/`Template`/`Package` slot. Going from `Resource`
+/// is one-way: `Symlink|Template|Package|Shell <: Resource`. List
+/// subtyping is covariant in the element type so `List<Symlink> <:
+/// List<Resource>`. `Map` stays invariant — keys and values are
+/// matched exactly. There is **no auto-narrowing** — a
+/// `Resource`-typed value does not satisfy a
+/// `Symlink`/`Template`/`Package`/`Shell` slot. Going from `Resource`
 /// back to a specific kind would require an explicit construct
 /// (pattern match or cast); none exists today, by design.
 // The recursive arms below have structurally identical bodies after
@@ -1115,7 +1117,7 @@ fn is_subtype(child: &Type, parent: &Type) -> bool {
         // string literal are admitted in `check_expr` only when the
         // literal is in the variant set. `Null` flows into any
         // nullable slot (`Null <: T?`), and reflexively into itself.
-        (Type::Symlink | Type::Template | Type::Package, Type::Resource)
+        (Type::Symlink | Type::Template | Type::Package | Type::Shell, Type::Resource)
         | (Type::StringUnion { .. }, Type::String)
         | (Type::Null, Type::Nullable(_)) => true,
         (Type::List(c), Type::List(p)) => is_subtype(c, p),
@@ -1141,7 +1143,7 @@ fn is_subtype(child: &Type, parent: &Type) -> bool {
 const fn is_resource_singleton(ty: &Type) -> bool {
     matches!(
         ty,
-        Type::Symlink | Type::Template | Type::Package | Type::Resource
+        Type::Symlink | Type::Template | Type::Package | Type::Shell | Type::Resource
     )
 }
 
@@ -1556,6 +1558,7 @@ fn walk_type(ty: &Type, span: &Span, diags: &mut Vec<Diagnostic>) {
         | Type::Double
         | Type::Symlink
         | Type::Template
+        | Type::Shell
         | Type::Resource
         | Type::Secret
         | Type::Package
@@ -1620,10 +1623,10 @@ fn check_reconcile_decl(r: &ReconcileDecl, env: &Env, fns: &FnEnv, diags: &mut V
 
 const fn is_reconcilable(ty: &Type) -> bool {
     match ty {
-        Type::Symlink | Type::Template | Type::Package | Type::Resource => true,
+        Type::Symlink | Type::Template | Type::Package | Type::Shell | Type::Resource => true,
         Type::List(inner) => matches!(
             **inner,
-            Type::Symlink | Type::Template | Type::Package | Type::Resource
+            Type::Symlink | Type::Template | Type::Package | Type::Shell | Type::Resource
         ),
         _ => false,
     }

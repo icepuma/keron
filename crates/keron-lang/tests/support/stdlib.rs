@@ -26,10 +26,13 @@ pub const RESERVED_OR_BUILTIN_NAMES: &[&str] = &[
     "Resource",
     "Secret",
     "Package",
+    "Shell",
+    "ShellKind",
     "OsType",
     "OsArch",
     "symlink",
     "template",
+    "shell",
     "keron_root",
     "env",
     "secret",
@@ -80,6 +83,17 @@ pub fn imports() -> ImportedSymbols {
     for name in ["brew", "cargo", "winget"] {
         insert_fn(&mut imp, name, &[("name", Type::String)], Type::Package);
     }
+    let shell_kind = string_union("ShellKind", &["sh", "bash", "zsh", "pwsh", "powershell"]);
+    insert_fn(
+        &mut imp,
+        "shell",
+        &[
+            ("kind", shell_kind.clone()),
+            ("name", Type::String),
+            ("script", Type::String),
+        ],
+        Type::Shell,
+    );
 
     let os_type = string_union("OsType", &["Linux", "Macos", "Windows", "Unknown"]);
     let os_arch = string_union("OsArch", &["x86_64", "aarch64", "arm", "x86", "Unknown"]);
@@ -92,6 +106,8 @@ pub fn imports() -> ImportedSymbols {
         ("Resource", Type::Resource),
         ("Secret", Type::Secret),
         ("Package", Type::Package),
+        ("Shell", Type::Shell),
+        ("ShellKind", shell_kind),
         ("OsType", os_type),
         ("OsArch", os_arch),
     ] {

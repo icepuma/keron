@@ -33,7 +33,7 @@ use keron_lang::{
 };
 use keron_modules::{ModuleGraph, ModuleId, stdlib};
 
-use crate::plan::{PackageManager, ResourceState};
+use crate::plan::{PackageManager, ResourceState, ShellKind};
 
 #[derive(Clone)]
 enum Value {
@@ -954,6 +954,7 @@ fn dispatch_intrinsic(id: IntrinsicId, args: &[CallArg], env: &Env<'_, '_>) -> R
                 to: target,
             }))
         }
+        IntrinsicId::Shell => dispatch_shell(args, env),
         IntrinsicId::Template => dispatch_template(args, env),
         IntrinsicId::KeronRoot => Ok(Value::plain_string(
             env.graph.keron_root.to_string_lossy().into_owned(),
@@ -994,6 +995,20 @@ fn dispatch_intrinsic(id: IntrinsicId, args: &[CallArg], env: &Env<'_, '_>) -> R
         IntrinsicId::Cargo => dispatch_package(args, env, PackageManager::Cargo),
         IntrinsicId::Winget => dispatch_package(args, env, PackageManager::Winget),
     }
+}
+
+fn dispatch_shell(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let kind = call_string(args, env, "kind", 0)?;
+    let name = call_string(args, env, "name", 1)?;
+    let script = call_string_value(args, env, "script", 2)?;
+    let kind = ShellKind::parse(&kind)?;
+    Ok(Value::Resource(ResourceState::Shell {
+        kind,
+        name,
+        cwd: env.graph.keron_root.clone(),
+        script: script.text,
+        sensitive: script.sensitive,
+    }))
 }
 
 /// Construct a `Package` resource. Each of the three package
@@ -1656,6 +1671,9 @@ mod tests {
                 panic!(
                     "first_file_path: expected filesystem resource, got Package({manager:?}, {name:?})"
                 )
+            }
+            ResourceState::Shell { name, .. } => {
+                panic!("first_file_path: expected filesystem resource, got Shell({name:?})")
             }
         }
     }
@@ -3509,6 +3527,66 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         };
         assert_eq!(*manager, PackageManager::Winget);
         assert_eq!(name, "Microsoft.PowerShell");
+    }
+
+    #[test]
+    fn shell_builds_a_shell_resource_with_root_cwd() {
+        let (states, root) = run_with_root(
+            "reconcile shell(kind = \"sh\", name = \"refresh-font-cache\", script = \"echo one\\necho two\\n\")\n",
+        );
+        assert_eq!(states.len(), 1);
+        let ResourceState::Shell {
+            kind,
+            name,
+            cwd,
+            script,
+            sensitive,
+        } = &states[0]
+        else {
+            panic!("expected Shell, got {:?}", states[0]);
+        };
+        assert_eq!(*kind, ShellKind::Sh);
+        assert_eq!(name, "refresh-font-cache");
+        assert_eq!(cwd, &root);
+        assert_eq!(script, "echo one\necho two\n");
+        assert!(!sensitive);
+    }
+
+    #[test]
+    fn shell_script_can_be_sensitive() {
+        let uri = "op://vault/shell/token";
+        let _g = secret_test::SecretOverride::ok(uri, "secret-token");
+        let states = run(&format!(
+            "val token = secret(\"{uri}\")\n\
+             reconcile shell(kind = \"sh\", name = \"with-secret\", script = \"TOKEN=${{unwrap_secret(token)}}\")\n",
+        ));
+        let ResourceState::Shell {
+            script, sensitive, ..
+        } = &states[0]
+        else {
+            panic!("expected Shell, got {:?}", states[0]);
+        };
+        assert_eq!(script, "TOKEN=secret-token");
+        assert!(*sensitive);
+    }
+
+    #[test]
+    fn shell_name_rejects_sensitive_string() {
+        let uri = "op://vault/shell/name";
+        let _g = secret_test::SecretOverride::ok(uri, "secret-name");
+        let err = run_result_with_templates(
+            &format!(
+                "val token = secret(\"{uri}\")\n\
+                 reconcile shell(kind = \"sh\", name = unwrap_secret(token), script = \"echo ok\")\n",
+            ),
+            &[],
+        )
+        .expect_err("sensitive name should fail");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("sensitive String cannot be used for `name`"),
+            "got: {msg}"
+        );
     }
 
     #[test]

@@ -163,7 +163,7 @@ fn leaf_path(change: &ResourceChange) -> Option<PathBuf> {
     match state {
         ResourceState::Symlink { from, .. } => Some(from.clone()),
         ResourceState::Template { path, .. } => Some(path.clone()),
-        ResourceState::Package { .. } => None,
+        ResourceState::Package { .. } | ResourceState::Shell { .. } => None,
     }
 }
 

@@ -1,0 +1,2 @@
+val refresh: Shell = shell(kind = "sh", name = "refresh", script = "echo ok")
+reconcile refresh

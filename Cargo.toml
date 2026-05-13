@@ -39,6 +39,7 @@ libc = "=0.2.186"
 # dotfile use case. The full bundle can be re-enabled later if a
 # manifest needs e.g. date formatting.
 tera = { version = "=1.20.1", default-features = false }
+which = "=8.0.2"
 # Pinned platform binding for the elevated-rights flow on Windows:
 # parent-side SID capture (`OpenProcessToken` + `GetTokenInformation` +
 # `ConvertSidToStringSidW`), child-side ownership transfer

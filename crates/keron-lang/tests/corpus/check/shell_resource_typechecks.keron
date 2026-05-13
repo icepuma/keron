@@ -1,0 +1,19 @@
+val default_kind: ShellKind = "sh"
+
+val refresh: Shell = shell(
+  kind = default_kind,
+  name = "refresh-font-cache",
+  script = "fc-cache -f \"$HOME/.local/share/fonts\"\n",
+)
+
+val any_shell: Resource = refresh
+
+val mixed: List<Resource> = [
+  refresh,
+  symlink(from = "~/dotfiles/zshrc", to = "~/.zshrc"),
+  template(path = "~/.config/example", source = "tmpl.tpl", vars = {"body": "ok"}),
+  brew("ripgrep"),
+]
+
+reconcile refresh -> any_shell
+reconcile mixed

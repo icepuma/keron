@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `"fish"` is not a variant of `ShellKind` (expected one of `"sh"`, `"bash"`, `"zsh"`, `"pwsh"`, `"powershell"`)
+  --> 1:35
+  |
+1 | val refresh: Shell = shell(kind = "fish", name = "refresh", script = "echo ok")
+  |                                   ^^^^^^

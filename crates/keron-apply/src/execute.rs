@@ -9,16 +9,18 @@
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
+use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
 
 use crate::packages;
-use crate::plan::{Action, Plan, ResourceChange, ResourceKind, ResourceState};
+use crate::plan::{Action, Plan, ResourceChange, ResourceKind, ResourceState, ShellKind};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ExecuteSummary {
     pub added: usize,
     pub changed: usize,
+    pub ran: usize,
 }
 
 pub fn execute(plan: &Plan) -> Result<ExecuteSummary> {
@@ -69,6 +71,7 @@ fn apply_change(change: &ResourceChange, summary: &mut ExecuteSummary) -> Result
     match change.action {
         Action::Create => summary.added += 1,
         Action::Update => summary.changed += 1,
+        Action::Run => summary.ran += 1,
         Action::NoOp => {}
     }
     Ok(())
@@ -133,6 +136,13 @@ pub fn apply_change_one_in(change: &ResourceChange, ctx: ApplyContext) -> Result
             // the elevated/child.rs ancestor pre-check.
             apply_update(before, after).with_context(|| format!("updating `{}`", change.address))
         }
+        Action::Run => {
+            let state = change
+                .after
+                .as_ref()
+                .with_context(|| format!("run `{}` has no desired state", change.address))?;
+            apply_run(state).with_context(|| format!("running `{}`", change.address))
+        }
     }
 }
 
@@ -145,7 +155,22 @@ fn apply_create(state: &ResourceState, ctx: ApplyContext) -> Result<()> {
             sensitive,
         } => create_template(path, content, *sensitive, ctx),
         ResourceState::Package { manager, name } => packages::install(*manager, name),
+        ResourceState::Shell { .. } => bail!(unsupported_kind(state)),
     }
+}
+
+fn apply_run(state: &ResourceState) -> Result<()> {
+    let ResourceState::Shell {
+        kind,
+        name,
+        cwd,
+        script,
+        ..
+    } = state
+    else {
+        bail!(unsupported_kind(state));
+    };
+    run_shell(*kind, name, cwd, script)
 }
 
 fn apply_update(before: &ResourceState, after: &ResourceState) -> Result<()> {
@@ -396,11 +421,49 @@ fn unsupported_kind(state: &ResourceState) -> String {
         ResourceState::Symlink { .. } => ResourceKind::Symlink,
         ResourceState::Template { .. } => ResourceKind::Template,
         ResourceState::Package { .. } => ResourceKind::Package,
+        ResourceState::Shell { .. } => ResourceKind::Shell,
     };
     format!(
         "executor not yet implemented for {} resources",
         kind.label()
     )
+}
+
+fn run_shell(kind: ShellKind, name: &str, cwd: &Path, script: &str) -> Result<()> {
+    let shell_path = which::which(kind.label())
+        .with_context(|| format!("shell `{}` is not available on PATH", kind.label()))?;
+    let mut command = Command::new(shell_path);
+    command.current_dir(cwd);
+    match kind {
+        ShellKind::Sh | ShellKind::Bash | ShellKind::Zsh => {
+            command.arg("-s");
+        }
+        ShellKind::Pwsh | ShellKind::Powershell => {
+            command.args(["-NoProfile", "-NonInteractive", "-Command", "-"]);
+        }
+    }
+    let mut child = command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .with_context(|| format!("spawning shell resource `{name}`"))?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .with_context(|| format!("opening stdin for shell resource `{name}`"))?;
+    stdin
+        .write_all(script.as_bytes())
+        .with_context(|| format!("writing script for shell resource `{name}`"))?;
+    drop(stdin);
+    let status = child
+        .wait()
+        .with_context(|| format!("waiting for shell resource `{name}`"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        bail!("shell resource `{name}` exited with {status}")
+    }
 }
 
 #[cfg(unix)]
@@ -423,7 +486,7 @@ fn symlink_impl(target: &Path, link: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plan::{PackageManager, ResourceKind};
+    use crate::plan::{PackageManager, ResourceKind, ShellKind};
     use std::env;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -490,11 +553,13 @@ mod tests {
                 ResourceState::Symlink { from, .. } => from.display().to_string(),
                 ResourceState::Template { path, .. } => path.display().to_string(),
                 ResourceState::Package { manager, name } => format!("{}:{}", manager.label(), name),
+                ResourceState::Shell { name, .. } => name.clone(),
             },
             kind: match probe {
                 ResourceState::Symlink { .. } => ResourceKind::Symlink,
                 ResourceState::Template { .. } => ResourceKind::Template,
                 ResourceState::Package { .. } => ResourceKind::Package,
+                ResourceState::Shell { .. } => ResourceKind::Shell,
             },
             action,
             before,
@@ -520,6 +585,95 @@ mod tests {
         let path = dir.join("noop.bat");
         fs::write(&path, "@echo off\r\nexit /b 0\r\n").unwrap();
         path
+    }
+
+    #[cfg(unix)]
+    fn write_fake_shell(dir: &std::path::Path) {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join("sh");
+        fs::write(
+            &path,
+            "#!/bin/sh\n\
+             printf '%s\\n' \"$@\" > \"$KERON_TEST_SHELL_ARGS\"\n\
+             pwd > \"$KERON_TEST_SHELL_CWD\"\n\
+             /bin/cat > \"$KERON_TEST_SHELL_STDIN\"\n\
+             echo shell-stdout\n\
+             echo shell-stderr >&2\n\
+             exit \"$KERON_TEST_SHELL_EXIT\"\n",
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&path, permissions).unwrap();
+    }
+
+    #[cfg(unix)]
+    struct ShellEnvGuard {
+        original_path: Option<std::ffi::OsString>,
+        original_args: Option<std::ffi::OsString>,
+        original_cwd: Option<std::ffi::OsString>,
+        original_stdin: Option<std::ffi::OsString>,
+        original_exit: Option<std::ffi::OsString>,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    #[cfg(unix)]
+    impl ShellEnvGuard {
+        fn set(
+            path: &std::path::Path,
+            args: &std::path::Path,
+            cwd: &std::path::Path,
+            stdin: &std::path::Path,
+            exit: Option<&str>,
+        ) -> Self {
+            static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+            let lock = LOCK
+                .get_or_init(|| std::sync::Mutex::new(()))
+                .lock()
+                .unwrap();
+            let guard = Self {
+                original_path: env::var_os("PATH"),
+                original_args: env::var_os("KERON_TEST_SHELL_ARGS"),
+                original_cwd: env::var_os("KERON_TEST_SHELL_CWD"),
+                original_stdin: env::var_os("KERON_TEST_SHELL_STDIN"),
+                original_exit: env::var_os("KERON_TEST_SHELL_EXIT"),
+                _lock: lock,
+            };
+            // SAFETY: this test guard serializes process-env mutation and restores on drop.
+            #[allow(unsafe_code)]
+            unsafe {
+                env::set_var("PATH", path);
+                env::set_var("KERON_TEST_SHELL_ARGS", args);
+                env::set_var("KERON_TEST_SHELL_CWD", cwd);
+                env::set_var("KERON_TEST_SHELL_STDIN", stdin);
+                env::set_var("KERON_TEST_SHELL_EXIT", exit.unwrap_or("0"));
+            }
+            guard
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for ShellEnvGuard {
+        fn drop(&mut self) {
+            restore_env("PATH", self.original_path.as_ref());
+            restore_env("KERON_TEST_SHELL_ARGS", self.original_args.as_ref());
+            restore_env("KERON_TEST_SHELL_CWD", self.original_cwd.as_ref());
+            restore_env("KERON_TEST_SHELL_STDIN", self.original_stdin.as_ref());
+            restore_env("KERON_TEST_SHELL_EXIT", self.original_exit.as_ref());
+        }
+    }
+
+    #[cfg(unix)]
+    fn restore_env(key: &str, value: Option<&std::ffi::OsString>) {
+        // SAFETY: this test guard serializes process-env mutation and restores on drop.
+        #[allow(unsafe_code)]
+        unsafe {
+            if let Some(value) = value {
+                env::set_var(key, value);
+            } else {
+                env::remove_var(key);
+            }
+        }
     }
 
     #[test]
@@ -823,6 +977,125 @@ mod tests {
         }
         let summary = result.expect("install spy should succeed");
         assert_eq!(summary.added, 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_shell_writes_script_to_stdin_and_uses_cwd() {
+        let d = TempDir::new("shell-run");
+        write_fake_shell(&d.path);
+        let args = d.path.join("args");
+        let cwd_file = d.path.join("cwd");
+        let stdin_file = d.path.join("stdin");
+        let _env = ShellEnvGuard::set(&d.path, &args, &cwd_file, &stdin_file, None);
+        let plan = Plan {
+            changes: vec![change(
+                Action::Run,
+                None,
+                Some(ResourceState::Shell {
+                    kind: ShellKind::Sh,
+                    name: "refresh".into(),
+                    cwd: d.path.clone(),
+                    script: "echo one\necho two\n".into(),
+                    sensitive: false,
+                }),
+            )],
+        };
+        let summary = execute(&plan).unwrap();
+        assert_eq!(summary.ran, 1);
+        assert_eq!(fs::read_to_string(args).unwrap(), "-s\n");
+        assert_eq!(
+            fs::read_to_string(cwd_file).unwrap().trim(),
+            fs::canonicalize(&d.path).unwrap().display().to_string()
+        );
+        assert_eq!(
+            fs::read_to_string(stdin_file).unwrap(),
+            "echo one\necho two\n"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_shell_nonzero_exit_fails_with_context() {
+        let d = TempDir::new("shell-nonzero");
+        write_fake_shell(&d.path);
+        let _env = ShellEnvGuard::set(
+            &d.path,
+            &d.path.join("args"),
+            &d.path.join("cwd"),
+            &d.path.join("stdin"),
+            Some("7"),
+        );
+        let plan = Plan {
+            changes: vec![change(
+                Action::Run,
+                None,
+                Some(ResourceState::Shell {
+                    kind: ShellKind::Sh,
+                    name: "fail".into(),
+                    cwd: d.path.clone(),
+                    script: "exit 7\n".into(),
+                    sensitive: false,
+                }),
+            )],
+        };
+        let err = execute(&plan).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("running `fail`"), "got: {msg}");
+        assert!(msg.contains("exited"), "got: {msg}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_shell_rechecks_missing_shell_before_spawn() {
+        let d = TempDir::new("shell-missing");
+        let _env = ShellEnvGuard::set(
+            &d.path,
+            &d.path.join("args"),
+            &d.path.join("cwd"),
+            &d.path.join("stdin"),
+            None,
+        );
+        let plan = Plan {
+            changes: vec![change(
+                Action::Run,
+                None,
+                Some(ResourceState::Shell {
+                    kind: ShellKind::Bash,
+                    name: "missing".into(),
+                    cwd: d.path.clone(),
+                    script: "echo ok\n".into(),
+                    sensitive: false,
+                }),
+            )],
+        };
+        let err = execute(&plan).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("shell `bash` is not available on PATH"));
+    }
+
+    #[test]
+    fn create_shell_action_reports_shell_executor_mismatch() {
+        let d = TempDir::new("shell-create-mismatch");
+        let plan = Plan {
+            changes: vec![change(
+                Action::Create,
+                None,
+                Some(ResourceState::Shell {
+                    kind: ShellKind::Sh,
+                    name: "refresh".into(),
+                    cwd: d.path.clone(),
+                    script: "echo ok\n".into(),
+                    sensitive: false,
+                }),
+            )],
+        };
+        let err = execute(&plan).expect_err("shell create action must be rejected");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("executor not yet implemented for shell resources"),
+            "got: {msg}"
+        );
     }
 
     #[test]

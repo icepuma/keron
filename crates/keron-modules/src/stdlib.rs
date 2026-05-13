@@ -55,6 +55,7 @@ fn build_registry() -> BTreeMap<&'static str, StdModule> {
     reg.insert("env", build_env());
     reg.insert("secrets", build_secrets());
     reg.insert("packages", build_packages());
+    reg.insert("shell", build_shell());
     reg
 }
 
@@ -69,6 +70,9 @@ pub const OS_TYPE_VARIANTS: &[&str] = &["Linux", "Macos", "Windows", "Unknown"];
 /// fallback rule as [`OS_TYPE_VARIANTS`]: anything not enumerated
 /// here collapses to `"Unknown"` when the intrinsic runs.
 pub const OS_ARCH_VARIANTS: &[&str] = &["x86_64", "aarch64", "arm", "x86", "Unknown"];
+
+/// Names of every variant of the `ShellKind` string-union type.
+pub const SHELL_KIND_VARIANTS: &[&str] = &["sh", "bash", "zsh", "pwsh", "powershell"];
 
 /// `std:fs` builtins — the resource constructors plus the
 /// `Resource`/`Symlink`/`Template` types they produce.
@@ -214,6 +218,32 @@ fn build_packages() -> StdModule {
     }
     let mut types = BTreeMap::new();
     types.insert("Package".into(), Type::Package);
+    StdModule { fns, types }
+}
+
+/// `std:shell` builtins — explicit, always-run shell resources.
+/// Construction is pure: the evaluator only records the script and
+/// root cwd; planning verifies the selected shell exists, and apply
+/// feeds the script over stdin.
+fn build_shell() -> StdModule {
+    let shell_kind = string_union("ShellKind", SHELL_KIND_VARIANTS);
+    let mut fns = BTreeMap::new();
+    fns.insert(
+        "shell".into(),
+        intrinsic_fn(
+            "shell",
+            &[
+                ("kind", shell_kind.clone()),
+                ("name", Type::String),
+                ("script", Type::String),
+            ],
+            Type::Shell,
+            IntrinsicId::Shell,
+        ),
+    );
+    let mut types = BTreeMap::new();
+    types.insert("Shell".into(), Type::Shell);
+    types.insert("ShellKind".into(), shell_kind);
     StdModule { fns, types }
 }
 
@@ -404,6 +434,33 @@ mod tests {
             assert_eq!(f.return_type.node, Type::Package);
         }
         assert_eq!(p.types.get("Package"), Some(&Type::Package));
+    }
+
+    #[test]
+    fn shell_module_registers_shell_resource() {
+        let reg = registry();
+        let sh = reg.get("shell").expect("shell module present");
+        let f = sh.fns.get("shell").expect("shell fn present");
+        assert_eq!(f.intrinsic, Some(IntrinsicId::Shell));
+        assert_eq!(f.params.len(), 3);
+        assert_eq!(f.params[0].name.node, "kind");
+        assert_eq!(f.params[1].name.node, "name");
+        assert_eq!(f.params[1].ty.node, Type::String);
+        assert_eq!(f.params[2].name.node, "script");
+        assert_eq!(f.params[2].ty.node, Type::String);
+        assert_eq!(f.return_type.node, Type::Shell);
+        assert_eq!(sh.types.get("Shell"), Some(&Type::Shell));
+        let Type::StringUnion { name, variants } = sh.types.get("ShellKind").unwrap() else {
+            panic!("expected ShellKind string union");
+        };
+        assert_eq!(name, "ShellKind");
+        assert_eq!(
+            variants,
+            &SHELL_KIND_VARIANTS
+                .iter()
+                .map(|variant| (*variant).to_string())
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]

@@ -1,0 +1,1 @@
+val refresh: Shell = shell(kind = "fish", name = "refresh", script = "echo ok")

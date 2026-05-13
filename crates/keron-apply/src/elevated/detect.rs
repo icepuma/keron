@@ -34,7 +34,7 @@ pub fn path_requires_elevation(state: &ResourceState, action: Action) -> bool {
         ResourceState::Template { path, .. } => path.parent().is_none_or(|p| !dir_is_writable(p)),
         // Packages defer to `PackageManager::requires_elevation`;
         // returning false here lets that policy stay authoritative.
-        ResourceState::Package { .. } => false,
+        ResourceState::Package { .. } | ResourceState::Shell { .. } => false,
     }
 }
 

@@ -25,6 +25,7 @@ use crate::platform::OsFamily;
 pub enum Action {
     Create,
     Update,
+    Run,
     NoOp,
 }
 
@@ -33,6 +34,7 @@ pub enum ResourceKind {
     Template,
     Symlink,
     Package,
+    Shell,
 }
 
 impl ResourceKind {
@@ -41,6 +43,42 @@ impl ResourceKind {
             Self::Template => "template",
             Self::Symlink => "symlink",
             Self::Package => "package",
+            Self::Shell => "shell",
+        }
+    }
+}
+
+/// Shell interpreter selected by the `shell(kind = ...)` constructor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ShellKind {
+    Sh,
+    Bash,
+    Zsh,
+    Pwsh,
+    Powershell,
+}
+
+impl ShellKind {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Sh => "sh",
+            Self::Bash => "bash",
+            Self::Zsh => "zsh",
+            Self::Pwsh => "pwsh",
+            Self::Powershell => "powershell",
+        }
+    }
+
+    pub fn parse(raw: &str) -> Result<Self> {
+        match raw {
+            "sh" => Ok(Self::Sh),
+            "bash" => Ok(Self::Bash),
+            "zsh" => Ok(Self::Zsh),
+            "pwsh" => Ok(Self::Pwsh),
+            "powershell" => Ok(Self::Powershell),
+            _ => bail!(
+                "`{raw}` is not a valid ShellKind; expected one of sh, bash, zsh, pwsh, powershell"
+            ),
         }
     }
 }
@@ -117,6 +155,14 @@ pub enum ResourceState {
         manager: PackageManager,
         name: String,
     },
+    Shell {
+        kind: ShellKind,
+        name: String,
+        cwd: PathBuf,
+        script: String,
+        #[serde(default)]
+        sensitive: bool,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -174,6 +220,7 @@ pub struct PrecheckedPlan {
 pub struct PlanSummary {
     pub add: usize,
     pub change: usize,
+    pub run: usize,
     /// How many of the above are flagged as requiring elevated rights.
     /// Sub-total of `add + change`, surfaced in the diff
     /// summary as `(N elevated)`.
@@ -188,6 +235,7 @@ impl Plan {
             match c.action {
                 Action::Create => s.add += 1,
                 Action::Update => s.change += 1,
+                Action::Run => s.run += 1,
                 Action::NoOp => continue,
             }
             if c.requires_elevation {
@@ -288,7 +336,9 @@ pub fn build_prechecked_plan(
 const fn include_in_plan(state: &ResourceState, os: OsFamily) -> bool {
     match state {
         ResourceState::Package { manager, .. } => manager.is_supported_on(os),
-        ResourceState::Symlink { .. } | ResourceState::Template { .. } => true,
+        ResourceState::Symlink { .. }
+        | ResourceState::Template { .. }
+        | ResourceState::Shell { .. } => true,
     }
 }
 
@@ -320,10 +370,25 @@ fn classify(state: &ResourceState, cache: &mut PackageCache) -> Result<ResourceC
         ResourceState::Symlink { from, to } => classify_symlink(from, to, state)?,
         ResourceState::Template { path, content, .. } => classify_template(path, content, state)?,
         ResourceState::Package { manager, name } => classify_package(*manager, name, state, cache)?,
+        ResourceState::Shell { kind, .. } => classify_shell(*kind, state)?,
     };
     change.requires_elevation = change.compute_requires_elevation();
     change.requires_force = change.compute_requires_force();
     Ok(change)
+}
+
+fn classify_shell(kind: ShellKind, state: &ResourceState) -> Result<ResourceChange> {
+    which::which(kind.label())
+        .with_context(|| format!("shell `{}` is not available on PATH", kind.label()))?;
+    Ok(ResourceChange {
+        address: address_for(state),
+        kind: ResourceKind::Shell,
+        action: Action::Run,
+        before: None,
+        after: Some(state.clone()),
+        requires_elevation: false,
+        requires_force: false,
+    })
 }
 
 /// Classify a package resource by checking the cache. The cache is
@@ -492,6 +557,7 @@ fn address_for(state: &ResourceState) -> String {
         ResourceState::Template { path, .. } => path.display().to_string(),
         ResourceState::Symlink { from, .. } => from.display().to_string(),
         ResourceState::Package { manager, name } => format!("{}:{}", manager.label(), name),
+        ResourceState::Shell { name, .. } => name.clone(),
     }
 }
 
@@ -539,10 +605,26 @@ mod tests {
 
     #[test]
     fn summary_counts_each_action() {
-        let plan = Plan::sample();
+        let mut plan = Plan::sample();
+        plan.changes.push(ResourceChange {
+            address: "refresh".into(),
+            kind: ResourceKind::Shell,
+            action: Action::Run,
+            before: None,
+            after: Some(ResourceState::Shell {
+                kind: ShellKind::Sh,
+                name: "refresh".into(),
+                cwd: PathBuf::from("/tmp"),
+                script: "echo ok".into(),
+                sensitive: false,
+            }),
+            requires_elevation: false,
+            requires_force: false,
+        });
         let s = plan.summary();
         assert_eq!(s.add, 1);
         assert_eq!(s.change, 1);
+        assert_eq!(s.run, 1);
     }
 
     #[test]
@@ -588,6 +670,30 @@ mod tests {
             to: PathBuf::from("/b"),
         };
         assert_eq!(address_for(&s), "/a");
+    }
+
+    #[test]
+    fn address_for_shell_uses_name() {
+        let s = ResourceState::Shell {
+            kind: ShellKind::Sh,
+            name: "refresh-font-cache".into(),
+            cwd: PathBuf::from("/tmp"),
+            script: "echo ok".into(),
+            sensitive: false,
+        };
+        assert_eq!(address_for(&s), "refresh-font-cache");
+    }
+
+    #[test]
+    fn shell_kind_parse_accepts_all_declared_variants() {
+        assert_eq!(ShellKind::parse("sh").unwrap(), ShellKind::Sh);
+        assert_eq!(ShellKind::parse("bash").unwrap(), ShellKind::Bash);
+        assert_eq!(ShellKind::parse("zsh").unwrap(), ShellKind::Zsh);
+        assert_eq!(ShellKind::parse("pwsh").unwrap(), ShellKind::Pwsh);
+        assert_eq!(
+            ShellKind::parse("powershell").unwrap(),
+            ShellKind::Powershell
+        );
     }
 
     #[test]
@@ -758,6 +864,97 @@ mod tests {
             from: from.to_path_buf(),
             to: to.to_path_buf(),
         }
+    }
+
+    #[cfg(unix)]
+    fn write_executable(dir: &Path, name: &str) {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join(name);
+        fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
+        let mut permissions = fs::metadata(&path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&path, permissions).unwrap();
+    }
+
+    #[cfg(unix)]
+    struct PathGuard {
+        original: Option<std::ffi::OsString>,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    #[cfg(unix)]
+    impl PathGuard {
+        fn set(path: &Path) -> Self {
+            static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+            let lock = LOCK
+                .get_or_init(|| std::sync::Mutex::new(()))
+                .lock()
+                .unwrap();
+            let original = env::var_os("PATH");
+            // SAFETY: this test guard serializes process-env mutation and restores on drop.
+            #[allow(unsafe_code)]
+            unsafe {
+                env::set_var("PATH", path);
+            }
+            Self {
+                original,
+                _lock: lock,
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for PathGuard {
+        fn drop(&mut self) {
+            // SAFETY: this test guard serializes process-env mutation and restores on drop.
+            #[allow(unsafe_code)]
+            unsafe {
+                if let Some(original) = &self.original {
+                    env::set_var("PATH", original);
+                } else {
+                    env::remove_var("PATH");
+                }
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn classify_shell_always_runs_when_shell_exists() {
+        let d = TempDir::new("shell-present");
+        write_executable(&d.path, "sh");
+        let _path = PathGuard::set(&d.path);
+        let state = ResourceState::Shell {
+            kind: ShellKind::Sh,
+            name: "refresh".into(),
+            cwd: d.path.clone(),
+            script: "echo ok".into(),
+            sensitive: false,
+        };
+        let change = classify(&state, &mut PackageCache::new()).unwrap();
+        assert_eq!(change.kind, ResourceKind::Shell);
+        assert_eq!(change.action, Action::Run);
+        assert!(!change.requires_elevation);
+        assert!(!change.requires_force);
+        assert!(change.before.is_none());
+        assert_eq!(change.after, Some(state));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn classify_shell_errors_when_shell_is_missing() {
+        let d = TempDir::new("shell-missing");
+        let _path = PathGuard::set(&d.path);
+        let state = ResourceState::Shell {
+            kind: ShellKind::Bash,
+            name: "refresh".into(),
+            cwd: d.path.clone(),
+            script: "echo ok".into(),
+            sensitive: false,
+        };
+        let err = classify(&state, &mut PackageCache::new()).expect_err("missing bash should fail");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("shell `bash` is not available on PATH"));
     }
 
     #[test]

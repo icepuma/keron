@@ -127,6 +127,10 @@ pub struct TypeAliasDecl {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntrinsicId {
     Symlink,
+    /// `shell(kind, name, script)` — declare an explicit shell script
+    /// resource. Planning verifies the named shell exists; execution
+    /// feeds `script` to that shell on stdin.
+    Shell,
     /// `template(path, source, vars)` — render a templated file. At
     /// apply time, `source` is read (resolved relative to the
     /// importing module's directory), `${name}` placeholders are
@@ -446,10 +450,14 @@ pub enum Type {
     /// resulting [`crate::IntrinsicId`]-tagged resource so the
     /// executor can pick the right CLI at apply time.
     Package,
-    /// Common supertype of [`Self::Symlink`], [`Self::Template`], and
-    /// [`Self::Package`]. There is no constructor — the type only
-    /// shows up via annotation (`val r: Resource = symlink(...)`),
-    /// list inference for mixed elements
+    /// Explicit shell execution resource. Constructed via
+    /// `shell(kind, name, script)`, stays pure during evaluation, and
+    /// runs only during `apply --execute`.
+    Shell,
+    /// Common supertype of [`Self::Symlink`], [`Self::Template`],
+    /// [`Self::Package`], and [`Self::Shell`]. There is no
+    /// constructor — the type only shows up via annotation (`val r:
+    /// Resource = symlink(...)`), list inference for mixed elements
     /// (`[symlink(...), template(...)]` has type `List<Resource>`),
     /// and `Resource`-typed fn signatures. Subtyping is one-way: a
     /// specific resource fits a `Resource` slot, but `Resource` does
@@ -515,6 +523,7 @@ impl fmt::Display for Type {
             Self::Resource => f.write_str("Resource"),
             Self::Secret => f.write_str("Secret"),
             Self::Package => f.write_str("Package"),
+            Self::Shell => f.write_str("Shell"),
             Self::Void => f.write_str("Void"),
             // Structs and string unions are nominal: print just the
             // declared name. The full field/variant list is only

@@ -76,6 +76,7 @@ fn literal_source_for(ty: &Type) -> BoxedStrategy<(String, Type)> {
         | Type::Resource
         | Type::Secret
         | Type::Package
+        | Type::Shell
         | Type::Void
         | Type::Struct { .. }
         | Type::StringUnion { .. }
@@ -121,6 +122,16 @@ fn eval_simple(e: &Expr) -> Literal {
         | Expr::Match { .. } => {
             panic!("eval_simple only supports literals and unary")
         }
+    }
+}
+
+fn resource_value(kind: u8, i: usize) -> String {
+    match kind {
+        0 => format!("symlink(from = \"a{i}\", to = \"b{i}\")"),
+        1 => format!(
+            "template(path = \"p{i}\", source = \"tmpl.tpl\", vars = {{\"body\": \"c{i}\"}})"
+        ),
+        _ => format!("shell(kind = \"sh\", name = \"run-{i}\", script = \"echo {i}\")"),
     }
 }
 
@@ -619,7 +630,7 @@ proptest! {
 
     #[test]
     fn arbitrary_mix_of_resource_kinds_in_chain_typechecks(
-        kinds in prop::collection::vec(0u8..2, 1..6),
+        kinds in prop::collection::vec(0u8..3, 1..6),
     ) {
         // Bind each step as a `Resource` val and chain them with `->`.
         // The chain checker walks each step against `is_reconcilable`,
@@ -628,10 +639,7 @@ proptest! {
         let mut names = Vec::new();
         for (i, k) in kinds.iter().enumerate() {
             let name = format!("r{i}");
-            let value = match k {
-                0 => format!("symlink(from = \"a{i}\", to = \"b{i}\")"),
-                _ => format!("template(path = \"p{i}\", source = \"tmpl.tpl\", vars = {{\"body\": \"c{i}\"}})"),
-            };
+            let value = resource_value(*k, i);
             writeln!(decls, "val {name}: Resource = {value}").expect("write to String");
             names.push(name);
         }
@@ -642,7 +650,7 @@ proptest! {
 
     #[test]
     fn arbitrary_mix_of_resource_kinds_infers_list_of_resource(
-        kinds in prop::collection::vec(0u8..2, 2..6),
+        kinds in prop::collection::vec(0u8..3, 2..6),
     ) {
         // Build a list literal with elements drawn from the two
         // resource kinds. As long as at least two kinds appear, the
@@ -655,10 +663,7 @@ proptest! {
         prop_assume!(distinct.len() >= 2);
         let mut entries = String::new();
         for (i, k) in kinds.iter().enumerate() {
-            let frag = match k {
-                0 => format!("symlink(from = \"a{i}\", to = \"b{i}\")"),
-                _ => format!("template(path = \"p{i}\", source = \"tmpl.tpl\", vars = {{\"body\": \"c{i}\"}})"),
-            };
+            let frag = resource_value(*k, i);
             entries.push_str(&frag);
             entries.push_str(", ");
         }

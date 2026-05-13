@@ -63,24 +63,18 @@ pub fn render_plan<W: Write>(out: &mut W, plan: &Plan, opts: RenderOptions) -> i
     }
 
     let s = plan.summary();
-    match (s.elevated, s.force) {
-        (0, 0) => writeln!(out, "Plan: {} to add, {} to change.", s.add, s.change)?,
-        (elevated, 0) => writeln!(
-            out,
-            "Plan: {} to add, {} to change ({} elevated).",
-            s.add, s.change, elevated,
-        )?,
-        (0, force) => writeln!(
-            out,
-            "Plan: {} to add, {} to change ({} force).",
-            s.add, s.change, force,
-        )?,
-        (elevated, force) => writeln!(
-            out,
-            "Plan: {} to add, {} to change ({} elevated) ({} force).",
-            s.add, s.change, elevated, force,
-        )?,
+    write!(
+        out,
+        "Plan: {} to add, {} to change, {} to run",
+        s.add, s.change, s.run
+    )?;
+    if s.elevated > 0 {
+        write!(out, " ({} elevated)", s.elevated)?;
     }
+    if s.force > 0 {
+        write!(out, " ({} force)", s.force)?;
+    }
+    writeln!(out, ".")?;
     Ok(())
 }
 
@@ -92,6 +86,7 @@ fn render_change<W: Write>(
     let verb = match change.action {
         Action::Create => "will be created",
         Action::Update => "will be updated in-place",
+        Action::Run => "will run",
         Action::NoOp => return Ok(()),
     };
     let symbol = action_symbol(change.action);
@@ -141,6 +136,11 @@ fn render_body<W: Write>(
                 render_diff_lines(out, before, after, opts)?;
             }
         }
+        Action::Run => {
+            if let Some(state) = &change.after {
+                render_state_lines(out, state, ">", YELLOW, opts)?;
+            }
+        }
         Action::NoOp => {}
     }
     Ok(())
@@ -175,6 +175,22 @@ fn render_state_lines<W: Write>(
             writeln!(out, "      {s} manager = \"{}\"", manager.label())?;
             writeln!(out, "      {s} name    = \"{}\"", escape_inline(name))?;
         }
+        ResourceState::Shell {
+            kind,
+            name,
+            cwd,
+            script,
+            sensitive,
+        } => {
+            writeln!(out, "      {s} kind   = \"{}\"", kind.label())?;
+            writeln!(out, "      {s} name   = \"{}\"", escape_inline(name))?;
+            writeln!(out, "      {s} cwd    = \"{}\"", show_path(cwd))?;
+            if *sensitive {
+                writeln!(out, "      {s} script = <sensitive>")?;
+            } else {
+                writeln!(out, "      {s} script = \"{}\"", escape_inline(script))?;
+            }
+        }
     }
     Ok(())
 }
@@ -189,89 +205,270 @@ fn render_diff_lines<W: Write>(
     match (before, after) {
         (
             ResourceState::Template {
-                path: bp,
-                content: bc,
-                sensitive: bs,
+                path: before_path,
+                content: before_content,
+                sensitive: before_sensitive,
             },
             ResourceState::Template {
-                path: ap,
-                content: ac,
-                sensitive: as_,
+                path: after_path,
+                content: after_content,
+                sensitive: after_sensitive,
             },
         ) => {
-            if bp != ap {
-                writeln!(
-                    out,
-                    "      {s} path    = \"{}\" -> \"{}\"",
-                    show_path(bp),
-                    show_path(ap)
-                )?;
-            }
-            if *bs || *as_ {
-                if bc != ac {
-                    writeln!(out, "      {s} content = <sensitive> -> <sensitive>")?;
-                }
-            } else if bc != ac {
-                writeln!(
-                    out,
-                    "      {s} content = \"{}\" -> \"{}\"",
-                    escape_inline(bc),
-                    escape_inline(ac)
-                )?;
-            }
+            let before = TemplateRenderState {
+                path: before_path,
+                content: before_content,
+                sensitive: *before_sensitive,
+            };
+            let after = TemplateRenderState {
+                path: after_path,
+                content: after_content,
+                sensitive: *after_sensitive,
+            };
+            render_template_diff(out, before, after, &s)?;
         }
         (
-            ResourceState::Symlink { from: bf, to: bt },
-            ResourceState::Symlink { from: af, to: at },
+            ResourceState::Symlink {
+                from: before_from,
+                to: before_to,
+            },
+            ResourceState::Symlink {
+                from: after_from,
+                to: after_to,
+            },
         ) => {
-            if bf != af {
-                writeln!(
-                    out,
-                    "      {s} from = \"{}\" -> \"{}\"",
-                    show_path(bf),
-                    show_path(af)
-                )?;
-            }
-            if bt != at {
-                writeln!(
-                    out,
-                    "      {s} to   = \"{}\" -> \"{}\"",
-                    show_path(bt),
-                    show_path(at)
-                )?;
-            }
+            let before = SymlinkRenderState {
+                from: before_from,
+                to: before_to,
+            };
+            let after = SymlinkRenderState {
+                from: after_from,
+                to: after_to,
+            };
+            render_symlink_diff(out, before, after, &s)?;
         }
         (
             ResourceState::Package {
-                manager: bm,
-                name: bn,
+                manager: before_manager,
+                name: before_name,
             },
             ResourceState::Package {
-                manager: am,
-                name: an,
+                manager: after_manager,
+                name: after_name,
             },
         ) => {
-            if bm != am {
-                writeln!(
-                    out,
-                    "      {s} manager = \"{}\" -> \"{}\"",
-                    bm.label(),
-                    am.label()
-                )?;
-            }
-            if bn != an {
-                writeln!(
-                    out,
-                    "      {s} name    = \"{}\" -> \"{}\"",
-                    escape_inline(bn),
-                    escape_inline(an)
-                )?;
-            }
+            let before = PackageRenderState {
+                manager: *before_manager,
+                name: before_name,
+            };
+            let after = PackageRenderState {
+                manager: *after_manager,
+                name: after_name,
+            };
+            render_package_diff(out, before, after, &s)?;
+        }
+        (ResourceState::Shell { .. }, ResourceState::Shell { .. }) => {
+            render_shell_resource_diff(out, before, after, &s)?;
         }
         _ => {
             render_state_lines(out, before, "-", RED, opts)?;
             render_state_lines(out, after, "+", GREEN, opts)?;
         }
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TemplateRenderState<'a> {
+    path: &'a std::path::Path,
+    content: &'a str,
+    sensitive: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SymlinkRenderState<'a> {
+    from: &'a std::path::Path,
+    to: &'a std::path::Path,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PackageRenderState<'a> {
+    manager: crate::plan::PackageManager,
+    name: &'a str,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ShellRenderState<'a> {
+    kind: crate::plan::ShellKind,
+    name: &'a str,
+    cwd: &'a std::path::Path,
+    script: &'a str,
+    sensitive: bool,
+}
+
+fn render_template_diff<W: Write>(
+    out: &mut W,
+    before: TemplateRenderState<'_>,
+    after: TemplateRenderState<'_>,
+    s: &str,
+) -> io::Result<()> {
+    if before.path != after.path {
+        writeln!(
+            out,
+            "      {s} path    = \"{}\" -> \"{}\"",
+            show_path(before.path),
+            show_path(after.path)
+        )?;
+    }
+    if before.sensitive || after.sensitive {
+        if before.content != after.content {
+            writeln!(out, "      {s} content = <sensitive> -> <sensitive>")?;
+        }
+    } else if before.content != after.content {
+        writeln!(
+            out,
+            "      {s} content = \"{}\" -> \"{}\"",
+            escape_inline(before.content),
+            escape_inline(after.content)
+        )?;
+    }
+    Ok(())
+}
+
+fn render_symlink_diff<W: Write>(
+    out: &mut W,
+    before: SymlinkRenderState<'_>,
+    after: SymlinkRenderState<'_>,
+    s: &str,
+) -> io::Result<()> {
+    if before.from != after.from {
+        writeln!(
+            out,
+            "      {s} from = \"{}\" -> \"{}\"",
+            show_path(before.from),
+            show_path(after.from)
+        )?;
+    }
+    if before.to != after.to {
+        writeln!(
+            out,
+            "      {s} to   = \"{}\" -> \"{}\"",
+            show_path(before.to),
+            show_path(after.to)
+        )?;
+    }
+    Ok(())
+}
+
+fn render_package_diff<W: Write>(
+    out: &mut W,
+    before: PackageRenderState<'_>,
+    after: PackageRenderState<'_>,
+    s: &str,
+) -> io::Result<()> {
+    if before.manager != after.manager {
+        writeln!(
+            out,
+            "      {s} manager = \"{}\" -> \"{}\"",
+            before.manager.label(),
+            after.manager.label()
+        )?;
+    }
+    if before.name != after.name {
+        writeln!(
+            out,
+            "      {s} name    = \"{}\" -> \"{}\"",
+            escape_inline(before.name),
+            escape_inline(after.name)
+        )?;
+    }
+    Ok(())
+}
+
+fn render_shell_resource_diff<W: Write>(
+    out: &mut W,
+    before: &ResourceState,
+    after: &ResourceState,
+    s: &str,
+) -> io::Result<()> {
+    let ResourceState::Shell {
+        kind: before_kind,
+        name: before_name,
+        cwd: before_cwd,
+        script: before_script,
+        sensitive: before_sensitive,
+    } = before
+    else {
+        unreachable!("caller already matched Shell before-state");
+    };
+    let ResourceState::Shell {
+        kind: after_kind,
+        name: after_name,
+        cwd: after_cwd,
+        script: after_script,
+        sensitive: after_sensitive,
+    } = after
+    else {
+        unreachable!("caller already matched Shell after-state");
+    };
+    let before = ShellRenderState {
+        kind: *before_kind,
+        name: before_name,
+        cwd: before_cwd,
+        script: before_script,
+        sensitive: *before_sensitive,
+    };
+    let after = ShellRenderState {
+        kind: *after_kind,
+        name: after_name,
+        cwd: after_cwd,
+        script: after_script,
+        sensitive: *after_sensitive,
+    };
+    render_shell_diff(out, before, after, s)
+}
+
+fn render_shell_diff<W: Write>(
+    out: &mut W,
+    before: ShellRenderState<'_>,
+    after: ShellRenderState<'_>,
+    s: &str,
+) -> io::Result<()> {
+    if before.kind != after.kind {
+        writeln!(
+            out,
+            "      {s} kind   = \"{}\" -> \"{}\"",
+            before.kind.label(),
+            after.kind.label()
+        )?;
+    }
+    if before.name != after.name {
+        writeln!(
+            out,
+            "      {s} name   = \"{}\" -> \"{}\"",
+            escape_inline(before.name),
+            escape_inline(after.name)
+        )?;
+    }
+    if before.cwd != after.cwd {
+        writeln!(
+            out,
+            "      {s} cwd    = \"{}\" -> \"{}\"",
+            show_path(before.cwd),
+            show_path(after.cwd)
+        )?;
+    }
+    if before.sensitive || after.sensitive {
+        if before.script != after.script {
+            writeln!(out, "      {s} script = <sensitive> -> <sensitive>")?;
+        }
+    } else if before.script != after.script {
+        writeln!(
+            out,
+            "      {s} script = \"{}\" -> \"{}\"",
+            escape_inline(before.script),
+            escape_inline(after.script)
+        )?;
     }
     Ok(())
 }
@@ -288,6 +485,7 @@ const fn action_symbol(action: Action) -> &'static str {
     match action {
         Action::Create => "+",
         Action::Update => "~",
+        Action::Run => ">",
         Action::NoOp => " ",
     }
 }
@@ -295,7 +493,7 @@ const fn action_symbol(action: Action) -> &'static str {
 const fn action_color(action: Action) -> &'static str {
     match action {
         Action::Create => GREEN,
-        Action::Update => YELLOW,
+        Action::Update | Action::Run => YELLOW,
         Action::NoOp => RESET,
     }
 }
@@ -303,7 +501,7 @@ const fn action_color(action: Action) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plan::{PackageManager, ResourceKind};
+    use crate::plan::{PackageManager, ResourceKind, ShellKind};
     use std::path::PathBuf;
 
     fn render(plan: &Plan) -> String {
@@ -323,10 +521,22 @@ mod tests {
         let out = render(&Plan::sample());
         assert!(out.contains("template.\"~/.zshrc\" will be created"));
         assert!(out.contains("symlink.\"~/.config/nvim\" will be updated in-place"));
-        assert!(out.contains("Plan: 1 to add, 1 to change."));
+        assert!(out.contains("Plan: 1 to add, 1 to change, 0 to run."));
         assert!(out.contains("+ resource \"template\""));
         assert!(out.contains("~ resource \"symlink\""));
         assert!(out.contains("~ to   = \"/old/target\" -> \"/new/target\""));
+    }
+
+    #[test]
+    fn summary_renders_positive_elevated_and_force_counts() {
+        let mut plan = Plan::sample();
+        plan.changes[0].requires_elevation = true;
+        plan.changes[1].requires_force = true;
+        let out = render(&plan);
+        assert!(
+            out.contains("Plan: 1 to add, 1 to change, 0 to run (1 elevated) (1 force)."),
+            "got: {out}"
+        );
     }
 
     #[test]
@@ -509,6 +719,7 @@ mod tests {
     fn action_color_uses_distinct_codes() {
         assert_eq!(action_color(Action::Create), GREEN);
         assert_eq!(action_color(Action::Update), YELLOW);
+        assert_eq!(action_color(Action::Run), YELLOW);
         assert_eq!(action_color(Action::NoOp), RESET);
     }
 
@@ -774,5 +985,151 @@ mod tests {
             "missing manager diff: {out}",
         );
         assert!(!out.contains("~ name"), "name unchanged: {out}");
+    }
+
+    #[test]
+    fn update_shell_renders_all_changed_fields() {
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "refresh".into(),
+                kind: ResourceKind::Shell,
+                action: Action::Update,
+                before: Some(ResourceState::Shell {
+                    kind: ShellKind::Sh,
+                    name: "refresh".into(),
+                    cwd: PathBuf::from("/repo"),
+                    script: "echo old\n".into(),
+                    sensitive: false,
+                }),
+                after: Some(ResourceState::Shell {
+                    kind: ShellKind::Bash,
+                    name: "reload".into(),
+                    cwd: PathBuf::from("/repo/subdir"),
+                    script: "echo new\n".into(),
+                    sensitive: false,
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        let out = render(&plan);
+        assert!(
+            out.contains("~ kind   = \"sh\" -> \"bash\""),
+            "missing kind diff: {out}"
+        );
+        assert!(
+            out.contains("~ name   = \"refresh\" -> \"reload\""),
+            "missing name diff: {out}"
+        );
+        assert!(
+            out.contains("~ cwd    = \"/repo\" -> \"/repo/subdir\""),
+            "missing cwd diff: {out}"
+        );
+        assert!(
+            out.contains("~ script = \"echo old\\n\" -> \"echo new\\n\""),
+            "missing script diff: {out}"
+        );
+    }
+
+    #[test]
+    fn update_shell_redacts_when_only_after_script_is_sensitive() {
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "refresh".into(),
+                kind: ResourceKind::Shell,
+                action: Action::Update,
+                before: Some(ResourceState::Shell {
+                    kind: ShellKind::Sh,
+                    name: "refresh".into(),
+                    cwd: PathBuf::from("/repo"),
+                    script: "echo public\n".into(),
+                    sensitive: false,
+                }),
+                after: Some(ResourceState::Shell {
+                    kind: ShellKind::Sh,
+                    name: "refresh".into(),
+                    cwd: PathBuf::from("/repo"),
+                    script: "TOKEN=secret\n".into(),
+                    sensitive: true,
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        let out = render(&plan);
+        assert!(
+            out.contains("~ script = <sensitive> -> <sensitive>"),
+            "got: {out}"
+        );
+        assert!(!out.contains("echo public"), "old script leaked: {out}");
+        assert!(!out.contains("TOKEN=secret"), "new script leaked: {out}");
+    }
+
+    #[test]
+    fn run_shell_renders_shell_fields() {
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "refresh".into(),
+                kind: ResourceKind::Shell,
+                action: Action::Run,
+                before: None,
+                after: Some(ResourceState::Shell {
+                    kind: ShellKind::Sh,
+                    name: "refresh".into(),
+                    cwd: PathBuf::from("/repo"),
+                    script: "echo ok\n".into(),
+                    sensitive: false,
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        let out = render(&plan);
+        assert!(
+            out.contains("shell.\"refresh\" will run"),
+            "missing header: {out}",
+        );
+        assert!(out.contains("> resource \"shell\""), "missing kind: {out}");
+        assert!(
+            out.contains("> kind   = \"sh\""),
+            "missing kind line: {out}"
+        );
+        assert!(
+            out.contains("> name   = \"refresh\""),
+            "missing name line: {out}"
+        );
+        assert!(
+            out.contains("> cwd    = \"/repo\""),
+            "missing cwd line: {out}"
+        );
+        assert!(
+            out.contains("> script = \"echo ok\\n\""),
+            "missing script: {out}"
+        );
+        assert!(out.contains("Plan: 0 to add, 0 to change, 1 to run."));
+    }
+
+    #[test]
+    fn sensitive_shell_script_is_redacted() {
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "refresh".into(),
+                kind: ResourceKind::Shell,
+                action: Action::Run,
+                before: None,
+                after: Some(ResourceState::Shell {
+                    kind: ShellKind::Sh,
+                    name: "refresh".into(),
+                    cwd: PathBuf::from("/repo"),
+                    script: "TOKEN=secret".into(),
+                    sensitive: true,
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        let out = render(&plan);
+        assert!(out.contains("> script = <sensitive>"), "got: {out}");
+        assert!(!out.contains("TOKEN=secret"), "secret leaked: {out}");
     }
 }

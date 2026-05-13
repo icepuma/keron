@@ -1,0 +1,101 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "refresh",
+                    span: 4..11,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Named(
+                            "Shell",
+                        ),
+                        span: 13..18,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "shell",
+                            span: 21..26,
+                        },
+                        args: [
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "kind",
+                                        span: 27..31,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "sh",
+                                        ),
+                                    ),
+                                    span: 34..38,
+                                },
+                                span: 27..38,
+                            },
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "name",
+                                        span: 40..44,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "refresh",
+                                        ),
+                                    ),
+                                    span: 47..56,
+                                },
+                                span: 40..56,
+                            },
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "script",
+                                        span: 58..64,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "echo ok",
+                                        ),
+                                    ),
+                                    span: 67..76,
+                                },
+                                span: 58..76,
+                            },
+                        ],
+                    },
+                    span: 21..78,
+                },
+                span: 0..78,
+            },
+        ),
+        Reconcile(
+            ReconcileDecl {
+                chains: [
+                    [
+                        Spanned {
+                            node: Var(
+                                "refresh",
+                            ),
+                            span: 88..95,
+                        },
+                    ],
+                ],
+                span: 78..96,
+            },
+        ),
+    ],
+}

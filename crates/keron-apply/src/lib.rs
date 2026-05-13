@@ -205,15 +205,15 @@ where
     if elevated_plan.changes.is_empty() {
         writeln!(
             stdout,
-            "Apply complete! Resources: {} added, {} changed.",
-            unpriv_summary.added, unpriv_summary.changed
+            "Apply complete! Resources: {} added, {} changed, {} ran.",
+            unpriv_summary.added, unpriv_summary.changed, unpriv_summary.ran
         )
         .map_err(RunError::Io)?;
     } else {
         writeln!(
             stdout,
-            "Unprivileged phase complete. Resources: {} added, {} changed.",
-            unpriv_summary.added, unpriv_summary.changed
+            "Unprivileged phase complete. Resources: {} added, {} changed, {} ran.",
+            unpriv_summary.added, unpriv_summary.changed, unpriv_summary.ran
         )
         .map_err(RunError::Io)?;
         writeln!(
@@ -226,9 +226,10 @@ where
             elevated::run_elevated(&elevated_plan).map_err(RunError::Elevation)?;
         writeln!(
             stdout,
-            "Apply complete! Resources: {} added, {} changed.",
+            "Apply complete! Resources: {} added, {} changed, {} ran.",
             unpriv_summary.added + elevated_summary.added,
-            unpriv_summary.changed + elevated_summary.changed
+            unpriv_summary.changed + elevated_summary.changed,
+            unpriv_summary.ran + elevated_summary.ran
         )
         .map_err(RunError::Io)?;
     }

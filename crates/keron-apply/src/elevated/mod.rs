@@ -69,6 +69,7 @@ pub fn run_elevated(plan: &Plan) -> Result<ExecuteSummary> {
     Ok(ExecuteSummary {
         added: summary.add,
         changed: summary.change,
+        ran: summary.run,
     })
 }
 
