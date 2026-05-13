@@ -504,6 +504,24 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
+    fn write_noop_binary(dir: &std::path::Path) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join("noop.sh");
+        fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
+        let mut permissions = fs::metadata(&path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&path, permissions).unwrap();
+        path
+    }
+
+    #[cfg(windows)]
+    fn write_noop_binary(dir: &std::path::Path) -> PathBuf {
+        let path = dir.join("noop.bat");
+        fs::write(&path, "@echo off\r\nexit /b 0\r\n").unwrap();
+        path
+    }
+
     #[test]
     fn create_symlink_writes_link_on_disk() {
         let d = TempDir::new("create");
@@ -776,15 +794,16 @@ mod tests {
 
     #[test]
     fn create_package_dispatches_to_packages_install() {
-        // Point the binary override at `/bin/true` so install
-        // "succeeds" without touching the real package manager.
+        let _os = crate::platform::OsOverride::set(crate::platform::OsFamily::Macos);
+        let d = TempDir::new("package-noop");
+        let noop = write_noop_binary(&d.path);
         // SAFETY: edition 2024 env mutation; test serialises via
         // SEQ-based temp dir naming and restores PATH-style env on
         // exit.
         #[allow(unsafe_code)]
         unsafe {
             std::env::set_var("KERON_ALLOW_TEST_OVERRIDES", "1");
-            std::env::set_var("KERON_TEST_PACKAGE_BIN_BREW", "/usr/bin/true");
+            std::env::set_var("KERON_TEST_PACKAGE_BIN_BREW", noop);
         }
         let plan = Plan {
             changes: vec![change(

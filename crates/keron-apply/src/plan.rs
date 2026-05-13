@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::elevated;
 use crate::eval;
 use crate::packages::PackageCache;
+use crate::platform::OsFamily;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Action {
@@ -82,6 +83,22 @@ impl PackageManager {
             Self::Brew | Self::Cargo | Self::Winget => false,
         }
     }
+
+    pub const fn is_supported_on(self, os: OsFamily) -> bool {
+        match self {
+            Self::Brew => matches!(os, OsFamily::Linux | OsFamily::Macos),
+            Self::Cargo => true,
+            Self::Winget => matches!(os, OsFamily::Windows),
+        }
+    }
+
+    pub const fn supported_os_label(self) -> &'static str {
+        match self {
+            Self::Brew => "Linux or Macos",
+            Self::Cargo => "any OS",
+            Self::Winget => "Windows",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -126,6 +143,31 @@ pub struct ResourceChange {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Plan {
     pub changes: Vec<ResourceChange>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnsupportedPackage {
+    pub address: String,
+    pub manager: PackageManager,
+    pub name: String,
+    pub os: OsFamily,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Precheck {
+    pub unsupported_packages: Vec<UnsupportedPackage>,
+}
+
+impl Precheck {
+    pub const fn is_empty(&self) -> bool {
+        self.unsupported_packages.is_empty()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PrecheckedPlan {
+    pub plan: Plan,
+    pub precheck: Precheck,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -221,13 +263,56 @@ impl ResourceChange {
 /// without persisted managed state, keron cannot prove that such paths
 /// are safe to remove.
 pub fn build_plan(graph: &keron_modules::ModuleGraph, keron_root: &Path) -> Result<Plan> {
+    Ok(build_prechecked_plan(graph, keron_root)?.plan)
+}
+
+pub fn build_prechecked_plan(
+    graph: &keron_modules::ModuleGraph,
+    keron_root: &Path,
+) -> Result<PrecheckedPlan> {
     let resources = eval::eval_graph(graph, keron_root)?;
+    let os = crate::platform::detect_os_family();
+    let precheck = precheck_resources(&resources, os);
     let mut cache = PackageCache::new();
     let changes = resources
         .iter()
+        .filter(|state| include_in_plan(state, os))
         .map(|state| classify(state, &mut cache))
         .collect::<Result<Vec<_>>>()?;
-    Ok(Plan { changes })
+    Ok(PrecheckedPlan {
+        plan: Plan { changes },
+        precheck,
+    })
+}
+
+const fn include_in_plan(state: &ResourceState, os: OsFamily) -> bool {
+    match state {
+        ResourceState::Package { manager, .. } => manager.is_supported_on(os),
+        ResourceState::Symlink { .. } | ResourceState::Template { .. } => true,
+    }
+}
+
+fn precheck_resources(resources: &[ResourceState], os: OsFamily) -> Precheck {
+    let unsupported_packages = resources
+        .iter()
+        .filter_map(|state| {
+            let ResourceState::Package { manager, name } = state else {
+                return None;
+            };
+            if manager.is_supported_on(os) {
+                return None;
+            }
+            Some(UnsupportedPackage {
+                address: address_for(state),
+                manager: *manager,
+                name: name.clone(),
+                os,
+            })
+        })
+        .collect();
+    Precheck {
+        unsupported_packages,
+    }
 }
 
 fn classify(state: &ResourceState, cache: &mut PackageCache) -> Result<ResourceChange> {
@@ -506,6 +591,53 @@ mod tests {
     }
 
     #[test]
+    fn package_manager_support_matrix_matches_host_os_policy() {
+        assert!(PackageManager::Brew.is_supported_on(OsFamily::Linux));
+        assert!(PackageManager::Brew.is_supported_on(OsFamily::Macos));
+        assert!(!PackageManager::Brew.is_supported_on(OsFamily::Windows));
+        assert!(!PackageManager::Brew.is_supported_on(OsFamily::Unknown));
+
+        assert!(PackageManager::Cargo.is_supported_on(OsFamily::Linux));
+        assert!(PackageManager::Cargo.is_supported_on(OsFamily::Macos));
+        assert!(PackageManager::Cargo.is_supported_on(OsFamily::Windows));
+        assert!(PackageManager::Cargo.is_supported_on(OsFamily::Unknown));
+
+        assert!(!PackageManager::Winget.is_supported_on(OsFamily::Linux));
+        assert!(!PackageManager::Winget.is_supported_on(OsFamily::Macos));
+        assert!(PackageManager::Winget.is_supported_on(OsFamily::Windows));
+        assert!(!PackageManager::Winget.is_supported_on(OsFamily::Unknown));
+    }
+
+    #[test]
+    fn precheck_reports_unsupported_packages_and_keeps_supported_resources() {
+        let resources = vec![
+            ResourceState::Package {
+                manager: PackageManager::Winget,
+                name: "Microsoft.PowerShell".into(),
+            },
+            ResourceState::Package {
+                manager: PackageManager::Brew,
+                name: "ripgrep".into(),
+            },
+            ResourceState::Template {
+                path: PathBuf::from("/tmp/out"),
+                content: "x".into(),
+                sensitive: false,
+            },
+        ];
+        let precheck = precheck_resources(&resources, OsFamily::Linux);
+        assert_eq!(precheck.unsupported_packages.len(), 1);
+        let unsupported = &precheck.unsupported_packages[0];
+        assert_eq!(unsupported.address, "winget:Microsoft.PowerShell");
+        assert_eq!(unsupported.manager, PackageManager::Winget);
+        assert_eq!(unsupported.name, "Microsoft.PowerShell");
+        assert_eq!(unsupported.os, OsFamily::Linux);
+        assert!(!include_in_plan(&resources[0], OsFamily::Linux));
+        assert!(include_in_plan(&resources[1], OsFamily::Linux));
+        assert!(include_in_plan(&resources[2], OsFamily::Linux));
+    }
+
+    #[test]
     fn build_plan_emits_one_change_per_resource() {
         use keron_modules::{EntrySource, ModuleId, resolve};
         use std::env;
@@ -537,6 +669,39 @@ mod tests {
         );
         let addrs: Vec<&str> = plan.changes.iter().map(|c| c.address.as_str()).collect();
         assert_eq!(addrs, vec!["/a", "/b"]);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn build_prechecked_plan_skips_unsupported_packages_before_classification() {
+        use keron_modules::{EntrySource, ModuleId, resolve};
+        use std::env;
+        use std::fs;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static SEQ: AtomicUsize = AtomicUsize::new(0);
+        let _os = crate::platform::OsOverride::set(OsFamily::Linux);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let dir = env::temp_dir().join(format!("keron-build-precheck-{}-{n}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let entry = dir.join("entry.keron");
+        fs::write(dir.join("tmpl.tpl"), "{{ body }}").unwrap();
+        let src = "reconcile {\n\
+                   winget(\"Microsoft.PowerShell\");\n\
+                   template(path = \"/a\", source = \"tmpl.tpl\", vars = {\"body\": \"\"});\n\
+                   }\n";
+        fs::write(&entry, src).unwrap();
+        let canonical = fs::canonicalize(&entry).unwrap();
+        let keron_root = canonical.parent().unwrap().to_path_buf();
+        let graph = resolve(vec![EntrySource {
+            text: src.into(),
+            base_dir: canonical.parent().unwrap().to_path_buf(),
+            id: ModuleId(canonical),
+        }])
+        .unwrap();
+        let prechecked = build_prechecked_plan(&graph, &keron_root).unwrap();
+        assert_eq!(prechecked.precheck.unsupported_packages.len(), 1);
+        assert_eq!(prechecked.plan.changes.len(), 1);
+        assert_eq!(prechecked.plan.changes[0].address, "/a");
         let _ = fs::remove_dir_all(&dir);
     }
 

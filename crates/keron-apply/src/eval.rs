@@ -1229,66 +1229,8 @@ mod secret_test {
     }
 }
 
-/// Map an `os_info::Type` onto our 4-variant `OsType` string-union.
-/// Anything not in {Linux, Macos, Windows} collapses to `"Unknown"` —
-/// the variant list lives in [`stdlib::OS_TYPE_VARIANTS`] so additions
-/// require touching both sides. Pure on its input so every arm is
-/// reachable from a unit test regardless of the host platform.
-const fn map_os_type(t: os_info::Type) -> &'static str {
-    use os_info::Type;
-    match t {
-        // Every Linux flavour os_info knows about — kept exhaustive
-        // (rather than `_ => "Linux"`) so a new os_info variant we
-        // haven't classified surfaces as "Unknown" until we triage it.
-        Type::Linux
-        | Type::Alpine
-        | Type::Amazon
-        | Type::Android
-        | Type::Arch
-        | Type::Artix
-        | Type::CachyOS
-        | Type::CentOS
-        | Type::Debian
-        | Type::EndeavourOS
-        | Type::Fedora
-        | Type::Garuda
-        | Type::Gentoo
-        | Type::Kali
-        | Type::Mabox
-        | Type::Manjaro
-        | Type::Mariner
-        | Type::Mint
-        | Type::NixOS
-        | Type::Nobara
-        | Type::OpenCloudOS
-        | Type::openEuler
-        | Type::openSUSE
-        | Type::OracleLinux
-        | Type::Pop
-        | Type::Raspbian
-        | Type::Redhat
-        | Type::RedHatEnterprise
-        | Type::RockyLinux
-        | Type::Solus
-        | Type::SUSE
-        | Type::Ubuntu
-        | Type::Ultramarine
-        | Type::Uos
-        | Type::Void => "Linux",
-        Type::Macos => "Macos",
-        Type::Windows => "Windows",
-        _ => "Unknown",
-    }
-}
-
-/// Host-OS detection. Thin wrapper around [`map_os_type`]: reads
-/// `os_info::get().os_type()` and feeds it through the pure mapping.
-/// `#[mutants::skip]` because the input is the runtime host and not
-/// reproducible from a test — `map_os_type` carries the mutation
-/// surface.
-#[cfg_attr(test, mutants::skip)]
 fn detect_os_type() -> String {
-    map_os_type(os_info::get().os_type()).to_string()
+    crate::platform::detect_os_family().label().to_string()
 }
 
 /// Map `os_info::Info::architecture()`'s `Option<&str>` onto our
@@ -2764,75 +2706,6 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
             "detect_os_arch produced `{got}`, not in {:?}",
             stdlib::OS_ARCH_VARIANTS,
         );
-    }
-
-    #[test]
-    fn map_os_type_categorizes_every_linux_flavour() {
-        // Drive every `os_info::Type` variant `map_os_type` classifies
-        // as Linux. If a variant is dropped from the or-pattern (a
-        // mutation cargo-mutants explicitly tries), at least one of
-        // these inputs maps to "Unknown" instead and surfaces the
-        // regression here.
-        use os_info::Type;
-        for t in [
-            Type::Linux,
-            Type::Alpine,
-            Type::Amazon,
-            Type::Android,
-            Type::Arch,
-            Type::Artix,
-            Type::CachyOS,
-            Type::CentOS,
-            Type::Debian,
-            Type::EndeavourOS,
-            Type::Fedora,
-            Type::Garuda,
-            Type::Gentoo,
-            Type::Kali,
-            Type::Mabox,
-            Type::Manjaro,
-            Type::Mariner,
-            Type::Mint,
-            Type::NixOS,
-            Type::Nobara,
-            Type::OpenCloudOS,
-            Type::openEuler,
-            Type::openSUSE,
-            Type::OracleLinux,
-            Type::Pop,
-            Type::Raspbian,
-            Type::Redhat,
-            Type::RedHatEnterprise,
-            Type::RockyLinux,
-            Type::Solus,
-            Type::SUSE,
-            Type::Ubuntu,
-            Type::Ultramarine,
-            Type::Uos,
-            Type::Void,
-        ] {
-            assert_eq!(map_os_type(t), "Linux", "expected `{t:?}` to map to Linux");
-        }
-    }
-
-    #[test]
-    fn map_os_type_categorizes_macos_and_windows() {
-        // Separate arms — each must produce its own variant. If
-        // either match arm is deleted, the corresponding case
-        // collapses to "Unknown" and the assertion catches it.
-        assert_eq!(map_os_type(os_info::Type::Macos), "Macos");
-        assert_eq!(map_os_type(os_info::Type::Windows), "Windows");
-    }
-
-    #[test]
-    fn map_os_type_falls_back_to_unknown_for_unmapped_variants() {
-        // `Unknown` is the catch-all. Use a couple of os_info
-        // variants that are deliberately *not* in the Linux/Macos/
-        // Windows arms (BSD family, etc.) so we exercise the
-        // `_ => "Unknown"` branch.
-        assert_eq!(map_os_type(os_info::Type::Unknown), "Unknown");
-        assert_eq!(map_os_type(os_info::Type::FreeBSD), "Unknown");
-        assert_eq!(map_os_type(os_info::Type::DragonFly), "Unknown");
     }
 
     #[test]

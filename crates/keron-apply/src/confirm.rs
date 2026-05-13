@@ -33,6 +33,20 @@ pub fn prompt_force<R: BufRead, W: Write>(
     Ok(line.trim() == "force")
 }
 
+pub fn prompt_precheck_continue<R: BufRead, W: Write>(
+    stdin: &mut R,
+    stdout: &mut W,
+) -> io::Result<bool> {
+    writeln!(stdout)?;
+    writeln!(stdout, "Do you still want to proceed?")?;
+    writeln!(stdout, "  Only 'yes' will be accepted to continue.")?;
+    writeln!(stdout)?;
+    write!(stdout, "  Enter a value: ")?;
+    stdout.flush()?;
+    let line = read_line_or_eof(stdin, "precheck prompt")?;
+    Ok(line.trim() == "yes")
+}
+
 /// Read a line from `stdin` or surface a clear EOF error.
 ///
 /// `BufRead::read_line` returns `Ok(0)` when the stream ends before
@@ -116,5 +130,16 @@ mod tests {
         let mut sin = io::Cursor::new(b"yes\n".to_vec());
         let mut sout = Vec::new();
         assert!(!prompt_force(&mut sin, &mut sout, 1).unwrap());
+    }
+
+    #[test]
+    fn precheck_continue_requires_literal_yes() {
+        let mut sin = io::Cursor::new(b"yes\n".to_vec());
+        let mut sout = Vec::new();
+        assert!(prompt_precheck_continue(&mut sin, &mut sout).unwrap());
+
+        let mut sin = io::Cursor::new(b"y\n".to_vec());
+        let mut sout = Vec::new();
+        assert!(!prompt_precheck_continue(&mut sin, &mut sout).unwrap());
     }
 }

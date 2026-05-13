@@ -19,6 +19,7 @@ mod execute;
 mod load;
 mod packages;
 mod plan;
+mod platform;
 mod report;
 mod terminal_safe;
 
@@ -159,11 +160,27 @@ where
         ))
     })?;
 
-    let plan = plan::build_plan(&graph, &keron_root).map_err(RunError::PreApply)?;
+    let prechecked =
+        plan::build_prechecked_plan(&graph, &keron_root).map_err(RunError::PreApply)?;
+    let plan = prechecked.plan;
+    let precheck = prechecked.precheck;
 
     diff::render_plan(stdout, &plan, RenderOptions { color }).map_err(RunError::Io)?;
+    render_precheck(stdout, &precheck).map_err(RunError::Io)?;
 
-    if !execute || plan.is_empty() {
+    if !execute {
+        return Ok(Outcome::Applied);
+    }
+
+    if !precheck.is_empty() {
+        let approved = confirm::prompt_precheck_continue(stdin, stdout).map_err(RunError::Io)?;
+        if !approved {
+            writeln!(stdout, "Apply cancelled.").map_err(RunError::Io)?;
+            return Ok(Outcome::Cancelled);
+        }
+    }
+
+    if plan.is_empty() {
         return Ok(Outcome::Applied);
     }
 
@@ -216,6 +233,29 @@ where
         .map_err(RunError::Io)?;
     }
     Ok(Outcome::Applied)
+}
+
+fn render_precheck<W: Write>(stdout: &mut W, precheck: &plan::Precheck) -> io::Result<()> {
+    if precheck.is_empty() {
+        return Ok(());
+    }
+    writeln!(stdout)?;
+    writeln!(
+        stdout,
+        "Precheck: some package resources are not supported on this OS and will be skipped."
+    )?;
+    for pkg in &precheck.unsupported_packages {
+        writeln!(
+            stdout,
+            "  - package.\"{}\" uses {} package `{}`, unsupported on {} (supported on: {})",
+            terminal_safe::show_str(&pkg.address),
+            pkg.manager.label(),
+            terminal_safe::show_str(&pkg.name),
+            pkg.os.label(),
+            pkg.manager.supported_os_label(),
+        )?;
+    }
+    Ok(())
 }
 
 /// Bail loudly when `keron apply` is run as root / Administrator
@@ -439,6 +479,80 @@ mod tests {
             !out.contains("Only 'yes' will be accepted"),
             "should not prompt: {out}",
         );
+    }
+
+    #[test]
+    fn run_plan_only_renders_unsupported_package_precheck_without_prompt() {
+        let _os = crate::platform::OsOverride::set(crate::platform::OsFamily::Linux);
+        let proj = TempProject::new("precheck-plan-only");
+        let entry = proj.write(
+            "entry.keron",
+            "reconcile winget(\"Microsoft.PowerShell\")\n",
+        );
+        let (res, out) = drive(&entry, false, "");
+        res.unwrap();
+        assert!(out.contains("Precheck"), "missing precheck: {out}");
+        assert!(
+            out.contains("winget:Microsoft.PowerShell"),
+            "missing skipped package: {out}",
+        );
+        assert!(
+            !out.contains("Do you still want to proceed"),
+            "plan-only run should not prompt: {out}",
+        );
+    }
+
+    #[test]
+    fn run_with_execute_cancels_when_unsupported_package_precheck_declined() {
+        let _os = crate::platform::OsOverride::set(crate::platform::OsFamily::Linux);
+        let proj = TempProject::new("precheck-no");
+        let dest = proj.root.join("out");
+        let src = format!(
+            "reconcile {{\n\
+             winget(\"Microsoft.PowerShell\");\n\
+             template(path = \"{}\", source = \"tmpl.tpl\", vars = {{\"body\": \"y\"}});\n\
+             }}\n",
+            dest.display(),
+        );
+        let entry = proj.write("entry.keron", &src);
+        let (res, out) = drive(&entry, true, "no\n");
+        let outcome = res.unwrap();
+        assert_eq!(outcome, Outcome::Cancelled);
+        assert!(
+            out.contains("Do you still want to proceed"),
+            "missing precheck prompt: {out}",
+        );
+        assert!(
+            !out.contains("Do you want to perform these actions"),
+            "normal apply prompt should not run after precheck decline: {out}",
+        );
+        assert!(!dest.exists(), "template should not be written");
+    }
+
+    #[test]
+    fn run_with_execute_skips_unsupported_packages_after_precheck_approval() {
+        let _os = crate::platform::OsOverride::set(crate::platform::OsFamily::Linux);
+        let proj = TempProject::new("precheck-yes");
+        let dest = proj.root.join("out");
+        let src = format!(
+            "reconcile {{\n\
+             winget(\"Microsoft.PowerShell\");\n\
+             template(path = \"{}\", source = \"tmpl.tpl\", vars = {{\"body\": \"y\"}});\n\
+             }}\n",
+            dest.display(),
+        );
+        let entry = proj.write("entry.keron", &src);
+        let (res, out) = drive(&entry, true, "yes\nyes\n");
+        res.expect("supported template should apply");
+        assert!(
+            out.contains("winget:Microsoft.PowerShell"),
+            "missing skipped package: {out}",
+        );
+        assert!(
+            out.contains("1 added"),
+            "summary should count template only: {out}"
+        );
+        assert_eq!(fs::read_to_string(dest).unwrap(), "y");
     }
 
     #[test]

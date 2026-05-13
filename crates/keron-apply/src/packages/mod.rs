@@ -98,6 +98,7 @@ fn fetch_installed(manager: PackageManager) -> Result<HashSet<String>> {
     if let Some(packages) = test_packages_override(manager) {
         return Ok(packages);
     }
+    validate_package_manager_supported(manager)?;
     match manager {
         PackageManager::Brew => brew::fetch(),
         PackageManager::Cargo => cargo::fetch(),
@@ -134,6 +135,7 @@ fn test_packages_override(manager: PackageManager) -> Option<HashSet<String>> {
 /// exits non-zero.
 pub fn install(manager: PackageManager, name: &str) -> Result<()> {
     validate_package_name(manager, name)?;
+    validate_package_manager_supported(manager)?;
     let (binary, args) = install_invocation(manager, name);
     let status = Command::new(&binary)
         .args(&args)
@@ -146,6 +148,19 @@ pub fn install(manager: PackageManager, name: &str) -> Result<()> {
         bail!("`{binary} {}` exited with status {status}", args.join(" "));
     }
     Ok(())
+}
+
+pub fn validate_package_manager_supported(manager: PackageManager) -> Result<()> {
+    let os = crate::platform::detect_os_family();
+    if manager.is_supported_on(os) {
+        return Ok(());
+    }
+    bail!(
+        "{} package resources are not supported on {}; supported on: {}",
+        manager.label(),
+        os.label(),
+        manager.supported_os_label(),
+    );
 }
 
 /// Reject package names that would be parsed as CLI flags or
@@ -381,6 +396,23 @@ mod tests {
     fn validate_package_name_accepts_dash_in_interior() {
         validate_package_name(PackageManager::Brew, "git-lfs").unwrap();
         validate_package_name(PackageManager::Cargo, "cargo-edit").unwrap();
+    }
+
+    #[test]
+    fn validate_package_manager_supported_rejects_wrong_os_manager() {
+        let _os = crate::platform::OsOverride::set(crate::platform::OsFamily::Windows);
+        let err = validate_package_manager_supported(PackageManager::Brew).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("brew"), "got: {msg}");
+        assert!(msg.contains("Windows"), "got: {msg}");
+        assert!(msg.contains("Linux or Macos"), "got: {msg}");
+    }
+
+    #[test]
+    fn validate_package_manager_supported_accepts_matching_manager() {
+        let _os = crate::platform::OsOverride::set(crate::platform::OsFamily::Windows);
+        validate_package_manager_supported(PackageManager::Winget).unwrap();
+        validate_package_manager_supported(PackageManager::Cargo).unwrap();
     }
 
     #[test]
