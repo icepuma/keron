@@ -77,11 +77,11 @@ pub const SHELL_KIND_VARIANTS: &[&str] = &["sh", "bash", "zsh", "pwsh", "powersh
 /// `std:fs` builtins — the resource constructors plus the
 /// `Resource`/`Symlink`/`Template` types they produce.
 ///
-/// `template(path, source, vars)` is the only file-producing form:
+/// `template(source, target, vars)` is the only file-producing form:
 /// `source` is a path to an external template file (resolved
 /// relative to the importing module's directory at apply time);
 /// `${name}` placeholders are substituted from `vars`, and the
-/// rendered text is written to `path`. A "plain" file with no
+/// rendered text is written to `target`. A "plain" file with no
 /// substitutions is just a `template` whose `vars` map is empty.
 fn build_fs() -> StdModule {
     let mut fns = BTreeMap::new();
@@ -89,7 +89,7 @@ fn build_fs() -> StdModule {
         "symlink".into(),
         intrinsic_fn(
             "symlink",
-            &[("from", Type::String), ("to", Type::String)],
+            &[("source", Type::String), ("target", Type::String)],
             Type::Symlink,
             IntrinsicId::Symlink,
         ),
@@ -99,8 +99,8 @@ fn build_fs() -> StdModule {
         intrinsic_fn(
             "template",
             &[
-                ("path", Type::String),
                 ("source", Type::String),
+                ("target", Type::String),
                 (
                     "vars",
                     Type::Map(Box::new(Type::String), Box::new(Type::String)),

@@ -423,16 +423,16 @@ fn classify_package(
 /// Diff a desired symlink against the live filesystem.
 ///
 /// - missing path → `Create`
-/// - symlink already pointing at `to` → `NoOp`
+/// - symlink already pointing at `source` → `NoOp`
 /// - symlink pointing elsewhere → `Update` (the existing target is the
 ///   `before` state)
 /// - non-symlink occupant → hard error: the apply pipeline refuses to
 ///   overwrite real files, mirroring how `stow` and friends bail rather
 ///   than clobber user data
-fn classify_symlink(from: &Path, to: &Path, after: &ResourceState) -> Result<ResourceChange> {
-    let address = from.display().to_string();
+fn classify_symlink(target: &Path, source: &Path, after: &ResourceState) -> Result<ResourceChange> {
+    let address = target.display().to_string();
     let kind = ResourceKind::Symlink;
-    match fs::symlink_metadata(from) {
+    match fs::symlink_metadata(target) {
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(ResourceChange {
             address,
             kind,
@@ -442,16 +442,16 @@ fn classify_symlink(from: &Path, to: &Path, after: &ResourceState) -> Result<Res
             requires_elevation: false,
             requires_force: false,
         }),
-        Err(e) => Err(anyhow!("reading existing path `{}`: {e}", from.display())),
+        Err(e) => Err(anyhow!("reading existing path `{}`: {e}", target.display())),
         Ok(meta) if meta.file_type().is_symlink() => {
             // `read_link` returns the literal target for diff display;
             // `canonicalize` follows the link so NoOp/Update compares
-            // apples to apples against `to` (already canonicalized by
+            // apples to apples against `source` (already canonicalized by
             // the evaluator). A broken link is always Update.
-            let current_literal = fs::read_link(from)
-                .with_context(|| format!("reading existing symlink `{}`", from.display()))?;
-            let resolves_to_same = match fs::canonicalize(from) {
-                Ok(resolved) => resolved == to,
+            let current_literal = fs::read_link(target)
+                .with_context(|| format!("reading existing symlink `{}`", target.display()))?;
+            let resolves_to_same = match fs::canonicalize(target) {
+                Ok(resolved) => resolved == source,
                 // A dangling symlink (target missing) legitimately
                 // canonicalizes-to-error; classify as Update. Any
                 // other error (EACCES on an intermediate dir, EIO,
@@ -462,12 +462,12 @@ fn classify_symlink(from: &Path, to: &Path, after: &ResourceState) -> Result<Res
                 Err(e) => {
                     return Err(anyhow!(
                         "canonicalizing existing symlink `{}`: {e}",
-                        from.display()
+                        target.display()
                     ));
                 }
             };
             let before = ResourceState::Symlink {
-                from: from.to_path_buf(),
+                from: target.to_path_buf(),
                 to: current_literal,
             };
             let action = if resolves_to_same {
@@ -487,7 +487,7 @@ fn classify_symlink(from: &Path, to: &Path, after: &ResourceState) -> Result<Res
         }
         Ok(_) => bail!(
             "`{}` exists and is not a symlink; refusing to overwrite",
-            from.display()
+            target.display()
         ),
     }
 }
@@ -654,7 +654,7 @@ mod tests {
     }
 
     #[test]
-    fn address_for_file_uses_path() {
+    fn address_for_template_uses_target() {
         let s = ResourceState::Template {
             path: PathBuf::from("/etc/x"),
             content: "y".into(),
@@ -664,7 +664,7 @@ mod tests {
     }
 
     #[test]
-    fn address_for_symlink_uses_from() {
+    fn address_for_symlink_uses_target() {
         let s = ResourceState::Symlink {
             from: PathBuf::from("/a"),
             to: PathBuf::from("/b"),
@@ -755,8 +755,8 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         let entry = dir.join("entry.keron");
         fs::write(dir.join("tmpl.tpl"), "{{ body }}").unwrap();
-        let src = "reconcile template(path = \"/a\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
-                   reconcile template(path = \"/b\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n";
+        let src = "reconcile template(source = \"tmpl.tpl\", target = \"/a\", vars = {\"body\": \"\"})\n\
+                   reconcile template(source = \"tmpl.tpl\", target = \"/b\", vars = {\"body\": \"\"})\n";
         fs::write(&entry, src).unwrap();
         let canonical = fs::canonicalize(&entry).unwrap();
         let keron_root = canonical.parent().unwrap().to_path_buf();
@@ -793,7 +793,7 @@ mod tests {
         fs::write(dir.join("tmpl.tpl"), "{{ body }}").unwrap();
         let src = "reconcile {\n\
                    winget(\"Microsoft.PowerShell\");\n\
-                   template(path = \"/a\", source = \"tmpl.tpl\", vars = {\"body\": \"\"});\n\
+                   template(source = \"tmpl.tpl\", target = \"/a\", vars = {\"body\": \"\"});\n\
                    }\n";
         fs::write(&entry, src).unwrap();
         let canonical = fs::canonicalize(&entry).unwrap();

@@ -27,25 +27,8 @@ Program {
                             CallArg {
                                 name: Some(
                                     Spanned {
-                                        node: "from",
-                                        span: 30..34,
-                                    },
-                                ),
-                                value: Spanned {
-                                    node: Literal(
-                                        String(
-                                            "~/df/zshrc",
-                                        ),
-                                    ),
-                                    span: 37..49,
-                                },
-                                span: 30..49,
-                            },
-                            CallArg {
-                                name: Some(
-                                    Spanned {
-                                        node: "to",
-                                        span: 51..53,
+                                        node: "source",
+                                        span: 30..36,
                                     },
                                 ),
                                 value: Spanned {
@@ -54,15 +37,32 @@ Program {
                                             "~/.zshrc",
                                         ),
                                     ),
-                                    span: 56..66,
+                                    span: 39..49,
                                 },
-                                span: 51..66,
+                                span: 30..49,
+                            },
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "target",
+                                        span: 51..57,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "~/df/zshrc",
+                                        ),
+                                    ),
+                                    span: 60..72,
+                                },
+                                span: 51..72,
                             },
                         ],
                     },
-                    span: 22..68,
+                    span: 22..74,
                 },
-                span: 1..68,
+                span: 1..74,
             },
         ),
         Reconcile(
@@ -73,11 +73,11 @@ Program {
                             node: Var(
                                 "zshrc",
                             ),
-                            span: 78..83,
+                            span: 84..89,
                         },
                     ],
                 ],
-                span: 68..84,
+                span: 74..90,
             },
         ),
     ],

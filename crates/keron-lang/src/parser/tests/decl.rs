@@ -129,7 +129,7 @@ fn span_covers_full_decl() {
 
 #[test]
 fn val_symlink_annotation_parses() {
-    let prog = ok(r#"val s: Symlink = symlink(from = "a", to = "b")"#);
+    let prog = ok(r#"val s: Symlink = symlink(source = "b", target = "a")"#);
     let v = first_val(&prog);
     assert_eq!(
         v.ty.as_ref().expect("annotation").node,
@@ -139,8 +139,9 @@ fn val_symlink_annotation_parses() {
 
 #[test]
 fn val_template_annotation_parses() {
-    let prog =
-        ok(r#"val f: Template = template(path = "p", source = "tmpl.tpl", vars = {"body": "c"})"#);
+    let prog = ok(
+        r#"val f: Template = template(source = "tmpl.tpl", target = "p", vars = {"body": "c"})"#,
+    );
     let v = first_val(&prog);
     assert_eq!(
         v.ty.as_ref().expect("annotation").node,

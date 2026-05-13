@@ -1,4 +1,4 @@
 
-val a: Symlink = symlink(from = "from-a", to = "to-a")
-val b: Symlink = symlink(from = "from-b", to = "to-b")
+val a: Symlink = symlink(source = "to-a", target = "from-a")
+val b: Symlink = symlink(source = "to-b", target = "from-b")
 reconcile { a; b }

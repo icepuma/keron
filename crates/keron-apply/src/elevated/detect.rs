@@ -28,8 +28,8 @@ pub fn path_requires_elevation(state: &ResourceState, action: Action) -> bool {
         return false;
     }
     match state {
-        // Create/update write to `from.parent()`; `to` is the link
-        // target and never written.
+        // Create/update write to the symlink target path; the source
+        // path is only read by the kernel while creating the link.
         ResourceState::Symlink { from, .. } => from.parent().is_none_or(|p| !dir_is_writable(p)),
         ResourceState::Template { path, .. } => path.parent().is_none_or(|p| !dir_is_writable(p)),
         // Packages defer to `PackageManager::requires_elevation`;
@@ -146,7 +146,7 @@ mod tests {
     }
 
     #[test]
-    fn template_uses_path_parent_for_probe() {
+    fn template_uses_target_parent_for_probe() {
         let d = TempDir::new("template");
         let state = ResourceState::Template {
             path: d.path.join("a.conf"),

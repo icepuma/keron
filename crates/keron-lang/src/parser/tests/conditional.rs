@@ -116,7 +116,7 @@ fn if_without_else_parses_as_control_flow() {
     // also Void (so the implicit empty Void else matches).
     let src = r#"
         val flag: Boolean = true
-        val target: Symlink = symlink(from = "a", to = "b")
+        val target: Symlink = symlink(source = "b", target = "a")
         if flag { reconcile target }
     "#;
     assert!(parse(src).is_ok());
@@ -127,7 +127,7 @@ fn if_without_else_at_top_level_yields_expr_stmt() {
     use crate::ast::Item;
     let src = r#"
         val flag: Boolean = true
-        val target: Symlink = symlink(from = "a", to = "b")
+        val target: Symlink = symlink(source = "b", target = "a")
         if flag { reconcile target }
     "#;
     let prog = parse(src).expect("parse should succeed");

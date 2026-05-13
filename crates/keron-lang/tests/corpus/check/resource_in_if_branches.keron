@@ -2,9 +2,9 @@
 val use_zsh: Boolean = true
 
 val r: Resource = if use_zsh {
-  symlink(from = "df/zsh", to = "~/.zshrc")
+  symlink(source = "~/.zshrc", target = "df/zsh")
 } else {
-  template(path = "/etc/motd", source = "tmpl.tpl", vars = {"body": "welcome"})
+  template(source = "tmpl.tpl", target = "/etc/motd", vars = {"body": "welcome"})
 }
 
 reconcile r

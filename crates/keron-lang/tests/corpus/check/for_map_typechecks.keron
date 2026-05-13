@@ -3,7 +3,7 @@
 # body scope.
 
 fn write_kv(key: String, count: Int): Template {
-  template(path = "~/state/${key}", source = "tmpl.tpl", vars = {"body": "${count}"})
+  template(source = "tmpl.tpl", target = "~/state/${key}", vars = {"body": "${count}"})
 }
 
 val counts: Map<String, Int> = {"alpha": 1, "beta": 2}
@@ -16,7 +16,7 @@ for (name, n) in counts {
 # `Boolean`).
 val codes: Map<Int, String> = {200: "ok", 404: "missing"}
 for (code, label) in codes {
-  reconcile template(path = "/tmp/${code}", source = "tmpl.tpl", vars = {"body": label})
+  reconcile template(source = "tmpl.tpl", target = "/tmp/${code}", vars = {"body": label})
 }
 
 # Body with inner `val` shadow-checks: `tag` doesn't collide with `k`
@@ -24,5 +24,5 @@ for (code, label) in codes {
 val by_user: Map<String, Boolean> = {"alice": true, "bob": false}
 for (user, enabled) in by_user {
   val tag: String = "${user}=${enabled}"
-  reconcile template(path = "/tmp/${user}", source = "tmpl.tpl", vars = {"body": tag})
+  reconcile template(source = "tmpl.tpl", target = "/tmp/${user}", vars = {"body": tag})
 }

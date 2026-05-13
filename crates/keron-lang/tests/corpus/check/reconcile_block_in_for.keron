@@ -1,7 +1,7 @@
 
 val xs: List<Symlink> = [
-  symlink(from = "from-a", to = "to-a"),
-  symlink(from = "from-b", to = "to-b"),
+  symlink(source = "to-a", target = "from-a"),
+  symlink(source = "to-b", target = "from-b"),
 ]
 
 for s in xs {

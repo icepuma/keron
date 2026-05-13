@@ -81,7 +81,7 @@ fn builtins_are_implicitly_in_scope() {
     // No `from "std:..."` line — `symlink` and `Symlink` resolve via
     // the builtin registry. Single-module graph: just the entry.
     let proj = TempProject::new("builtins-implicit");
-    let src = "val s: Symlink = symlink(from = \"a\", to = \"b\")\n\
+    let src = "val s: Symlink = symlink(source = \"b\", target = \"a\")\n\
                reconcile s\n";
     let entry = proj.write("entry.keron", src);
     let graph = resolve(TempProject::entry_source(&entry, src)).expect("resolve ok");
@@ -109,7 +109,7 @@ fn invalid_path_prefix_errors() {
 fn cross_file_import_resolves() {
     let proj = TempProject::new("cross-file");
     let helpers_src = "fn link(name: String): Symlink {\n\
-                       \tsymlink(from = name, to = name)\n\
+                       \tsymlink(source = name, target = name)\n\
                        }\n";
     proj.write("helpers.keron", helpers_src);
     let entry_src = "from \"./helpers.keron\" use link\n\
@@ -191,8 +191,8 @@ fn user_fn_collides_with_builtin() {
     // dedicated "builtin and cannot be redefined" diagnostic, not the
     // generic "already defined" message used for user-vs-user collisions.
     let proj = TempProject::new("dup-builtin");
-    let src = "fn symlink(from: String, to: String): Symlink {\n\
-               \tsymlink(from = from, to = to)\n\
+    let src = "fn symlink(source: String, target: String): Symlink {\n\
+               \tsymlink(source = source, target = target)\n\
                }\n";
     let entry = proj.write("entry.keron", src);
     let bundle = resolve(TempProject::entry_source(&entry, src)).expect_err("should fail");
@@ -393,12 +393,12 @@ fn multi_root_loads_every_root_into_the_graph() {
     let proj = TempProject::new("multi-root");
     let a_path = proj.write(
         "a.keron",
-        "val s: Symlink = symlink(from = \"a-from\", to = \"a-to\")\n\
+        "val s: Symlink = symlink(source = \"a-to\", target = \"a-from\")\n\
          reconcile s\n",
     );
     let b_path = proj.write(
         "b.keron",
-        "val s: Symlink = symlink(from = \"b-from\", to = \"b-to\")\n\
+        "val s: Symlink = symlink(source = \"b-to\", target = \"b-from\")\n\
          reconcile s\n",
     );
     let a_src = fs::read_to_string(&a_path).unwrap();

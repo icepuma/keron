@@ -382,7 +382,7 @@ fn elevated_symlink_into_protected_dir_is_owned_by_calling_user() {
     let elevated_link = protected.join("link");
 
     let manifest = format!(
-        "reconcile symlink(from = \"{}\", to = \"./payload\")\n",
+        "reconcile symlink(source = \"./payload\", target = \"{}\")\n",
         elevated_link.display(),
     );
     fs::write(fixture_root.join("entry.keron"), &manifest).unwrap();

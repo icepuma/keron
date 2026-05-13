@@ -6,14 +6,14 @@ use super::check_src;
 
 #[test]
 fn symlink_typechecks() {
-    assert!(check_src(r#"val s: Symlink = symlink(from = "a", to = "b")"#).is_ok());
+    assert!(check_src(r#"val s: Symlink = symlink(source = "b", target = "a")"#).is_ok());
 }
 
 #[test]
 fn template_typechecks() {
     assert!(
         check_src(
-            r#"val f: Template = template(path = "x", source = "tmpl.tpl", vars = {"body": "y"})"#
+            r#"val f: Template = template(source = "tmpl.tpl", target = "x", vars = {"body": "y"})"#
         )
         .is_ok()
     );
@@ -21,7 +21,7 @@ fn template_typechecks() {
 
 #[test]
 fn symlink_inferred_to_symlink_type() {
-    assert!(check_src(r#"val s = symlink(from = "a", to = "b")"#).is_ok());
+    assert!(check_src(r#"val s = symlink(source = "b", target = "a")"#).is_ok());
 }
 
 #[test]
@@ -33,8 +33,8 @@ fn resource_type_inside_fn_body_resolves() {
     assert!(
         check_src(
             r#"fn make(): Symlink {
-                val tmp: Template = template(path = "/p", source = "tmpl.tpl", vars = {"body": ""})
-                symlink(from = "a", to = "b")
+                val tmp: Template = template(source = "tmpl.tpl", target = "/p", vars = {"body": ""})
+                symlink(source = "b", target = "a")
             }"#
         )
         .is_ok()
@@ -51,11 +51,11 @@ fn resource_type_inside_if_branch_resolves() {
         check_src(
             r#"fn make(flag: Boolean): Symlink {
                 if flag {
-                    val a: Template = template(path = "/a", source = "tmpl.tpl", vars = {"body": ""})
-                    symlink(from = "x", to = "y")
+                    val a: Template = template(source = "tmpl.tpl", target = "/a", vars = {"body": ""})
+                    symlink(source = "y", target = "x")
                 } else {
-                    val b: Template = template(path = "/b", source = "tmpl.tpl", vars = {"body": ""})
-                    symlink(from = "u", to = "v")
+                    val b: Template = template(source = "tmpl.tpl", target = "/b", vars = {"body": ""})
+                    symlink(source = "v", target = "u")
                 }
             }"#
         )
@@ -71,7 +71,7 @@ fn resource_type_inside_for_body_resolves() {
         check_src(
             r#"fn pulse(): Void {
                 for n in [1, 2] {
-                    val placeholder: Template = template(path = "/x", source = "tmpl.tpl", vars = {"body": "y"})
+                    val placeholder: Template = template(source = "tmpl.tpl", target = "/x", vars = {"body": "y"})
                 }
             }"#
         )
@@ -84,7 +84,7 @@ fn resource_type_inside_top_level_reconcile_expr_resolves() {
     assert!(
         check_src(
             r#"if true {
-                val f: Template = template(path = "/p", source = "tmpl.tpl", vars = {"body": ""})
+                val f: Template = template(source = "tmpl.tpl", target = "/p", vars = {"body": ""})
                 reconcile f
             }"#
         )
@@ -97,10 +97,10 @@ fn resource_type_inside_reconcile_decl_expr_resolves() {
     assert!(
         check_src(
             r#"reconcile if true {
-                val f: Template = template(path = "/p", source = "tmpl.tpl", vars = {"body": ""})
+                val f: Template = template(source = "tmpl.tpl", target = "/p", vars = {"body": ""})
                 f
             } else {
-                template(path = "/q", source = "tmpl.tpl", vars = {"body": ""})
+                template(source = "tmpl.tpl", target = "/q", vars = {"body": ""})
             }"#
         )
         .is_ok()
@@ -119,7 +119,7 @@ fn recursive_struct_type_errors_without_overflowing() {
 
 #[test]
 fn named_args_reorder_for_symlink() {
-    assert!(check_src(r#"val s: Symlink = symlink(to = "b", from = "a")"#).is_ok());
+    assert!(check_src(r#"val s: Symlink = symlink(source = "b", target = "a")"#).is_ok());
 }
 
 #[test]
@@ -129,8 +129,7 @@ fn positional_args_for_symlink() {
 
 #[test]
 fn list_of_symlinks_typechecks() {
-    let src =
-        r#"val xs: List<Symlink> = [symlink(from = "a", to = "b"), symlink(from = "c", to = "d")]"#;
+    let src = r#"val xs: List<Symlink> = [symlink(source = "b", target = "a"), symlink(source = "d", target = "c")]"#;
     assert!(check_src(src).is_ok());
 }
 
@@ -138,28 +137,32 @@ fn list_of_symlinks_typechecks() {
 
 #[test]
 fn symlink_wrong_arg_type_errors() {
-    let err =
-        check_src(r#"val s: Symlink = symlink(from = 1, to = "x")"#).expect_err("should fail");
+    let err = check_src(r#"val s: Symlink = symlink(source = "x", target = 1)"#)
+        .expect_err("should fail");
     assert!(err[0].message.contains("expected `String`"));
     assert!(err[0].message.contains("found `Int`"));
 }
 
 #[test]
 fn symlink_missing_arg_errors() {
-    let err = check_src(r#"val s: Symlink = symlink(from = "a")"#).expect_err("should fail");
-    assert!(err[0].message.contains("missing required argument `to`"));
+    let err = check_src(r#"val s: Symlink = symlink(source = "a")"#).expect_err("should fail");
+    assert!(
+        err[0]
+            .message
+            .contains("missing required argument `target`")
+    );
 }
 
 #[test]
 fn template_missing_arg_errors() {
-    let err = check_src(r#"val f: Template = template(path = "x", source = "tmpl.tpl")"#)
+    let err = check_src(r#"val f: Template = template(source = "tmpl.tpl", target = "x")"#)
         .expect_err("should fail");
     assert!(err[0].message.contains("missing required argument `vars`"));
 }
 
 #[test]
 fn unknown_named_arg_for_symlink_errors() {
-    let err = check_src(r#"val s: Symlink = symlink(from = "a", to = "b", what = 1)"#)
+    let err = check_src(r#"val s: Symlink = symlink(source = "b", what = 1, target = "a")"#)
         .expect_err("should fail");
     assert!(err[0].message.contains("`symlink` has no parameter `what`"));
 }
@@ -182,7 +185,8 @@ fn template_cannot_be_map_key() {
 #[test]
 fn map_with_symlink_value_typechecks() {
     assert!(
-        check_src(r#"val m: Map<String, Symlink> = {"z": symlink(from = "a", to = "b")}"#).is_ok()
+        check_src(r#"val m: Map<String, Symlink> = {"z": symlink(source = "b", target = "a")}"#)
+            .is_ok()
     );
 }
 
@@ -190,7 +194,7 @@ fn map_with_symlink_value_typechecks() {
 fn symlink_returned_from_user_fn() {
     let src = r#"
         fn make(name: String): Symlink {
-            symlink(from = name, to = name)
+            symlink(source = name, target = name)
         }
         val s: Symlink = make("zshrc")
     "#;
@@ -199,7 +203,8 @@ fn symlink_returned_from_user_fn() {
 
 #[test]
 fn symlink_assigned_to_int_errors() {
-    let err = check_src(r#"val n: Int = symlink(from = "a", to = "b")"#).expect_err("should fail");
+    let err =
+        check_src(r#"val n: Int = symlink(source = "b", target = "a")"#).expect_err("should fail");
     assert!(err[0].message.contains("expected `Int`"));
     assert!(err[0].message.contains("found `Symlink`"));
 }
@@ -246,21 +251,21 @@ fn user_val_collides_with_template_builtin() {
 
 #[test]
 fn symlink_satisfies_resource_annotation() {
-    let src = r#"val r: Resource = symlink(from = "a", to = "b")"#;
+    let src = r#"val r: Resource = symlink(source = "b", target = "a")"#;
     assert!(check_src(src).is_ok());
 }
 
 #[test]
 fn template_satisfies_resource_annotation() {
     let src =
-        r#"val r: Resource = template(path = "p", source = "tmpl.tpl", vars = {"body": "c"})"#;
+        r#"val r: Resource = template(source = "tmpl.tpl", target = "p", vars = {"body": "c"})"#;
     assert!(check_src(src).is_ok());
 }
 
 #[test]
 fn mixed_resource_list_inferred_to_list_of_resource() {
     let src = r#"
-        val xs = [symlink(from = "a", to = "b"), template(path = "p", source = "tmpl.tpl", vars = {"body": "c"})]
+        val xs = [symlink(source = "b", target = "a"), template(source = "tmpl.tpl", target = "p", vars = {"body": "c"})]
         val ys: List<Resource> = xs
     "#;
     assert!(check_src(src).is_ok());
@@ -270,8 +275,8 @@ fn mixed_resource_list_inferred_to_list_of_resource() {
 fn list_of_resource_annotation_accepts_mixed_elements() {
     let src = r#"
         val xs: List<Resource> = [
-          symlink(from = "a", to = "b"),
-          template(path = "p", source = "tmpl.tpl", vars = {"body": "c"}),
+          symlink(source = "b", target = "a"),
+          template(source = "tmpl.tpl", target = "p", vars = {"body": "c"}),
         ]
     "#;
     assert!(check_src(src).is_ok());
@@ -280,7 +285,7 @@ fn list_of_resource_annotation_accepts_mixed_elements() {
 #[test]
 fn list_of_symlink_subtypes_list_of_resource() {
     let src = r#"
-        val xs: List<Symlink> = [symlink(from = "a", to = "b")]
+        val xs: List<Symlink> = [symlink(source = "b", target = "a")]
         val ys: List<Resource> = xs
     "#;
     assert!(check_src(src).is_ok());
@@ -289,7 +294,7 @@ fn list_of_symlink_subtypes_list_of_resource() {
 #[test]
 fn reconcile_accepts_resource_var() {
     let src = r#"
-        val r: Resource = symlink(from = "a", to = "b")
+        val r: Resource = symlink(source = "b", target = "a")
         reconcile r
     "#;
     assert!(check_src(src).is_ok());
@@ -299,8 +304,8 @@ fn reconcile_accepts_resource_var() {
 fn reconcile_accepts_list_of_resource() {
     let src = r#"
         val xs: List<Resource> = [
-          symlink(from = "a", to = "b"),
-          template(path = "p", source = "tmpl.tpl", vars = {"body": "c"}),
+          symlink(source = "b", target = "a"),
+          template(source = "tmpl.tpl", target = "p", vars = {"body": "c"}),
         ]
         reconcile xs
     "#;
@@ -310,8 +315,8 @@ fn reconcile_accepts_list_of_resource() {
 #[test]
 fn reconcile_chain_mixes_kinds_via_resource() {
     let src = r#"
-        val s: Symlink = symlink(from = "a", to = "b")
-        val f: Template = template(path = "p", source = "tmpl.tpl", vars = {"body": "c"})
+        val s: Symlink = symlink(source = "b", target = "a")
+        val f: Template = template(source = "tmpl.tpl", target = "p", vars = {"body": "c"})
         reconcile s -> f
     "#;
     assert!(check_src(src).is_ok());
@@ -324,7 +329,7 @@ fn resource_does_not_narrow_to_symlink() {
     // narrowing direction is rejected at check time. (See
     // `crates/keron-lang/src/check/mod.rs::is_subtype` for the rule.)
     let src = r#"
-        val r: Resource = symlink(from = "a", to = "b")
+        val r: Resource = symlink(source = "b", target = "a")
         val s: Symlink = r
     "#;
     let err = check_src(src).expect_err("should fail");
@@ -335,7 +340,7 @@ fn resource_does_not_narrow_to_symlink() {
 #[test]
 fn resource_does_not_narrow_to_template() {
     let src = r#"
-        val r: Resource = template(path = "p", source = "p.tmpl", vars = {})
+        val r: Resource = template(source = "p.tmpl", target = "p", vars = {})
         val f: Template = r
     "#;
     let err = check_src(src).expect_err("should fail");
@@ -346,7 +351,7 @@ fn resource_does_not_narrow_to_template() {
 #[test]
 fn list_of_resource_does_not_narrow_to_list_of_symlink() {
     let src = r#"
-        val xs: List<Resource> = [symlink(from = "a", to = "b")]
+        val xs: List<Resource> = [symlink(source = "b", target = "a")]
         val ys: List<Symlink> = xs
     "#;
     let err = check_src(src).expect_err("should fail");
@@ -358,7 +363,7 @@ fn list_of_resource_does_not_narrow_to_list_of_symlink() {
 fn symlink_does_not_narrow_to_template() {
     // Specific resource kinds remain distinct from each other.
     let src = r#"
-        val s: Symlink = symlink(from = "a", to = "b")
+        val s: Symlink = symlink(source = "b", target = "a")
         val f: Template = s
     "#;
     let err = check_src(src).expect_err("should fail");
@@ -370,7 +375,7 @@ fn symlink_does_not_narrow_to_template() {
 fn fn_returning_resource_from_symlink_typechecks() {
     let src = r#"
         fn make(name: String): Resource {
-            symlink(from = name, to = name)
+            symlink(source = name, target = name)
         }
         val r: Resource = make("zshrc")
     "#;
@@ -383,7 +388,7 @@ fn fn_param_resource_accepts_specific_kinds() {
         fn install(r: Resource): Resource {
             r
         }
-        val s: Symlink = symlink(from = "a", to = "b")
+        val s: Symlink = symlink(source = "b", target = "a")
         reconcile install(s)
     "#;
     assert!(check_src(src).is_ok());
@@ -396,8 +401,8 @@ fn fn_param_list_of_resource_accepts_mixed_arg() {
             rs
         }
         reconcile install([
-            symlink(from = "a", to = "b"),
-            template(path = "p", source = "tmpl.tpl", vars = {"body": "c"}),
+            symlink(source = "b", target = "a"),
+            template(source = "tmpl.tpl", target = "p", vars = {"body": "c"}),
         ])
     "#;
     assert!(check_src(src).is_ok());
@@ -406,15 +411,15 @@ fn fn_param_list_of_resource_accepts_mixed_arg() {
 #[test]
 fn list_with_int_and_resource_still_errors() {
     // Subtyping only lifts among the resource singletons.
-    let src = r#"val xs = [symlink(from = "a", to = "b"), 1]"#;
+    let src = r#"val xs = [symlink(source = "b", target = "a"), 1]"#;
     assert!(check_src(src).is_err());
 }
 
 #[test]
 fn resource_concat_with_list_of_resource_typechecks() {
     let src = r#"
-        val a: List<Symlink> = [symlink(from = "a", to = "b")]
-        val b: List<Template> = [template(path = "p", source = "tmpl.tpl", vars = {"body": "c"})]
+        val a: List<Symlink> = [symlink(source = "b", target = "a")]
+        val b: List<Template> = [template(source = "tmpl.tpl", target = "p", vars = {"body": "c"})]
         val all: List<Resource> = a ++ b
     "#;
     assert!(check_src(src).is_ok());
@@ -426,8 +431,8 @@ fn concat_lifts_heterogeneous_resource_lists_in_synthesis() {
     // `List<Resource>` so the binding can be used wherever a list of
     // resources is expected.
     let src = r#"
-        val a: List<Symlink> = [symlink(from = "a", to = "b")]
-        val b: List<Template> = [template(path = "p", source = "tmpl.tpl", vars = {"body": "c"})]
+        val a: List<Symlink> = [symlink(source = "b", target = "a")]
+        val b: List<Template> = [template(source = "tmpl.tpl", target = "p", vars = {"body": "c"})]
         val all = a ++ b
         reconcile all
     "#;
@@ -437,7 +442,7 @@ fn concat_lifts_heterogeneous_resource_lists_in_synthesis() {
 #[test]
 fn concat_resource_list_with_int_list_still_errors() {
     let src = r#"
-        val a: List<Symlink> = [symlink(from = "a", to = "b")]
+        val a: List<Symlink> = [symlink(source = "b", target = "a")]
         val b: List<Int> = [1]
         val all = a ++ b
     "#;
@@ -460,8 +465,8 @@ fn map_with_resource_value_annotation_accepts_mix() {
     // entry; `Symlink` and `Template` both satisfy that slot.
     let src = r#"
         val m: Map<String, Resource> = {
-          "shell": symlink(from = "df/zsh", to = "~/.zshrc"),
-          "motd": template(path = "/etc/motd", source = "tmpl.tpl", vars = {"body": "welcome"}),
+          "shell": symlink(source = "~/.zshrc", target = "df/zsh"),
+          "motd": template(source = "tmpl.tpl", target = "/etc/motd", vars = {"body": "welcome"}),
         }
     "#;
     assert!(check_src(src).is_ok());
@@ -473,8 +478,8 @@ fn for_over_list_of_resource_binds_resource() {
     // its body sees a value compatible with any resource slot.
     let src = r#"
         val rs: List<Resource> = [
-          symlink(from = "a", to = "b"),
-          template(path = "p", source = "tmpl.tpl", vars = {"body": "c"}),
+          symlink(source = "b", target = "a"),
+          template(source = "tmpl.tpl", target = "p", vars = {"body": "c"}),
         ]
         for r in rs {
           reconcile r
@@ -490,9 +495,9 @@ fn if_branches_with_specific_resources_satisfy_resource_annotation() {
     let src = r#"
         val use_zsh: Boolean = true
         val r: Resource = if use_zsh {
-          symlink(from = "df/zsh", to = "~/.zshrc")
+          symlink(source = "~/.zshrc", target = "df/zsh")
         } else {
-          template(path = "/etc/motd", source = "tmpl.tpl", vars = {"body": "welcome"})
+          template(source = "tmpl.tpl", target = "/etc/motd", vars = {"body": "welcome"})
         }
         reconcile r
     "#;
@@ -506,9 +511,9 @@ fn if_synthesis_of_mismatched_resource_branches_still_errors() {
     // unified type must annotate against `Resource`.
     let src = r#"
         val r = if true {
-          symlink(from = "a", to = "b")
+          symlink(source = "b", target = "a")
         } else {
-          template(path = "p", source = "tmpl.tpl", vars = {"body": "c"})
+          template(source = "tmpl.tpl", target = "p", vars = {"body": "c"})
         }
     "#;
     let err = check_src(src).expect_err("should fail");

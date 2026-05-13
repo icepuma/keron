@@ -160,7 +160,7 @@ fn render_state_lines<W: Write>(
             content,
             sensitive,
         } => {
-            writeln!(out, "      {s} path    = \"{}\"", show_path(path))?;
+            writeln!(out, "      {s} target  = \"{}\"", show_path(path))?;
             if *sensitive {
                 writeln!(out, "      {s} content = <sensitive>")?;
             } else {
@@ -168,8 +168,8 @@ fn render_state_lines<W: Write>(
             }
         }
         ResourceState::Symlink { from, to } => {
-            writeln!(out, "      {s} from = \"{}\"", show_path(from))?;
-            writeln!(out, "      {s} to   = \"{}\"", show_path(to))?;
+            writeln!(out, "      {s} source = \"{}\"", show_path(to))?;
+            writeln!(out, "      {s} target = \"{}\"", show_path(from))?;
         }
         ResourceState::Package { manager, name } => {
             writeln!(out, "      {s} manager = \"{}\"", manager.label())?;
@@ -315,7 +315,7 @@ fn render_template_diff<W: Write>(
     if before.path != after.path {
         writeln!(
             out,
-            "      {s} path    = \"{}\" -> \"{}\"",
+            "      {s} target  = \"{}\" -> \"{}\"",
             show_path(before.path),
             show_path(after.path)
         )?;
@@ -344,7 +344,7 @@ fn render_symlink_diff<W: Write>(
     if before.from != after.from {
         writeln!(
             out,
-            "      {s} from = \"{}\" -> \"{}\"",
+            "      {s} target = \"{}\" -> \"{}\"",
             show_path(before.from),
             show_path(after.from)
         )?;
@@ -352,7 +352,7 @@ fn render_symlink_diff<W: Write>(
     if before.to != after.to {
         writeln!(
             out,
-            "      {s} to   = \"{}\" -> \"{}\"",
+            "      {s} source = \"{}\" -> \"{}\"",
             show_path(before.to),
             show_path(after.to)
         )?;
@@ -524,7 +524,7 @@ mod tests {
         assert!(out.contains("Plan: 1 to add, 1 to change, 0 to run."));
         assert!(out.contains("+ resource \"template\""));
         assert!(out.contains("~ resource \"symlink\""));
-        assert!(out.contains("~ to   = \"/old/target\" -> \"/new/target\""));
+        assert!(out.contains("~ source = \"/old/target\" -> \"/new/target\""));
     }
 
     #[test]
@@ -554,7 +554,7 @@ mod tests {
     }
 
     #[test]
-    fn create_renders_path_and_content_lines() {
+    fn create_renders_target_and_content_lines() {
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "/etc/x".into(),
@@ -572,8 +572,8 @@ mod tests {
         };
         let out = render(&plan);
         assert!(
-            out.contains("+ path    = \"/etc/x\""),
-            "missing path line: {out}"
+            out.contains("+ target  = \"/etc/x\""),
+            "missing target line: {out}"
         );
         assert!(
             out.contains("+ content = \"hi\""),
@@ -582,7 +582,7 @@ mod tests {
     }
 
     #[test]
-    fn create_symlink_renders_from_and_to_lines() {
+    fn create_symlink_renders_source_and_target_lines() {
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "/a".into(),
@@ -598,8 +598,14 @@ mod tests {
             }],
         };
         let out = render(&plan);
-        assert!(out.contains("+ from = \"/a\""), "missing from line: {out}");
-        assert!(out.contains("+ to   = \"/b\""), "missing to line: {out}");
+        assert!(
+            out.contains("+ source = \"/b\""),
+            "missing source line: {out}"
+        );
+        assert!(
+            out.contains("+ target = \"/a\""),
+            "missing target line: {out}"
+        );
     }
 
     #[test]
@@ -625,7 +631,10 @@ mod tests {
         };
         let out = render(&plan);
         assert!(out.contains("~ content = \"old\" -> \"new\""), "got: {out}");
-        assert!(!out.contains("~ path"), "path should be unchanged: {out}");
+        assert!(
+            !out.contains("~ target"),
+            "target should be unchanged: {out}"
+        );
     }
 
     #[test]
@@ -651,7 +660,7 @@ mod tests {
         };
         let out = render(&plan);
         assert!(
-            out.contains("~ path    = \"/old\" -> \"/new\""),
+            out.contains("~ target  = \"/old\" -> \"/new\""),
             "got: {out}"
         );
         assert!(
@@ -680,8 +689,11 @@ mod tests {
             }],
         };
         let out = render(&plan);
-        assert!(out.contains("~ to   = \"/t1\" -> \"/t2\""), "got: {out}");
-        assert!(!out.contains("~ from"), "from should be unchanged: {out}");
+        assert!(out.contains("~ source = \"/t1\" -> \"/t2\""), "got: {out}");
+        assert!(
+            !out.contains("~ target"),
+            "target should be unchanged: {out}"
+        );
     }
 
     #[test]
@@ -706,11 +718,11 @@ mod tests {
         };
         let out = render(&plan);
         assert!(
-            out.contains("- path    = \"/x\""),
+            out.contains("- target  = \"/x\""),
             "missing before half: {out}"
         );
         assert!(
-            out.contains("+ from = \"/x\""),
+            out.contains("+ target = \"/x\""),
             "missing create half: {out}"
         );
     }

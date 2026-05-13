@@ -108,11 +108,11 @@ fn elevated_subset_runs_under_spy_and_chowns_back() {
     fs::set_permissions(&protected_dir, perm).unwrap();
 
     let manifest = format!(
-        "reconcile {{\n  symlink(from = \"{}\", to = \"{}\");\n  symlink(from = \"{}\", to = \"{}\");\n}}\n",
-        plain_link.display(),
+        "reconcile {{\n  symlink(source = \"{}\", target = \"{}\");\n  symlink(source = \"{}\", target = \"{}\");\n}}\n",
         plain_target.display(),
-        protected_link.display(),
+        plain_link.display(),
         protected_target.display(),
+        protected_link.display(),
     );
     let entry = proj.write("entry.keron", &manifest);
 

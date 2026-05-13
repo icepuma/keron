@@ -175,18 +175,24 @@ fn apply_run(state: &ResourceState) -> Result<()> {
 
 fn apply_update(before: &ResourceState, after: &ResourceState) -> Result<()> {
     match (before, after) {
-        (ResourceState::Symlink { from: bf, .. }, ResourceState::Symlink { from: af, to: at }) => {
-            // Planner guarantees matched `from` on both sides; bail
+        (
+            ResourceState::Symlink { from: bt, .. },
+            ResourceState::Symlink {
+                from: at,
+                to: source,
+            },
+        ) => {
+            // Planner guarantees matched target on both sides; bail
             // loudly if that invariant ever drifts.
-            if bf != af {
+            if bt != at {
                 bail!(
-                    "symlink update path mismatch: `{}` vs `{}`",
-                    bf.display(),
-                    af.display(),
+                    "symlink update target mismatch: `{}` vs `{}`",
+                    bt.display(),
+                    at.display(),
                 );
             }
-            remove_symlink(bf)?;
-            create_symlink(af, at, ApplyContext::Unprivileged)
+            remove_symlink(bt)?;
+            create_symlink(at, source, ApplyContext::Unprivileged)
         }
         (
             ResourceState::Template { path: bp, .. },
@@ -198,7 +204,7 @@ fn apply_update(before: &ResourceState, after: &ResourceState) -> Result<()> {
         ) => {
             if bp != ap {
                 bail!(
-                    "template update path mismatch: `{}` vs `{}`",
+                    "template update target mismatch: `{}` vs `{}`",
                     bp.display(),
                     ap.display(),
                 );
@@ -209,35 +215,40 @@ fn apply_update(before: &ResourceState, after: &ResourceState) -> Result<()> {
     }
 }
 
-fn create_symlink(from: &Path, to: &Path, ctx: ApplyContext) -> Result<()> {
+fn create_symlink(target: &Path, source: &Path, ctx: ApplyContext) -> Result<()> {
     #[cfg(unix)]
     if matches!(ctx, ApplyContext::Elevated)
-        && let Some(parent_path) = from.parent()
-        && let Some(leaf) = from.file_name()
+        && let Some(parent_path) = target.parent()
+        && let Some(leaf) = target.file_name()
     {
         // Walk each ancestor with O_NOFOLLOW; symlinkat onto the
         // resulting parent fd. Closes the TOCTOU window between
         // `mkdir_all(parent)` and `symlink(2)` that the elevated
         // child would otherwise be racing.
         let parent = crate::elevated::safe_write::ParentDir::open(parent_path)
-            .with_context(|| format!("opening elevated parent of `{}`", from.display()))?;
-        return crate::elevated::safe_write::symlink_at(&parent, leaf, to).with_context(|| {
+            .with_context(|| format!("opening elevated parent of `{}`", target.display()))?;
+        return crate::elevated::safe_write::symlink_at(&parent, leaf, source).with_context(|| {
             format!(
-                "symlinking `{}` -> `{}` (elevated)",
-                from.display(),
-                to.display()
+                "creating symlink target `{}` from source `{}` (elevated)",
+                target.display(),
+                source.display()
             )
         });
     }
     let _ = ctx;
-    if let Some(parent) = from.parent()
+    if let Some(parent) = target.parent()
         && !parent.as_os_str().is_empty()
     {
         fs::create_dir_all(parent)
             .with_context(|| format!("creating parent directory `{}`", parent.display()))?;
     }
-    symlink_impl(to, from)
-        .with_context(|| format!("symlinking `{}` -> `{}`", from.display(), to.display()))
+    symlink_impl(source, target).with_context(|| {
+        format!(
+            "creating symlink target `{}` from source `{}`",
+            target.display(),
+            source.display()
+        )
+    })
 }
 
 fn remove_symlink(path: &Path) -> Result<()> {
@@ -1162,6 +1173,9 @@ mod tests {
             )],
         };
         let err = execute(&plan).unwrap_err();
-        assert!(format!("{err:#}").contains("path mismatch"), "got: {err:#}");
+        assert!(
+            format!("{err:#}").contains("target mismatch"),
+            "got: {err:#}"
+        );
     }
 }

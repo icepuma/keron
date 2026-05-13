@@ -82,7 +82,7 @@ fn seed_fs(imp: &mut ImportedSymbols) {
     imp.fns.insert(
         "symlink".into(),
         fn_sig(
-            vec![param("from", Type::String), param("to", Type::String)],
+            vec![param("source", Type::String), param("target", Type::String)],
             Type::Symlink,
         ),
     );
@@ -90,8 +90,8 @@ fn seed_fs(imp: &mut ImportedSymbols) {
         "template".into(),
         fn_sig(
             vec![
-                param("path", Type::String),
                 param("source", Type::String),
+                param("target", Type::String),
                 param(
                     "vars",
                     Type::Map(Box::new(Type::String), Box::new(Type::String)),

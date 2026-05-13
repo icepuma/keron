@@ -127,9 +127,9 @@ fn eval_simple(e: &Expr) -> Literal {
 
 fn resource_value(kind: u8, i: usize) -> String {
     match kind {
-        0 => format!("symlink(from = \"a{i}\", to = \"b{i}\")"),
+        0 => format!("symlink(source = \"b{i}\", target = \"a{i}\")"),
         1 => format!(
-            "template(path = \"p{i}\", source = \"tmpl.tpl\", vars = {{\"body\": \"c{i}\"}})"
+            "template(source = \"tmpl.tpl\", target = \"p{i}\", vars = {{\"body\": \"c{i}\"}})"
         ),
         _ => format!("shell(kind = \"sh\", name = \"run-{i}\", script = \"echo {i}\")"),
     }
@@ -547,7 +547,7 @@ proptest! {
         to in "[a-zA-Z0-9 _./]{1,32}",
     ) {
         let src = format!(
-            "val s: Symlink = symlink(from = \"{from}\", to = \"{to}\")\nreconcile s"
+            "val s: Symlink = symlink(source = \"{to}\", target = \"{from}\")\nreconcile s"
         );
         let prog = parse(&src).expect("parse should succeed");
         prop_assert!(check(&prog).is_ok());
@@ -576,7 +576,7 @@ proptest! {
         for (i, name) in dedup.iter().enumerate() {
             writeln!(
                 src,
-                "val {name}: Symlink = symlink(from = \"~/from-{i}\", to = \"~/to-{i}\")"
+                "val {name}: Symlink = symlink(source = \"~/to-{i}\", target = \"~/from-{i}\")"
             )
             .expect("write to String");
         }
@@ -600,7 +600,7 @@ proptest! {
         for (i, name) in dedup.iter().enumerate() {
             writeln!(
                 decls,
-                "val {name}: Symlink = symlink(from = \"~/from-{i}\", to = \"~/to-{i}\")"
+                "val {name}: Symlink = symlink(source = \"~/to-{i}\", target = \"~/from-{i}\")"
             )
             .expect("write to String");
         }
@@ -679,7 +679,7 @@ proptest! {
     ) {
         // A chain mixing a symlink and a non-resource always fails.
         let src = format!(
-            "val {name}: Symlink = symlink(from = \"a\", to = \"b\")\nreconcile {name} -> {n}"
+            "val {name}: Symlink = symlink(source = \"b\", target = \"a\")\nreconcile {name} -> {n}"
         );
         let prog = parse(&src).expect("parse should succeed");
         let errs = check(&prog).expect_err("should fail");
@@ -701,7 +701,7 @@ proptest! {
         } else {
             names
                 .iter()
-                .map(|n| format!("symlink(from = \"~/{n}\", to = \"~/.{n}\")"))
+                .map(|n| format!("symlink(source = \"~/.{n}\", target = \"~/{n}\")"))
                 .collect::<Vec<_>>()
                 .join(", ")
         };
@@ -745,7 +745,7 @@ proptest! {
         // exercising the binding's type. A `Void` loop with body
         // `reconcile <File>` is well-typed.
         let src = format!(
-            "val xs: List<Int> = [{body}]\nfor x in xs {{ reconcile template(path = \"/tmp/${{x}}\", source = \"tmpl.tpl\", vars = {{\"body\": \"\"}}) }}"
+            "val xs: List<Int> = [{body}]\nfor x in xs {{ reconcile template(source = \"tmpl.tpl\", target = \"/tmp/${{x}}\", vars = {{\"body\": \"\"}}) }}"
         );
         let prog = parse(&src).expect("parse should succeed");
         prop_assert!(check(&prog).is_ok(), "check failed for: {src}");
@@ -767,7 +767,7 @@ proptest! {
             .collect::<Vec<_>>()
             .join(", ");
         let src = format!(
-            "val m: Map<String, Int> = {{{body}}}\nfor (k, v) in m {{ reconcile template(path = \"/tmp/${{k}}\", source = \"tmpl.tpl\", vars = {{\"body\": \"${{v}}\"}}) }}"
+            "val m: Map<String, Int> = {{{body}}}\nfor (k, v) in m {{ reconcile template(source = \"tmpl.tpl\", target = \"/tmp/${{k}}\", vars = {{\"body\": \"${{v}}\"}}) }}"
         );
         let prog = parse(&src).expect("parse should succeed");
         prop_assert!(check(&prog).is_ok(), "check failed for: {src}");

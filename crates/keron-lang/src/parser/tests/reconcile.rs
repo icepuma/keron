@@ -30,14 +30,14 @@ fn only_step(r: &ReconcileDecl) -> &Spanned<Expr> {
 
 #[test]
 fn reconcile_call_expr_parses() {
-    let r = first_reconcile(r#"reconcile symlink(from = "a", to = "b")"#);
+    let r = first_reconcile(r#"reconcile symlink(source = "b", target = "a")"#);
     assert!(matches!(only_step(&r).node, Expr::Call { .. }));
 }
 
 #[test]
 fn reconcile_list_parses() {
     let r = first_reconcile(
-        r#"reconcile [symlink(from = "a", to = "b"), symlink(from = "c", to = "d")]"#,
+        r#"reconcile [symlink(source = "b", target = "a"), symlink(source = "d", target = "c")]"#,
     );
     let Expr::List(items) = &only_step(&r).node else {
         panic!("expected list");
@@ -47,7 +47,8 @@ fn reconcile_list_parses() {
 
 #[test]
 fn reconcile_var_parses() {
-    let r = first_reconcile("val x: Symlink = symlink(from = \"a\", to = \"b\")\nreconcile x");
+    let r =
+        first_reconcile("val x: Symlink = symlink(source = \"b\", target = \"a\")\nreconcile x");
     assert!(matches!(only_step(&r).node, Expr::Var(_)));
 }
 
@@ -55,7 +56,7 @@ fn reconcile_var_parses() {
 fn reconcile_user_fn_call_parses() {
     let src = "
         fn make(): Symlink {
-            symlink(from = \"a\", to = \"b\")
+            symlink(source = \"b\", target = \"a\")
         }
         reconcile make()
     ";
@@ -88,8 +89,8 @@ fn rejects_fn_named_reconcile() {
 #[test]
 fn multiple_reconcile_decls_parse() {
     let prog = ok("
-        val a: Symlink = symlink(from = \"x\", to = \"y\")
-        val b: Template = template(path = \"p\", source = \"tmpl.tpl\", vars = {\"body\": \"c\"})
+        val a: Symlink = symlink(source = \"y\", target = \"x\")
+        val b: Template = template(source = \"tmpl.tpl\", target = \"p\", vars = {\"body\": \"c\"})
         reconcile a
         reconcile b
     ");
@@ -108,8 +109,8 @@ fn multiple_reconcile_decls_parse() {
 fn reconcile_chain_two_parses() {
     let r = first_reconcile(
         "
-        val a: Symlink = symlink(from = \"x\", to = \"y\")
-        val b: Symlink = symlink(from = \"p\", to = \"q\")
+        val a: Symlink = symlink(source = \"y\", target = \"x\")
+        val b: Symlink = symlink(source = \"q\", target = \"p\")
         reconcile a -> b
         ",
     );
@@ -123,9 +124,9 @@ fn reconcile_chain_two_parses() {
 fn reconcile_chain_three_parses() {
     let r = first_reconcile(
         "
-        val a: Symlink = symlink(from = \"x\", to = \"y\")
-        val b: Symlink = symlink(from = \"p\", to = \"q\")
-        val c: Symlink = symlink(from = \"u\", to = \"v\")
+        val a: Symlink = symlink(source = \"y\", target = \"x\")
+        val b: Symlink = symlink(source = \"q\", target = \"p\")
+        val c: Symlink = symlink(source = \"v\", target = \"u\")
         reconcile a -> b -> c
         ",
     );
@@ -134,7 +135,8 @@ fn reconcile_chain_three_parses() {
 
 #[test]
 fn reconcile_chain_with_call_parses() {
-    let src = r#"reconcile symlink(from = "a", to = "b") -> symlink(from = "c", to = "d")"#;
+    let src =
+        r#"reconcile symlink(source = "b", target = "a") -> symlink(source = "d", target = "c")"#;
     let r = first_reconcile(src);
     let chain = only_chain(&r);
     assert_eq!(chain.len(), 2);
@@ -147,9 +149,9 @@ fn reconcile_chain_with_call_parses() {
 fn reconcile_chain_with_list_step_parses() {
     let r = first_reconcile(
         "
-        val a: Symlink = symlink(from = \"x\", to = \"y\")
-        val b: Symlink = symlink(from = \"p\", to = \"q\")
-        val c: Symlink = symlink(from = \"u\", to = \"v\")
+        val a: Symlink = symlink(source = \"y\", target = \"x\")
+        val b: Symlink = symlink(source = \"q\", target = \"p\")
+        val c: Symlink = symlink(source = \"v\", target = \"u\")
         reconcile [a, b] -> c
         ",
     );
@@ -180,7 +182,7 @@ fn rejects_chain_outside_reconcile() {
 fn reconcile_block_single_step_parses() {
     let r = first_reconcile(
         "
-        val a: Symlink = symlink(from = \"x\", to = \"y\")
+        val a: Symlink = symlink(source = \"y\", target = \"x\")
         reconcile { a }
         ",
     );
@@ -192,9 +194,9 @@ fn reconcile_block_single_step_parses() {
 fn reconcile_block_three_chains_parses() {
     let r = first_reconcile(
         "
-        val a: Symlink = symlink(from = \"x\", to = \"y\")
-        val b: Symlink = symlink(from = \"p\", to = \"q\")
-        val c: Symlink = symlink(from = \"u\", to = \"v\")
+        val a: Symlink = symlink(source = \"y\", target = \"x\")
+        val b: Symlink = symlink(source = \"q\", target = \"p\")
+        val c: Symlink = symlink(source = \"v\", target = \"u\")
         reconcile {
           a;
           b;
@@ -212,9 +214,9 @@ fn reconcile_block_three_chains_parses() {
 fn reconcile_block_chain_can_use_arrow_within_step() {
     let r = first_reconcile(
         "
-        val a: Symlink = symlink(from = \"x\", to = \"y\")
-        val b: Symlink = symlink(from = \"p\", to = \"q\")
-        val c: Symlink = symlink(from = \"u\", to = \"v\")
+        val a: Symlink = symlink(source = \"y\", target = \"x\")
+        val b: Symlink = symlink(source = \"q\", target = \"p\")
+        val c: Symlink = symlink(source = \"v\", target = \"u\")
         reconcile {
           a;
           b -> c
@@ -230,8 +232,8 @@ fn reconcile_block_chain_can_use_arrow_within_step() {
 fn reconcile_block_allows_trailing_semicolon() {
     let r = first_reconcile(
         "
-        val a: Symlink = symlink(from = \"x\", to = \"y\")
-        val b: Symlink = symlink(from = \"p\", to = \"q\")
+        val a: Symlink = symlink(source = \"y\", target = \"x\")
+        val b: Symlink = symlink(source = \"q\", target = \"p\")
         reconcile {
           a;
           b;
@@ -245,8 +247,8 @@ fn reconcile_block_allows_trailing_semicolon() {
 fn reconcile_block_tolerates_blank_lines_and_comments() {
     let r = first_reconcile(
         "
-        val a: Symlink = symlink(from = \"x\", to = \"y\")
-        val b: Symlink = symlink(from = \"p\", to = \"q\")
+        val a: Symlink = symlink(source = \"y\", target = \"x\")
+        val b: Symlink = symlink(source = \"q\", target = \"p\")
         reconcile {
           # leading comment
           a;   # trailing comment
@@ -268,8 +270,8 @@ fn rejects_reconcile_block_with_missing_separator() {
     assert!(
         parse(
             "
-        val a: Symlink = symlink(from = \"x\", to = \"y\")
-        val b: Symlink = symlink(from = \"p\", to = \"q\")
+        val a: Symlink = symlink(source = \"y\", target = \"x\")
+        val b: Symlink = symlink(source = \"q\", target = \"p\")
         reconcile { a b }
         "
         )
@@ -280,8 +282,8 @@ fn rejects_reconcile_block_with_missing_separator() {
 #[test]
 fn block_inside_if_branch_parses() {
     let prog = ok("
-        val a: Symlink = symlink(from = \"x\", to = \"y\")
-        val b: Symlink = symlink(from = \"p\", to = \"q\")
+        val a: Symlink = symlink(source = \"y\", target = \"x\")
+        val b: Symlink = symlink(source = \"q\", target = \"p\")
         if true {
           reconcile {
             a;
@@ -301,10 +303,10 @@ fn block_inside_if_branch_parses() {
 fn reconcile_chain_four_parses() {
     let r = first_reconcile(
         "
-        val a: Symlink = symlink(from = \"a\", to = \"b\")
-        val b: Symlink = symlink(from = \"c\", to = \"d\")
-        val c: Symlink = symlink(from = \"e\", to = \"f\")
-        val d: Symlink = symlink(from = \"g\", to = \"h\")
+        val a: Symlink = symlink(source = \"b\", target = \"a\")
+        val b: Symlink = symlink(source = \"d\", target = \"c\")
+        val c: Symlink = symlink(source = \"f\", target = \"e\")
+        val d: Symlink = symlink(source = \"h\", target = \"g\")
         reconcile a -> b -> c -> d
         ",
     );
@@ -315,8 +317,8 @@ fn reconcile_chain_four_parses() {
 fn reconcile_block_one_line_parses() {
     let r = first_reconcile(
         "
-        val a: Symlink = symlink(from = \"a\", to = \"b\")
-        val b: Symlink = symlink(from = \"c\", to = \"d\")
+        val a: Symlink = symlink(source = \"b\", target = \"a\")
+        val b: Symlink = symlink(source = \"d\", target = \"c\")
         reconcile { a; b }
         ",
     );
@@ -330,8 +332,8 @@ fn reconcile_block_one_line_parses() {
 fn reconcile_block_inside_fn_body_parses() {
     let prog = ok("
         fn install(): Void {
-            val a: Symlink = symlink(from = \"a\", to = \"b\")
-            val b: Symlink = symlink(from = \"c\", to = \"d\")
+            val a: Symlink = symlink(source = \"b\", target = \"a\")
+            val b: Symlink = symlink(source = \"d\", target = \"c\")
             reconcile {
               a;
               b
@@ -350,9 +352,9 @@ fn reconcile_block_inside_fn_body_parses() {
 fn block_with_chain_only_step_parses_one_chain() {
     let r = first_reconcile(
         "
-        val a: Symlink = symlink(from = \"a\", to = \"b\")
-        val b: Symlink = symlink(from = \"c\", to = \"d\")
-        val c: Symlink = symlink(from = \"e\", to = \"f\")
+        val a: Symlink = symlink(source = \"b\", target = \"a\")
+        val b: Symlink = symlink(source = \"d\", target = \"c\")
+        val c: Symlink = symlink(source = \"f\", target = \"e\")
         reconcile { a -> b -> c }
         ",
     );

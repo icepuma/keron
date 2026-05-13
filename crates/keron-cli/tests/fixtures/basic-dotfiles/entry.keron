@@ -9,8 +9,8 @@ val home: String = match env("HOME") {
 }
 
 reconcile {
-  symlink(from = "${home}/.testrc", to = "./zshrc");
-  symlink(from = "${home}/.testgitconfig", to = "./gitconfig");
-  symlink(from = "${home}/.testvimrc", to = "./vimrc");
-  symlink(from = "${home}/.config/keron-e2e/nvim/init.lua", to = "./config/nvim/init.lua");
+  symlink(source = "./zshrc", target = "${home}/.testrc");
+  symlink(source = "./gitconfig", target = "${home}/.testgitconfig");
+  symlink(source = "./vimrc", target = "${home}/.testvimrc");
+  symlink(source = "./config/nvim/init.lua", target = "${home}/.config/keron-e2e/nvim/init.lua");
 }

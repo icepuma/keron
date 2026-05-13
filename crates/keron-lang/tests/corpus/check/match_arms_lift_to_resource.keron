@@ -4,7 +4,7 @@ type Kind = "link" | "tmpl"
 # lift to `Resource`, mirroring the list-inference rule.
 fn make(k: Kind): Resource {
   match k {
-    "link" => symlink(from = "a", to = "b"),
-    "tmpl" => template(path = "p", source = "t.tpl", vars = {}),
+    "link" => symlink(source = "b", target = "a"),
+    "tmpl" => template(source = "t.tpl", target = "p", vars = {}),
   }
 }

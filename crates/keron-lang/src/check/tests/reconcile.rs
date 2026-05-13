@@ -6,13 +6,13 @@ use super::check_src;
 
 #[test]
 fn reconcile_symlink_call_typechecks() {
-    assert!(check_src(r#"reconcile symlink(from = "a", to = "b")"#).is_ok());
+    assert!(check_src(r#"reconcile symlink(source = "b", target = "a")"#).is_ok());
 }
 
 #[test]
 fn reconcile_file_call_typechecks() {
     assert!(
-        check_src(r#"reconcile template(path = "x", source = "tmpl.tpl", vars = {"body": "y"})"#)
+        check_src(r#"reconcile template(source = "tmpl.tpl", target = "x", vars = {"body": "y"})"#)
             .is_ok()
     );
 }
@@ -20,7 +20,7 @@ fn reconcile_file_call_typechecks() {
 #[test]
 fn reconcile_symlink_var_typechecks() {
     let src = r#"
-        val s: Symlink = symlink(from = "a", to = "b")
+        val s: Symlink = symlink(source = "b", target = "a")
         reconcile s
     "#;
     assert!(check_src(src).is_ok());
@@ -28,7 +28,8 @@ fn reconcile_symlink_var_typechecks() {
 
 #[test]
 fn reconcile_list_of_symlinks_typechecks() {
-    let src = r#"reconcile [symlink(from = "a", to = "b"), symlink(from = "c", to = "d")]"#;
+    let src =
+        r#"reconcile [symlink(source = "b", target = "a"), symlink(source = "d", target = "c")]"#;
     assert!(check_src(src).is_ok());
 }
 
@@ -45,7 +46,7 @@ fn reconcile_empty_list_with_annotation_typechecks() {
 fn reconcile_user_fn_returning_symlink_typechecks() {
     let src = r#"
         fn make(): Symlink {
-            symlink(from = "a", to = "b")
+            symlink(source = "b", target = "a")
         }
         reconcile make()
     "#;
@@ -55,8 +56,8 @@ fn reconcile_user_fn_returning_symlink_typechecks() {
 #[test]
 fn reconcile_mixed_kinds_via_repeated_directives() {
     let src = r#"
-        val s: Symlink = symlink(from = "a", to = "b")
-        val f: Template = template(path = "x", source = "tmpl.tpl", vars = {"body": "y"})
+        val s: Symlink = symlink(source = "b", target = "a")
+        val f: Template = template(source = "tmpl.tpl", target = "x", vars = {"body": "y"})
         reconcile s
         reconcile f
     "#;
@@ -117,7 +118,7 @@ fn reconcile_unknown_var_errors() {
 fn reconcile_forward_reference_errors() {
     let src = r#"
         reconcile x
-        val x: Symlink = symlink(from = "a", to = "b")
+        val x: Symlink = symlink(source = "b", target = "a")
     "#;
     let err = check_src(src).expect_err("should fail");
     assert!(err[0].message.contains("unknown variable `x`"));
@@ -145,7 +146,7 @@ fn reconcile_list_of_string_errors() {
 
 #[test]
 fn reconcile_arg_type_mismatch_propagates() {
-    let err = check_src(r#"reconcile symlink(from = 1, to = "b")"#).expect_err("should fail");
+    let err = check_src(r#"reconcile symlink(source = "b", target = 1)"#).expect_err("should fail");
     assert!(err[0].message.contains("expected `String`"));
     assert!(err[0].message.contains("found `Int`"));
 }
@@ -155,8 +156,8 @@ fn reconcile_arg_type_mismatch_propagates() {
 #[test]
 fn reconcile_chain_of_resources_typechecks() {
     let src = r#"
-        val a: Symlink = symlink(from = "x", to = "y")
-        val b: Template = template(path = "p", source = "tmpl.tpl", vars = {"body": "c"})
+        val a: Symlink = symlink(source = "y", target = "x")
+        val b: Template = template(source = "tmpl.tpl", target = "p", vars = {"body": "c"})
         reconcile a -> b
     "#;
     assert!(check_src(src).is_ok());
@@ -165,8 +166,8 @@ fn reconcile_chain_of_resources_typechecks() {
 #[test]
 fn reconcile_block_of_single_steps_typechecks() {
     let src = r#"
-        val a: Symlink = symlink(from = "x", to = "y")
-        val b: Template = template(path = "p", source = "tmpl.tpl", vars = {"body": "c"})
+        val a: Symlink = symlink(source = "y", target = "x")
+        val b: Template = template(source = "tmpl.tpl", target = "p", vars = {"body": "c"})
         reconcile {
           a;
           b
@@ -178,9 +179,9 @@ fn reconcile_block_of_single_steps_typechecks() {
 #[test]
 fn reconcile_block_with_chain_steps_typechecks() {
     let src = r#"
-        val a: Symlink = symlink(from = "x", to = "y")
-        val b: Symlink = symlink(from = "p", to = "q")
-        val c: Symlink = symlink(from = "u", to = "v")
+        val a: Symlink = symlink(source = "y", target = "x")
+        val b: Symlink = symlink(source = "q", target = "p")
+        val c: Symlink = symlink(source = "v", target = "u")
         reconcile {
           a;
           b -> c
@@ -192,7 +193,7 @@ fn reconcile_block_with_chain_steps_typechecks() {
 #[test]
 fn reconcile_chain_with_non_reconcilable_step_at_head_errors() {
     let src = r#"
-        val a: Symlink = symlink(from = "x", to = "y")
+        val a: Symlink = symlink(source = "y", target = "x")
         reconcile 42 -> a
     "#;
     let err = check_src(src).expect_err("should fail");
@@ -202,8 +203,8 @@ fn reconcile_chain_with_non_reconcilable_step_at_head_errors() {
 #[test]
 fn reconcile_chain_with_non_reconcilable_step_in_middle_errors() {
     let src = r#"
-        val a: Symlink = symlink(from = "x", to = "y")
-        val b: Symlink = symlink(from = "p", to = "q")
+        val a: Symlink = symlink(source = "y", target = "x")
+        val b: Symlink = symlink(source = "q", target = "p")
         reconcile a -> "nope" -> b
     "#;
     let err = check_src(src).expect_err("should fail");
@@ -213,7 +214,7 @@ fn reconcile_chain_with_non_reconcilable_step_in_middle_errors() {
 #[test]
 fn reconcile_chain_reports_every_bad_step() {
     let src = r#"
-        val a: Symlink = symlink(from = "x", to = "y")
+        val a: Symlink = symlink(source = "y", target = "x")
         reconcile 1 -> a -> "two" -> 3.0
     "#;
     let err = check_src(src).expect_err("should fail");
@@ -225,8 +226,8 @@ fn reconcile_chain_reports_every_bad_step() {
 #[test]
 fn reconcile_block_inside_if_typechecks() {
     let src = r#"
-        val a: Symlink = symlink(from = "x", to = "y")
-        val b: Symlink = symlink(from = "p", to = "q")
+        val a: Symlink = symlink(source = "y", target = "x")
+        val b: Symlink = symlink(source = "q", target = "p")
         if true {
           reconcile {
             a;
@@ -240,7 +241,7 @@ fn reconcile_block_inside_if_typechecks() {
 #[test]
 fn reconcile_block_inside_for_typechecks() {
     let src = r#"
-        val xs: List<Symlink> = [symlink(from = "x", to = "y")]
+        val xs: List<Symlink> = [symlink(source = "y", target = "x")]
         for s in xs {
           reconcile {
             s
@@ -253,9 +254,9 @@ fn reconcile_block_inside_for_typechecks() {
 #[test]
 fn reconcile_chain_with_resource_step_typechecks() {
     let src = r#"
-        val s: Symlink = symlink(from = "a", to = "b")
-        val r: Resource = template(path = "p", source = "tmpl.tpl", vars = {"body": "c"})
-        val t: Template = template(path = "q", source = "tmpl.tpl", vars = {"body": "d"})
+        val s: Symlink = symlink(source = "b", target = "a")
+        val r: Resource = template(source = "tmpl.tpl", target = "p", vars = {"body": "c"})
+        val t: Template = template(source = "tmpl.tpl", target = "q", vars = {"body": "d"})
         reconcile s -> r -> t
     "#;
     assert!(check_src(src).is_ok());
@@ -264,10 +265,10 @@ fn reconcile_chain_with_resource_step_typechecks() {
 #[test]
 fn reconcile_block_with_resource_step_typechecks() {
     let src = r#"
-        val r: Resource = symlink(from = "a", to = "b")
+        val r: Resource = symlink(source = "b", target = "a")
         val rs: List<Resource> = [
-          template(path = "p", source = "tmpl.tpl", vars = {"body": "c"}),
-          template(path = "q", source = "tmpl.tpl", vars = {"body": "d"}),
+          template(source = "tmpl.tpl", target = "p", vars = {"body": "c"}),
+          template(source = "tmpl.tpl", target = "q", vars = {"body": "d"}),
         ]
         reconcile {
           r;
@@ -280,10 +281,10 @@ fn reconcile_block_with_resource_step_typechecks() {
 #[test]
 fn reconcile_chain_length_four_typechecks() {
     let src = r#"
-        val a: Symlink = symlink(from = "a", to = "b")
-        val b: Symlink = symlink(from = "c", to = "d")
-        val c: Symlink = symlink(from = "e", to = "f")
-        val d: Symlink = symlink(from = "g", to = "h")
+        val a: Symlink = symlink(source = "b", target = "a")
+        val b: Symlink = symlink(source = "d", target = "c")
+        val c: Symlink = symlink(source = "f", target = "e")
+        val d: Symlink = symlink(source = "h", target = "g")
         reconcile a -> b -> c -> d
     "#;
     assert!(check_src(src).is_ok());

@@ -3,9 +3,9 @@ val use_zsh: Boolean = true
 
 # Each branch produces a Symlink; the resulting if-expr is also Symlink.
 val shellrc: Symlink = if use_zsh {
-  symlink(from = "~/df/zshrc", to = "~/.zshrc")
+  symlink(source = "~/.zshrc", target = "~/df/zshrc")
 } else {
-  symlink(from = "~/df/bashrc", to = "~/.bashrc")
+  symlink(source = "~/.bashrc", target = "~/df/bashrc")
 }
 
 # Else-if chain with a fallback branch.

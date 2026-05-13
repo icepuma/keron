@@ -1,5 +1,5 @@
 val zero: Int = if true {
-  reconcile [symlink(from = "a", to = "b")]
+  reconcile [symlink(source = "b", target = "a")]
   0
 } else {
   0

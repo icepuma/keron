@@ -19,12 +19,12 @@ val brew_tools: List<Package> = [ripgrep, starship]
 # same way symlinks and templates do.
 val mixed: List<Resource> = [
   brew("fzf"),
-  symlink(from = "~/dotfiles/.zshrc", to = "~/.zshrc"),
+  symlink(source = "~/.zshrc", target = "~/dotfiles/.zshrc"),
   cargo("ripgrep"),
 ]
 
 # `++` lifts to `List<Resource>` when the element kinds differ.
-val together: List<Resource> = brew_tools ++ [symlink(from = "a", to = "b")]
+val together: List<Resource> = brew_tools ++ [symlink(source = "b", target = "a")]
 
 # Packages are reconcilable like any other resource.
 reconcile ripgrep

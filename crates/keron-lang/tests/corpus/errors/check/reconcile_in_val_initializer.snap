@@ -4,5 +4,5 @@ source: crates/keron-lang/tests/harness/mod.rs
 error: `reconcile` is not allowed inside a value expression; resources emitted here would be silently dropped — move it to a top-level `reconcile` or to a top-level `for` / `if` statement
   --> 2:3
   |
-2 |   reconcile [symlink(from = "a", to = "b")]
-  |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2 |   reconcile [symlink(source = "b", target = "a")]
+  |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

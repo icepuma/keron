@@ -35,7 +35,7 @@ fn mixed_resource_list_lifts_package_to_resource() {
     // resource singletons go through.
     assert!(
         check_src(
-            "val xs = [brew(\"git\"), symlink(from = \"/a\", to = \"/b\")]\n\
+            "val xs = [brew(\"git\"), symlink(source = \"/b\", target = \"/a\")]\n\
              val ys: List<Resource> = xs",
         )
         .is_ok()
@@ -48,7 +48,7 @@ fn match_lifts_package_and_filesystem_resource_to_resource() {
         check_src(
             "val r: Resource = match true {\n\
              true => brew(\"git\"),\n\
-             _ => symlink(from = \"/a\", to = \"/b\"),\n\
+             _ => symlink(source = \"/b\", target = \"/a\"),\n\
              }\n",
         )
         .is_ok()

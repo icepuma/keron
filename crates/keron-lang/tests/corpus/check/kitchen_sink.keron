@@ -128,12 +128,12 @@ val alias_or_default: String = match maybe_alias {
 
 # --- resources & reconcile ---
 fn link(name: String): Symlink {
-  symlink(from = "~/dotfiles/${name}", to = "~/.${name}")
+  symlink(source = "~/.${name}", target = "~/dotfiles/${name}")
 }
 
 val zshrc: Symlink = link("zshrc")
-val gitcfg: Template = template(path = "~/.gitconfig", source = "tmpl.tpl", vars = {"body": "[user]\n  email = me"})
-val xdgcfg: Template = template(path = "~/.config/keron.toml", source = "tmpl.tpl", vars = {"body": "key = \"value\""})
+val gitcfg: Template = template(source = "tmpl.tpl", target = "~/.gitconfig", vars = {"body": "[user]\n  email = me"})
+val xdgcfg: Template = template(source = "tmpl.tpl", target = "~/.config/keron.toml", vars = {"body": "key = \"value\""})
 
 val all_links: List<Symlink> = [
   link("vimrc"),
@@ -236,7 +236,7 @@ for one_link in all_links {
 
 # Iterate a map of name → priority and reconcile a derived file.
 for (name, priority) in by_name {
-  reconcile template(path = "~/.priority/${name}", source = "tmpl.tpl", vars = {"body": "${priority}"})
+  reconcile template(source = "tmpl.tpl", target = "~/.priority/${name}", vars = {"body": "${priority}"})
 }
 
 # `for` composes with `if` for conditional declarations inside a loop.
@@ -272,12 +272,12 @@ val any_resource: Resource = link("vimrc")
 
 val mixed_resources: List<Resource> = [
   link("tmux.conf"),
-  template(path = "/etc/motd", source = "tmpl.tpl", vars = {"body": "welcome"}),
-  template(path = "/etc/issue", source = "tmpl.tpl", vars = {"body": "welcome"}),
+  template(source = "tmpl.tpl", target = "/etc/motd", vars = {"body": "welcome"}),
+  template(source = "tmpl.tpl", target = "/etc/issue", vars = {"body": "welcome"}),
 ]
 
 # Heterogeneous list literals infer to `List<Resource>` automatically.
-val auto_mix = [link("alacritty.yml"), template(path = "/etc/issue", source = "tmpl.tpl", vars = {"body": ""})]
+val auto_mix = [link("alacritty.yml"), template(source = "tmpl.tpl", target = "/etc/issue", vars = {"body": ""})]
 
 # `++` mirrors list synthesis: concatenating lists whose element kinds
 # differ lifts the result to `List<Resource>`.
@@ -288,7 +288,7 @@ val combined_resources = all_links ++ [gitcfg, xdgcfg]
 # kinds — both branches satisfy the `Resource` annotation.
 fn pick(name: String, want_file: Boolean): Resource {
   if want_file {
-    template(path = "~/.config/${name}", source = "tmpl.tpl", vars = {"body": ""})
+    template(source = "tmpl.tpl", target = "~/.config/${name}", vars = {"body": ""})
   } else {
     link(name)
   }
@@ -518,7 +518,7 @@ for p in brew_tools {
 }
 
 reconcile template(
-  path = "~/.config/keron/state",
   source = "tmpl.tpl",
+  target = "~/.config/keron/state",
   vars = {"body": "${mode_marker}\nrole=${origin_role}\nlevel=${level_summary}\nplatform=${platform}\nhome=${keron_home}\neditor=${editor}\n"},
 )

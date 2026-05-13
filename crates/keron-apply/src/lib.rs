@@ -448,7 +448,7 @@ mod tests {
         let proj = TempProject::new("not-execute");
         let entry = proj.write(
             "entry.keron",
-            "reconcile template(path = \"/x\", source = \"tmpl.tpl\", vars = {\"body\": \"y\"})\n",
+            "reconcile template(source = \"tmpl.tpl\", target = \"/x\", vars = {\"body\": \"y\"})\n",
         );
         let (res, out) = drive(&entry, false, "");
         res.unwrap();
@@ -467,7 +467,7 @@ mod tests {
         let proj = TempProject::new("empty-plan");
         let entry = proj.write(
             "entry.keron",
-            "val f: Template = template(path = \"/x\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n",
+            "val f: Template = template(source = \"tmpl.tpl\", target = \"/x\", vars = {\"body\": \"\"})\n",
         );
         let (res, out) = drive(&entry, true, "");
         res.unwrap();
@@ -511,7 +511,7 @@ mod tests {
         let src = format!(
             "reconcile {{\n\
              winget(\"Microsoft.PowerShell\");\n\
-             template(path = \"{}\", source = \"tmpl.tpl\", vars = {{\"body\": \"y\"}});\n\
+             template(source = \"tmpl.tpl\", target = \"{}\", vars = {{\"body\": \"y\"}});\n\
              }}\n",
             dest.display(),
         );
@@ -538,7 +538,7 @@ mod tests {
         let src = format!(
             "reconcile {{\n\
              winget(\"Microsoft.PowerShell\");\n\
-             template(path = \"{}\", source = \"tmpl.tpl\", vars = {{\"body\": \"y\"}});\n\
+             template(source = \"tmpl.tpl\", target = \"{}\", vars = {{\"body\": \"y\"}});\n\
              }}\n",
             dest.display(),
         );
@@ -561,7 +561,7 @@ mod tests {
         let proj = TempProject::new("no-approval");
         let entry = proj.write(
             "entry.keron",
-            "reconcile template(path = \"/x\", source = \"tmpl.tpl\", vars = {\"body\": \"y\"})\n",
+            "reconcile template(source = \"tmpl.tpl\", target = \"/x\", vars = {\"body\": \"y\"})\n",
         );
         let (res, out) = drive(&entry, true, "no\n");
         let outcome = res.unwrap();
@@ -583,7 +583,7 @@ mod tests {
         let dest = proj.root.join("out");
         fs::write(&dest, "old").unwrap();
         let src = format!(
-            "reconcile template(path = \"{}\", source = \"tmpl.tpl\", vars = {{\"body\": \"new\"}})\n",
+            "reconcile template(source = \"tmpl.tpl\", target = \"{}\", vars = {{\"body\": \"new\"}})\n",
             dest.display(),
         );
         let entry = proj.write("entry.keron", &src);
@@ -611,7 +611,7 @@ mod tests {
         let proj = TempProject::new("yes-approval");
         let dest = proj.root.join("out");
         let src = format!(
-            "reconcile template(path = \"{}\", source = \"tmpl.tpl\", vars = {{\"body\": \"y\"}})\n",
+            "reconcile template(source = \"tmpl.tpl\", target = \"{}\", vars = {{\"body\": \"y\"}})\n",
             dest.display(),
         );
         let entry = proj.write("entry.keron", &src);
@@ -632,9 +632,9 @@ mod tests {
         fs::write(&target, "payload").unwrap();
         let link = proj.root.join("alias");
         let src = format!(
-            "reconcile symlink(from = \"{}\", to = \"{}\")\n",
-            link.display(),
+            "reconcile symlink(source = \"{}\", target = \"{}\")\n",
             target.display(),
+            link.display(),
         );
         let entry = proj.write("entry.keron", &src);
 
@@ -663,9 +663,9 @@ mod tests {
         let link = proj.root.join("alias");
         std::os::unix::fs::symlink(&target, &link).unwrap();
         let src = format!(
-            "reconcile symlink(from = \"{}\", to = \"{}\")\n",
-            link.display(),
+            "reconcile symlink(source = \"{}\", target = \"{}\")\n",
             target.display(),
+            link.display(),
         );
         let entry = proj.write("entry.keron", &src);
 

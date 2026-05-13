@@ -1,8 +1,8 @@
 
 val rs: List<Resource> = [
-  symlink(from = "df/zsh", to = "~/.zshrc"),
-  template(path = "/etc/motd", source = "tmpl.tpl", vars = {"body": "welcome"}),
-  template(path = "/etc/issue", source = "tmpl.tpl", vars = {"body": "welcome"}),
+  symlink(source = "~/.zshrc", target = "df/zsh"),
+  template(source = "tmpl.tpl", target = "/etc/motd", vars = {"body": "welcome"}),
+  template(source = "tmpl.tpl", target = "/etc/issue", vars = {"body": "welcome"}),
 ]
 
 for r in rs {

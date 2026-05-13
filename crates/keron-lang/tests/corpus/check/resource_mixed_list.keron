@@ -1,6 +1,6 @@
 
-val zshrc: Symlink = symlink(from = "df/zshrc", to = "~/.zshrc")
-val motd: Template = template(path = "/etc/motd", source = "tmpl.tpl", vars = {"body": "welcome"})
+val zshrc: Symlink = symlink(source = "~/.zshrc", target = "df/zshrc")
+val motd: Template = template(source = "tmpl.tpl", target = "/etc/motd", vars = {"body": "welcome"})
 
 val mixed: List<Resource> = [zshrc, motd]
 

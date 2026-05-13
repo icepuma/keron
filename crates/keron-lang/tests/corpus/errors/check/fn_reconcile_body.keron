@@ -1,4 +1,4 @@
-val target: Symlink = symlink(from = "a", to = "b")
+val target: Symlink = symlink(source = "b", target = "a")
 
 fn install(): Void {
   reconcile target

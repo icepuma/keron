@@ -9,7 +9,7 @@ val home: String = match env("HOME") {
 }
 
 reconcile template(
-  path = "${home}/.testgreeting",
   source = "./greeting.tpl",
+  target = "${home}/.testgreeting",
   vars = {"name": "keron", "scope": "e2e"},
 )

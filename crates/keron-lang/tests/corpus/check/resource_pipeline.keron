@@ -4,7 +4,7 @@
 # construction is pure — no I/O until `reconcile`.
 
 fn link(name: String): Symlink {
-  symlink(from = "~/dotfiles/${name}", to = "~/.${name}")
+  symlink(source = "~/.${name}", target = "~/dotfiles/${name}")
 }
 
 val configs: List<Symlink> = [

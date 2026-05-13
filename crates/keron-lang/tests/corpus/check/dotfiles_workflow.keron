@@ -4,7 +4,7 @@
 # `reconcile` directives are the only acts of intent.
 
 fn link(name: String): Symlink {
-  symlink(from = "~/dotfiles/${name}", to = "~/.${name}")
+  symlink(source = "~/.${name}", target = "~/dotfiles/${name}")
 }
 
 val shell_links: List<Symlink> = [
@@ -19,8 +19,8 @@ val editor_links: List<Symlink> = [
 ]
 
 val gitconfig: Template = template(
-  path = "~/.gitconfig",
   source = "tmpl.tpl",
+  target = "~/.gitconfig",
   vars = {"body": "[user]\n  email = me@example.com\n  name = Me"},
 )
 

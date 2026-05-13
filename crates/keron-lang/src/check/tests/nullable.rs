@@ -170,7 +170,7 @@ fn match_arm_unification_rejects_cross_type_results() {
     let err = check_src(
         "fn pick(b: Boolean): Resource { match b {\n\
            true => 7,\n\
-           false => symlink(from = \"a\", to = \"b\"),\n\
+           false => symlink(source = \"b\", target = \"a\"),\n\
          }}",
     )
     .expect_err("Int + Symlink should not unify");
@@ -237,7 +237,7 @@ fn nullable_nullable_widens_through_inner_subtyping() {
     // `is_subtype(c, p)`), giving the same false negative.
     assert!(
         check_src(
-            "val s: Symlink? = symlink(from = \"a\", to = \"b\")\n\
+            "val s: Symlink? = symlink(source = \"b\", target = \"a\")\n\
              val r: Resource? = s",
         )
         .is_ok()

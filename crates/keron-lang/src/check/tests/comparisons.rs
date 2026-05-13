@@ -39,8 +39,10 @@ fn equality_inferred_to_boolean() {
 
 #[test]
 fn equality_with_resource_errors() {
-    let err = check_src(r#"val r = symlink(from="a", to="b") == symlink(from="c", to="d")"#)
-        .expect_err("should fail");
+    let err = check_src(
+        r#"val r = symlink(source = "b", target = "a") == symlink(source = "d", target = "c")"#,
+    )
+    .expect_err("should fail");
     assert!(err[0].message.contains("`==` requires"));
     assert!(err[0].message.contains("`Symlink`"));
 }

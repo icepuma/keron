@@ -1,2 +1,2 @@
 
-reconcile symlink(from = "a", to = "b")
+reconcile symlink(source = "b", target = "a")

@@ -30,25 +30,8 @@ Program {
                                         CallArg {
                                             name: Some(
                                                 Spanned {
-                                                    node: "from",
-                                                    span: 38..42,
-                                                },
-                                            ),
-                                            value: Spanned {
-                                                node: Literal(
-                                                    String(
-                                                        "df/zsh",
-                                                    ),
-                                                ),
-                                                span: 45..53,
-                                            },
-                                            span: 38..53,
-                                        },
-                                        CallArg {
-                                            name: Some(
-                                                Spanned {
-                                                    node: "to",
-                                                    span: 55..57,
+                                                    node: "source",
+                                                    span: 38..44,
                                                 },
                                             ),
                                             value: Spanned {
@@ -57,26 +40,60 @@ Program {
                                                         "~/.zshrc",
                                                     ),
                                                 ),
-                                                span: 60..70,
+                                                span: 47..57,
                                             },
-                                            span: 55..70,
+                                            span: 38..57,
+                                        },
+                                        CallArg {
+                                            name: Some(
+                                                Spanned {
+                                                    node: "target",
+                                                    span: 59..65,
+                                                },
+                                            ),
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "df/zsh",
+                                                    ),
+                                                ),
+                                                span: 68..76,
+                                            },
+                                            span: 59..76,
                                         },
                                     ],
                                 },
-                                span: 30..71,
+                                span: 30..77,
                             },
                             Spanned {
                                 node: Call {
                                     callee: Spanned {
                                         node: "template",
-                                        span: 75..83,
+                                        span: 81..89,
                                     },
                                     args: [
                                         CallArg {
                                             name: Some(
                                                 Spanned {
-                                                    node: "path",
-                                                    span: 84..88,
+                                                    node: "source",
+                                                    span: 90..96,
+                                                },
+                                            ),
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "tmpl.tpl",
+                                                    ),
+                                                ),
+                                                span: 99..109,
+                                            },
+                                            span: 90..109,
+                                        },
+                                        CallArg {
+                                            name: Some(
+                                                Spanned {
+                                                    node: "target",
+                                                    span: 111..117,
                                                 },
                                             ),
                                             value: Spanned {
@@ -85,32 +102,15 @@ Program {
                                                         "/etc/motd",
                                                     ),
                                                 ),
-                                                span: 91..102,
+                                                span: 120..131,
                                             },
-                                            span: 84..102,
-                                        },
-                                        CallArg {
-                                            name: Some(
-                                                Spanned {
-                                                    node: "source",
-                                                    span: 104..110,
-                                                },
-                                            ),
-                                            value: Spanned {
-                                                node: Literal(
-                                                    String(
-                                                        "tmpl.tpl",
-                                                    ),
-                                                ),
-                                                span: 113..123,
-                                            },
-                                            span: 104..123,
+                                            span: 111..131,
                                         },
                                         CallArg {
                                             name: Some(
                                                 Spanned {
                                                     node: "vars",
-                                                    span: 125..129,
+                                                    span: 133..137,
                                                 },
                                             ),
                                             value: Spanned {
@@ -123,7 +123,7 @@ Program {
                                                                         "body",
                                                                     ),
                                                                 ),
-                                                                span: 133..139,
+                                                                span: 141..147,
                                                             },
                                                             value: Spanned {
                                                                 node: Literal(
@@ -131,32 +131,49 @@ Program {
                                                                         "welcome",
                                                                     ),
                                                                 ),
-                                                                span: 141..150,
+                                                                span: 149..158,
                                                             },
-                                                            span: 133..150,
+                                                            span: 141..158,
                                                         },
                                                     ],
                                                 ),
-                                                span: 132..151,
+                                                span: 140..159,
                                             },
-                                            span: 125..151,
+                                            span: 133..159,
                                         },
                                     ],
                                 },
-                                span: 75..152,
+                                span: 81..160,
                             },
                             Spanned {
                                 node: Call {
                                     callee: Spanned {
                                         node: "template",
-                                        span: 156..164,
+                                        span: 164..172,
                                     },
                                     args: [
                                         CallArg {
                                             name: Some(
                                                 Spanned {
-                                                    node: "path",
-                                                    span: 165..169,
+                                                    node: "source",
+                                                    span: 173..179,
+                                                },
+                                            ),
+                                            value: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "tmpl.tpl",
+                                                    ),
+                                                ),
+                                                span: 182..192,
+                                            },
+                                            span: 173..192,
+                                        },
+                                        CallArg {
+                                            name: Some(
+                                                Spanned {
+                                                    node: "target",
+                                                    span: 194..200,
                                                 },
                                             ),
                                             value: Spanned {
@@ -165,32 +182,15 @@ Program {
                                                         "/etc/issue",
                                                     ),
                                                 ),
-                                                span: 172..184,
+                                                span: 203..215,
                                             },
-                                            span: 165..184,
-                                        },
-                                        CallArg {
-                                            name: Some(
-                                                Spanned {
-                                                    node: "source",
-                                                    span: 186..192,
-                                                },
-                                            ),
-                                            value: Spanned {
-                                                node: Literal(
-                                                    String(
-                                                        "tmpl.tpl",
-                                                    ),
-                                                ),
-                                                span: 195..205,
-                                            },
-                                            span: 186..205,
+                                            span: 194..215,
                                         },
                                         CallArg {
                                             name: Some(
                                                 Spanned {
                                                     node: "vars",
-                                                    span: 207..211,
+                                                    span: 217..221,
                                                 },
                                             ),
                                             value: Spanned {
@@ -203,7 +203,7 @@ Program {
                                                                         "body",
                                                                     ),
                                                                 ),
-                                                                span: 215..221,
+                                                                span: 225..231,
                                                             },
                                                             value: Spanned {
                                                                 node: Literal(
@@ -211,25 +211,25 @@ Program {
                                                                         "welcome",
                                                                     ),
                                                                 ),
-                                                                span: 223..232,
+                                                                span: 233..242,
                                                             },
-                                                            span: 215..232,
+                                                            span: 225..242,
                                                         },
                                                     ],
                                                 ),
-                                                span: 214..233,
+                                                span: 224..243,
                                             },
-                                            span: 207..233,
+                                            span: 217..243,
                                         },
                                     ],
                                 },
-                                span: 156..234,
+                                span: 164..244,
                             },
                         ],
                     ),
-                    span: 26..239,
+                    span: 26..249,
                 },
-                span: 1..239,
+                span: 1..249,
             },
         ),
         ExprStmt(
@@ -238,14 +238,14 @@ Program {
                     pattern: Elem(
                         Spanned {
                             node: "r",
-                            span: 243..244,
+                            span: 253..254,
                         },
                     ),
                     iter_expr: Spanned {
                         node: Var(
                             "rs",
                         ),
-                        span: 248..250,
+                        span: 258..260,
                     },
                     body: Block {
                         stmts: [
@@ -257,19 +257,19 @@ Program {
                                                 node: Var(
                                                     "r",
                                                 ),
-                                                span: 265..266,
+                                                span: 275..276,
                                             },
                                         ],
                                     ],
-                                    span: 255..267,
+                                    span: 265..277,
                                 },
                             ),
                         ],
                         trailing: None,
-                        span: 251..269,
+                        span: 261..279,
                     },
                 },
-                span: 239..269,
+                span: 249..279,
             },
         ),
     ],

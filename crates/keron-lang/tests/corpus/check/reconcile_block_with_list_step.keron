@@ -1,11 +1,11 @@
 
-val a: Symlink = symlink(from = "df/a", to = "~/.a")
-val b: Symlink = symlink(from = "df/b", to = "~/.b")
-val c: Symlink = symlink(from = "df/c", to = "~/.c")
+val a: Symlink = symlink(source = "~/.a", target = "df/a")
+val b: Symlink = symlink(source = "~/.b", target = "df/b")
+val c: Symlink = symlink(source = "~/.c", target = "df/c")
 
 val shells: List<Symlink> = [
-  symlink(from = "df/zsh", to = "~/.zshrc"),
-  symlink(from = "df/bash", to = "~/.bashrc"),
+  symlink(source = "~/.zshrc", target = "df/zsh"),
+  symlink(source = "~/.bashrc", target = "df/bash"),
 ]
 
 reconcile {

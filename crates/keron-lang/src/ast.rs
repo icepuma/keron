@@ -131,11 +131,11 @@ pub enum IntrinsicId {
     /// resource. Planning verifies the named shell exists; execution
     /// feeds `script` to that shell on stdin.
     Shell,
-    /// `template(path, source, vars)` — render a templated file. At
+    /// `template(source, target, vars)` — render a templated file. At
     /// apply time, `source` is read (resolved relative to the
     /// importing module's directory), `${name}` placeholders are
     /// substituted with values from `vars`, and the rendered text is
-    /// written to `path`. Subsumes the old `file(path, content)`
+    /// written to `target`. Subsumes the old `file(target, content)`
     /// constructor: a non-templating file is just a `template` with
     /// an empty `vars` map.
     Template,
@@ -439,8 +439,8 @@ pub enum Type {
     /// fn; only enters the apply queue via `reconcile`.
     Symlink,
     /// Templated file. Constructed via the builtin
-    /// `template(path, source, vars)` fn; at apply time the
-    /// substituted text lands at `path`. A "plain" file is just a
+    /// `template(source, target, vars)` fn; at apply time the
+    /// substituted text lands at `target`. A "plain" file is just a
     /// template with an empty `vars` map.
     Template,
     /// A package-manager-managed package (brew formula, `cargo

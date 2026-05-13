@@ -42,36 +42,8 @@ Program {
                                     CallArg {
                                         name: Some(
                                             Spanned {
-                                                node: "from",
-                                                span: 44..48,
-                                            },
-                                        ),
-                                        value: Spanned {
-                                            node: Interpolation(
-                                                [
-                                                    Text(
-                                                        "~/dotfiles/",
-                                                    ),
-                                                    Expr {
-                                                        expr: Spanned {
-                                                            node: Var(
-                                                                "name",
-                                                            ),
-                                                            span: 65..69,
-                                                        },
-                                                        indent: None,
-                                                    },
-                                                ],
-                                            ),
-                                            span: 51..71,
-                                        },
-                                        span: 44..71,
-                                    },
-                                    CallArg {
-                                        name: Some(
-                                            Spanned {
-                                                node: "to",
-                                                span: 73..75,
+                                                node: "source",
+                                                span: 44..50,
                                             },
                                         ),
                                         value: Spanned {
@@ -85,24 +57,52 @@ Program {
                                                             node: Var(
                                                                 "name",
                                                             ),
-                                                            span: 84..88,
+                                                            span: 59..63,
                                                         },
                                                         indent: None,
                                                     },
                                                 ],
                                             ),
-                                            span: 78..90,
+                                            span: 53..65,
                                         },
-                                        span: 73..90,
+                                        span: 44..65,
+                                    },
+                                    CallArg {
+                                        name: Some(
+                                            Spanned {
+                                                node: "target",
+                                                span: 67..73,
+                                            },
+                                        ),
+                                        value: Spanned {
+                                            node: Interpolation(
+                                                [
+                                                    Text(
+                                                        "~/dotfiles/",
+                                                    ),
+                                                    Expr {
+                                                        expr: Spanned {
+                                                            node: Var(
+                                                                "name",
+                                                            ),
+                                                            span: 90..94,
+                                                        },
+                                                        indent: None,
+                                                    },
+                                                ],
+                                            ),
+                                            span: 76..96,
+                                        },
+                                        span: 67..96,
                                     },
                                 ],
                             },
-                            span: 36..92,
+                            span: 36..98,
                         },
                     ),
-                    span: 32..95,
+                    span: 32..101,
                 },
-                span: 1..95,
+                span: 1..101,
                 intrinsic: None,
             },
         ),
@@ -110,21 +110,21 @@ Program {
             ValDecl {
                 name: Spanned {
                     node: "zshrc",
-                    span: 99..104,
+                    span: 105..110,
                 },
                 ty: Some(
                     Spanned {
                         node: Named(
                             "Symlink",
                         ),
-                        span: 106..113,
+                        span: 112..119,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "link",
-                            span: 116..120,
+                            span: 122..126,
                         },
                         args: [
                             CallArg {
@@ -135,15 +135,15 @@ Program {
                                             "zshrc",
                                         ),
                                     ),
-                                    span: 121..128,
+                                    span: 127..134,
                                 },
-                                span: 121..128,
+                                span: 127..134,
                             },
                         ],
                     },
-                    span: 116..130,
+                    span: 122..136,
                 },
-                span: 95..130,
+                span: 101..136,
             },
         ),
     ],

@@ -1,8 +1,8 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
 ---
-error: missing required argument `to` for `symlink`
+error: missing required argument `target` for `symlink`
   --> 2:18
   |
-2 | val s: Symlink = symlink(from = "a")
-  |                  ^^^^^^^^^^^^^^^^^^^^
+2 | val s: Symlink = symlink(source = "a")
+  |                  ^^^^^^^^^^^^^^^^^^^^^^

@@ -40,9 +40,9 @@ fn if_with_resource_branches_typechecks() {
     let src = r#"
         val pick: Boolean = true
         val r: Symlink = if pick {
-            symlink(from = "a", to = "b")
+            symlink(source = "b", target = "a")
         } else {
-            symlink(from = "c", to = "d")
+            symlink(source = "d", target = "c")
         }
     "#;
     assert!(check_src(src).is_ok());
@@ -163,9 +163,9 @@ fn reconcile_if_resource_typechecks() {
     let src = r#"
         val use_zsh: Boolean = true
         reconcile if use_zsh {
-            symlink(from = "~/df/zshrc", to = "~/.zshrc")
+            symlink(source = "~/.zshrc", target = "~/df/zshrc")
         } else {
-            symlink(from = "~/df/bashrc", to = "~/.bashrc")
+            symlink(source = "~/.bashrc", target = "~/df/bashrc")
         }
     "#;
     assert!(check_src(src).is_ok());
@@ -191,7 +191,7 @@ fn if_without_else_void_branches_typechecks() {
     // expression statement.
     let src = r#"
         val flag: Boolean = true
-        val target: Symlink = symlink(from = "a", to = "b")
+        val target: Symlink = symlink(source = "b", target = "a")
         if flag { reconcile target }
     "#;
     assert!(check_src(src).is_ok());
@@ -237,7 +237,7 @@ fn void_fn_with_no_trailing_typechecks() {
 #[test]
 fn void_fn_with_conditional_reconcile_errors() {
     let src = r#"
-        val target: Symlink = symlink(from = "a", to = "b")
+        val target: Symlink = symlink(source = "b", target = "a")
         fn install_if(flag: Boolean): Void {
           if flag { reconcile target }
         }

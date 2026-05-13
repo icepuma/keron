@@ -48,25 +48,8 @@ Program {
                             CallArg {
                                 name: Some(
                                     Spanned {
-                                        node: "from",
-                                        span: 58..62,
-                                    },
-                                ),
-                                value: Spanned {
-                                    node: Literal(
-                                        String(
-                                            "~/df/zshrc",
-                                        ),
-                                    ),
-                                    span: 65..77,
-                                },
-                                span: 58..77,
-                            },
-                            CallArg {
-                                name: Some(
-                                    Spanned {
-                                        node: "to",
-                                        span: 79..81,
+                                        node: "source",
+                                        span: 58..64,
                                     },
                                 ),
                                 value: Spanned {
@@ -75,58 +58,58 @@ Program {
                                             "~/.zshrc",
                                         ),
                                     ),
-                                    span: 84..94,
+                                    span: 67..77,
                                 },
-                                span: 79..94,
+                                span: 58..77,
+                            },
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "target",
+                                        span: 79..85,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "~/df/zshrc",
+                                        ),
+                                    ),
+                                    span: 88..100,
+                                },
+                                span: 79..100,
                             },
                         ],
                     },
-                    span: 50..96,
+                    span: 50..102,
                 },
-                span: 29..96,
+                span: 29..102,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "bashrc",
-                    span: 100..106,
+                    span: 106..112,
                 },
                 ty: Some(
                     Spanned {
                         node: Symlink,
-                        span: 108..115,
+                        span: 114..121,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "symlink",
-                            span: 118..125,
+                            span: 124..131,
                         },
                         args: [
                             CallArg {
                                 name: Some(
                                     Spanned {
-                                        node: "from",
-                                        span: 126..130,
-                                    },
-                                ),
-                                value: Spanned {
-                                    node: Literal(
-                                        String(
-                                            "~/df/bashrc",
-                                        ),
-                                    ),
-                                    span: 133..146,
-                                },
-                                span: 126..146,
-                            },
-                            CallArg {
-                                name: Some(
-                                    Spanned {
-                                        node: "to",
-                                        span: 148..150,
+                                        node: "source",
+                                        span: 132..138,
                                     },
                                 ),
                                 value: Spanned {
@@ -135,15 +118,32 @@ Program {
                                             "~/.bashrc",
                                         ),
                                     ),
-                                    span: 153..164,
+                                    span: 141..152,
                                 },
-                                span: 148..164,
+                                span: 132..152,
+                            },
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "target",
+                                        span: 154..160,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "~/df/bashrc",
+                                        ),
+                                    ),
+                                    span: 163..176,
+                                },
+                                span: 154..176,
                             },
                         ],
                     },
-                    span: 118..167,
+                    span: 124..179,
                 },
-                span: 96..167,
+                span: 102..179,
             },
         ),
         ExprStmt(
@@ -153,7 +153,7 @@ Program {
                         node: Var(
                             "use_zsh",
                         ),
-                        span: 170..177,
+                        span: 182..189,
                     },
                     then_branch: Block {
                         stmts: [
@@ -165,24 +165,24 @@ Program {
                                                 node: Var(
                                                     "zshrc",
                                                 ),
-                                                span: 190..195,
+                                                span: 202..207,
                                             },
                                         ],
                                     ],
-                                    span: 180..196,
+                                    span: 192..208,
                                 },
                             ),
                         ],
                         trailing: None,
-                        span: 178..198,
+                        span: 190..210,
                     },
                     else_branch: Block {
                         stmts: [],
                         trailing: None,
-                        span: 198..198,
+                        span: 210..210,
                     },
                 },
-                span: 167..198,
+                span: 179..210,
             },
         ),
         ExprStmt(
@@ -192,7 +192,7 @@ Program {
                         node: Var(
                             "use_zsh",
                         ),
-                        span: 201..208,
+                        span: 213..220,
                     },
                     then_branch: Block {
                         stmts: [
@@ -204,16 +204,16 @@ Program {
                                                 node: Var(
                                                     "zshrc",
                                                 ),
-                                                span: 221..226,
+                                                span: 233..238,
                                             },
                                         ],
                                     ],
-                                    span: 211..227,
+                                    span: 223..239,
                                 },
                             ),
                         ],
                         trailing: None,
-                        span: 209..229,
+                        span: 221..241,
                     },
                     else_branch: Block {
                         stmts: [
@@ -225,19 +225,19 @@ Program {
                                                 node: Var(
                                                     "bashrc",
                                                 ),
-                                                span: 246..252,
+                                                span: 258..264,
                                             },
                                         ],
                                     ],
-                                    span: 236..253,
+                                    span: 248..265,
                                 },
                             ),
                         ],
                         trailing: None,
-                        span: 234..255,
+                        span: 246..267,
                     },
                 },
-                span: 198..255,
+                span: 210..267,
             },
         ),
     ],

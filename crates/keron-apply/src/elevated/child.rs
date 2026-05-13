@@ -193,7 +193,7 @@ mod tests {
     }
 
     #[test]
-    fn leaf_path_for_symlink_returns_from() {
+    fn leaf_path_for_symlink_returns_target() {
         let c = change(ResourceState::Symlink {
             from: PathBuf::from("/a"),
             to: PathBuf::from("/b"),
@@ -202,7 +202,7 @@ mod tests {
     }
 
     #[test]
-    fn leaf_path_for_template_returns_path() {
+    fn leaf_path_for_template_returns_target() {
         let c = change(ResourceState::Template {
             path: PathBuf::from("/c"),
             content: "x".into(),

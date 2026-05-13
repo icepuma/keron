@@ -20,25 +20,8 @@ Program {
                                                 CallArg {
                                                     name: Some(
                                                         Spanned {
-                                                            node: "from",
-                                                            span: 23..27,
-                                                        },
-                                                    ),
-                                                    value: Spanned {
-                                                        node: Literal(
-                                                            String(
-                                                                "~/df/zshrc",
-                                                            ),
-                                                        ),
-                                                        span: 30..42,
-                                                    },
-                                                    span: 23..42,
-                                                },
-                                                CallArg {
-                                                    name: Some(
-                                                        Spanned {
-                                                            node: "to",
-                                                            span: 44..46,
+                                                            node: "source",
+                                                            span: 23..29,
                                                         },
                                                     ),
                                                     value: Spanned {
@@ -47,43 +30,43 @@ Program {
                                                                 "~/.zshrc",
                                                             ),
                                                         ),
-                                                        span: 49..59,
+                                                        span: 32..42,
                                                     },
-                                                    span: 44..59,
+                                                    span: 23..42,
                                                 },
-                                            ],
-                                        },
-                                        span: 15..60,
-                                    },
-                                    Spanned {
-                                        node: Call {
-                                            callee: Spanned {
-                                                node: "symlink",
-                                                span: 64..71,
-                                            },
-                                            args: [
                                                 CallArg {
                                                     name: Some(
                                                         Spanned {
-                                                            node: "from",
-                                                            span: 72..76,
+                                                            node: "target",
+                                                            span: 44..50,
                                                         },
                                                     ),
                                                     value: Spanned {
                                                         node: Literal(
                                                             String(
-                                                                "~/df/vimrc",
+                                                                "~/df/zshrc",
                                                             ),
                                                         ),
-                                                        span: 79..91,
+                                                        span: 53..65,
                                                     },
-                                                    span: 72..91,
+                                                    span: 44..65,
                                                 },
+                                            ],
+                                        },
+                                        span: 15..66,
+                                    },
+                                    Spanned {
+                                        node: Call {
+                                            callee: Spanned {
+                                                node: "symlink",
+                                                span: 70..77,
+                                            },
+                                            args: [
                                                 CallArg {
                                                     name: Some(
                                                         Spanned {
-                                                            node: "to",
-                                                            span: 93..95,
+                                                            node: "source",
+                                                            span: 78..84,
                                                         },
                                                     ),
                                                     value: Spanned {
@@ -92,21 +75,38 @@ Program {
                                                                 "~/.vimrc",
                                                             ),
                                                         ),
-                                                        span: 98..108,
+                                                        span: 87..97,
                                                     },
-                                                    span: 93..108,
+                                                    span: 78..97,
+                                                },
+                                                CallArg {
+                                                    name: Some(
+                                                        Spanned {
+                                                            node: "target",
+                                                            span: 99..105,
+                                                        },
+                                                    ),
+                                                    value: Spanned {
+                                                        node: Literal(
+                                                            String(
+                                                                "~/df/vimrc",
+                                                            ),
+                                                        ),
+                                                        span: 108..120,
+                                                    },
+                                                    span: 99..120,
                                                 },
                                             ],
                                         },
-                                        span: 64..109,
+                                        span: 70..121,
                                     },
                                 ],
                             ),
-                            span: 11..113,
+                            span: 11..125,
                         },
                     ],
                 ],
-                span: 1..113,
+                span: 1..125,
             },
         ),
     ],

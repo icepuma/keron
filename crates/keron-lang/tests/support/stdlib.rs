@@ -50,15 +50,15 @@ pub fn imports() -> ImportedSymbols {
     insert_fn(
         &mut imp,
         "symlink",
-        &[("from", Type::String), ("to", Type::String)],
+        &[("source", Type::String), ("target", Type::String)],
         Type::Symlink,
     );
     insert_fn(
         &mut imp,
         "template",
         &[
-            ("path", Type::String),
             ("source", Type::String),
+            ("target", Type::String),
             (
                 "vars",
                 Type::Map(Box::new(Type::String), Box::new(Type::String)),

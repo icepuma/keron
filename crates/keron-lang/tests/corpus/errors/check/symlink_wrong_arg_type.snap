@@ -2,7 +2,7 @@
 source: crates/keron-lang/tests/harness/mod.rs
 ---
 error: type mismatch: expected `String`, found `Int`
-  --> 2:33
+  --> 2:49
   |
-2 | val s: Symlink = symlink(from = 1, to = "x")
-  |                                 ^
+2 | val s: Symlink = symlink(source = "x", target = 1)
+  |                                                 ^

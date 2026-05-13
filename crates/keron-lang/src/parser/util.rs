@@ -9,9 +9,8 @@ pub(super) type Extra<'src> = extra::Err<Rich<'src, char>>;
 
 // `from` and `use` are intentionally NOT reserved here. They are
 // contextual keywords used only in `from "..." use ...` import items;
-// allowing them as ordinary identifiers means resource constructors
-// can keep parameter names like `from` (as in `symlink(from = ...)`)
-// without conflict.
+// allowing them as ordinary identifiers keeps imports contextual
+// instead of making `from` globally unavailable.
 //
 // The resource-type names (`Symlink`, `Template`, `Resource`) are
 // also intentionally NOT reserved: they are imported from `std:fs`

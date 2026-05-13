@@ -946,12 +946,12 @@ fn builtin_fn(name: &str) -> Option<&'static FnDecl> {
 fn dispatch_intrinsic(id: IntrinsicId, args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     match id {
         IntrinsicId::Symlink => {
-            let from = call_string(args, env, "from", 0)?;
-            let to = call_string(args, env, "to", 1)?;
-            let target = resolve_managed_path(&to, env, "symlink", "to")?;
+            let source = call_string(args, env, "source", 0)?;
+            let target = call_string(args, env, "target", 1)?;
+            let resolved_source = resolve_managed_path(&source, env, "symlink", "source")?;
             Ok(Value::Resource(ResourceState::Symlink {
-                from: PathBuf::from(from),
-                to: target,
+                from: PathBuf::from(target),
+                to: resolved_source,
             }))
         }
         IntrinsicId::Shell => dispatch_shell(args, env),
@@ -1301,15 +1301,15 @@ fn detect_os_arch() -> String {
 }
 
 /// Build a `Template` resource by reading a template file from disk
-/// and rendering it with the supplied variables. `path` is the
-/// destination (where the rendered text will land at apply time);
-/// `source` is the path of the template file (resolved relative to
-/// the importing module's source directory). The rendered content is
-/// frozen into [`ResourceState::Template`] at eval time so the apply
-/// step is a plain write.
+/// and rendering it with the supplied variables. `source` is the path
+/// of the template file (resolved relative to the importing module's
+/// source directory); `target` is where the rendered text will land at
+/// apply time. The rendered content is frozen into
+/// [`ResourceState::Template`] at eval time so the apply step is a
+/// plain write.
 fn dispatch_template(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
-    let path = call_string(args, env, "path", 0)?;
-    let source = call_string(args, env, "source", 1)?;
+    let source = call_string(args, env, "source", 0)?;
+    let target = call_string(args, env, "target", 1)?;
     let (vars, sensitive) = call_string_map(args, env, "vars", 2)?;
     let resolved = resolve_managed_path(&source, env, "template", "source")?;
     let raw = std::fs::read_to_string(&resolved).with_context(|| {
@@ -1321,7 +1321,7 @@ fn dispatch_template(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     let rendered = render_template(&source, &raw, &vars)
         .with_context(|| format!("rendering template `{source}`"))?;
     Ok(Value::Resource(ResourceState::Template {
-        path: PathBuf::from(path),
+        path: PathBuf::from(target),
         content: rendered,
         sensitive,
     }))
@@ -1329,7 +1329,7 @@ fn dispatch_template(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
 
 /// Resolve a user-supplied path argument and pin it inside the keron
 /// root. Applies to the source side of resources `keron apply` owns —
-/// the `to` of a symlink and the `source` of a template — because
+/// the `source` of a symlink and the `source` of a template — because
 /// those must live inside the directory the user pointed the CLI at;
 /// the project is otherwise free to symlink to or template from
 /// arbitrary host paths, which defeats the "the keron dir is the
@@ -1337,8 +1337,8 @@ fn dispatch_template(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
 ///
 /// Resolution rules:
 /// - Relative paths are joined against the importing module file's
-///   directory, so `to = "./zshrc"` next to `<root>/sub/foo.keron`
-///   means `<root>/sub/zshrc`.
+///   directory, so `source = "./zshrc"` next to
+///   `<root>/sub/foo.keron` means `<root>/sub/zshrc`.
 /// - Absolute paths are taken as-is — typically produced by
 ///   interpolating `${keron_root()}` into the string.
 /// - The candidate is canonicalized (resolves `..`, follows any
@@ -1579,12 +1579,12 @@ mod tests {
             }
             fs::create_dir_all(&root).expect("create temp dir");
             // Drop a generic one-placeholder template alongside the
-            // entry so the convention `template(path = X, source =
-            // "tmpl.tpl", vars = {"body": Y})` works as a direct
-            // stand-in for the old `file(path = X, content = Y)`
-            // shape. Tests that care about template-level mechanics
-            // (multiple placeholders, missing vars, etc.) seed their
-            // own template file via `seed_template`.
+            // entry so the convention
+            // `template(source = "tmpl.tpl", target = X, vars = {"body": Y})`
+            // works as a direct stand-in for the old
+            // `file(target = X, content = Y)` shape. Tests that care
+            // about template-level mechanics seed their own template
+            // file via `seed_template`.
             fs::write(root.join("tmpl.tpl"), "{{ body }}").expect("seed default template");
             Self { root }
         }
@@ -1960,7 +1960,7 @@ mod tests {
         for i in 0..300 {
             writeln!(
                 src,
-                "reconcile template(path = \"/k{i}-${{one()}}\", source = \"tmpl.tpl\", vars = {{\"body\": \"\"}})",
+                "reconcile template(source = \"tmpl.tpl\", target = \"/k{i}-${{one()}}\", vars = {{\"body\": \"\"}})",
             )
             .unwrap();
         }
@@ -1991,7 +1991,7 @@ mod tests {
     #[test]
     fn eval_graph_emits_resources_for_reconciles() {
         let states = run(
-            "reconcile template(path = \"/x\", source = \"tmpl.tpl\", vars = {\"body\": \"y\"})\n",
+            "reconcile template(source = \"tmpl.tpl\", target = \"/x\", vars = {\"body\": \"y\"})\n",
         );
         assert_eq!(states.len(), 1);
         assert_eq!(first_file_path(&states), &PathBuf::from("/x"));
@@ -2001,7 +2001,7 @@ mod tests {
     #[test]
     fn eval_graph_returns_empty_when_no_reconciles() {
         let states = run(
-            "val f: Template = template(path = \"/x\", source = \"tmpl.tpl\", vars = {\"body\": \"y\"})\n",
+            "val f: Template = template(source = \"tmpl.tpl\", target = \"/x\", vars = {\"body\": \"y\"})\n",
         );
         assert!(states.is_empty());
     }
@@ -2009,7 +2009,7 @@ mod tests {
     #[test]
     fn template_rendering_rejects_builtin_functions() {
         let err = run_result_with_templates(
-            "reconcile template(path = \"/x\", source = \"tmpl.tpl\", vars = {})\n",
+            "reconcile template(source = \"tmpl.tpl\", target = \"/x\", vars = {})\n",
             &[("tmpl.tpl", "{{ get_env(name=\"PATH\") }}")],
         )
         .expect_err("Tera builtins must not be available");
@@ -2021,7 +2021,7 @@ mod tests {
     fn default_param_can_reference_earlier_param_at_runtime() {
         let states = run(
             "fn file(path: String, body: String = path + \" body\"): Template {\n\
-             \ttemplate(path = path, source = \"tmpl.tpl\", vars = {\"body\": body})\n\
+             \ttemplate(source = \"tmpl.tpl\", target = path, vars = {\"body\": body})\n\
              }\n\
              reconcile file(\"/x\")\n",
         );
@@ -2031,8 +2031,8 @@ mod tests {
     #[test]
     fn push_resources_unwraps_lists() {
         let states = run(
-            "val xs: List<Template> = [template(path = \"/a\", source = \"tmpl.tpl\", vars = {\"body\": \"\"}), \
-                                    template(path = \"/b\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})]\n\
+            "val xs: List<Template> = [template(source = \"tmpl.tpl\", target = \"/a\", vars = {\"body\": \"\"}), \
+                                    template(source = \"tmpl.tpl\", target = \"/b\", vars = {\"body\": \"\"})]\n\
              reconcile xs\n",
         );
         let paths: Vec<&PathBuf> = states
@@ -2048,7 +2048,7 @@ mod tests {
     #[test]
     fn exec_void_expr_handles_top_level_if() {
         let states = run(
-            "if true { reconcile template(path = \"/yes\", source = \"tmpl.tpl\", vars = {\"body\": \"\"}) }\n",
+            "if true { reconcile template(source = \"tmpl.tpl\", target = \"/yes\", vars = {\"body\": \"\"}) }\n",
         );
         assert_eq!(states.len(), 1);
         assert_eq!(first_file_path(&states), &PathBuf::from("/yes"));
@@ -2057,9 +2057,9 @@ mod tests {
     #[test]
     fn exec_void_expr_skips_else_branch_when_true() {
         let states = run("if true {\n\
-             \treconcile template(path = \"/yes\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
+             \treconcile template(source = \"tmpl.tpl\", target = \"/yes\", vars = {\"body\": \"\"})\n\
              } else {\n\
-             \treconcile template(path = \"/no\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
+             \treconcile template(source = \"tmpl.tpl\", target = \"/no\", vars = {\"body\": \"\"})\n\
              }\n");
         assert_eq!(states.len(), 1);
         assert_eq!(first_file_path(&states), &PathBuf::from("/yes"));
@@ -2068,7 +2068,7 @@ mod tests {
     #[test]
     fn exec_void_expr_handles_top_level_for() {
         let states = run("for n in [1, 2, 3] {\n\
-             \treconcile template(path = \"/${n}\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
+             \treconcile template(source = \"tmpl.tpl\", target = \"/${n}\", vars = {\"body\": \"\"})\n\
              }\n");
         assert_eq!(states.len(), 3);
         assert_eq!(first_file_path(&states), &PathBuf::from("/1"));
@@ -2081,7 +2081,7 @@ mod tests {
         // reconcile and produce an empty plan.
         let states = run("if true {\n\
              \tval base: String = \"/v\"\n\
-             \treconcile template(path = base, source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
+             \treconcile template(source = \"tmpl.tpl\", target = base, vars = {\"body\": \"\"})\n\
              }\n");
         assert_eq!(states.len(), 1);
         assert_eq!(first_file_path(&states), &PathBuf::from("/v"));
@@ -2090,7 +2090,7 @@ mod tests {
     #[test]
     fn iterate_runs_body_per_map_entry() {
         let states = run("for (k, v) in {\"a\": 1, \"b\": 2} {\n\
-             \treconcile template(path = \"/${k}\", source = \"tmpl.tpl\", vars = {\"body\": \"${v}\"})\n\
+             \treconcile template(source = \"tmpl.tpl\", target = \"/${k}\", vars = {\"body\": \"${v}\"})\n\
              }\n");
         assert_eq!(states.len(), 2);
         // Map iteration order is unspecified — assert on the set of paths.
@@ -2110,7 +2110,7 @@ mod tests {
         // Encodes binop results in the file path so any drift in
         // eval_binop arithmetic is observable end-to-end.
         let states = run(
-            "reconcile template(path = \"/${2 + 3}-${10 - 4}-${2 * 3}-${10 / 2}-${2 ** 8}\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n",
+            "reconcile template(source = \"tmpl.tpl\", target = \"/${2 + 3}-${10 - 4}-${2 * 3}-${10 / 2}-${2 ** 8}\", vars = {\"body\": \"\"})\n",
         );
         assert_eq!(first_file_path(&states), &PathBuf::from("/5-6-6-5-256"));
     }
@@ -2121,7 +2121,7 @@ mod tests {
              val diff: Double = 5.5 - 2.0\n\
              val prod: Double = 2.0 * 3.0\n\
              val quot: Double = 10.0 / 4.0\n\
-             reconcile template(path = \"/${sum}-${diff}-${prod}-${quot}\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n");
+             reconcile template(source = \"tmpl.tpl\", target = \"/${sum}-${diff}-${prod}-${quot}\", vars = {\"body\": \"\"})\n");
         assert_eq!(first_file_path(&states), &PathBuf::from("/3.5-3.5-6-2.5"));
     }
 
@@ -2131,7 +2131,7 @@ mod tests {
              val b: Double = 5 - 1.5\n\
              val c: Double = 2 * 2.5\n\
              val d: Double = 1.5 * 2\n\
-             reconcile template(path = \"/${a}-${b}-${c}-${d}\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n");
+             reconcile template(source = \"tmpl.tpl\", target = \"/${a}-${b}-${c}-${d}\", vars = {\"body\": \"\"})\n");
         assert_eq!(first_file_path(&states), &PathBuf::from("/3.5-3.5-5-3"));
     }
 
@@ -2139,7 +2139,7 @@ mod tests {
     fn unary_neg_in_interpolation_round_trips() {
         let states = run("val x: Int = -7\n\
              val y: Double = -2.5\n\
-             reconcile template(path = \"/${x}\", source = \"tmpl.tpl\", vars = {\"body\": \"${y}\"})\n");
+             reconcile template(source = \"tmpl.tpl\", target = \"/${x}\", vars = {\"body\": \"${y}\"})\n");
         assert_eq!(first_file_path(&states), &PathBuf::from("/-7"));
         assert_eq!(first_file_content(&states), "-2.5");
     }
@@ -2148,8 +2148,8 @@ mod tests {
     fn equality_observable_via_branching() {
         let states = run("val same: Boolean = 1 == 1\n\
              val diff: Boolean = 1 == 2\n\
-             reconcile template(path = if same { \"/yes\" } else { \"/no\" }, source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
-             reconcile template(path = if diff { \"/yes\" } else { \"/no\" }, source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n");
+             reconcile template(source = \"tmpl.tpl\", target = if same { \"/yes\" } else { \"/no\" }, vars = {\"body\": \"\"})\n\
+             reconcile template(source = \"tmpl.tpl\", target = if diff { \"/yes\" } else { \"/no\" }, vars = {\"body\": \"\"})\n");
         let paths: Vec<_> = states
             .iter()
             .map(|s| match s {
@@ -2163,10 +2163,10 @@ mod tests {
     #[test]
     fn comparison_operators_observable_via_branching() {
         let states = run(
-            "reconcile template(path = if 1 < 2 { \"/lt\" } else { \"/ge\" }, source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
-             reconcile template(path = if 2 <= 2 { \"/le\" } else { \"/gt\" }, source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
-             reconcile template(path = if 3 > 2 { \"/gt\" } else { \"/le\" }, source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
-             reconcile template(path = if 2 >= 2 { \"/ge\" } else { \"/lt\" }, source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n",
+            "reconcile template(source = \"tmpl.tpl\", target = if 1 < 2 { \"/lt\" } else { \"/ge\" }, vars = {\"body\": \"\"})\n\
+             reconcile template(source = \"tmpl.tpl\", target = if 2 <= 2 { \"/le\" } else { \"/gt\" }, vars = {\"body\": \"\"})\n\
+             reconcile template(source = \"tmpl.tpl\", target = if 3 > 2 { \"/gt\" } else { \"/le\" }, vars = {\"body\": \"\"})\n\
+             reconcile template(source = \"tmpl.tpl\", target = if 2 >= 2 { \"/ge\" } else { \"/lt\" }, vars = {\"body\": \"\"})\n",
         );
         let paths: Vec<_> = states
             .iter()
@@ -2189,8 +2189,8 @@ mod tests {
     #[test]
     fn string_equality_distinguishes_distinct_values() {
         let states = run(
-            "reconcile template(path = if \"a\" == \"a\" { \"/eq\" } else { \"/ne\" }, source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
-             reconcile template(path = if \"a\" == \"b\" { \"/eq\" } else { \"/ne\" }, source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n",
+            "reconcile template(source = \"tmpl.tpl\", target = if \"a\" == \"a\" { \"/eq\" } else { \"/ne\" }, vars = {\"body\": \"\"})\n\
+             reconcile template(source = \"tmpl.tpl\", target = if \"a\" == \"b\" { \"/eq\" } else { \"/ne\" }, vars = {\"body\": \"\"})\n",
         );
         let paths: Vec<_> = states
             .iter()
@@ -2205,8 +2205,8 @@ mod tests {
     #[test]
     fn boolean_equality_distinguishes_distinct_values() {
         let states = run(
-            "reconcile template(path = if true == true { \"/eq\" } else { \"/ne\" }, source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
-             reconcile template(path = if true == false { \"/eq\" } else { \"/ne\" }, source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n",
+            "reconcile template(source = \"tmpl.tpl\", target = if true == true { \"/eq\" } else { \"/ne\" }, vars = {\"body\": \"\"})\n\
+             reconcile template(source = \"tmpl.tpl\", target = if true == false { \"/eq\" } else { \"/ne\" }, vars = {\"body\": \"\"})\n",
         );
         let paths: Vec<_> = states
             .iter()
@@ -2221,8 +2221,8 @@ mod tests {
     #[test]
     fn cross_type_equality_via_int_double_promotion() {
         let states = run(
-            "reconcile template(path = if 2 == 2.0 { \"/eq\" } else { \"/ne\" }, source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
-             reconcile template(path = if 2 == 2.5 { \"/eq\" } else { \"/ne\" }, source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n",
+            "reconcile template(source = \"tmpl.tpl\", target = if 2 == 2.0 { \"/eq\" } else { \"/ne\" }, vars = {\"body\": \"\"})\n\
+             reconcile template(source = \"tmpl.tpl\", target = if 2 == 2.5 { \"/eq\" } else { \"/ne\" }, vars = {\"body\": \"\"})\n",
         );
         let paths: Vec<_> = states
             .iter()
@@ -2246,7 +2246,7 @@ mod tests {
         let states = run("fn pair(left: String, right: String): String {\n\
              \tleft + \"|\" + right\n\
              }\n\
-reconcile template(path = pair(right = \"R\", left = \"L\"), source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n");
+reconcile template(source = \"tmpl.tpl\", target = pair(right = \"R\", left = \"L\"), vars = {\"body\": \"\"})\n");
         assert_eq!(states.len(), 1);
         // With `==` correct, left=L, right=R, output = "L|R".
         // With `==` mutated to `!=`, args swap, output = "R|L".
@@ -2259,7 +2259,7 @@ reconcile template(path = pair(right = \"R\", left = \"L\"), source = \"tmpl.tpl
             "fn pick(prefix: String, suffix: String = \"-default\"): String {\n\
              \tprefix + suffix\n\
              }\n\
-reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n",
+reconcile template(source = \"tmpl.tpl\", target = pick(\"a\"), vars = {\"body\": \"\"})\n",
         );
         assert_eq!(first_file_path(&states), &PathBuf::from("a-default"));
     }
@@ -2270,7 +2270,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         // syntax). Mutating the positional-fallback path in
         // `eval_call_arg` would re-route the args.
         let states = run_with_templates(
-            "reconcile template(\"/positional\", \"body.tpl\", {\"body\": \"hi\"})\n",
+            "reconcile template(\"body.tpl\", \"/positional\", {\"body\": \"hi\"})\n",
             &[("body.tpl", "{{ body }}")],
         );
         assert_eq!(first_file_path(&states), &PathBuf::from("/positional"));
@@ -2286,7 +2286,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         // succeed, which is only possible when the cycle guard is
         // intact.
         let states = run("val tag: String = \"ok\"\n\
-             reconcile template(path = \"/${tag}\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n");
+             reconcile template(source = \"tmpl.tpl\", target = \"/${tag}\", vars = {\"body\": \"\"})\n");
         assert_eq!(first_file_path(&states), &PathBuf::from("/ok"));
     }
 
@@ -2294,7 +2294,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
     fn struct_field_access_round_trips() {
         let states = run("struct Host { name: String, port: Int }\n\
              val h: Host = Host(name = \"alpha\", port = 22)\n\
-             reconcile template(path = \"/${h.name}-${h.port}\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n");
+             reconcile template(source = \"tmpl.tpl\", target = \"/${h.name}-${h.port}\", vars = {\"body\": \"\"})\n");
         assert_eq!(first_file_path(&states), &PathBuf::from("/alpha-22"));
     }
 
@@ -2303,8 +2303,8 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         let states = run("struct Pair { a: String, b: String }\n\
              val p1: Pair = Pair(\"x\", \"y\")\n\
              val p2: Pair = Pair(b = \"y\", a = \"x\")\n\
-             reconcile template(path = \"/${p1.a}-${p1.b}\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
-             reconcile template(path = \"/${p2.a}-${p2.b}\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n");
+             reconcile template(source = \"tmpl.tpl\", target = \"/${p1.a}-${p1.b}\", vars = {\"body\": \"\"})\n\
+             reconcile template(source = \"tmpl.tpl\", target = \"/${p2.a}-${p2.b}\", vars = {\"body\": \"\"})\n");
         let paths: Vec<_> = states
             .iter()
             .map(|s| match s {
@@ -2326,7 +2326,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
                }\n\
              }\n\
              val c: Color = \"green\"\n\
-             reconcile template(path = \"/${label(c)}\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n");
+             reconcile template(source = \"tmpl.tpl\", target = \"/${label(c)}\", vars = {\"body\": \"\"})\n");
         assert_eq!(first_file_path(&states), &PathBuf::from("/natural"));
     }
 
@@ -2341,10 +2341,10 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
                  _ => \"other\",\n\
                }\n\
              }\n\
-             reconcile template(path = \"/${axis(Point(0, 0))}\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
-             reconcile template(path = \"/${axis(Point(3, 0))}\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
-             reconcile template(path = \"/${axis(Point(0, 5))}\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
-             reconcile template(path = \"/${axis(Point(2, 3))}\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n");
+             reconcile template(source = \"tmpl.tpl\", target = \"/${axis(Point(0, 0))}\", vars = {\"body\": \"\"})\n\
+             reconcile template(source = \"tmpl.tpl\", target = \"/${axis(Point(3, 0))}\", vars = {\"body\": \"\"})\n\
+             reconcile template(source = \"tmpl.tpl\", target = \"/${axis(Point(0, 5))}\", vars = {\"body\": \"\"})\n\
+             reconcile template(source = \"tmpl.tpl\", target = \"/${axis(Point(2, 3))}\", vars = {\"body\": \"\"})\n");
         let paths: Vec<_> = states
             .iter()
             .map(|s| match s {
@@ -2371,7 +2371,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
                  other => other,\n\
                }\n\
              }\n\
-             reconcile template(path = \"/${label(\"hello\")}\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n");
+             reconcile template(source = \"tmpl.tpl\", target = \"/${label(\"hello\")}\", vars = {\"body\": \"\"})\n");
         assert_eq!(first_file_path(&states), &PathBuf::from("/hello"));
     }
 
@@ -2379,7 +2379,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
     fn union_value_compares_equal_to_string_literal() {
         let states = run("type Mode = \"on\" | \"off\"\n\
              val m: Mode = \"on\"\n\
-             reconcile template(path = if m == \"on\" { \"/active\" } else { \"/idle\" }, source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n");
+             reconcile template(source = \"tmpl.tpl\", target = if m == \"on\" { \"/active\" } else { \"/idle\" }, vars = {\"body\": \"\"})\n");
         assert_eq!(first_file_path(&states), &PathBuf::from("/active"));
     }
 
@@ -2396,9 +2396,9 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
                  _ => \"other\",\n\
                }\n\
              }\n\
-             reconcile template(path = \"/${pick(0)}\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
-             reconcile template(path = \"/${pick(1)}\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
-             reconcile template(path = \"/${pick(7)}\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n");
+             reconcile template(source = \"tmpl.tpl\", target = \"/${pick(0)}\", vars = {\"body\": \"\"})\n\
+             reconcile template(source = \"tmpl.tpl\", target = \"/${pick(1)}\", vars = {\"body\": \"\"})\n\
+             reconcile template(source = \"tmpl.tpl\", target = \"/${pick(7)}\", vars = {\"body\": \"\"})\n");
         let paths: Vec<_> = states
             .iter()
             .map(|s| match s {
@@ -2428,8 +2428,8 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
                  _ => \"unreachable\",\n\
                }\n\
              }\n\
-             reconcile template(path = \"/${label(true)}\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
-             reconcile template(path = \"/${label(false)}\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n");
+             reconcile template(source = \"tmpl.tpl\", target = \"/${label(true)}\", vars = {\"body\": \"\"})\n\
+             reconcile template(source = \"tmpl.tpl\", target = \"/${label(false)}\", vars = {\"body\": \"\"})\n");
         let paths: Vec<_> = states
             .iter()
             .map(|s| match s {
@@ -2445,12 +2445,12 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
         // Render `{{ user }}` and `{{ shell }}` from the supplied
         // vars map and verify the resulting Template resource carries
         // the substituted text. Pins both `dispatch_template`'s arg
-        // routing (path / source / vars) and `render_template`'s
+        // routing (source / target / vars) and `render_template`'s
         // Tera substitution.
         let states = run_with_templates(
             "reconcile template(\n\
-                 \tpath = \"/etc/passwd\",\n\
                  \tsource = \"shell.tpl\",\n\
+                 \ttarget = \"/etc/passwd\",\n\
                  \tvars = {\"user\": \"alice\", \"shell\": \"/bin/zsh\"},\n\
              )\n",
             &[("shell.tpl", "{{ user }}:x:1000:{{ shell }}\n")],
@@ -2467,7 +2467,7 @@ reconcile template(path = pick(\"a\"), source = \"tmpl.tpl\", vars = {\"body\": 
     beta
   """
 
-reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
+reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
 "#);
         assert_eq!(first_file_content(&states), "alpha\n  beta");
     }
@@ -2484,7 +2484,7 @@ val body = """
     ${chunk}
   """
 
-reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
+reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
 "#);
         assert_eq!(first_file_content(&states), "block:\n  one\n  two");
     }
@@ -2501,7 +2501,7 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
             "  block:\n",
             "    ${chunk}\n",
             "  \"\"\"\n\n",
-            "reconcile template(path = \"/msg\", source = \"tmpl.tpl\", vars = {\"body\": body})\n",
+            "reconcile template(source = \"tmpl.tpl\", target = \"/msg\", vars = {\"body\": body})\n",
         ));
         assert_eq!(first_file_content(&states), "block:\n  one\n\n  two");
     }
@@ -2513,7 +2513,7 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
   line\n
   """#
 
-reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
+reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
 "##);
         assert_eq!(
             first_file_content(&states),
@@ -2531,8 +2531,8 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         proj.seed_template("greet.tpl", "hello {{ who }}");
         let entry = proj.entry(
             "reconcile template(\n\
-                 \tpath = \"/x\",\n\
                  \tsource = \"greet.tpl\",\n\
+                 \ttarget = \"/x\",\n\
                  \tvars = {},\n\
              )\n",
         );
@@ -2560,8 +2560,8 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         // byte-indexed implementation would re-open this hole.
         let states = run_with_templates(
             "reconcile template(\n\
-                 \tpath = \"/x\",\n\
                  \tsource = \"intl.tpl\",\n\
+                 \ttarget = \"/x\",\n\
                  \tvars = {\"who\": \"alice\"},\n\
              )\n",
             &[("intl.tpl", "{{ who }} — ☃\n")],
@@ -2578,8 +2578,8 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         // change semantics here.
         let states = run_with_templates(
             "reconcile template(\n\
-                 \tpath = \"/x\",\n\
                  \tsource = \"trail.tpl\",\n\
+                 \ttarget = \"/x\",\n\
                  \tvars = {},\n\
              )\n",
             &[("trail.tpl", "ends with $")],
@@ -2595,7 +2595,7 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         let proj = TempProject::new("tmpl-unterminated");
         proj.seed_template("bad.tpl", "open {{ unfinished");
         let entry =
-            proj.entry("reconcile template(path = \"/x\", source = \"bad.tpl\", vars = {})\n");
+            proj.entry("reconcile template(source = \"bad.tpl\", target = \"/x\", vars = {})\n");
         let canonical = fs::canonicalize(&entry).unwrap();
         let base_dir = canonical.parent().unwrap().to_path_buf();
         let keron_root = base_dir.clone();
@@ -2677,8 +2677,8 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         // intrinsic surfaces a wrapping context line plus the
         // underlying I/O error so the user can locate the typo.
         let proj = TempProject::new("tmpl-missing-source");
-        let entry =
-            proj.entry("reconcile template(path = \"/x\", source = \"missing.tpl\", vars = {})\n");
+        let entry = proj
+            .entry("reconcile template(source = \"missing.tpl\", target = \"/x\", vars = {})\n");
         let canonical = fs::canonicalize(&entry).unwrap();
         let base_dir = canonical.parent().unwrap().to_path_buf();
         let keron_root = base_dir.clone();
@@ -2705,9 +2705,9 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
                  _ => \"other\",\n\
                }\n\
              }\n\
-             reconcile template(path = \"/${label(1.5)}\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
-             reconcile template(path = \"/${label(2.5)}\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
-             reconcile template(path = \"/${label(7.0)}\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n");
+             reconcile template(source = \"tmpl.tpl\", target = \"/${label(1.5)}\", vars = {\"body\": \"\"})\n\
+             reconcile template(source = \"tmpl.tpl\", target = \"/${label(2.5)}\", vars = {\"body\": \"\"})\n\
+             reconcile template(source = \"tmpl.tpl\", target = \"/${label(7.0)}\", vars = {\"body\": \"\"})\n");
         let paths: Vec<_> = states
             .iter()
             .map(|s| match s {
@@ -2731,7 +2731,7 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         // whatever `eval_graph` was called with. We park the result in
         // a `template` resource so we can read the path back.
         let (states, root) = run_with_root(
-            "reconcile template(path = keron_root(), source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n",
+            "reconcile template(source = \"tmpl.tpl\", target = keron_root(), vars = {\"body\": \"\"})\n",
         );
         assert_eq!(states.len(), 1);
         let ResourceState::Template { path, .. } = &states[0] else {
@@ -2743,7 +2743,7 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
     #[test]
     fn keron_root_interpolates_into_paths() {
         let (states, root) = run_with_root(
-            "reconcile template(path = \"${keron_root()}/sub\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n",
+            "reconcile template(source = \"tmpl.tpl\", target = \"${keron_root()}/sub\", vars = {\"body\": \"\"})\n",
         );
         let ResourceState::Template { path, .. } = &states[0] else {
             panic!("expected template, got {:?}", states[0]);
@@ -2759,7 +2759,7 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         // dispatcher's fallback was bypassed or a new os_info variant
         // is leaking through.
         let states = run(
-            "reconcile template(path = os_type(), source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n",
+            "reconcile template(source = \"tmpl.tpl\", target = os_type(), vars = {\"body\": \"\"})\n",
         );
         let ResourceState::Template { path, .. } = &states[0] else {
             panic!("expected template, got {:?}", states[0]);
@@ -2775,7 +2775,7 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
     #[test]
     fn os_arch_intrinsic_returns_one_of_the_documented_variants() {
         let states = run(
-            "reconcile template(path = os_arch(), source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n",
+            "reconcile template(source = \"tmpl.tpl\", target = os_arch(), vars = {\"body\": \"\"})\n",
         );
         let ResourceState::Template { path, .. } = &states[0] else {
             panic!("expected template, got {:?}", states[0]);
@@ -2846,8 +2846,8 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         // pattern dispatch → bind narrowing → resource construction.
         let states = run("val maybe_path: String? = \"/opt/app\"\n\
              reconcile match maybe_path {\n\
-                 null => template(path = \"/opt/fallback\", source = \"tmpl.tpl\", vars = {\"body\": \"\"}),\n\
-                 p => template(path = p, source = \"tmpl.tpl\", vars = {\"body\": \"\"}),\n\
+                 null => template(source = \"tmpl.tpl\", target = \"/opt/fallback\", vars = {\"body\": \"\"}),\n\
+                 p => template(source = \"tmpl.tpl\", target = p, vars = {\"body\": \"\"}),\n\
              }\n");
         assert_eq!(states.len(), 1);
         let ResourceState::Template { path, .. } = &states[0] else {
@@ -2860,8 +2860,8 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
     fn nullable_match_takes_null_arm_when_value_is_null() {
         let states = run("val maybe_path: String? = null\n\
              reconcile match maybe_path {\n\
-                 null => template(path = \"/opt/fallback\", source = \"tmpl.tpl\", vars = {\"body\": \"\"}),\n\
-                 p => template(path = p, source = \"tmpl.tpl\", vars = {\"body\": \"\"}),\n\
+                 null => template(source = \"tmpl.tpl\", target = \"/opt/fallback\", vars = {\"body\": \"\"}),\n\
+                 p => template(source = \"tmpl.tpl\", target = p, vars = {\"body\": \"\"}),\n\
              }\n");
         let ResourceState::Template { path, .. } = &states[0] else {
             panic!("expected template, got {:?}", states[0]);
@@ -2877,9 +2877,9 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         // string-typed branch via `if`.
         let states = run("val maybe: String? = null\n\
              reconcile if maybe == null {\n\
-                 template(path = \"/missing\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
+                 template(source = \"tmpl.tpl\", target = \"/missing\", vars = {\"body\": \"\"})\n\
              } else {\n\
-                 template(path = \"/present\", source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n\
+                 template(source = \"tmpl.tpl\", target = \"/present\", vars = {\"body\": \"\"})\n\
              }\n");
         let ResourceState::Template { path, .. } = &states[0] else {
             panic!("expected template, got {:?}", states[0]);
@@ -2918,8 +2918,8 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         set_env(&name, "hello");
         let src = format!(
             "reconcile match env(\"{name}\") {{\n\
-                 null => template(path = \"/missing\", source = \"tmpl.tpl\", vars = {{\"body\": \"\"}}),\n\
-                 v => template(path = v, source = \"tmpl.tpl\", vars = {{\"body\": \"\"}}),\n\
+                 null => template(source = \"tmpl.tpl\", target = \"/missing\", vars = {{\"body\": \"\"}}),\n\
+                 v => template(source = \"tmpl.tpl\", target = v, vars = {{\"body\": \"\"}}),\n\
              }}\n",
         );
         let states = run(&src);
@@ -2934,8 +2934,8 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         let name = unique_env_name("ENV_UNSET");
         let src = format!(
             "reconcile match env(\"{name}\") {{\n\
-                 null => template(path = \"/missing\", source = \"tmpl.tpl\", vars = {{\"body\": \"\"}}),\n\
-                 v => template(path = v, source = \"tmpl.tpl\", vars = {{\"body\": \"\"}}),\n\
+                 null => template(source = \"tmpl.tpl\", target = \"/missing\", vars = {{\"body\": \"\"}}),\n\
+                 v => template(source = \"tmpl.tpl\", target = v, vars = {{\"body\": \"\"}}),\n\
              }}\n",
         );
         let states = run(&src);
@@ -2955,8 +2955,8 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         set_env(&name, "");
         let src = format!(
             "reconcile match env(\"{name}\") {{\n\
-                 null => template(path = \"/unset\", source = \"tmpl.tpl\", vars = {{\"body\": \"\"}}),\n\
-                 v => template(path = \"/set\", source = \"tmpl.tpl\", vars = {{\"body\": \"\"}}),\n\
+                 null => template(source = \"tmpl.tpl\", target = \"/unset\", vars = {{\"body\": \"\"}}),\n\
+                 v => template(source = \"tmpl.tpl\", target = \"/set\", vars = {{\"body\": \"\"}}),\n\
              }}\n",
         );
         let states = run(&src);
@@ -2975,9 +2975,9 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         set_env(&name, "x");
         let src = format!(
             "reconcile if env(\"{name}\") == null {{\n\
-                 template(path = \"/missing\", source = \"tmpl.tpl\", vars = {{\"body\": \"\"}})\n\
+                 template(source = \"tmpl.tpl\", target = \"/missing\", vars = {{\"body\": \"\"}})\n\
              }} else {{\n\
-                 template(path = \"/present\", source = \"tmpl.tpl\", vars = {{\"body\": \"\"}})\n\
+                 template(source = \"tmpl.tpl\", target = \"/present\", vars = {{\"body\": \"\"}})\n\
              }}\n",
         );
         let states = run(&src);
@@ -3014,7 +3014,7 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         let states = run_with_templates(
             &format!(
                 "val token: Secret = secret(\"{uri}\")\n\
-                 reconcile template(path = \"/secret\", source = \"secret.tpl\", vars = {{\"body\": unwrap_secret(token)}})\n",
+                 reconcile template(source = \"secret.tpl\", target = \"/secret\", vars = {{\"body\": unwrap_secret(token)}})\n",
             ),
             &[("secret.tpl", "{{ body }}")],
         );
@@ -3038,7 +3038,7 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         let states = run_with_templates(
             &format!(
                 "val token: Secret = secret(\"{uri}\")\n\
-                 reconcile template(path = \"/secret\", source = \"secret.tpl\", vars = {{\"body\": unwrap_secret(token)}})\n",
+                 reconcile template(source = \"secret.tpl\", target = \"/secret\", vars = {{\"body\": unwrap_secret(token)}})\n",
             ),
             &[("secret.tpl", "{{ body }}")],
         );
@@ -3059,7 +3059,7 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         let states = run_with_templates(
             &format!(
                 "val token: Secret = secret(\"{uri}\")\n\
-                 reconcile template(path = \"/secret\", source = \"secret.tpl\", vars = {{\"body\": unwrap_secret(token)}})\n",
+                 reconcile template(source = \"secret.tpl\", target = \"/secret\", vars = {{\"body\": unwrap_secret(token)}})\n",
             ),
             &[("secret.tpl", "{{ body }}")],
         );
@@ -3082,7 +3082,7 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         let proj = TempProject::new("secret-fail");
         let src = format!(
             "val token: Secret = secret(\"{uri}\")\n\
-             reconcile template(path = unwrap_secret(token), source = \"tmpl.tpl\", vars = {{\"body\": \"\"}})\n",
+             reconcile template(source = \"tmpl.tpl\", target = unwrap_secret(token), vars = {{\"body\": \"\"}})\n",
         );
         let entry = proj.entry(&src);
         let canonical = fs::canonicalize(&entry).unwrap();
@@ -3107,7 +3107,7 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
     fn secret_unsupported_scheme_is_rejected() {
         let proj = TempProject::new("secret-bad-scheme");
         let src = "val tok: Secret = secret(\"file:///etc/secret\")\n\
-                   reconcile template(path = unwrap_secret(tok), source = \"tmpl.tpl\", vars = {\"body\": \"\"})\n";
+                   reconcile template(source = \"tmpl.tpl\", target = unwrap_secret(tok), vars = {\"body\": \"\"})\n";
         let entry = proj.entry(src);
         let canonical = fs::canonicalize(&entry).unwrap();
         let base_dir = canonical.parent().unwrap().to_path_buf();
@@ -3143,8 +3143,8 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
             &format!(
                 "val token: Secret = secret(\"{uri}\")\n\
                  reconcile template(\n\
-                     \tpath = \"/etc/auth\",\n\
                      \tsource = \"auth.tpl\",\n\
+                     \ttarget = \"/etc/auth\",\n\
                      \tvars = {{\"token\": unwrap_secret(token)}},\n\
                  )\n",
             ),
@@ -3167,7 +3167,7 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         let states = run_with_templates(
             &format!(
                 "val token: Secret = secret(\"{uri}\")\n\
-                 reconcile template(path = \"/etc/auth\", source = \"auth.tpl\", vars = {{\"token\": unwrap_secret(token) + \"-abc\"}})\n",
+                 reconcile template(source = \"auth.tpl\", target = \"/etc/auth\", vars = {{\"token\": unwrap_secret(token) + \"-abc\"}})\n",
             ),
             &[("auth.tpl", "TOKEN={{ token }}\n")],
         );
@@ -3188,7 +3188,7 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         let states = run_with_templates(
             &format!(
                 "val token: Secret = secret(\"{uri}\")\n\
-                 reconcile template(path = \"/etc/auth\", source = \"auth.tpl\", vars = {{\"token\": \"prefix-${{unwrap_secret(token)}}\"}})\n",
+                 reconcile template(source = \"auth.tpl\", target = \"/etc/auth\", vars = {{\"token\": \"prefix-${{unwrap_secret(token)}}\"}})\n",
             ),
             &[("auth.tpl", "TOKEN={{ token }}\n")],
         );
@@ -3212,7 +3212,7 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         let proj = TempProject::new(project_label);
         let src = format!(
             "val tok: Secret = secret(\"{uri}\")\n\
-             reconcile template(path = unwrap_secret(tok), source = \"tmpl.tpl\", vars = {{\"body\": \"\"}})\n",
+             reconcile template(source = \"tmpl.tpl\", target = unwrap_secret(tok), vars = {{\"body\": \"\"}})\n",
         );
         let entry = proj.entry(&src);
         let canonical = fs::canonicalize(&entry).unwrap();
@@ -3626,7 +3626,7 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         let states = run_with_templates(
             "reconcile {\n\
                  brew(\"ripgrep\");\n\
-                 symlink(from = \"/from\", to = \"./inside\");\n\
+                 symlink(source = \"./inside\", target = \"/from\");\n\
                  cargo(\"sccache\");\n\
              }\n",
             &[("inside", "")],
@@ -3642,30 +3642,34 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
     }
 
     #[test]
-    fn symlink_to_relative_path_resolves_inside_keron_root() {
-        // `to = "./zshrc"` reads from the entry's directory; the
-        // resolved target is canonical and lives inside the keron
+    fn symlink_source_relative_path_resolves_inside_keron_root() {
+        // `source = "./zshrc"` reads from the entry's directory; the
+        // resolved source is canonical and lives inside the keron
         // root, so the executor never sees the raw user string.
         let states = run_with_templates(
-            "reconcile symlink(from = \"/dest\", to = \"./zshrc\")\n",
+            "reconcile symlink(source = \"./zshrc\", target = \"/dest\")\n",
             &[("zshrc", "export PATH=...")],
         );
         let ResourceState::Symlink { to, .. } = &states[0] else {
             panic!("expected Symlink, got {:?}", states[0]);
         };
-        assert!(to.is_absolute(), "to should be canonical: {}", to.display());
+        assert!(
+            to.is_absolute(),
+            "source should be canonical: {}",
+            to.display()
+        );
         let last = to.file_name().unwrap();
         assert_eq!(last, "zshrc");
     }
 
     #[test]
-    fn symlink_to_absolute_path_inside_keron_root_is_accepted() {
-        // Most user code interpolates `keron_root()` to build the `to`
+    fn symlink_source_absolute_path_inside_keron_root_is_accepted() {
+        // Most user code interpolates `keron_root()` to build the `source`
         // argument; the absolute path it produces must still pass the
         // containment check.
         let proj = TempProject::new("symlink-keron-root");
         proj.seed_template("zshrc", "export PATH=...");
-        let src = "reconcile symlink(from = \"/dest\", to = \"${keron_root()}/zshrc\")\n";
+        let src = "reconcile symlink(source = \"${keron_root()}/zshrc\", target = \"/dest\")\n";
         let entry = proj.entry(src);
         let canonical = fs::canonicalize(&entry).unwrap();
         let base_dir = canonical.parent().unwrap().to_path_buf();
@@ -3682,19 +3686,19 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         };
         assert!(
             to.starts_with(&keron_root),
-            "to outside root: {}",
+            "source outside root: {}",
             to.display()
         );
     }
 
     #[test]
-    fn symlink_to_absolute_path_outside_keron_root_is_rejected() {
+    fn symlink_source_absolute_path_outside_keron_root_is_rejected() {
         // `/etc/hosts` exists on every test host but is not inside
         // the temp keron root. The diagnostic must name the argument,
         // the user value, and the keron root so the user can see
         // exactly what is being refused and why.
         let proj = TempProject::new("symlink-outside");
-        let src = "reconcile symlink(from = \"/dest\", to = \"/etc/hosts\")\n";
+        let src = "reconcile symlink(source = \"/etc/hosts\", target = \"/dest\")\n";
         let entry = proj.entry(src);
         let canonical = fs::canonicalize(&entry).unwrap();
         let base_dir = canonical.parent().unwrap().to_path_buf();
@@ -3708,7 +3712,7 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         let err = eval_graph(&graph, &keron_root).expect_err("path outside root must be refused");
         let msg = format!("{err:#}");
         assert!(msg.contains("symlink"), "should name the kind: {msg}");
-        assert!(msg.contains("`to`"), "should name the argument: {msg}");
+        assert!(msg.contains("`source`"), "should name the argument: {msg}");
         assert!(
             msg.contains("/etc/hosts"),
             "should echo the user value: {msg}"
@@ -3720,8 +3724,8 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
     }
 
     #[test]
-    fn symlink_to_dotdot_escape_is_rejected() {
-        // `to = "../escape"` is a relative form that lands outside
+    fn symlink_source_dotdot_escape_is_rejected() {
+        // `source = "../escape"` is a relative form that lands outside
         // the root after `..` is consumed; canonicalization fails
         // open into the containment check, not silently accepts.
         let proj = TempProject::new("symlink-dotdot");
@@ -3732,7 +3736,7 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         let parent = proj.root.parent().unwrap();
         let escape = parent.join("keron-test-escape.tmp");
         fs::write(&escape, "x").unwrap();
-        let src = "reconcile symlink(from = \"/dest\", to = \"../keron-test-escape.tmp\")\n";
+        let src = "reconcile symlink(source = \"../keron-test-escape.tmp\", target = \"/dest\")\n";
         let entry = proj.entry(src);
         let canonical = fs::canonicalize(&entry).unwrap();
         let base_dir = canonical.parent().unwrap().to_path_buf();
@@ -3752,14 +3756,14 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
     }
 
     #[test]
-    fn symlink_to_missing_path_errors_with_locating_context() {
+    fn symlink_source_missing_path_errors_with_locating_context() {
         // The path resolves to a file that does not exist; canonicalize
         // fails. The error chain must mention the kind, the argument
         // name, the user-supplied value, and where we looked — that's
         // what makes the diagnostic locatable rather than the bare
         // io::Error.
         let proj = TempProject::new("symlink-missing");
-        let src = "reconcile symlink(from = \"/dest\", to = \"./not-there\")\n";
+        let src = "reconcile symlink(source = \"./not-there\", target = \"/dest\")\n";
         let entry = proj.entry(src);
         let canonical = fs::canonicalize(&entry).unwrap();
         let base_dir = canonical.parent().unwrap().to_path_buf();
@@ -3770,17 +3774,17 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
             id: keron_modules::ModuleId(canonical),
         }])
         .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
-        let err = eval_graph(&graph, &keron_root).expect_err("missing target must error");
+        let err = eval_graph(&graph, &keron_root).expect_err("missing source must error");
         let msg = format!("{err:#}");
         assert!(msg.contains("symlink"), "kind missing: {msg}");
-        assert!(msg.contains("`to`"), "arg name missing: {msg}");
+        assert!(msg.contains("`source`"), "arg name missing: {msg}");
         assert!(msg.contains("not-there"), "value missing: {msg}");
     }
 
     #[cfg(unix)]
     #[test]
-    fn symlink_to_a_symlink_is_rejected() {
-        // `to = "./alias"` where `alias` is itself a symlink would
+    fn symlink_source_that_is_symlink_is_rejected() {
+        // `source = "./alias"` where `alias` is itself a symlink would
         // chain indirection. Refuse loudly rather than canonicalize
         // through; the user almost certainly meant to point at the
         // underlying file.
@@ -3788,7 +3792,7 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         let real = proj.root.join("real.txt");
         fs::write(&real, "hi").unwrap();
         std::os::unix::fs::symlink(&real, proj.root.join("alias")).unwrap();
-        let src = "reconcile symlink(from = \"/dest\", to = \"./alias\")\n";
+        let src = "reconcile symlink(source = \"./alias\", target = \"/dest\")\n";
         let entry = proj.entry(src);
         let canonical = fs::canonicalize(&entry).unwrap();
         let base_dir = canonical.parent().unwrap().to_path_buf();
@@ -3802,7 +3806,7 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         let err = eval_graph(&graph, &keron_root).expect_err("symlink-to-symlink must be refused");
         let msg = format!("{err:#}");
         assert!(msg.contains("symlink"), "kind missing: {msg}");
-        assert!(msg.contains("`to`"), "arg name missing: {msg}");
+        assert!(msg.contains("`source`"), "arg name missing: {msg}");
         assert!(
             msg.contains("only manages real files"),
             "real-files-only message missing: {msg}",
@@ -3820,7 +3824,7 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         let real = proj.root.join("real.tpl");
         fs::write(&real, "hi").unwrap();
         std::os::unix::fs::symlink(&real, proj.root.join("alias.tpl")).unwrap();
-        let src = "reconcile template(path = \"/dest\", source = \"./alias.tpl\", vars = {})\n";
+        let src = "reconcile template(source = \"./alias.tpl\", target = \"/dest\", vars = {})\n";
         let entry = proj.entry(src);
         let canonical = fs::canonicalize(&entry).unwrap();
         let base_dir = canonical.parent().unwrap().to_path_buf();
@@ -3848,7 +3852,7 @@ reconcile template(path = "/msg", source = "tmpl.tpl", vars = {"body": body})
         // An absolute path pointing outside the keron root errors
         // before the file is even read.
         let proj = TempProject::new("template-outside");
-        let src = "reconcile template(path = \"/dest\", source = \"/etc/hosts\", vars = {\"body\": \"\"})\n";
+        let src = "reconcile template(source = \"/etc/hosts\", target = \"/dest\", vars = {\"body\": \"\"})\n";
         let entry = proj.entry(src);
         let canonical = fs::canonicalize(&entry).unwrap();
         let base_dir = canonical.parent().unwrap().to_path_buf();

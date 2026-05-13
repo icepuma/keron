@@ -1,2 +1,2 @@
 
-val s: Symlink = symlink(from = "a")
+val s: Symlink = symlink(source = "a")

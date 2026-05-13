@@ -17,25 +17,8 @@ Program {
                                     CallArg {
                                         name: Some(
                                             Spanned {
-                                                node: "from",
-                                                span: 19..23,
-                                            },
-                                        ),
-                                        value: Spanned {
-                                            node: Literal(
-                                                String(
-                                                    "from-a",
-                                                ),
-                                            ),
-                                            span: 26..34,
-                                        },
-                                        span: 19..34,
-                                    },
-                                    CallArg {
-                                        name: Some(
-                                            Spanned {
-                                                node: "to",
-                                                span: 36..38,
+                                                node: "source",
+                                                span: 19..25,
                                             },
                                         ),
                                         value: Spanned {
@@ -44,43 +27,43 @@ Program {
                                                     "to-a",
                                                 ),
                                             ),
-                                            span: 41..47,
+                                            span: 28..34,
                                         },
-                                        span: 36..47,
+                                        span: 19..34,
                                     },
-                                ],
-                            },
-                            span: 11..49,
-                        },
-                        Spanned {
-                            node: Call {
-                                callee: Spanned {
-                                    node: "symlink",
-                                    span: 52..59,
-                                },
-                                args: [
                                     CallArg {
                                         name: Some(
                                             Spanned {
-                                                node: "from",
-                                                span: 60..64,
+                                                node: "target",
+                                                span: 36..42,
                                             },
                                         ),
                                         value: Spanned {
                                             node: Literal(
                                                 String(
-                                                    "from-b",
+                                                    "from-a",
                                                 ),
                                             ),
-                                            span: 67..75,
+                                            span: 45..53,
                                         },
-                                        span: 60..75,
+                                        span: 36..53,
                                     },
+                                ],
+                            },
+                            span: 11..55,
+                        },
+                        Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "symlink",
+                                    span: 58..65,
+                                },
+                                args: [
                                     CallArg {
                                         name: Some(
                                             Spanned {
-                                                node: "to",
-                                                span: 77..79,
+                                                node: "source",
+                                                span: 66..72,
                                             },
                                         ),
                                         value: Spanned {
@@ -89,17 +72,34 @@ Program {
                                                     "to-b",
                                                 ),
                                             ),
-                                            span: 82..88,
+                                            span: 75..81,
                                         },
-                                        span: 77..88,
+                                        span: 66..81,
+                                    },
+                                    CallArg {
+                                        name: Some(
+                                            Spanned {
+                                                node: "target",
+                                                span: 83..89,
+                                            },
+                                        ),
+                                        value: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "from-b",
+                                                ),
+                                            ),
+                                            span: 92..100,
+                                        },
+                                        span: 83..100,
                                     },
                                 ],
                             },
-                            span: 52..90,
+                            span: 58..102,
                         },
                     ],
                 ],
-                span: 1..90,
+                span: 1..102,
             },
         ),
     ],

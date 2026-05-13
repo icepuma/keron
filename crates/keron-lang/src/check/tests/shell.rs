@@ -47,8 +47,8 @@ fn shell_mixes_with_other_resource_kinds() {
         check_src(
             r#"val xs: List<Resource> = [
                  shell(kind = "sh", name = "refresh", script = "echo ok"),
-                 symlink(from = "a", to = "b"),
-                 template(path = "p", source = "tmpl.tpl", vars = {"body": "c"}),
+                 symlink(source = "b", target = "a"),
+                 template(source = "tmpl.tpl", target = "p", vars = {"body": "c"}),
                ]
                reconcile xs"#
         )

@@ -17,25 +17,8 @@ Program {
                                     CallArg {
                                         name: Some(
                                             Spanned {
-                                                node: "from",
-                                                span: 19..23,
-                                            },
-                                        ),
-                                        value: Spanned {
-                                            node: Literal(
-                                                String(
-                                                    "a",
-                                                ),
-                                            ),
-                                            span: 26..29,
-                                        },
-                                        span: 19..29,
-                                    },
-                                    CallArg {
-                                        name: Some(
-                                            Spanned {
-                                                node: "to",
-                                                span: 31..33,
+                                                node: "source",
+                                                span: 19..25,
                                             },
                                         ),
                                         value: Spanned {
@@ -44,17 +27,34 @@ Program {
                                                     "b",
                                                 ),
                                             ),
-                                            span: 36..39,
+                                            span: 28..31,
                                         },
-                                        span: 31..39,
+                                        span: 19..31,
+                                    },
+                                    CallArg {
+                                        name: Some(
+                                            Spanned {
+                                                node: "target",
+                                                span: 33..39,
+                                            },
+                                        ),
+                                        value: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "a",
+                                                ),
+                                            ),
+                                            span: 42..45,
+                                        },
+                                        span: 33..45,
                                     },
                                 ],
                             },
-                            span: 11..41,
+                            span: 11..47,
                         },
                     ],
                 ],
-                span: 1..41,
+                span: 1..47,
             },
         ),
     ],
