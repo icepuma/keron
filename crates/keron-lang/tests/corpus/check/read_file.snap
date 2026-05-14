@@ -1,0 +1,160 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "prefix",
+                    span: 185..191,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 193..199,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Coalesce,
+                        lhs: Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "read_file",
+                                    span: 202..211,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: None,
+                                        value: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "./partials/header.txt",
+                                                ),
+                                            ),
+                                            span: 212..235,
+                                        },
+                                        span: 212..235,
+                                    },
+                                ],
+                            },
+                            span: 202..237,
+                        },
+                        rhs: Spanned {
+                            node: Literal(
+                                String(
+                                    "",
+                                ),
+                            ),
+                            span: 240..242,
+                        },
+                    },
+                    span: 202..242,
+                },
+                span: 181..243,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "suffix",
+                    span: 247..253,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 255..261,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Coalesce,
+                        lhs: Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "read_file",
+                                    span: 264..273,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: None,
+                                        value: Spanned {
+                                            node: Interpolation(
+                                                [
+                                                    Text(
+                                                        "./partials/footer.",
+                                                    ),
+                                                    Expr {
+                                                        expr: Spanned {
+                                                            node: Call {
+                                                                callee: Spanned {
+                                                                    node: "os_type",
+                                                                    span: 295..302,
+                                                                },
+                                                                args: [],
+                                                            },
+                                                            span: 295..304,
+                                                        },
+                                                        indent: None,
+                                                    },
+                                                ],
+                                            ),
+                                            span: 274..306,
+                                        },
+                                        span: 274..306,
+                                    },
+                                ],
+                            },
+                            span: 264..308,
+                        },
+                        rhs: Spanned {
+                            node: Literal(
+                                String(
+                                    "",
+                                ),
+                            ),
+                            span: 311..313,
+                        },
+                    },
+                    span: 264..313,
+                },
+                span: 243..314,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "merged",
+                    span: 318..324,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 326..332,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Add,
+                        lhs: Spanned {
+                            node: Var(
+                                "prefix",
+                            ),
+                            span: 335..341,
+                        },
+                        rhs: Spanned {
+                            node: Var(
+                                "suffix",
+                            ),
+                            span: 344..350,
+                        },
+                    },
+                    span: 335..350,
+                },
+                span: 314..351,
+            },
+        ),
+    ],
+}

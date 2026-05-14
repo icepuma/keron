@@ -1,0 +1,9 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
+---
+error: required fields must come before defaulted fields
+  --> 6:3
+  |
+6 |   b: Int,
+  |   ^^^^^^

@@ -20,6 +20,7 @@ Program {
                             node: String,
                             span: 232..238,
                         },
+                        default: None,
                         span: 226..238,
                     },
                     StructField {
@@ -31,6 +32,7 @@ Program {
                             node: String,
                             span: 245..251,
                         },
+                        default: None,
                         span: 240..252,
                     },
                 ],

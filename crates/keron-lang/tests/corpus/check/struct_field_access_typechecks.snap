@@ -1,5 +1,6 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
 ---
 Program {
     items: [
@@ -19,6 +20,7 @@ Program {
                             node: String,
                             span: 20..26,
                         },
+                        default: None,
                         span: 14..26,
                     },
                     StructField {
@@ -30,6 +32,7 @@ Program {
                             node: Int,
                             span: 34..37,
                         },
+                        default: None,
                         span: 28..38,
                     },
                 ],

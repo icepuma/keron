@@ -1,0 +1,73 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
+---
+Program {
+    items: [
+        Struct(
+            StructDecl {
+                name: Spanned {
+                    node: "Server",
+                    span: 310..316,
+                },
+                fields: [
+                    StructField {
+                        name: Spanned {
+                            node: "host",
+                            span: 321..325,
+                        },
+                        ty: Spanned {
+                            node: String,
+                            span: 327..333,
+                        },
+                        default: None,
+                        span: 321..333,
+                    },
+                    StructField {
+                        name: Spanned {
+                            node: "port",
+                            span: 337..341,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 343..346,
+                        },
+                        default: Some(
+                            Spanned {
+                                node: Literal(
+                                    Int(
+                                        8080,
+                                    ),
+                                ),
+                                span: 349..353,
+                            },
+                        ),
+                        span: 337..353,
+                    },
+                    StructField {
+                        name: Spanned {
+                            node: "tls",
+                            span: 357..360,
+                        },
+                        ty: Spanned {
+                            node: Boolean,
+                            span: 362..369,
+                        },
+                        default: Some(
+                            Spanned {
+                                node: Literal(
+                                    Boolean(
+                                        false,
+                                    ),
+                                ),
+                                span: 372..377,
+                            },
+                        ),
+                        span: 357..377,
+                    },
+                ],
+                span: 303..381,
+            },
+        ),
+    ],
+}

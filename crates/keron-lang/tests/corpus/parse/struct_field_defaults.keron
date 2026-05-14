@@ -1,0 +1,11 @@
+# Struct fields may carry a default expression after their type
+# (`name: Type = expr`). The same required-before-default rule fn
+# parameters obey applies here. The default itself sees the outer
+# module env only — sibling fields are not in scope, matching the
+# record-as-independent-fields model.
+
+struct Server {
+  host: String,
+  port: Int = 8080,
+  tls: Boolean = false,
+}

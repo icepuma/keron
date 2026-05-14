@@ -1,0 +1,2 @@
+# vendored footer — keron-managed
+# this section comes from footer.txt

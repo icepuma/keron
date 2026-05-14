@@ -1,0 +1,17 @@
+# Demonstrates the chezmoi-style "include vendored content" pattern:
+# `read_file` pulls partials inside the keron repo into a value the
+# template machinery can render. Containment makes this safe — the
+# same path that goes through `symlink(source = ...)` containment
+# also gates `read_file(path)`, so a partial can only come from a
+# location the keron repo already covers.
+
+val home: String = env("HOME") ?? keron_root()
+val header: String = read_file("./header.txt") ?? ""
+val footer: String = read_file("./footer.txt") ?? ""
+val body: String = header + footer
+
+reconcile template(
+  source = "./combined.tpl",
+  target = "${home}/.testpartials",
+  vars = {"body": body},
+)

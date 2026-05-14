@@ -71,6 +71,7 @@ pub const RESERVED_OR_BUILTIN_NAMES: &[&str] = &[
     "path_exists",
     "path_is_dir",
     "path_is_file",
+    "read_file",
 ];
 
 pub fn imports() -> ImportedSymbols {
@@ -88,6 +89,8 @@ pub fn imports() -> ImportedSymbols {
     insert_list(&mut imp);
     insert_map(&mut imp);
     insert_path(&mut imp);
+    insert_file(&mut imp);
+    insert_numeric(&mut imp);
     insert_named_types(&mut imp, shell_kind, os_type, os_arch);
     imp
 }
@@ -241,7 +244,25 @@ fn insert_list(imp: &mut ImportedSymbols) {
         imp,
         "last",
         &[("xs", Type::List(Box::new(t.clone())))],
-        Type::Nullable(Box::new(t)),
+        Type::Nullable(Box::new(t.clone())),
+    );
+    insert_fn(
+        imp,
+        "sort",
+        &[("xs", Type::List(Box::new(Type::String)))],
+        Type::List(Box::new(Type::String)),
+    );
+    insert_fn(
+        imp,
+        "unique",
+        &[("xs", Type::List(Box::new(t.clone())))],
+        Type::List(Box::new(t.clone())),
+    );
+    insert_fn(
+        imp,
+        "index_of",
+        &[("xs", Type::List(Box::new(t.clone()))), ("x", t)],
+        Type::Nullable(Box::new(Type::Int)),
     );
 }
 
@@ -270,13 +291,31 @@ fn insert_map(imp: &mut ImportedSymbols) {
             ("k", k.clone()),
             ("default", v.clone()),
         ],
-        v,
+        v.clone(),
     );
     insert_fn(
         imp,
         "map_contains",
-        &[("m", map_kv), ("k", k)],
+        &[("m", map_kv.clone()), ("k", k.clone())],
         Type::Boolean,
+    );
+    insert_fn(
+        imp,
+        "merge",
+        &[("a", map_kv.clone()), ("b", map_kv.clone())],
+        map_kv.clone(),
+    );
+    insert_fn(
+        imp,
+        "without",
+        &[("m", map_kv.clone()), ("k", k.clone())],
+        map_kv.clone(),
+    );
+    insert_fn(
+        imp,
+        "with",
+        &[("m", map_kv.clone()), ("k", k), ("v", v)],
+        map_kv,
     );
 }
 
@@ -305,6 +344,32 @@ fn insert_path(imp: &mut ImportedSymbols) {
     ] {
         insert_fn(imp, name, &[("p", Type::String)], Type::Boolean);
     }
+}
+
+/// `std:file` — `read_file(path) -> String?`, keron-root-confined.
+fn insert_file(imp: &mut ImportedSymbols) {
+    insert_fn(
+        imp,
+        "read_file",
+        &[("path", Type::String)],
+        Type::Nullable(Box::new(Type::String)),
+    );
+}
+
+/// `std:numeric` — strict string-to-number parsers; nullable result.
+fn insert_numeric(imp: &mut ImportedSymbols) {
+    insert_fn(
+        imp,
+        "parse_int",
+        &[("s", Type::String)],
+        Type::Nullable(Box::new(Type::Int)),
+    );
+    insert_fn(
+        imp,
+        "parse_double",
+        &[("s", Type::String)],
+        Type::Nullable(Box::new(Type::Double)),
+    );
 }
 
 fn insert_named_types(imp: &mut ImportedSymbols, shell_kind: Type, os_type: Type, os_arch: Type) {

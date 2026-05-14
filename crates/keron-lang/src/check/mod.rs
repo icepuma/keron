@@ -185,6 +185,9 @@ pub fn resolve_type_names(
                         &mut diags,
                         &mut Vec::new(),
                     );
+                    if let Some(default) = &mut field.default {
+                        resolve_expr_types(&mut default.node, &scope, &mut diags);
+                    }
                 }
             }
             Item::Reconcile(r) => resolve_reconcile_types(r, &scope, &mut diags),
@@ -500,7 +503,8 @@ pub fn check_module(program: &Program, imported: &ImportedSymbols) -> Result<(),
     }
     for item in &program.items {
         match item {
-            Item::Use(_) | Item::Struct(_) | Item::TypeAlias(_) => {}
+            Item::Use(_) | Item::TypeAlias(_) => {}
+            Item::Struct(s) => check_struct_decl(s, &val_env, &fn_env, &mut diags),
             Item::Val(v) => check_val_decl(v, &mut val_env, &fn_env, &mut diags),
             Item::Fn(f) => check_fn_decl(f, &val_env, &fn_env, &mut diags),
             Item::Reconcile(r) => check_reconcile_decl(r, &val_env, &fn_env, &mut diags),
@@ -520,13 +524,22 @@ fn redefine_message(name: &str, imported: &ImportedSymbols) -> String {
 }
 
 /// Synthesise a [`FnSig`] for a struct's implicit constructor: each
-/// field becomes a positional parameter (no defaults) in declared
-/// order, returning `Type::Struct{...}`. Returns `None` when the
-/// struct has duplicate field names — that's reported via `diags`.
+/// field becomes a positional parameter in declared order, returning
+/// `Type::Struct{...}`. Fields written as `name: Type = expr` set
+/// `has_default` on the corresponding `ParamSig`; the same
+/// required-before-default ordering rule that applies to fn parameters
+/// is enforced here. Default *expressions* are type-checked in pass 2
+/// by [`check_struct_decl`], which needs the val / fn env that this
+/// pass doesn't yet have.
+///
+/// Returns `None` when the struct has a fatal sig-level problem
+/// (duplicate field names, defaulted-then-required ordering) — those
+/// are reported via `diags`.
 fn build_struct_sig(s: &StructDecl, diags: &mut Vec<Diagnostic>) -> Option<FnSig> {
     let mut params = Vec::with_capacity(s.fields.len());
     let mut field_pairs: Vec<(String, Type)> = Vec::with_capacity(s.fields.len());
     let mut seen: HashSet<String> = HashSet::new();
+    let mut seen_default = false;
     let mut ok = true;
     for field in &s.fields {
         validate_type_annotation(&field.ty, diags);
@@ -537,10 +550,21 @@ fn build_struct_sig(s: &StructDecl, diags: &mut Vec<Diagnostic>) -> Option<FnSig
             ));
             ok = false;
         }
+        let has_default = field.default.is_some();
+        if !has_default && seen_default {
+            diags.push(Diagnostic::new(
+                field.span.clone(),
+                "required fields must come before defaulted fields",
+            ));
+            ok = false;
+        }
+        if has_default {
+            seen_default = true;
+        }
         params.push(ParamSig {
             name: field.name.node.clone(),
             ty: field.ty.node.clone(),
-            has_default: false,
+            has_default,
         });
         field_pairs.push((field.name.node.clone(), field.ty.node.clone()));
     }
@@ -554,6 +578,22 @@ fn build_struct_sig(s: &StructDecl, diags: &mut Vec<Diagnostic>) -> Option<FnSig
         })
     } else {
         None
+    }
+}
+
+/// Pass-2 hook for struct decls: type-check each defaulted field's
+/// expression against the field's annotated type. Defaults see the
+/// outer val / fn env only — sibling fields are *not* in scope, so
+/// every default is independent (records aren't a sequence). If a
+/// caller wants field-to-field derivation, they compose through
+/// top-level `val` bindings before calling the constructor.
+fn check_struct_decl(s: &StructDecl, outer_env: &Env, fns: &FnEnv, diags: &mut Vec<Diagnostic>) {
+    for field in &s.fields {
+        if let Some(default) = &field.default
+            && let Err(d) = check_expr(default, &field.ty.node, outer_env, fns)
+        {
+            diags.push(d);
+        }
     }
 }
 

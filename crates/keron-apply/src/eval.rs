@@ -985,6 +985,13 @@ impl Drop for CallDepthGuard<'_, '_> {
 /// [`Value::Struct`]. Argument resolution mirrors [`bind_params`] —
 /// the type checker has already validated counts and types so a hit
 /// here is well-typed by construction.
+///
+/// Field defaults are evaluated in the caller's outer env (no
+/// sibling-field shadows in scope, by design — see
+/// `check_struct_decl`), so a default like `port: Int = 8080` is just
+/// a constant evaluated once per missing-arg call and a default like
+/// `home: String = home_dir()` re-evaluates the builtin every time
+/// the field is omitted.
 fn construct_struct(decl: &StructDecl, args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     let mut fields: Vec<(String, Value)> = Vec::with_capacity(decl.fields.len());
     let mut positional = args.iter().filter(|a| a.name.is_none());
@@ -996,6 +1003,8 @@ fn construct_struct(decl: &StructDecl, args: &[CallArg], env: &Env<'_, '_>) -> R
             eval_expr(&arg.value, env)?
         } else if let Some(arg) = positional.next() {
             eval_expr(&arg.value, env)?
+        } else if let Some(default) = &field.default {
+            eval_expr(default, env)?
         } else {
             bail!(
                 "missing argument for field `{}` of struct `{}`",
@@ -1085,10 +1094,18 @@ fn dispatch_intrinsic(id: IntrinsicId, args: &[CallArg], env: &Env<'_, '_>) -> R
         IntrinsicId::ListContains => dispatch_list_contains(args, env),
         IntrinsicId::ListFirst => dispatch_list_endpoint(args, env, ListEndpoint::First),
         IntrinsicId::ListLast => dispatch_list_endpoint(args, env, ListEndpoint::Last),
+        IntrinsicId::Sort => dispatch_sort(args, env),
+        IntrinsicId::Unique => dispatch_unique(args, env),
+        IntrinsicId::IndexOf => dispatch_index_of(args, env),
         IntrinsicId::MapKeys => dispatch_map_projection(args, env, MapProjection::Keys),
         IntrinsicId::MapValues => dispatch_map_projection(args, env, MapProjection::Values),
         IntrinsicId::MapGet => dispatch_map_get(args, env),
         IntrinsicId::MapContains => dispatch_map_contains(args, env),
+        IntrinsicId::MapMerge => dispatch_map_merge(args, env),
+        IntrinsicId::MapWithout => dispatch_map_without(args, env),
+        IntrinsicId::MapWith => dispatch_map_with(args, env),
+        IntrinsicId::ParseInt => dispatch_parse_int(args, env),
+        IntrinsicId::ParseDouble => dispatch_parse_double(args, env),
         IntrinsicId::PathJoin => dispatch_path_join(args, env),
         IntrinsicId::PathParent => dispatch_path_parent(args, env),
         IntrinsicId::PathBasename => dispatch_path_basename(args, env),
@@ -1097,7 +1114,31 @@ fn dispatch_intrinsic(id: IntrinsicId, args: &[CallArg], env: &Env<'_, '_>) -> R
         IntrinsicId::PathExists => dispatch_path_probe(args, env, PathProbe::Exists),
         IntrinsicId::PathIsDir => dispatch_path_probe(args, env, PathProbe::IsDir),
         IntrinsicId::PathIsFile => dispatch_path_probe(args, env, PathProbe::IsFile),
+        IntrinsicId::ReadFile => dispatch_read_file(args, env),
     }
+}
+
+/// `read_file(path)` — keron-root-confined UTF-8 read.
+///
+/// The path must resolve (via the same `resolve_managed_path` that
+/// guards `symlink(source = …)` and `template(source = …)`) to a real
+/// file inside the keron root. Containment failure, IO error, and
+/// invalid-UTF-8 all collapse to `Value::Null` so a `?? "fallback"`
+/// site can recover uniformly. This is **load-bearing security**:
+/// the type is `String?`, every error path returns `null`, and the
+/// resolver — not the dispatch — owns the containment decision.
+fn dispatch_read_file(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let raw = call_string(args, env, "path", 0)?;
+    let Ok(resolved) = resolve_managed_path(&raw, env, "read_file", "path") else {
+        return Ok(Value::Null);
+    };
+    let Ok(bytes) = std::fs::read(&resolved) else {
+        return Ok(Value::Null);
+    };
+    let Ok(text) = String::from_utf8(bytes) else {
+        return Ok(Value::Null);
+    };
+    Ok(Value::plain_string(text))
 }
 
 #[derive(Clone, Copy)]
@@ -1281,6 +1322,153 @@ fn dispatch_map_contains(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
         );
     };
     Ok(Value::Bool(pairs.iter().any(|(k, _)| value_eq(k, &key))))
+}
+
+/// `sort(xs)` — ascending lex order on `String`. The signature
+/// constrains `xs` to `List<String>`; any other element type is a
+/// type error before dispatch, so destructuring failures here mean
+/// AST drift (loud `bail!`, not a silent miss).
+fn dispatch_sort(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let xs = eval_call_arg(args, env, "xs", 0)?;
+    let Value::List(mut items) = xs else {
+        bail!("sort(xs): `xs` was {} (expected List)", xs.type_name());
+    };
+    items.sort_by(|a, b| match (a, b) {
+        (Value::String { text: x, .. }, Value::String { text: y, .. }) => x.cmp(y),
+        _ => std::cmp::Ordering::Equal,
+    });
+    Ok(Value::List(items))
+}
+
+/// `unique(xs)` — keep first occurrence, drop later duplicates.
+/// O(n²) on equality probes; lists in dotfile manifests are small
+/// enough that the obvious algorithm wins over any hashing scheme
+/// that'd need a `Value`-keyed equivalence.
+fn dispatch_unique(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let xs = eval_call_arg(args, env, "xs", 0)?;
+    let Value::List(items) = xs else {
+        bail!("unique(xs): `xs` was {} (expected List)", xs.type_name());
+    };
+    let mut out: Vec<Value> = Vec::with_capacity(items.len());
+    for item in items {
+        if !out.iter().any(|seen| value_eq(seen, &item)) {
+            out.push(item);
+        }
+    }
+    Ok(Value::List(out))
+}
+
+/// `index_of(xs, x)` — position of the first equal element, or
+/// `null`. Saturates to `Value::Null` rather than a sentinel `-1`
+/// so `??` is the natural recovery path (the whole reason we shaped
+/// the signature as `Int?`).
+fn dispatch_index_of(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let xs = eval_call_arg(args, env, "xs", 0)?;
+    let needle = eval_call_arg(args, env, "x", 1)?;
+    let Value::List(items) = xs else {
+        bail!(
+            "index_of(xs, x): `xs` was {} (expected List)",
+            xs.type_name()
+        );
+    };
+    let Some(idx) = items.iter().position(|item| value_eq(item, &needle)) else {
+        return Ok(Value::Null);
+    };
+    let n: i64 = idx
+        .try_into()
+        .map_err(|_| anyhow!("index_of(xs, x): index exceeds Int range"))?;
+    Ok(Value::Int(n))
+}
+
+/// `merge(a, b)` — last-wins overlay. Preserves `a`'s declaration
+/// order for keys that exist in both, then appends `b`'s new keys
+/// in their original order. Matches what users expect from a
+/// "base config + per-host override" composition.
+fn dispatch_map_merge(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let a = eval_call_arg(args, env, "a", 0)?;
+    let b = eval_call_arg(args, env, "b", 1)?;
+    let Value::Map(left) = a else {
+        bail!("merge(a, b): `a` was {} (expected Map)", a.type_name());
+    };
+    let Value::Map(right) = b else {
+        bail!("merge(a, b): `b` was {} (expected Map)", b.type_name());
+    };
+    let mut out: Vec<(Value, Value)> = Vec::with_capacity(left.len() + right.len());
+    for (k, v) in left {
+        let override_v = right.iter().find_map(|(rk, rv)| {
+            if value_eq(rk, &k) {
+                Some(rv.clone())
+            } else {
+                None
+            }
+        });
+        out.push((k, override_v.unwrap_or(v)));
+    }
+    for (k, v) in right {
+        if !out.iter().any(|(ok, _)| value_eq(ok, &k)) {
+            out.push((k, v));
+        }
+    }
+    Ok(Value::Map(out))
+}
+
+/// `without(m, k)` — drop the binding for `k`. Stable for all other
+/// keys; a no-op when `k` is absent (no ambiguity to surface).
+fn dispatch_map_without(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let m = eval_call_arg(args, env, "m", 0)?;
+    let key = eval_call_arg(args, env, "k", 1)?;
+    let Value::Map(pairs) = m else {
+        bail!("without(m, k): `m` was {} (expected Map)", m.type_name());
+    };
+    let out: Vec<(Value, Value)> = pairs
+        .into_iter()
+        .filter(|(k, _)| !value_eq(k, &key))
+        .collect();
+    Ok(Value::Map(out))
+}
+
+/// `with(m, k, v)` — upsert. Preserves `k`'s existing position when
+/// already bound (so updates don't reorder a map the caller built
+/// in a meaningful order); appends when the key is new.
+fn dispatch_map_with(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let m = eval_call_arg(args, env, "m", 0)?;
+    let key = eval_call_arg(args, env, "k", 1)?;
+    let value = eval_call_arg(args, env, "v", 2)?;
+    let Value::Map(pairs) = m else {
+        bail!("with(m, k, v): `m` was {} (expected Map)", m.type_name());
+    };
+    let mut out: Vec<(Value, Value)> = Vec::with_capacity(pairs.len() + 1);
+    let mut replaced = false;
+    for (existing_k, existing_v) in pairs {
+        if !replaced && value_eq(&existing_k, &key) {
+            out.push((existing_k, value.clone()));
+            replaced = true;
+        } else {
+            out.push((existing_k, existing_v));
+        }
+    }
+    if !replaced {
+        out.push((key, value));
+    }
+    Ok(Value::Map(out))
+}
+
+/// `parse_int(s)` — strict signed-integer parse. Rust's
+/// `i64::from_str` already rejects leading whitespace, trailing
+/// junk, and hex prefixes; we mirror that contract directly.
+fn dispatch_parse_int(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let s = call_string(args, env, "s", 0)?;
+    Ok(s.parse::<i64>().map_or(Value::Null, Value::Int))
+}
+
+/// `parse_double(s)` — strict IEEE-754 parse. Rust's `f64::from_str`
+/// accepts `"inf"` / `"NaN"`, but the rest of the language assumes
+/// `Double` values are finite — so we collapse non-finite parses to
+/// `null` as if they were malformed.
+fn dispatch_parse_double(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let s = call_string(args, env, "s", 0)?;
+    let parsed = s.parse::<f64>().ok().filter(|n| n.is_finite());
+    Ok(parsed.map_or(Value::Null, Value::Double))
 }
 
 /// `hostname()` — read via `gethostname(2)` on Unix and the
@@ -4624,5 +4812,240 @@ reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
             .to_string_lossy()
             .into_owned();
         assert_eq!(value, expected);
+    }
+
+    /// `read_file` is the only round-2 stdlib intrinsic that touches
+    /// arbitrary user-supplied paths, and the keron-root containment
+    /// guard is the load-bearing security property. The four tests
+    /// below pin every leg of that guard: in-root success, missing
+    /// file null, absolute-outside-root null, and `..` escape null.
+    /// Drop fixtures via the existing `run_with_templates` seam
+    /// (which writes to `root/<name>`) so the file lives at a path
+    /// inside the canonicalized keron root the evaluator sees.
+    #[test]
+    fn read_file_returns_contents_for_file_inside_keron_root() {
+        let states = run_with_templates(
+            r#"val s: String = read_file("./snippet.txt") ?? "<missing>"
+               reconcile template(source = "tmpl.tpl", target = s, vars = {"body": ""})
+            "#,
+            &[("snippet.txt", "INSIDE-ROOT")],
+        );
+        let ResourceState::Template { path, .. } = &states[0] else {
+            panic!("expected template, got {:?}", states[0]);
+        };
+        assert!(
+            path.ends_with("INSIDE-ROOT"),
+            "expected contents `INSIDE-ROOT`, got `{}`",
+            path.display(),
+        );
+    }
+
+    #[test]
+    fn read_file_returns_null_when_file_is_missing() {
+        // No `snippet.txt` seeded — `resolve_managed_path` errors on
+        // `symlink_metadata`, which collapses to `null` and the
+        // fallback string takes over.
+        let value = first_target_path(
+            r#"val s: String = read_file("./does-not-exist") ?? "MISSING"
+               reconcile template(source = "tmpl.tpl", target = s, vars = {"body": ""})
+            "#,
+        );
+        assert!(value.ends_with("MISSING"), "got `{value}`");
+    }
+
+    #[test]
+    fn read_file_returns_null_for_absolute_path_outside_keron_root() {
+        // `/etc/passwd` exists on every supported host but lives
+        // outside the temp keron root, so containment must reject it
+        // and the fallback string must win. If this ever returns the
+        // real file's contents the security guard has regressed.
+        let value = first_target_path(
+            r#"val s: String = read_file("/etc/passwd") ?? "BLOCKED"
+               reconcile template(source = "tmpl.tpl", target = s, vars = {"body": ""})
+            "#,
+        );
+        assert!(value.ends_with("BLOCKED"), "got `{value}`");
+    }
+
+    #[test]
+    fn read_file_returns_null_for_dotdot_escape_outside_keron_root() {
+        // `..` ascends past the temp keron root; canonicalize +
+        // `starts_with` rejects, collapsing to null. Pins the
+        // canonical-form leg of the containment check independently
+        // of the absolute-path leg above.
+        let value = first_target_path(
+            r#"val s: String = read_file("../../../../etc/passwd") ?? "ESCAPED"
+               reconcile template(source = "tmpl.tpl", target = s, vars = {"body": ""})
+            "#,
+        );
+        assert!(value.ends_with("ESCAPED"), "got `{value}`");
+    }
+
+    #[test]
+    fn sort_orders_strings_ascending() {
+        let value = first_target_path(
+            r#"val out: String = join(sort(["c", "a", "b"]), ",")
+               reconcile template(source = "tmpl.tpl", target = out, vars = {"body": ""})
+            "#,
+        );
+        assert!(value.ends_with("a,b,c"), "got `{value}`");
+    }
+
+    #[test]
+    fn unique_preserves_first_occurrence_order() {
+        let value = first_target_path(
+            r#"val out: String = join(unique(["a", "b", "a", "c", "b"]), ",")
+               reconcile template(source = "tmpl.tpl", target = out, vars = {"body": ""})
+            "#,
+        );
+        assert!(value.ends_with("a,b,c"), "got `{value}`");
+    }
+
+    #[test]
+    fn index_of_returns_position_when_present() {
+        let value = first_target_path(
+            r#"val xs: List<String> = ["a", "b", "c"]
+               val i: Int = index_of(xs, "b") ?? -1
+               reconcile template(source = "tmpl.tpl", target = "${i}", vars = {"body": ""})
+            "#,
+        );
+        assert!(value.ends_with('1'), "got `{value}`");
+    }
+
+    #[test]
+    fn index_of_returns_null_when_absent_routes_to_fallback() {
+        let value = first_target_path(
+            r#"val xs: List<String> = ["a", "b"]
+               val i: Int = index_of(xs, "z") ?? -1
+               reconcile template(source = "tmpl.tpl", target = "${i}", vars = {"body": ""})
+            "#,
+        );
+        assert!(value.ends_with("-1"), "got `{value}`");
+    }
+
+    #[test]
+    fn merge_overlays_right_over_left_and_preserves_order() {
+        let value = first_target_path(
+            r#"val a: Map<String, String> = {"x": "1", "y": "2"}
+               val b: Map<String, String> = {"y": "9", "z": "3"}
+               val m: Map<String, String> = merge(a, b)
+               val ks: String = join(keys(m), ",")
+               val vs: String = join(values(m), ",")
+               reconcile template(source = "tmpl.tpl", target = "${ks}:${vs}", vars = {"body": ""})
+            "#,
+        );
+        assert!(value.ends_with("x,y,z:1,9,3"), "got `{value}`");
+    }
+
+    #[test]
+    fn without_drops_named_key_only() {
+        let value = first_target_path(
+            r#"val m: Map<String, String> = {"a": "1", "b": "2", "c": "3"}
+               val out: Map<String, String> = without(m, "b")
+               reconcile template(source = "tmpl.tpl", target = join(keys(out), ","), vars = {"body": ""})
+            "#,
+        );
+        assert!(value.ends_with("a,c"), "got `{value}`");
+    }
+
+    #[test]
+    fn with_upserts_preserving_existing_key_position() {
+        let value = first_target_path(
+            r#"val m: Map<String, String> = {"a": "1", "b": "2"}
+               val out: Map<String, String> = with(m, "a", "9")
+               val ks: String = join(keys(out), ",")
+               val vs: String = join(values(out), ",")
+               reconcile template(source = "tmpl.tpl", target = "${ks}:${vs}", vars = {"body": ""})
+            "#,
+        );
+        assert!(value.ends_with("a,b:9,2"), "got `{value}`");
+    }
+
+    #[test]
+    fn with_appends_new_keys_at_end() {
+        let value = first_target_path(
+            r#"val m: Map<String, String> = {"a": "1"}
+               val out: Map<String, String> = with(m, "z", "9")
+               reconcile template(source = "tmpl.tpl", target = join(keys(out), ","), vars = {"body": ""})
+            "#,
+        );
+        assert!(value.ends_with("a,z"), "got `{value}`");
+    }
+
+    #[test]
+    fn parse_int_returns_value_for_valid_input() {
+        let value = first_target_path(
+            r#"val n: Int = parse_int("42") ?? -1
+               reconcile template(source = "tmpl.tpl", target = "${n}", vars = {"body": ""})
+            "#,
+        );
+        assert!(value.ends_with("42"), "got `{value}`");
+    }
+
+    #[test]
+    fn parse_int_returns_null_for_malformed_input_routes_to_fallback() {
+        let value = first_target_path(
+            r#"val n: Int = parse_int("not-a-number") ?? -1
+               reconcile template(source = "tmpl.tpl", target = "${n}", vars = {"body": ""})
+            "#,
+        );
+        assert!(value.ends_with("-1"), "got `{value}`");
+    }
+
+    #[test]
+    fn parse_double_rejects_non_finite_input() {
+        // `"inf"` parses as `f64::INFINITY` via `str::parse`, but the
+        // dispatch screens non-finite values to `null` so the rest of
+        // the language can rely on Double arithmetic.
+        let value = first_target_path(
+            r#"val d: Double = parse_double("inf") ?? 7.0
+               reconcile template(source = "tmpl.tpl", target = "${d}", vars = {"body": ""})
+            "#,
+        );
+        assert!(value.ends_with('7'), "got `{value}`");
+    }
+
+    #[test]
+    fn struct_field_default_fills_in_when_arg_is_omitted() {
+        // Positional construction supplies only the required field;
+        // the two defaulted fields fill in via their declared
+        // expressions. Routing the values into a template var pins
+        // both the eval path and that defaults are evaluated in the
+        // outer env (concat is a constant expression here).
+        let value = first_target_path(
+            r#"struct Server {
+                 host: String,
+                 port: Int = 8080,
+                 protocol: String = "https" + ""
+               }
+               val s: Server = Server("api.example.com")
+               reconcile template(
+                 source = "tmpl.tpl",
+                 target = "${s.host}:${s.port}/${s.protocol}",
+                 vars = {"body": ""},
+               )
+            "#,
+        );
+        assert!(
+            value.ends_with("api.example.com:8080/https"),
+            "got `{value}`",
+        );
+    }
+
+    #[test]
+    fn struct_field_default_yields_to_explicit_named_arg() {
+        // When the caller names the defaulted field, the default is
+        // bypassed entirely — no shadowing, no merge surprises.
+        let value = first_target_path(
+            r#"struct Server { host: String, port: Int = 8080 }
+               val s: Server = Server(host = "api", port = 443)
+               reconcile template(
+                 source = "tmpl.tpl",
+                 target = "${s.host}:${s.port}",
+                 vars = {"body": ""},
+               )
+            "#,
+        );
+        assert!(value.ends_with("api:443"), "got `{value}`");
     }
 }

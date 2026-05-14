@@ -1,0 +1,9 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
+---
+error: type mismatch in `merge`: type parameter `V` was inferred as `String` from an earlier argument, but this argument is `Int`
+  --> 6:39
+  |
+6 | val m: Map<String, String> = merge(a, b)
+  |                                       ^

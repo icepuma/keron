@@ -1,0 +1,6 @@
+# A field's default must match its declared type. Catching this at
+# struct decl time means callers never observe a default that would
+# break the struct's nominal contract.
+struct Bad {
+  port: Int = "eighty-eighty",
+}

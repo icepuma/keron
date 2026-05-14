@@ -1,0 +1,281 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
+---
+Program {
+    items: [
+        Struct(
+            StructDecl {
+                name: Spanned {
+                    node: "Server",
+                    span: 288..294,
+                },
+                fields: [
+                    StructField {
+                        name: Spanned {
+                            node: "host",
+                            span: 299..303,
+                        },
+                        ty: Spanned {
+                            node: String,
+                            span: 305..311,
+                        },
+                        default: None,
+                        span: 299..311,
+                    },
+                    StructField {
+                        name: Spanned {
+                            node: "port",
+                            span: 315..319,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 321..324,
+                        },
+                        default: Some(
+                            Spanned {
+                                node: Literal(
+                                    Int(
+                                        8080,
+                                    ),
+                                ),
+                                span: 327..331,
+                            },
+                        ),
+                        span: 315..331,
+                    },
+                    StructField {
+                        name: Spanned {
+                            node: "tls",
+                            span: 335..338,
+                        },
+                        ty: Spanned {
+                            node: Boolean,
+                            span: 340..347,
+                        },
+                        default: Some(
+                            Spanned {
+                                node: Literal(
+                                    Boolean(
+                                        false,
+                                    ),
+                                ),
+                                span: 350..355,
+                            },
+                        ),
+                        span: 335..355,
+                    },
+                ],
+                span: 281..360,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "explicit",
+                    span: 364..372,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Struct {
+                            name: "Server",
+                            fields: [
+                                (
+                                    "host",
+                                    String,
+                                ),
+                                (
+                                    "port",
+                                    Int,
+                                ),
+                                (
+                                    "tls",
+                                    Boolean,
+                                ),
+                            ],
+                        },
+                        span: 374..380,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "Server",
+                            span: 383..389,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "api",
+                                        ),
+                                    ),
+                                    span: 390..395,
+                                },
+                                span: 390..395,
+                            },
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            443,
+                                        ),
+                                    ),
+                                    span: 397..400,
+                                },
+                                span: 397..400,
+                            },
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        Boolean(
+                                            true,
+                                        ),
+                                    ),
+                                    span: 402..406,
+                                },
+                                span: 402..406,
+                            },
+                        ],
+                    },
+                    span: 383..408,
+                },
+                span: 360..408,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "with_default_port",
+                    span: 412..429,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Struct {
+                            name: "Server",
+                            fields: [
+                                (
+                                    "host",
+                                    String,
+                                ),
+                                (
+                                    "port",
+                                    Int,
+                                ),
+                                (
+                                    "tls",
+                                    Boolean,
+                                ),
+                            ],
+                        },
+                        span: 431..437,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "Server",
+                            span: 440..446,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "api",
+                                        ),
+                                    ),
+                                    span: 447..452,
+                                },
+                                span: 447..452,
+                            },
+                        ],
+                    },
+                    span: 440..454,
+                },
+                span: 408..454,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "partial_named",
+                    span: 458..471,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Struct {
+                            name: "Server",
+                            fields: [
+                                (
+                                    "host",
+                                    String,
+                                ),
+                                (
+                                    "port",
+                                    Int,
+                                ),
+                                (
+                                    "tls",
+                                    Boolean,
+                                ),
+                            ],
+                        },
+                        span: 473..479,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "Server",
+                            span: 482..488,
+                        },
+                        args: [
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "host",
+                                        span: 489..493,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "api",
+                                        ),
+                                    ),
+                                    span: 496..501,
+                                },
+                                span: 489..501,
+                            },
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "tls",
+                                        span: 503..506,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        Boolean(
+                                            true,
+                                        ),
+                                    ),
+                                    span: 509..513,
+                                },
+                                span: 503..513,
+                            },
+                        ],
+                    },
+                    span: 482..515,
+                },
+                span: 454..515,
+            },
+        ),
+    ],
+}

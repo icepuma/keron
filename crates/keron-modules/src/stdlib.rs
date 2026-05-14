@@ -61,6 +61,8 @@ fn build_registry() -> BTreeMap<&'static str, StdModule> {
     reg.insert("list", build_list());
     reg.insert("map", build_map());
     reg.insert("path", build_path());
+    reg.insert("file", build_file());
+    reg.insert("numeric", build_numeric());
     reg
 }
 
@@ -429,8 +431,38 @@ fn build_list() -> StdModule {
         intrinsic_fn(
             "last",
             &[("xs", Type::List(Box::new(t.clone())))],
-            Type::Nullable(Box::new(t)),
+            Type::Nullable(Box::new(t.clone())),
             IntrinsicId::ListLast,
+        ),
+    );
+    // `sort` is intentionally non-generic: real callers want String
+    // ordering (PATH segments, package lists). See `IntrinsicId::Sort`
+    // for the rationale on staying String-only here.
+    fns.insert(
+        "sort".into(),
+        intrinsic_fn(
+            "sort",
+            &[("xs", Type::List(Box::new(Type::String)))],
+            Type::List(Box::new(Type::String)),
+            IntrinsicId::Sort,
+        ),
+    );
+    fns.insert(
+        "unique".into(),
+        intrinsic_fn(
+            "unique",
+            &[("xs", Type::List(Box::new(t.clone())))],
+            Type::List(Box::new(t.clone())),
+            IntrinsicId::Unique,
+        ),
+    );
+    fns.insert(
+        "index_of".into(),
+        intrinsic_fn(
+            "index_of",
+            &[("xs", Type::List(Box::new(t.clone()))), ("x", t)],
+            Type::Nullable(Box::new(Type::Int)),
+            IntrinsicId::IndexOf,
         ),
     );
     StdModule {
@@ -476,7 +508,7 @@ fn build_map() -> StdModule {
                 ("k", k.clone()),
                 ("default", v.clone()),
             ],
-            v,
+            v.clone(),
             IntrinsicId::MapGet,
         ),
     );
@@ -484,9 +516,96 @@ fn build_map() -> StdModule {
         "map_contains".into(),
         intrinsic_fn(
             "map_contains",
-            &[("m", map_kv), ("k", k)],
+            &[("m", map_kv.clone()), ("k", k.clone())],
             Type::Boolean,
             IntrinsicId::MapContains,
+        ),
+    );
+    fns.insert(
+        "merge".into(),
+        intrinsic_fn(
+            "merge",
+            &[("a", map_kv.clone()), ("b", map_kv.clone())],
+            map_kv.clone(),
+            IntrinsicId::MapMerge,
+        ),
+    );
+    fns.insert(
+        "without".into(),
+        intrinsic_fn(
+            "without",
+            &[("m", map_kv.clone()), ("k", k.clone())],
+            map_kv.clone(),
+            IntrinsicId::MapWithout,
+        ),
+    );
+    fns.insert(
+        "with".into(),
+        intrinsic_fn(
+            "with",
+            &[("m", map_kv.clone()), ("k", k), ("v", v)],
+            map_kv,
+            IntrinsicId::MapWith,
+        ),
+    );
+    StdModule {
+        fns,
+        types: BTreeMap::new(),
+    }
+}
+
+/// `std:file` builtins — file-content reads, distinct from `std:fs`
+/// which constructs *resources* (symlinks, templates). The boundary
+/// is "read raw bytes during planning" vs "schedule a file-shaped
+/// effect for apply".
+///
+/// `read_file(path)` is keron-root-confined: the path is resolved
+/// with the same `resolve_managed_path` rule the symlink/template
+/// `source =` arguments use, so a hostile `.keron` repo cannot
+/// exfiltrate host files via this intrinsic. Anything outside the
+/// keron root, missing, unreadable, or not valid UTF-8 collapses to
+/// `null` — matching the failure-to-null convention shared with
+/// `path_exists` and `env`.
+fn build_file() -> StdModule {
+    let mut fns = BTreeMap::new();
+    fns.insert(
+        "read_file".into(),
+        intrinsic_fn(
+            "read_file",
+            &[("path", Type::String)],
+            Type::Nullable(Box::new(Type::String)),
+            IntrinsicId::ReadFile,
+        ),
+    );
+    StdModule {
+        fns,
+        types: BTreeMap::new(),
+    }
+}
+
+/// `std:numeric` builtins — string-to-number parsers. Both return
+/// nullable types so a missing/malformed input flows through `??` the
+/// same way `env(...) ?? "0"` does. Live in their own module rather
+/// than `std:string` because the failure semantics are number-shaped
+/// (not just "the string didn't satisfy a predicate").
+fn build_numeric() -> StdModule {
+    let mut fns = BTreeMap::new();
+    fns.insert(
+        "parse_int".into(),
+        intrinsic_fn(
+            "parse_int",
+            &[("s", Type::String)],
+            Type::Nullable(Box::new(Type::Int)),
+            IntrinsicId::ParseInt,
+        ),
+    );
+    fns.insert(
+        "parse_double".into(),
+        intrinsic_fn(
+            "parse_double",
+            &[("s", Type::String)],
+            Type::Nullable(Box::new(Type::Double)),
+            IntrinsicId::ParseDouble,
         ),
     );
     StdModule {

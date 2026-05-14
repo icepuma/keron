@@ -206,6 +206,70 @@ fn basic_dotfiles_creates_symlinks_then_is_idempotent() {
 }
 
 #[test]
+fn vendored_partials_concatenate_via_read_file_into_templated_target() {
+    // Dogfoods the chezmoi-style "include vendored content" pattern:
+    // `read_file("./header.txt") + read_file("./footer.txt")` flows
+    // into a `template(... vars = { body })` call, and the resulting
+    // file on disk contains both partials' contents in order. The
+    // single primary security guarantee — `read_file` only sees
+    // files inside the keron repo — is observable here too: both
+    // partials sit alongside `entry.keron` in the fixture dir, and
+    // an analogous absolute-path read against `/etc/passwd` would
+    // collapse to `null` and fall through to `??`.
+    let home = E2eHome::new("vendored-partials");
+    let fixture = fixture_dir("vendored-partials");
+
+    let first = run(keron_apply(&fixture, &home.path), "yes\n");
+    assert!(
+        first.success,
+        "first run failed: stdout=\n{}\nstderr=\n{}",
+        first.stdout, first.stderr,
+    );
+    assert!(
+        first.stdout.contains("1 added"),
+        "first run should add 1 template: {}",
+        first.stdout,
+    );
+
+    let rendered = home.path.join(".testpartials");
+    let content = fs::read_to_string(&rendered).expect("partials file written");
+    assert!(
+        content.contains("vendored header"),
+        "rendered file missing header partial: {content}",
+    );
+    assert!(
+        content.contains("vendored footer"),
+        "rendered file missing footer partial: {content}",
+    );
+    // Order matters — header is concatenated before footer in the
+    // manifest, so the header text must appear first in the output.
+    let header_pos = content
+        .find("vendored header")
+        .expect("header text present");
+    let footer_pos = content
+        .find("vendored footer")
+        .expect("footer text present");
+    assert!(
+        header_pos < footer_pos,
+        "partials concatenated out of order: {content}",
+    );
+
+    // Idempotency: a second apply with no source changes should
+    // detect the file is byte-identical and report no work.
+    let second = run(keron_apply(&fixture, &home.path), "yes\n");
+    assert!(
+        second.success,
+        "second run failed: stdout=\n{}\nstderr=\n{}",
+        second.stdout, second.stderr,
+    );
+    assert!(
+        second.stdout.contains("No changes"),
+        "second run should be idempotent, got: {}",
+        second.stdout,
+    );
+}
+
+#[test]
 fn template_renders_then_is_idempotent() {
     let home = E2eHome::new("template");
     let fixture = fixture_dir("templates");

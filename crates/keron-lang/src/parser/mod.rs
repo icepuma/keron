@@ -219,7 +219,7 @@ fn item<'src>() -> impl Parser<'src, &'src str, Item, Extra<'src>> {
     .map(Item::ExprStmt);
     choice((
         use_decl().map(Item::Use),
-        struct_decl().map(Item::Struct),
+        struct_decl(e.clone()).map(Item::Struct),
         type_alias_decl().map(Item::TypeAlias),
         val_decl(e.clone()).map(Item::Val),
         fn_decl(e.clone()).map(Item::Fn),

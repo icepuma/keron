@@ -1,0 +1,9 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
+---
+error: type mismatch: expected `Int`, found `Int?`
+  --> 4:14
+  |
+4 | val n: Int = parse_int("42")
+  |              ^^^^^^^^^^^^^^^^

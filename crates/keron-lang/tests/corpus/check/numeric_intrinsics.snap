@@ -1,0 +1,112 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "n",
+                    span: 200..201,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Int,
+                        span: 203..206,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Coalesce,
+                        lhs: Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "parse_int",
+                                    span: 209..218,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: None,
+                                        value: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "42",
+                                                ),
+                                            ),
+                                            span: 219..223,
+                                        },
+                                        span: 219..223,
+                                    },
+                                ],
+                            },
+                            span: 209..225,
+                        },
+                        rhs: Spanned {
+                            node: Literal(
+                                Int(
+                                    0,
+                                ),
+                            ),
+                            span: 228..229,
+                        },
+                    },
+                    span: 209..229,
+                },
+                span: 196..230,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "d",
+                    span: 234..235,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Double,
+                        span: 237..243,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Coalesce,
+                        lhs: Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "parse_double",
+                                    span: 246..258,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: None,
+                                        value: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "3.14",
+                                                ),
+                                            ),
+                                            span: 259..265,
+                                        },
+                                        span: 259..265,
+                                    },
+                                ],
+                            },
+                            span: 246..267,
+                        },
+                        rhs: Spanned {
+                            node: Literal(
+                                Double(
+                                    0.0,
+                                ),
+                            ),
+                            span: 270..273,
+                        },
+                    },
+                    span: 246..273,
+                },
+                span: 230..274,
+            },
+        ),
+    ],
+}

@@ -1,0 +1,4 @@
+# `parse_int` returns `Int?`; binding it to a non-nullable `Int` is a
+# type error. Users `??` a fallback (`parse_int(s) ?? 0`) — same shape
+# as `env(...)` and `read_file(...)`.
+val n: Int = parse_int("42")

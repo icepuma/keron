@@ -1,0 +1,19 @@
+# Tier 2 list / map ops: `sort` (String-only), `unique` / `index_of`
+# (generic in `T`), `merge` / `without` / `with` (generic in `K`, `V`).
+# Pins the type rules:
+#   - `sort` rejects non-String lists (negative cases live under
+#     `errors/check/`); accepts `List<String>` straight through.
+#   - `unique` and `index_of` bind `T` from the list element type, so
+#     repeat uses must match. `index_of` returns `Int?`.
+#   - `merge` / `without` / `with` thread `K`, `V` through both args
+#     and the return.
+
+val sorted: List<String> = sort(["c", "a", "b"])
+val dedup: List<String> = unique(["a", "b", "a"])
+val idx: Int = index_of(["x", "y", "z"], "y") ?? -1
+
+val base: Map<String, String> = {"a": "1", "b": "2"}
+val overlay: Map<String, String> = {"b": "9", "c": "3"}
+val merged: Map<String, String> = merge(base, overlay)
+val stripped: Map<String, String> = without(merged, "a")
+val upserted: Map<String, String> = with(stripped, "d", "4")

@@ -95,17 +95,25 @@ pub struct FnDecl {
 /// `struct Name { field: Type, ... }` — a nominal record type. Field
 /// order is significant: the implicit constructor accepts positional
 /// arguments in declared order (and named arguments by field name).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct StructDecl {
     pub name: Spanned<String>,
     pub fields: Vec<StructField>,
     pub span: Span,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// One declared field of a struct.
+///
+/// `default` is set when the field is written as `name: Type = expr`
+/// — the default value is evaluated at construction time when the
+/// caller omits the field. Same shape and ordering rule as fn-parameter
+/// defaults: any required field must precede every defaulted one (the
+/// checker enforces this).
+#[derive(Debug, Clone, PartialEq)]
 pub struct StructField {
     pub name: Spanned<String>,
     pub ty: Spanned<Type>,
+    pub default: Option<Spanned<Expr>>,
     pub span: Span,
 }
 
@@ -316,6 +324,65 @@ pub enum IntrinsicId {
     /// `path_is_file(p: String) -> Boolean` — `true` only when the
     /// path exists *and* is a regular file (symlinks are followed).
     PathIsFile,
+    /// `read_file(path: String) -> String?` — load the UTF-8 contents
+    /// of a file *inside the keron root* during evaluation. The path
+    /// goes through the same `resolve_managed_path` containment check
+    /// that `symlink(source = …)` and `template(source = …)` use, so a
+    /// hostile manifest cannot read `/etc/passwd` or any host file
+    /// the keron repo doesn't already include.
+    ///
+    /// Every failure mode — file missing, not readable, resolves
+    /// outside the keron root, not valid UTF-8 — collapses to `null`,
+    /// matching the convention used by `path_exists` and `env`. This
+    /// is deliberately not the right place to debug "why didn't my
+    /// file load"; users diagnose with `path_exists(…)` first if they
+    /// need granularity, then call `read_file` once the path resolves.
+    ReadFile,
+    /// `sort(xs: List<String>) -> List<String>` — Unicode codepoint
+    /// order ascending. Deliberately *not* generic in `T`: real
+    /// dotfile use cases (`PATH` segments, package lists) are
+    /// String-typed, and generic ordering would force a comparator
+    /// design (Int/Double comparison, lexicographic structs) we don't
+    /// have a workflow for. Lift to generics only when a manifest
+    /// needs it.
+    Sort,
+    /// `unique(xs: List<T>) -> List<T>` — preserve first occurrence,
+    /// drop subsequent duplicates. Element equality follows the same
+    /// rule as `==` / `list_contains`. Generic in `T`.
+    Unique,
+    /// `index_of(xs: List<T>, x: T) -> Int?` — position of the first
+    /// element equal to `x`, or `null` when absent. Returning `Int?`
+    /// (not a sentinel `-1`) keeps the `??`-fallback path natural and
+    /// avoids the "is the index also a valid result?" footgun.
+    /// Generic in `T`.
+    IndexOf,
+    /// `merge(a: Map<K, V>, b: Map<K, V>) -> Map<K, V>` — last-wins
+    /// overlay: every binding of `b` shadows the same key in `a`.
+    /// Preserves declaration order of `a`, with new keys from `b`
+    /// appended. Generic in `K`, `V`.
+    MapMerge,
+    /// `without(m: Map<K, V>, k: K) -> Map<K, V>` — drop the binding
+    /// for `k` from `m`. No-op when `k` is absent (mirrors `Map::remove`
+    /// when the caller doesn't need the removed value). Generic in
+    /// `K`, `V`.
+    MapWithout,
+    /// `with(m: Map<K, V>, k: K, v: V) -> Map<K, V>` — insert or
+    /// overwrite `k -> v`. When `k` is already bound, its position is
+    /// preserved and only the value changes; otherwise the binding is
+    /// appended. Generic in `K`, `V`.
+    MapWith,
+    /// `parse_int(s: String) -> Int?` — strict signed-integer parse.
+    /// Accepts an optional leading `+`/`-` and ASCII digits only;
+    /// returns `null` for any non-conforming input (whitespace, empty,
+    /// trailing junk, hex prefixes, overflow). Use `trim(s)` first if
+    /// you want to tolerate surrounding whitespace.
+    ParseInt,
+    /// `parse_double(s: String) -> Double?` — strict IEEE-754 parse
+    /// via Rust's `str::parse::<f64>()`. Returns `null` for malformed
+    /// input. NaN / infinity are not produced — Rust's parser accepts
+    /// `"inf"`/`"NaN"`, so we screen those explicitly to keep `Double`
+    /// values finite (the rest of the language assumes that).
+    ParseDouble,
 }
 
 #[derive(Debug, Clone, PartialEq)]
