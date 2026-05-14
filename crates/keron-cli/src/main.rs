@@ -73,11 +73,31 @@ fn main() -> ExitCode {
             // `.keron` manifest that embedded `\r` or `\x1b[A` in a
             // path / address can't forge the rendered error chain
             // — same threat as the diff renderer, different sink.
-            let raw = format!("Error: {error:?}");
+            let raw = format_cli_error(&error);
             eprintln!("{}", keron_apply::sanitize_terminal_message(&raw));
             ExitCode::from(exit_code)
         }
     }
+}
+
+/// `RunError`'s Display delegates to its wrapped `anyhow::Error` (see
+/// `#[error("{0}")]`), but the same anyhow is also exposed as
+/// `#[source]`. anyhow's Debug walks both, so the user sees the
+/// top-level message twice — once as `Error:` and once under
+/// `Caused by:`. Skip the wrapper by formatting the inner anyhow
+/// directly; for non-`RunError` anyhow values (e.g. from `run_format`),
+/// fall back to the standard chain-walking Debug.
+fn format_cli_error(error: &anyhow::Error) -> String {
+    error.downcast_ref::<keron_apply::RunError>().map_or_else(
+        || format!("Error: {error:?}"),
+        |run| match run {
+            keron_apply::RunError::Io(io) => format!("Error: {io}"),
+            keron_apply::RunError::DirectElevation(a)
+            | keron_apply::RunError::PreApply(a)
+            | keron_apply::RunError::Apply(a)
+            | keron_apply::RunError::Elevation(a) => format!("Error: {a:?}"),
+        },
+    )
 }
 
 /// CLI failure: the source chain to render plus the exit code to

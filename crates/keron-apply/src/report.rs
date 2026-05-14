@@ -45,15 +45,24 @@ fn render_one(
 
     // Per-label colors set via `Label::with_color` bypass
     // `Config::with_color(false)`, so only paint when requested.
+    // Yellow on the offending span is the conventional rustc/ariadne
+    // shade — distinct from the red `Error` kind header above so the
+    // eye separates "what kind of problem" from "where".
     let mut label = Label::new(span.clone()).with_message(&d.message);
     if color {
-        label = label.with_color(Color::Red);
+        label = label.with_color(Color::Yellow);
     }
-    let report = Report::build(ReportKind::Error, span)
+    let mut report = Report::build(ReportKind::Error, span)
         .with_message(&d.message)
         .with_label(label)
-        .with_config(ariadne::Config::new().with_color(color))
-        .finish();
+        .with_config(ariadne::Config::new().with_color(color));
+    if let Some(note) = &d.note {
+        report = report.with_note(note);
+    }
+    if let Some(help) = &d.help {
+        report = report.with_help(help);
+    }
+    let report = report.finish();
 
     let mut buf: Vec<u8> = Vec::new();
     let cache = sources(std::iter::once((header.clone(), src.as_str())));

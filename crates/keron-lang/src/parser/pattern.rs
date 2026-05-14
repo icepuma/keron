@@ -40,6 +40,11 @@ pub(super) fn pattern<'src>() -> impl Parser<'src, &'src str, Spanned<Pattern>, 
         let lit = literal_pattern();
         let struct_or_bind = struct_or_bind_pattern(pat);
 
+        // No `.labelled("pattern")` here: `struct_or_bind_pattern`
+        // raises `Rich::custom` errors for casing mistakes (e.g.
+        // "struct pattern names must start with an uppercase letter"),
+        // and chumsky's `label_with` would replace them with a bare
+        // `[pattern]` expected set — hiding the actionable detail.
         choice((wildcard, lit, struct_or_bind))
     })
 }

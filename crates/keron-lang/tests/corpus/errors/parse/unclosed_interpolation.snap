@@ -1,8 +1,9 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
 ---
-error: found '"' expected something else, '.', '#', '*', '/', '+', '-', '=', '!', '<', '>', '}', '"true"', '"false"', '"null"', int, '[', '{', '"if"', '"for"', '"match"', identifier, or '('
-  --> 1:21
+error: unexpected `"`, expected expression
+  --> 1:9
   |
 1 | val a = "x = ${1 + 2"
-  |                     ^
+  |         ^

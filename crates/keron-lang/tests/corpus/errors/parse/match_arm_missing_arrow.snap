@@ -1,7 +1,8 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
 ---
-error: found '1' expected something else, '#', or '='
+error: unexpected `1`, expected `=`
   --> 2:5
   |
 2 |   1 1,

@@ -56,5 +56,6 @@ pub(super) fn type_annotation<'src>() -> impl Parser<'src, &'src str, Type, Extr
                     Type::Nullable(Box::new(inner))
                 }
             })
+            .labelled("type")
     })
 }

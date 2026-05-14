@@ -1,7 +1,8 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
 ---
-error: found '{' expected something else, '#', or '"in"'
+error: unexpected `{`, expected `in`
   --> 2:7
   |
 2 | for x { reconcile x }

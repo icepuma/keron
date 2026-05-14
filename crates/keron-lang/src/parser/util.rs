@@ -41,6 +41,11 @@ const KEYWORDS: &[&str] = &[
 ];
 
 pub(super) fn ident<'src>() -> impl Parser<'src, &'src str, String, Extra<'src>> + Clone {
+    // No `.labelled("identifier")` here: chumsky's `text::ident()`
+    // already records its expected set as `"identifier"`, and wrapping
+    // with `.labelled` would clobber the `try_map`'s `Rich::custom`
+    // (`label_with` replaces the reason with `ExpectedFound{[label]}`),
+    // hiding the "reserved keyword" message users actually need.
     text::ident().try_map(|s: &str, span| {
         if KEYWORDS.contains(&s) {
             Err(Rich::custom(span, format!("`{s}` is a reserved keyword")))

@@ -39,6 +39,14 @@ use super::{
 
 pub(super) fn expr<'src>() -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone {
     recursive(|expr| {
+        // `atom` is also labelled (in addition to the outer expression
+        // chain below) so that secondary errors logged from inside
+        // `additive.repeated()` — e.g. after `1 +` when the next
+        // multiplicand fails to start — collapse to "expected
+        // expression" too. chumsky's `Parser::labelled` only relabels
+        // alt errors whose position equals the labelled parser's start
+        // position, so a label on the *outermost* parser doesn't reach
+        // nested-position failures recovered by `.repeated()`.
         let atom = choice((
             string_expr(expr.clone()).padded_by(pad()),
             non_string_literal_expr(),
@@ -50,7 +58,8 @@ pub(super) fn expr<'src>() -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<
             var_or_call(expr.clone()),
             expr.clone()
                 .delimited_by(just('(').padded_by(pad()), just(')').padded_by(pad())),
-        ));
+        ))
+        .labelled("expression");
 
         let postfix = atom
             .then(
@@ -87,6 +96,13 @@ pub(super) fn expr<'src>() -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<
                     Some(rhs) => merge_binary(BinOp::Pow, lhs, rhs),
                 });
 
+            // Labelling the unary alternative as "expression" catches
+            // the failure mode "RHS of a binary op didn't parse" —
+            // e.g. `1 +` — where chumsky surfaces the unfinished
+            // multiplicand's `-` token alongside the atom-level
+            // "expression" label. Without this, the user sees
+            // `expected '-' or expression`; with it, both alternatives
+            // collapse to a single `expected expression`.
             choice((
                 just('-')
                     .padded_by(pad())
@@ -100,6 +116,7 @@ pub(super) fn expr<'src>() -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<
                     }),
                 power,
             ))
+            .labelled("expression")
         });
 
         let mul_op = choice((just('*').to(BinOp::Mul), just('/').to(BinOp::Div))).padded_by(pad());
@@ -131,10 +148,15 @@ pub(super) fn expr<'src>() -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<
             just('>').to(BinOp::Gt),
         ))
         .padded_by(pad());
+        // Label the entire expression chain so any failure to start one
+        // (e.g. after `val x =`) surfaces as a single "expression"
+        // alternative rather than dumping every leading-char form
+        // (`-`, `'r'`, `'"true"'`, …) into the message.
         additive
             .clone()
             .then(cmp_op.then(additive).repeated().collect::<Vec<_>>())
             .map(|(lhs, ops)| ops.into_iter().fold(lhs, fold_left))
+            .labelled("expression")
     })
 }
 

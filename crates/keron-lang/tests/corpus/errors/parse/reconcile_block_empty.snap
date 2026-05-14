@@ -1,7 +1,8 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
 ---
-error: found '}' expected something else, '#', '-', 'r', '"', '"true"', '"false"', '"null"', int, '[', '{', '"if"', '"for"', '"match"', identifier, or '('
+error: unexpected `}`, expected expression
   --> 1:13
   |
 1 | reconcile { }

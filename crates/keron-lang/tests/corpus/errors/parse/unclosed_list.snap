@@ -1,7 +1,8 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
 ---
-error: found end of input expected any, '#', '.', '*', '/', '+', '-', '=', '!', '<', '>', ',', or ']'
+error: unexpected end of input, expected `!`, `*`, `+`, `,`, `-`, `.`, `/`, `<`, `=`, `>`, or `]`
   --> 2:1
   |
 2 | 

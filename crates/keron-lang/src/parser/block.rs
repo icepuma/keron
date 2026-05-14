@@ -55,4 +55,5 @@ where
             trailing,
             span: span_to_range(e.span()),
         })
+        .labelled("block")
 }

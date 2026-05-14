@@ -1,7 +1,8 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
 ---
-error: found 'e' expected '#', or '"'
+error: unexpected `e`, expected `"`
   --> 2:13
   |
 2 | for x in { reconcile x }
