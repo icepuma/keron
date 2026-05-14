@@ -407,7 +407,12 @@ fn resolve_type_in_place(
         | Type::Secret
         | Type::Package
         | Type::Void
-        | Type::Null => {}
+        | Type::Null
+        // `Generic` is only embedded in intrinsic signatures, which
+        // bypass type resolution — but if one is somehow reachable
+        // (e.g. via a struct field built from a stdlib signature),
+        // it's an opaque leaf for the resolver.
+        | Type::Generic(_) => {}
     }
 }
 
@@ -1170,6 +1175,10 @@ fn expr_type(e: &Spanned<Expr>, env: &Env, fns: &FnEnv) -> Result<Type, Diagnost
         Expr::Binary { op, lhs, rhs } => {
             let lt = expr_type(lhs, env, fns)?;
             let rt = expr_type(rhs, env, fns)?;
+            if *op == BinOp::Coalesce {
+                return coalesce_result(&lt, &rt)
+                    .map_err(|msg| Diagnostic::new(e.span.clone(), msg));
+            }
             binop_result(*op, &lt, &rt)
                 .ok_or_else(|| Diagnostic::new(e.span.clone(), binop_error(*op, &lt, &rt)))
         }
@@ -1440,6 +1449,18 @@ fn check_call(
         }
     }
 
+    // Generic-aware path: when the signature mentions `Type::Generic`
+    // anywhere (set up only by stdlib intrinsics like `len`,
+    // `contains`, `get`), switch from the cheap bidirectional
+    // `check_expr` mode to an inference-then-bind mode that lets us
+    // resolve `T`/`K`/`V` from concrete argument types. Non-generic
+    // signatures keep the existing fast path.
+    let has_generics = sig.params.iter().any(|p| type_contains_generic(&p.ty))
+        || type_contains_generic(&sig.return_type);
+    if has_generics {
+        return check_generic_call(callee, sig, &matched, env, fns, call_span);
+    }
+
     for (i, param) in sig.params.iter().enumerate() {
         match matched[i] {
             Some(arg) => check_expr(&arg.value, &param.ty, env, fns)?,
@@ -1458,6 +1479,149 @@ fn check_call(
     }
 
     Ok(sig.return_type.clone())
+}
+
+/// Generic-aware variant of the per-param check used by the
+/// inference-then-bind branch above. Each present argument's type is
+/// inferred independently and unified against the (possibly-generic)
+/// parameter type; the resulting binding map then substitutes
+/// generics in the declared return type.
+fn check_generic_call(
+    callee: &Spanned<String>,
+    sig: &FnSig,
+    matched: &[Option<&CallArg>],
+    env: &Env,
+    fns: &FnEnv,
+    call_span: Span,
+) -> Result<Type, Diagnostic> {
+    let mut bindings: HashMap<String, Type> = HashMap::new();
+    for (i, param) in sig.params.iter().enumerate() {
+        let Some(arg) = matched[i] else {
+            if !param.has_default {
+                return Err(Diagnostic::new(
+                    call_span,
+                    format!(
+                        "missing required argument `{}` for `{}`",
+                        param.name, callee.node
+                    ),
+                ));
+            }
+            continue;
+        };
+        // Inference-mode: ask for the argument's concrete type. Empty
+        // containers and other expressions that need an expected type
+        // to be inferrable will fail here with their own diagnostic.
+        let arg_ty = expr_type(&arg.value, env, fns)?;
+        bind_generics(
+            &param.ty,
+            &arg_ty,
+            &mut bindings,
+            &arg.value.span,
+            &callee.node,
+        )?;
+    }
+    Ok(substitute_generics(&sig.return_type, &bindings))
+}
+
+fn type_contains_generic(t: &Type) -> bool {
+    match t {
+        Type::Generic(_) => true,
+        Type::List(inner) | Type::Nullable(inner) => type_contains_generic(inner),
+        Type::Map(k, v) => type_contains_generic(k) || type_contains_generic(v),
+        Type::Struct { fields, .. } => fields.iter().any(|(_, t)| type_contains_generic(t)),
+        Type::String
+        | Type::Int
+        | Type::Boolean
+        | Type::Double
+        | Type::Void
+        | Type::Null
+        | Type::Symlink
+        | Type::Template
+        | Type::Package
+        | Type::Shell
+        | Type::Resource
+        | Type::Secret
+        | Type::StringUnion { .. }
+        | Type::Named(_) => false,
+    }
+}
+
+/// Walk `param` and `arg` in parallel, recording the binding for each
+/// `Type::Generic` encountered. Repeat occurrences of the same name
+/// must unify exactly — no LUB / subtype-widening — so the user gets a
+/// clear diagnostic instead of a silently-broadened result type.
+fn bind_generics(
+    param: &Type,
+    arg: &Type,
+    bindings: &mut HashMap<String, Type>,
+    span: &Span,
+    callee: &str,
+) -> Result<(), Diagnostic> {
+    if let Type::Generic(name) = param {
+        match bindings.get(name) {
+            None => {
+                bindings.insert(name.clone(), arg.clone());
+                return Ok(());
+            }
+            // Accept the new argument when it fits the prior binding
+            // via the existing subtype rule (e.g. `OsType <: String`,
+            // a specific resource fits a `Resource` slot). The binding
+            // itself stays at the broader prior type — no widening
+            // beyond what was first inferred, matching how the rest
+            // of the type checker handles invariant containers.
+            Some(prior) if prior == arg || is_subtype(arg, prior) => return Ok(()),
+            Some(prior) => {
+                return Err(Diagnostic::new(
+                    span.clone(),
+                    format!(
+                        "type mismatch in `{callee}`: type parameter `{name}` was inferred as `{prior}` from an earlier argument, but this argument is `{arg}`",
+                    ),
+                ));
+            }
+        }
+    }
+    match (param, arg) {
+        (Type::List(p), Type::List(a)) | (Type::Nullable(p), Type::Nullable(a)) => {
+            bind_generics(p, a, bindings, span, callee)
+        }
+        (Type::Map(pk, pv), Type::Map(ak, av)) => {
+            bind_generics(pk, ak, bindings, span, callee)?;
+            bind_generics(pv, av, bindings, span, callee)
+        }
+        (p, a) if is_subtype(a, p) => Ok(()),
+        (p, a) => Err(Diagnostic::new(
+            span.clone(),
+            format!("type mismatch in `{callee}`: expected `{p}`, found `{a}`"),
+        )),
+    }
+}
+
+fn substitute_generics(t: &Type, bindings: &HashMap<String, Type>) -> Type {
+    match t {
+        // An unbound generic in the return type means the signature
+        // was malformed (a return-only `T` with no parameter using
+        // it). Leave it as `Generic(...)` so the calling site renders
+        // it verbatim — the consequent diagnostic will be louder than
+        // a silent collapse.
+        Type::Generic(name) => bindings
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| Type::Generic(name.clone())),
+        Type::List(inner) => Type::List(Box::new(substitute_generics(inner, bindings))),
+        Type::Nullable(inner) => Type::Nullable(Box::new(substitute_generics(inner, bindings))),
+        Type::Map(k, v) => Type::Map(
+            Box::new(substitute_generics(k, bindings)),
+            Box::new(substitute_generics(v, bindings)),
+        ),
+        Type::Struct { name, fields } => Type::Struct {
+            name: name.clone(),
+            fields: fields
+                .iter()
+                .map(|(n, t)| (n.clone(), substitute_generics(t, bindings)))
+                .collect(),
+        },
+        _ => t.clone(),
+    }
 }
 
 fn map_type(
@@ -1594,6 +1758,15 @@ fn walk_type(ty: &Type, span: &Span, diags: &mut Vec<Diagnostic>) {
             span.clone(),
             format!("unknown type `{name}`"),
         )),
+        // `Type::Generic` lives only in intrinsic signatures and is
+        // substituted away by `check_call`. A user-visible annotation
+        // can't construct it (the parser produces `Type::Named` for
+        // any capitalized identifier in type position), so reaching
+        // here is a stdlib bug, not a user error — flag it loudly.
+        Type::Generic(name) => diags.push(Diagnostic::new(
+            span.clone(),
+            format!("internal error: unresolved type variable `{name}`"),
+        )),
     }
 }
 
@@ -1671,7 +1844,55 @@ fn binop_result(op: BinOp, lhs: &Type, rhs: &Type) -> Option<Type> {
         BinOp::Concat => concat_result(lhs, rhs),
         BinOp::Eq | BinOp::Neq => equality_result(lhs, rhs),
         BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => ordering_result(lhs, rhs),
+        BinOp::And | BinOp::Or => boolean_result(lhs, rhs),
+        // `??` has its own check path (`coalesce_result`) called
+        // directly from `expr_type`; it never reaches here.
+        BinOp::Coalesce => None,
     }
+}
+
+const fn boolean_result(lhs: &Type, rhs: &Type) -> Option<Type> {
+    if matches!((lhs, rhs), (Type::Boolean, Type::Boolean)) {
+        Some(Type::Boolean)
+    } else {
+        None
+    }
+}
+
+/// `??` type rule. Diverges from the regular `binop_result` shape
+/// (`(T, T) -> T`) because the operator unwraps a `Nullable<T>` rather
+/// than combining two same-typed operands.
+///
+/// Accepted forms:
+///   - `null ?? x`         → type of `x` (LHS is statically null)
+///   - `T? ?? T`           → `T`        (LHS unwrapped, RHS pins it)
+///   - `T? ?? T?`          → `T?`       (RHS may itself be null)
+///   - `T? ?? null`        → `T?`       (RHS is statically null)
+///
+/// Rejected when the LHS isn't nullable — that's a coding mistake, and
+/// surfacing it as a type error preserves keron's "no implicit
+/// promotions" stance. The error string is plain prose; callers wrap
+/// it into a `Diagnostic` with the binop's span.
+fn coalesce_result(lhs: &Type, rhs: &Type) -> Result<Type, String> {
+    // `null ?? x` collapses to `x` — the LHS contributes no value.
+    if matches!(lhs, Type::Null) {
+        return Ok(rhs.clone());
+    }
+    let Type::Nullable(inner) = lhs else {
+        return Err(format!(
+            "`??` requires the left side to be a nullable type (`T?`), found `{lhs}`"
+        ));
+    };
+    let inner_ty = inner.as_ref();
+    if rhs == inner_ty {
+        return Ok(inner_ty.clone());
+    }
+    if rhs == lhs || matches!(rhs, Type::Null) {
+        return Ok(lhs.clone());
+    }
+    Err(format!(
+        "`??` requires the right side to be `{inner_ty}` or `{lhs}`, found `{rhs}`"
+    ))
 }
 
 const fn add_result(lhs: &Type, rhs: &Type) -> Option<Type> {
@@ -1762,6 +1983,9 @@ fn binop_error(op: BinOp, lhs: &Type, rhs: &Type) -> String {
         BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Pow => "`Int` or `Double`",
         BinOp::Concat => "matching `List<T>`",
         BinOp::Eq | BinOp::Neq => "`String`, `Int`, `Boolean`, or `Double`",
+        BinOp::And | BinOp::Or => "`Boolean`",
+        // `??` builds its own message in `coalesce_result`; never reached.
+        BinOp::Coalesce => "nullable left side with matching right side",
     };
     format!(
         "`{}` requires {kind} operands, found `{lhs}` and `{rhs}`",

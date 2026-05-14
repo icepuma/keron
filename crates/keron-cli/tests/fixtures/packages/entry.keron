@@ -3,10 +3,7 @@
 # driver passes through to user code; on a real run, the user picks
 # the manager themselves.
 
-val manager: String = match env("KERON_E2E_MANAGER") {
-  null => "brew",
-  v => v,
-}
+val manager: String = env("KERON_E2E_MANAGER") ?? "brew"
 
 reconcile match manager {
   "brew"   => brew("ripgrep"),

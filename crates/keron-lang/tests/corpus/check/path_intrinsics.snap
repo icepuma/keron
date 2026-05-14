@@ -1,0 +1,353 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "home",
+                    span: 190..194,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 196..202,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "home_dir",
+                            span: 205..213,
+                        },
+                        args: [],
+                    },
+                    span: 205..216,
+                },
+                span: 186..216,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "cfg",
+                    span: 220..223,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 225..231,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "path_join",
+                            span: 234..243,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Var(
+                                        "home",
+                                    ),
+                                    span: 244..248,
+                                },
+                                span: 244..248,
+                            },
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            ".config/nvim/init.lua",
+                                        ),
+                                    ),
+                                    span: 250..273,
+                                },
+                                span: 250..273,
+                            },
+                        ],
+                    },
+                    span: 234..275,
+                },
+                span: 216..275,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "parent",
+                    span: 279..285,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 287..293,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Coalesce,
+                        lhs: Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "path_parent",
+                                    span: 296..307,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: None,
+                                        value: Spanned {
+                                            node: Var(
+                                                "cfg",
+                                            ),
+                                            span: 308..311,
+                                        },
+                                        span: 308..311,
+                                    },
+                                ],
+                            },
+                            span: 296..313,
+                        },
+                        rhs: Spanned {
+                            node: Var(
+                                "home",
+                            ),
+                            span: 316..320,
+                        },
+                    },
+                    span: 296..320,
+                },
+                span: 275..321,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "name",
+                    span: 325..329,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 331..337,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "path_basename",
+                            span: 340..353,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Var(
+                                        "cfg",
+                                    ),
+                                    span: 354..357,
+                                },
+                                span: 354..357,
+                            },
+                        ],
+                    },
+                    span: 340..359,
+                },
+                span: 321..359,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "ext",
+                    span: 363..366,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 368..374,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "path_extension",
+                            span: 377..391,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Var(
+                                        "cfg",
+                                    ),
+                                    span: 392..395,
+                                },
+                                span: 392..395,
+                            },
+                        ],
+                    },
+                    span: 377..397,
+                },
+                span: 359..397,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "abs",
+                    span: 401..404,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 406..413,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "path_is_absolute",
+                            span: 416..432,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Var(
+                                        "cfg",
+                                    ),
+                                    span: 433..436,
+                                },
+                                span: 433..436,
+                            },
+                        ],
+                    },
+                    span: 416..438,
+                },
+                span: 397..438,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "live",
+                    span: 442..446,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 448..455,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "path_exists",
+                            span: 458..469,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Call {
+                                        callee: Spanned {
+                                            node: "keron_root",
+                                            span: 470..480,
+                                        },
+                                        args: [],
+                                    },
+                                    span: 470..482,
+                                },
+                                span: 470..482,
+                            },
+                        ],
+                    },
+                    span: 458..484,
+                },
+                span: 438..484,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "dir",
+                    span: 488..491,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 493..500,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "path_is_dir",
+                            span: 503..514,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Call {
+                                        callee: Spanned {
+                                            node: "keron_root",
+                                            span: 515..525,
+                                        },
+                                        args: [],
+                                    },
+                                    span: 515..527,
+                                },
+                                span: 515..527,
+                            },
+                        ],
+                    },
+                    span: 503..529,
+                },
+                span: 484..529,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "file",
+                    span: 533..537,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 539..546,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "path_is_file",
+                            span: 549..561,
+                        },
+                        args: [
+                            CallArg {
+                                name: None,
+                                value: Spanned {
+                                    node: Var(
+                                        "home",
+                                    ),
+                                    span: 562..566,
+                                },
+                                span: 562..566,
+                            },
+                        ],
+                    },
+                    span: 549..568,
+                },
+                span: 529..568,
+            },
+        ),
+    ],
+}

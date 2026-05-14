@@ -53,9 +53,14 @@ fn build_registry() -> BTreeMap<&'static str, StdModule> {
     reg.insert("keron", build_keron());
     reg.insert("os", build_os());
     reg.insert("env", build_env());
+    reg.insert("host", build_host());
     reg.insert("secrets", build_secrets());
     reg.insert("packages", build_packages());
     reg.insert("shell", build_shell());
+    reg.insert("string", build_string());
+    reg.insert("list", build_list());
+    reg.insert("map", build_map());
+    reg.insert("path", build_path());
     reg
 }
 
@@ -167,6 +172,11 @@ fn build_env() -> StdModule {
 /// cross-type equality with strings, and Map keys are rejected by
 /// the type checker — a secret can only land in a sink via an
 /// explicit `unwrap_secret(...)`.
+///
+/// `secret(uri)` returns `Secret`, not `Secret?`: resolution failure
+/// is a hard error, deliberately. `secret("op://x") ?? fallback` is
+/// a type error (`??` requires a nullable LHS). See the design note
+/// on [`IntrinsicId::Secret`] for the rationale.
 fn build_secrets() -> StdModule {
     let mut fns = BTreeMap::new();
     fns.insert(
@@ -245,6 +255,336 @@ fn build_shell() -> StdModule {
     types.insert("Shell".into(), Type::Shell);
     types.insert("ShellKind".into(), shell_kind);
     StdModule { fns, types }
+}
+
+/// `std:host` builtins — per-machine identity signals (hostname,
+/// invoking user) and standard directory locations. Directory
+/// helpers wrap the `dirs` crate, which follows XDG on Linux and the
+/// equivalent platform convention on macOS / Windows.
+///
+/// Universally-available dirs (`home`, `config`, `cache`, `data`)
+/// return `String` and bail when the underlying lookup fails — which
+/// practically means `$HOME` is unset with no platform fallback.
+/// Linux-only dirs (`state`, `runtime`) return `String?` because the
+/// `dirs` crate returns `None` on macOS / Windows by design.
+fn build_host() -> StdModule {
+    let mut fns = BTreeMap::new();
+    fns.insert(
+        "hostname".into(),
+        intrinsic_fn("hostname", &[], Type::String, IntrinsicId::Hostname),
+    );
+    fns.insert(
+        "user".into(),
+        intrinsic_fn("user", &[], Type::String, IntrinsicId::User),
+    );
+    fns.insert(
+        "home_dir".into(),
+        intrinsic_fn("home_dir", &[], Type::String, IntrinsicId::HomeDir),
+    );
+    fns.insert(
+        "config_dir".into(),
+        intrinsic_fn("config_dir", &[], Type::String, IntrinsicId::ConfigDir),
+    );
+    fns.insert(
+        "cache_dir".into(),
+        intrinsic_fn("cache_dir", &[], Type::String, IntrinsicId::CacheDir),
+    );
+    fns.insert(
+        "data_dir".into(),
+        intrinsic_fn("data_dir", &[], Type::String, IntrinsicId::DataDir),
+    );
+    fns.insert(
+        "state_dir".into(),
+        intrinsic_fn(
+            "state_dir",
+            &[],
+            Type::Nullable(Box::new(Type::String)),
+            IntrinsicId::StateDir,
+        ),
+    );
+    fns.insert(
+        "runtime_dir".into(),
+        intrinsic_fn(
+            "runtime_dir",
+            &[],
+            Type::Nullable(Box::new(Type::String)),
+            IntrinsicId::RuntimeDir,
+        ),
+    );
+    StdModule {
+        fns,
+        types: BTreeMap::new(),
+    }
+}
+
+/// `std:string` builtins — pure string operations that today have no
+/// in-language equivalent. The set is deliberately minimal:
+///
+///   - `split(s, sep)` / `join(xs, sep)` — build and unbuild paths
+///     and PATH-like strings.
+///   - `contains(s, needle)` — substring predicate, e.g. for branching
+///     on whether `env("PATH")` already mentions a directory.
+///   - `replace(s, from, to)` — fixed-string rewrite (not a regex; we
+///     don't want a regex engine in the dotfile DSL).
+///   - `trim(s)` — strip surrounding whitespace, useful after reading
+///     a `shell(...)` output via templating.
+fn build_string() -> StdModule {
+    let mut fns = BTreeMap::new();
+    fns.insert(
+        "split".into(),
+        intrinsic_fn(
+            "split",
+            &[("s", Type::String), ("sep", Type::String)],
+            Type::List(Box::new(Type::String)),
+            IntrinsicId::Split,
+        ),
+    );
+    fns.insert(
+        "join".into(),
+        intrinsic_fn(
+            "join",
+            &[
+                ("xs", Type::List(Box::new(Type::String))),
+                ("sep", Type::String),
+            ],
+            Type::String,
+            IntrinsicId::Join,
+        ),
+    );
+    fns.insert(
+        "contains".into(),
+        intrinsic_fn(
+            "contains",
+            &[("haystack", Type::String), ("needle", Type::String)],
+            Type::Boolean,
+            IntrinsicId::Contains,
+        ),
+    );
+    fns.insert(
+        "replace".into(),
+        intrinsic_fn(
+            "replace",
+            &[
+                ("s", Type::String),
+                ("from", Type::String),
+                ("to", Type::String),
+            ],
+            Type::String,
+            IntrinsicId::Replace,
+        ),
+    );
+    fns.insert(
+        "trim".into(),
+        intrinsic_fn(
+            "trim",
+            &[("s", Type::String)],
+            Type::String,
+            IntrinsicId::Trim,
+        ),
+    );
+    StdModule {
+        fns,
+        types: BTreeMap::new(),
+    }
+}
+
+/// `std:list` builtins — generic operations on any `List<T>`. The
+/// `T` parameter is encoded with `Type::Generic("T")` in the signature;
+/// `keron-lang::check::check_call` binds it from the actual argument
+/// type at every call site and substitutes it into the return type.
+/// Failing arms (e.g. `first` on an empty list) return `T?` so the
+/// caller threads the absence through `??` or `match`.
+fn build_list() -> StdModule {
+    let t = Type::Generic("T".into());
+    let mut fns = BTreeMap::new();
+    fns.insert(
+        "len".into(),
+        intrinsic_fn(
+            "len",
+            &[("xs", Type::List(Box::new(t.clone())))],
+            Type::Int,
+            IntrinsicId::ListLen,
+        ),
+    );
+    fns.insert(
+        "list_contains".into(),
+        intrinsic_fn(
+            "list_contains",
+            &[("xs", Type::List(Box::new(t.clone()))), ("x", t.clone())],
+            Type::Boolean,
+            IntrinsicId::ListContains,
+        ),
+    );
+    fns.insert(
+        "first".into(),
+        intrinsic_fn(
+            "first",
+            &[("xs", Type::List(Box::new(t.clone())))],
+            Type::Nullable(Box::new(t.clone())),
+            IntrinsicId::ListFirst,
+        ),
+    );
+    fns.insert(
+        "last".into(),
+        intrinsic_fn(
+            "last",
+            &[("xs", Type::List(Box::new(t.clone())))],
+            Type::Nullable(Box::new(t)),
+            IntrinsicId::ListLast,
+        ),
+    );
+    StdModule {
+        fns,
+        types: BTreeMap::new(),
+    }
+}
+
+/// `std:map` builtins — generic operations on any `Map<K, V>`. `K`
+/// and `V` are independent type variables bound at the call site.
+/// `get` requires the caller to supply a `default: V` so the return
+/// type stays `V` (not `V?`); use a `Map<K, V?>` if you need to
+/// distinguish "absent" from "explicitly null".
+fn build_map() -> StdModule {
+    let k = Type::Generic("K".into());
+    let v = Type::Generic("V".into());
+    let map_kv = Type::Map(Box::new(k.clone()), Box::new(v.clone()));
+    let mut fns = BTreeMap::new();
+    fns.insert(
+        "keys".into(),
+        intrinsic_fn(
+            "keys",
+            &[("m", map_kv.clone())],
+            Type::List(Box::new(k.clone())),
+            IntrinsicId::MapKeys,
+        ),
+    );
+    fns.insert(
+        "values".into(),
+        intrinsic_fn(
+            "values",
+            &[("m", map_kv.clone())],
+            Type::List(Box::new(v.clone())),
+            IntrinsicId::MapValues,
+        ),
+    );
+    fns.insert(
+        "get".into(),
+        intrinsic_fn(
+            "get",
+            &[
+                ("m", map_kv.clone()),
+                ("k", k.clone()),
+                ("default", v.clone()),
+            ],
+            v,
+            IntrinsicId::MapGet,
+        ),
+    );
+    fns.insert(
+        "map_contains".into(),
+        intrinsic_fn(
+            "map_contains",
+            &[("m", map_kv), ("k", k)],
+            Type::Boolean,
+            IntrinsicId::MapContains,
+        ),
+    );
+    StdModule {
+        fns,
+        types: BTreeMap::new(),
+    }
+}
+
+/// `std:path` builtins — path manipulation and filesystem probes on
+/// `String` paths. We deliberately stay on `String` instead of
+/// introducing a nominal `Path` type because all path values today
+/// come from `home_dir()`, `keron_root()`, `env(...)`, and string
+/// interpolation — there's no boundary a `Path` type would protect.
+///
+/// `path_exists` / `path_is_dir` / `path_is_file` read the filesystem
+/// at evaluation time, so they make plan output depend on disk state
+/// (the same way `template(source = …)` already does). Use them for
+/// "is this already here?" branching, not as the sole gate around an
+/// idempotent reconcile — the executor will do its own existence
+/// checks before writing.
+fn build_path() -> StdModule {
+    let mut fns = BTreeMap::new();
+    fns.insert(
+        "path_join".into(),
+        intrinsic_fn(
+            "path_join",
+            &[("p", Type::String), ("segment", Type::String)],
+            Type::String,
+            IntrinsicId::PathJoin,
+        ),
+    );
+    fns.insert(
+        "path_parent".into(),
+        intrinsic_fn(
+            "path_parent",
+            &[("p", Type::String)],
+            Type::Nullable(Box::new(Type::String)),
+            IntrinsicId::PathParent,
+        ),
+    );
+    fns.insert(
+        "path_basename".into(),
+        intrinsic_fn(
+            "path_basename",
+            &[("p", Type::String)],
+            Type::String,
+            IntrinsicId::PathBasename,
+        ),
+    );
+    fns.insert(
+        "path_extension".into(),
+        intrinsic_fn(
+            "path_extension",
+            &[("p", Type::String)],
+            Type::String,
+            IntrinsicId::PathExtension,
+        ),
+    );
+    fns.insert(
+        "path_is_absolute".into(),
+        intrinsic_fn(
+            "path_is_absolute",
+            &[("p", Type::String)],
+            Type::Boolean,
+            IntrinsicId::PathIsAbsolute,
+        ),
+    );
+    fns.insert(
+        "path_exists".into(),
+        intrinsic_fn(
+            "path_exists",
+            &[("p", Type::String)],
+            Type::Boolean,
+            IntrinsicId::PathExists,
+        ),
+    );
+    fns.insert(
+        "path_is_dir".into(),
+        intrinsic_fn(
+            "path_is_dir",
+            &[("p", Type::String)],
+            Type::Boolean,
+            IntrinsicId::PathIsDir,
+        ),
+    );
+    fns.insert(
+        "path_is_file".into(),
+        intrinsic_fn(
+            "path_is_file",
+            &[("p", Type::String)],
+            Type::Boolean,
+            IntrinsicId::PathIsFile,
+        ),
+    );
+    StdModule {
+        fns,
+        types: BTreeMap::new(),
+    }
 }
 
 /// `std:os` builtins — host OS / architecture detection exposed as
@@ -495,5 +835,210 @@ mod tests {
         assert_eq!(f.params[0].name.node, "name");
         assert_eq!(f.params[0].ty.node, Type::String);
         assert_eq!(f.return_type.node, Type::Nullable(Box::new(Type::String)),);
+    }
+
+    #[test]
+    fn host_module_registers_identity_and_required_dir_helpers_as_string() {
+        let reg = registry();
+        let host = reg.get("host").expect("host module present");
+        for (name, intrinsic) in [
+            ("hostname", IntrinsicId::Hostname),
+            ("user", IntrinsicId::User),
+            ("home_dir", IntrinsicId::HomeDir),
+            ("config_dir", IntrinsicId::ConfigDir),
+            ("cache_dir", IntrinsicId::CacheDir),
+            ("data_dir", IntrinsicId::DataDir),
+        ] {
+            let f = host
+                .fns
+                .get(name)
+                .unwrap_or_else(|| panic!("{name} fn present"));
+            assert_eq!(f.intrinsic, Some(intrinsic));
+            assert!(f.params.is_empty(), "{name} takes no arguments");
+            assert_eq!(
+                f.return_type.node,
+                Type::String,
+                "{name} returns String (universally available)"
+            );
+        }
+    }
+
+    #[test]
+    fn host_module_marks_linux_only_dirs_as_nullable() {
+        let reg = registry();
+        let host = reg.get("host").expect("host module present");
+        for (name, intrinsic) in [
+            ("state_dir", IntrinsicId::StateDir),
+            ("runtime_dir", IntrinsicId::RuntimeDir),
+        ] {
+            let f = host
+                .fns
+                .get(name)
+                .unwrap_or_else(|| panic!("{name} fn present"));
+            assert_eq!(f.intrinsic, Some(intrinsic));
+            // Linux-only dirs are `String?` so macOS / Windows users
+            // see a `null` they can `??` rather than a runtime error.
+            assert_eq!(
+                f.return_type.node,
+                Type::Nullable(Box::new(Type::String)),
+                "{name} returns String?"
+            );
+        }
+    }
+
+    #[test]
+    fn path_module_registers_manipulation_and_probe_intrinsics() {
+        let reg = registry();
+        let path = reg.get("path").expect("path module present");
+
+        let join = path.fns.get("path_join").expect("path_join fn present");
+        assert_eq!(join.intrinsic, Some(IntrinsicId::PathJoin));
+        assert_eq!(join.params.len(), 2);
+        assert_eq!(join.params[0].ty.node, Type::String);
+        assert_eq!(join.params[1].ty.node, Type::String);
+        assert_eq!(join.return_type.node, Type::String);
+
+        let parent = path.fns.get("path_parent").expect("path_parent fn present");
+        assert_eq!(parent.intrinsic, Some(IntrinsicId::PathParent));
+        // `path_parent` returns `String?` so the no-parent case
+        // surfaces as `null` rather than an exception.
+        assert_eq!(
+            parent.return_type.node,
+            Type::Nullable(Box::new(Type::String)),
+        );
+
+        for (name, intrinsic) in [
+            ("path_basename", IntrinsicId::PathBasename),
+            ("path_extension", IntrinsicId::PathExtension),
+        ] {
+            let f = path
+                .fns
+                .get(name)
+                .unwrap_or_else(|| panic!("{name} fn present"));
+            assert_eq!(f.intrinsic, Some(intrinsic));
+            assert_eq!(f.return_type.node, Type::String);
+        }
+
+        for (name, intrinsic) in [
+            ("path_is_absolute", IntrinsicId::PathIsAbsolute),
+            ("path_exists", IntrinsicId::PathExists),
+            ("path_is_dir", IntrinsicId::PathIsDir),
+            ("path_is_file", IntrinsicId::PathIsFile),
+        ] {
+            let f = path
+                .fns
+                .get(name)
+                .unwrap_or_else(|| panic!("{name} fn present"));
+            assert_eq!(f.intrinsic, Some(intrinsic));
+            assert_eq!(f.return_type.node, Type::Boolean);
+        }
+    }
+
+    #[test]
+    fn list_module_signatures_are_generic_in_t() {
+        let reg = registry();
+        let list_mod = reg.get("list").expect("list module present");
+        let t = Type::Generic("T".into());
+
+        let len = list_mod.fns.get("len").expect("len fn present");
+        assert_eq!(len.intrinsic, Some(IntrinsicId::ListLen));
+        assert_eq!(len.params[0].ty.node, Type::List(Box::new(t.clone())));
+        assert_eq!(len.return_type.node, Type::Int);
+
+        let list_contains = list_mod
+            .fns
+            .get("list_contains")
+            .expect("list_contains fn present");
+        assert_eq!(list_contains.intrinsic, Some(IntrinsicId::ListContains));
+        assert_eq!(
+            list_contains.params[0].ty.node,
+            Type::List(Box::new(t.clone()))
+        );
+        // `assert_eq!` borrows both sides, so the literal `t` here
+        // doesn't consume it — later assertions can still reference it.
+        assert_eq!(list_contains.params[1].ty.node, t);
+        assert_eq!(list_contains.return_type.node, Type::Boolean);
+
+        let first = list_mod.fns.get("first").expect("first fn present");
+        assert_eq!(first.intrinsic, Some(IntrinsicId::ListFirst));
+        assert_eq!(first.params[0].ty.node, Type::List(Box::new(t.clone())));
+        assert_eq!(first.return_type.node, Type::Nullable(Box::new(t.clone())),);
+
+        let last = list_mod.fns.get("last").expect("last fn present");
+        assert_eq!(last.intrinsic, Some(IntrinsicId::ListLast));
+        assert_eq!(last.return_type.node, Type::Nullable(Box::new(t)));
+    }
+
+    #[test]
+    fn map_module_signatures_are_generic_in_k_and_v() {
+        let reg = registry();
+        let map = reg.get("map").expect("map module present");
+        let k = Type::Generic("K".into());
+        let v = Type::Generic("V".into());
+        let map_kv = Type::Map(Box::new(k.clone()), Box::new(v.clone()));
+
+        let keys = map.fns.get("keys").expect("keys fn present");
+        assert_eq!(keys.intrinsic, Some(IntrinsicId::MapKeys));
+        assert_eq!(keys.params[0].ty.node, map_kv);
+        assert_eq!(keys.return_type.node, Type::List(Box::new(k.clone())));
+
+        let values = map.fns.get("values").expect("values fn present");
+        assert_eq!(values.intrinsic, Some(IntrinsicId::MapValues));
+        assert_eq!(values.return_type.node, Type::List(Box::new(v.clone())));
+
+        let get = map.fns.get("get").expect("get fn present");
+        assert_eq!(get.intrinsic, Some(IntrinsicId::MapGet));
+        assert_eq!(get.params[1].ty.node, k);
+        assert_eq!(get.params[2].ty.node, v);
+        // `get` returns the bound `V` — the caller supplies a default
+        // so the result type stays non-nullable.
+        assert_eq!(get.return_type.node, v);
+
+        let map_contains = map
+            .fns
+            .get("map_contains")
+            .expect("map_contains fn present");
+        assert_eq!(map_contains.intrinsic, Some(IntrinsicId::MapContains));
+        assert_eq!(map_contains.params[1].ty.node, k);
+        assert_eq!(map_contains.return_type.node, Type::Boolean);
+    }
+
+    #[test]
+    fn string_module_registers_split_join_contains_replace_trim() {
+        let reg = registry();
+        let s = reg.get("string").expect("string module present");
+
+        let split = s.fns.get("split").expect("split fn present");
+        assert_eq!(split.intrinsic, Some(IntrinsicId::Split));
+        assert_eq!(split.params.len(), 2);
+        assert_eq!(split.params[0].ty.node, Type::String);
+        assert_eq!(split.params[1].ty.node, Type::String);
+        assert_eq!(
+            split.return_type.node,
+            Type::List(Box::new(Type::String)),
+            "split returns List<String>"
+        );
+
+        let join = s.fns.get("join").expect("join fn present");
+        assert_eq!(join.intrinsic, Some(IntrinsicId::Join));
+        assert_eq!(join.params.len(), 2);
+        assert_eq!(join.params[0].ty.node, Type::List(Box::new(Type::String)));
+        assert_eq!(join.params[1].ty.node, Type::String);
+        assert_eq!(join.return_type.node, Type::String);
+
+        let contains = s.fns.get("contains").expect("contains fn present");
+        assert_eq!(contains.intrinsic, Some(IntrinsicId::Contains));
+        assert_eq!(contains.params.len(), 2);
+        assert_eq!(contains.return_type.node, Type::Boolean);
+
+        let replace = s.fns.get("replace").expect("replace fn present");
+        assert_eq!(replace.intrinsic, Some(IntrinsicId::Replace));
+        assert_eq!(replace.params.len(), 3);
+        assert_eq!(replace.return_type.node, Type::String);
+
+        let trim = s.fns.get("trim").expect("trim fn present");
+        assert_eq!(trim.intrinsic, Some(IntrinsicId::Trim));
+        assert_eq!(trim.params.len(), 1);
+        assert_eq!(trim.return_type.node, Type::String);
     }
 }

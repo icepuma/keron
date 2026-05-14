@@ -1,5 +1,6 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
 ---
 Program {
     items: [
@@ -78,6 +79,7 @@ Program {
                                             ),
                                             span: 83..88,
                                         },
+                                        guard: None,
                                         body: Spanned {
                                             node: Literal(
                                                 String(
@@ -97,6 +99,7 @@ Program {
                                             ),
                                             span: 104..111,
                                         },
+                                        guard: None,
                                         body: Spanned {
                                             node: Literal(
                                                 String(
@@ -116,6 +119,7 @@ Program {
                                             ),
                                             span: 130..136,
                                         },
+                                        guard: None,
                                         body: Spanned {
                                             node: Literal(
                                                 String(

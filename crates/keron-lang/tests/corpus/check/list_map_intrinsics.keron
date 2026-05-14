@@ -1,0 +1,22 @@
+# `std:list` and `std:map` are generic over the element / key / value
+# types. The checker binds the type variable from the concrete
+# argument and substitutes it into the return type — exact-equality
+# at first sight, with subtype acceptance for repeat uses (so a
+# `StringUnion` like `OsType` fits a slot already bound to `String`).
+
+val nums: List<Int> = [1, 2, 3, 4]
+val n: Int = len(nums)
+val has_two: Boolean = list_contains(nums, 2)
+val head: Int = first(nums) ?? -1
+val tail: Int = last(nums) ?? -1
+
+val parts: List<String> = split("a:b:c", ":")
+val first_part: String = first(parts) ?? "<empty>"
+
+val mapping: Map<String, String> = {"linux": "/usr/local", "macos": "/opt/homebrew"}
+val all_keys: List<String> = keys(mapping)
+val all_values: List<String> = values(mapping)
+# `os_type()` is `OsType` (a `StringUnion`) and `K = String`; the
+# subtype rule (`StringUnion <: String`) lets the lookup type-check.
+val prefix: String = get(mapping, os_type(), "/tmp")
+val knows_linux: Boolean = map_contains(mapping, "linux")

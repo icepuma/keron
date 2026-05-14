@@ -446,6 +446,14 @@ fn eval_expr(expr: &Spanned<Expr>, env: &Env<'_, '_>) -> Result<Value> {
         Expr::Literal(lit) => Ok(eval_literal(lit)),
         Expr::Unary { op, operand } => eval_unary(*op, eval_expr(operand, env)?),
         Expr::Binary { op, lhs, rhs } => {
+            // Short-circuit operators: skip RHS evaluation when the LHS
+            // already decides the result. Important when the RHS has
+            // observable cost — `secret(...)` shells out — or when the
+            // RHS would itself error (e.g. a function call that's only
+            // safe to attempt under the LHS guard).
+            if let Some(v) = eval_short_circuit(*op, lhs, rhs, env)? {
+                return Ok(v);
+            }
             let l = eval_expr(lhs, env)?;
             let r = eval_expr(rhs, env)?;
             eval_binop(*op, l, r)
@@ -508,13 +516,27 @@ fn eval_match(scrutinee: &Spanned<Expr>, arms: &[MatchArm], env: &Env<'_, '_>) -
     let val = eval_expr(scrutinee, env)?;
     for arm in arms {
         let mut bindings: HashMap<String, Value> = HashMap::new();
-        if try_match_pattern(&arm.pattern.node, &val, &mut bindings) {
-            let mut arm_env = env.clone();
-            for (n, v) in bindings {
-                arm_env.local.insert(n, v);
-            }
-            return eval_expr(&arm.body, &arm_env);
+        if !try_match_pattern(&arm.pattern.node, &val, &mut bindings) {
+            continue;
         }
+        let mut arm_env = env.clone();
+        for (n, v) in bindings {
+            arm_env.local.insert(n, v);
+        }
+        // Guards run with pattern bindings in scope; a false guard
+        // falls through to the next arm (the pattern's bindings are
+        // discarded with `arm_env` on the next iteration).
+        if let Some(guard) = &arm.guard {
+            match eval_expr(guard, &arm_env)? {
+                Value::Bool(true) => {}
+                Value::Bool(false) => continue,
+                other => bail!(
+                    "`match` arm guard was {} (expected Boolean)",
+                    other.type_name()
+                ),
+            }
+        }
+        return eval_expr(&arm.body, &arm_env);
     }
     bail!("no `match` arm matched value of type {}", val.type_name())
 }
@@ -608,6 +630,58 @@ fn eval_literal(lit: &Literal) -> Value {
         Literal::Boolean(b) => Value::Bool(*b),
         Literal::Double(d) => Value::Double(*d),
         Literal::Null => Value::Null,
+    }
+}
+
+/// Handle binary operators whose RHS must not be evaluated when the
+/// LHS already pins the result. Returns `Ok(Some(v))` when the
+/// operator was a short-circuit form and the result was determined,
+/// `Ok(None)` for any other operator (caller does eager evaluation).
+///
+/// The type checker has already guaranteed that `&&` / `||` operands
+/// are `Boolean` and that the LHS of `??` is nullable, so the runtime
+/// `Value` shape is trustworthy; bail messages are defensive cover
+/// for evaluator bugs, not user-facing errors.
+fn eval_short_circuit(
+    op: BinOp,
+    lhs: &Spanned<Expr>,
+    rhs: &Spanned<Expr>,
+    env: &Env<'_, '_>,
+) -> Result<Option<Value>> {
+    match op {
+        BinOp::Coalesce => {
+            let l = eval_expr(lhs, env)?;
+            if matches!(l, Value::Null) {
+                Ok(Some(eval_expr(rhs, env)?))
+            } else {
+                Ok(Some(l))
+            }
+        }
+        BinOp::And | BinOp::Or => {
+            let l = eval_expr(lhs, env)?;
+            let Value::Bool(b) = l else {
+                bail!(
+                    "`{}` LHS was {} (expected Boolean)",
+                    op.symbol(),
+                    l.type_name()
+                );
+            };
+            // `&&` short-circuits on `false`, `||` short-circuits on `true`.
+            let short = matches!(op, BinOp::Or);
+            if b == short {
+                return Ok(Some(Value::Bool(b)));
+            }
+            let r = eval_expr(rhs, env)?;
+            let Value::Bool(rb) = r else {
+                bail!(
+                    "`{}` RHS was {} (expected Boolean)",
+                    op.symbol(),
+                    r.type_name()
+                );
+            };
+            Ok(Some(Value::Bool(rb)))
+        }
+        _ => Ok(None),
     }
 }
 
@@ -994,7 +1068,361 @@ fn dispatch_intrinsic(id: IntrinsicId, args: &[CallArg], env: &Env<'_, '_>) -> R
         IntrinsicId::Brew => dispatch_package(args, env, PackageManager::Brew),
         IntrinsicId::Cargo => dispatch_package(args, env, PackageManager::Cargo),
         IntrinsicId::Winget => dispatch_package(args, env, PackageManager::Winget),
+        IntrinsicId::Hostname => dispatch_hostname(),
+        IntrinsicId::User => dispatch_user(),
+        IntrinsicId::HomeDir => dispatch_required_dir("home_dir", dirs::home_dir),
+        IntrinsicId::ConfigDir => dispatch_required_dir("config_dir", dirs::config_dir),
+        IntrinsicId::CacheDir => dispatch_required_dir("cache_dir", dirs::cache_dir),
+        IntrinsicId::DataDir => dispatch_required_dir("data_dir", dirs::data_dir),
+        IntrinsicId::StateDir => Ok(dispatch_optional_dir(dirs::state_dir)),
+        IntrinsicId::RuntimeDir => Ok(dispatch_optional_dir(dirs::runtime_dir)),
+        IntrinsicId::Split => dispatch_split(args, env),
+        IntrinsicId::Join => dispatch_join(args, env),
+        IntrinsicId::Contains => dispatch_contains(args, env),
+        IntrinsicId::Replace => dispatch_replace(args, env),
+        IntrinsicId::Trim => dispatch_trim(args, env),
+        IntrinsicId::ListLen => dispatch_list_len(args, env),
+        IntrinsicId::ListContains => dispatch_list_contains(args, env),
+        IntrinsicId::ListFirst => dispatch_list_endpoint(args, env, ListEndpoint::First),
+        IntrinsicId::ListLast => dispatch_list_endpoint(args, env, ListEndpoint::Last),
+        IntrinsicId::MapKeys => dispatch_map_projection(args, env, MapProjection::Keys),
+        IntrinsicId::MapValues => dispatch_map_projection(args, env, MapProjection::Values),
+        IntrinsicId::MapGet => dispatch_map_get(args, env),
+        IntrinsicId::MapContains => dispatch_map_contains(args, env),
+        IntrinsicId::PathJoin => dispatch_path_join(args, env),
+        IntrinsicId::PathParent => dispatch_path_parent(args, env),
+        IntrinsicId::PathBasename => dispatch_path_basename(args, env),
+        IntrinsicId::PathExtension => dispatch_path_extension(args, env),
+        IntrinsicId::PathIsAbsolute => dispatch_path_is_absolute(args, env),
+        IntrinsicId::PathExists => dispatch_path_probe(args, env, PathProbe::Exists),
+        IntrinsicId::PathIsDir => dispatch_path_probe(args, env, PathProbe::IsDir),
+        IntrinsicId::PathIsFile => dispatch_path_probe(args, env, PathProbe::IsFile),
     }
+}
+
+#[derive(Clone, Copy)]
+enum PathProbe {
+    Exists,
+    IsDir,
+    IsFile,
+}
+
+fn dispatch_path_join(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let p = call_string(args, env, "p", 0)?;
+    let segment = call_string(args, env, "segment", 1)?;
+    let joined = std::path::PathBuf::from(p).join(segment);
+    Ok(Value::plain_string(joined.to_string_lossy().into_owned()))
+}
+
+fn dispatch_path_parent(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let p = call_string(args, env, "p", 0)?;
+    Ok(std::path::Path::new(&p)
+        .parent()
+        // `Path::parent` returns `Some("")` for "foo" (relative, no
+        // separator). That's almost never what a dotfile manifest
+        // wants — collapse it to `null` so users get a clean
+        // signal of "no parent here".
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .map_or(Value::Null, |parent| {
+            Value::plain_string(parent.to_string_lossy().into_owned())
+        }))
+}
+
+fn dispatch_path_basename(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let p = call_string(args, env, "p", 0)?;
+    let name = std::path::Path::new(&p)
+        .file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+    Ok(Value::plain_string(name))
+}
+
+fn dispatch_path_extension(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let p = call_string(args, env, "p", 0)?;
+    let ext = std::path::Path::new(&p)
+        .extension()
+        .map_or_else(String::new, |e| e.to_string_lossy().into_owned());
+    Ok(Value::plain_string(ext))
+}
+
+fn dispatch_path_is_absolute(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let p = call_string(args, env, "p", 0)?;
+    Ok(Value::Bool(std::path::Path::new(&p).is_absolute()))
+}
+
+/// `path_exists` / `path_is_dir` / `path_is_file` all share the same
+/// shape: read filesystem metadata once and ask one question of it.
+/// Failure (permission denied, IO error) collapses to `false` because
+/// "I can't tell" is closer to "no" than to "yes" for the branching
+/// decisions these are used for.
+fn dispatch_path_probe(args: &[CallArg], env: &Env<'_, '_>, kind: PathProbe) -> Result<Value> {
+    let p = call_string(args, env, "p", 0)?;
+    // `metadata` follows symlinks; that matches what every other
+    // `std:path` operation does and aligns with what the user sees
+    // when they `ls` the path.
+    let meta = std::fs::metadata(&p);
+    let answer = match (kind, meta) {
+        (PathProbe::Exists, Ok(_)) => true,
+        (PathProbe::IsDir, Ok(m)) => m.is_dir(),
+        (PathProbe::IsFile, Ok(m)) => m.is_file(),
+        (_, Err(_)) => false,
+    };
+    Ok(Value::Bool(answer))
+}
+
+#[derive(Clone, Copy)]
+enum ListEndpoint {
+    First,
+    Last,
+}
+
+#[derive(Clone, Copy)]
+enum MapProjection {
+    Keys,
+    Values,
+}
+
+fn dispatch_list_len(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let xs = eval_call_arg(args, env, "xs", 0)?;
+    let Value::List(items) = xs else {
+        bail!("len(xs): `xs` was {} (expected List)", xs.type_name());
+    };
+    let n: i64 = items
+        .len()
+        .try_into()
+        .map_err(|_| anyhow!("len(xs): list size exceeds Int range"))?;
+    Ok(Value::Int(n))
+}
+
+fn dispatch_list_contains(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let xs = eval_call_arg(args, env, "xs", 0)?;
+    let needle = eval_call_arg(args, env, "x", 1)?;
+    let Value::List(items) = xs else {
+        bail!(
+            "contains(xs, x): `xs` was {} (expected List)",
+            xs.type_name()
+        );
+    };
+    Ok(Value::Bool(
+        items.iter().any(|item| value_eq(item, &needle)),
+    ))
+}
+
+/// `first(xs)` / `last(xs)` share an inspection shape — pull the head
+/// or tail of a `Value::List`, returning `Value::Null` for an empty
+/// list (matching the `T?` signature). The element is cloned because
+/// the list itself is consumed by the dispatch.
+fn dispatch_list_endpoint(args: &[CallArg], env: &Env<'_, '_>, end: ListEndpoint) -> Result<Value> {
+    let xs = eval_call_arg(args, env, "xs", 0)?;
+    let Value::List(items) = xs else {
+        bail!(
+            "{}(xs): `xs` was {} (expected List)",
+            match end {
+                ListEndpoint::First => "first",
+                ListEndpoint::Last => "last",
+            },
+            xs.type_name()
+        );
+    };
+    Ok(match end {
+        ListEndpoint::First => items.into_iter().next().unwrap_or(Value::Null),
+        ListEndpoint::Last => items.into_iter().next_back().unwrap_or(Value::Null),
+    })
+}
+
+fn dispatch_map_projection(
+    args: &[CallArg],
+    env: &Env<'_, '_>,
+    proj: MapProjection,
+) -> Result<Value> {
+    let m = eval_call_arg(args, env, "m", 0)?;
+    let Value::Map(pairs) = m else {
+        bail!(
+            "{}(m): `m` was {} (expected Map)",
+            match proj {
+                MapProjection::Keys => "keys",
+                MapProjection::Values => "values",
+            },
+            m.type_name()
+        );
+    };
+    let out: Vec<Value> = pairs
+        .into_iter()
+        .map(|(k, v)| match proj {
+            MapProjection::Keys => k,
+            MapProjection::Values => v,
+        })
+        .collect();
+    Ok(Value::List(out))
+}
+
+fn dispatch_map_get(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let m = eval_call_arg(args, env, "m", 0)?;
+    let key = eval_call_arg(args, env, "k", 1)?;
+    let default = eval_call_arg(args, env, "default", 2)?;
+    let Value::Map(pairs) = m else {
+        bail!(
+            "get(m, k, default): `m` was {} (expected Map)",
+            m.type_name()
+        );
+    };
+    Ok(pairs
+        .into_iter()
+        .find_map(|(k, v)| value_eq(&k, &key).then_some(v))
+        .unwrap_or(default))
+}
+
+fn dispatch_map_contains(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let m = eval_call_arg(args, env, "m", 0)?;
+    let key = eval_call_arg(args, env, "k", 1)?;
+    let Value::Map(pairs) = m else {
+        bail!(
+            "map_contains(m, k): `m` was {} (expected Map)",
+            m.type_name()
+        );
+    };
+    Ok(Value::Bool(pairs.iter().any(|(k, _)| value_eq(k, &key))))
+}
+
+/// `hostname()` — read via `gethostname(2)` on Unix and the
+/// `$COMPUTERNAME` env on Windows. The Unix path goes through `libc`
+/// directly to avoid pulling in a separate crate; the Windows path
+/// uses an env var because every winlogon-spawned shell exports it
+/// and it sidesteps `windows-sys` for what is purely a string read.
+fn dispatch_hostname() -> Result<Value> {
+    #[cfg(unix)]
+    {
+        // 256 bytes covers HOST_NAME_MAX (64 on Linux, 255 on macOS)
+        // with room for the trailing NUL.
+        let mut buf = vec![0u8; 256];
+        // SAFETY: `gethostname` writes at most `buf.len()` bytes into
+        // `buf` and NUL-terminates on success; we read only up to the
+        // first NUL (or end-of-buffer) afterwards.
+        #[allow(unsafe_code)]
+        let rc = unsafe { libc::gethostname(buf.as_mut_ptr().cast(), buf.len()) };
+        if rc != 0 {
+            bail!("gethostname failed: {}", std::io::Error::last_os_error());
+        }
+        let nul = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+        Ok(Value::plain_string(
+            String::from_utf8_lossy(&buf[..nul]).into_owned(),
+        ))
+    }
+    #[cfg(windows)]
+    {
+        let name = std::env::var("COMPUTERNAME")
+            .map_err(|_| anyhow!("hostname unavailable: $COMPUTERNAME is not set"))?;
+        Ok(Value::plain_string(name))
+    }
+}
+
+/// `user()` — login name from `$USER` (Unix) or `$USERNAME` (Windows).
+/// We don't fall through to `getpwuid_r` (Unix) because the env var
+/// is what every shell-init script also consults; matching that
+/// convention keeps `user()` and what the user sees in `$PS1` aligned.
+fn dispatch_user() -> Result<Value> {
+    let var = if cfg!(windows) { "USERNAME" } else { "USER" };
+    let value = std::env::var(var).map_err(|_| anyhow!("user() unavailable: ${var} is not set"))?;
+    Ok(Value::plain_string(value))
+}
+
+/// Wrap a `dirs::*_dir` helper as a "must-resolve" intrinsic. The
+/// `dirs` crate returns `None` when the underlying lookup truly can't
+/// produce a path (no `$HOME` and no platform fallback), so an error
+/// here genuinely means "this machine can't tell me where its home
+/// is" — worth a hard failure instead of a silent empty string.
+fn dispatch_required_dir(
+    name: &'static str,
+    lookup: fn() -> Option<std::path::PathBuf>,
+) -> Result<Value> {
+    let path =
+        lookup().ok_or_else(|| anyhow!("{name}() unavailable: could not determine the path"))?;
+    Ok(Value::plain_string(path.to_string_lossy().into_owned()))
+}
+
+/// Wrap a `dirs::*_dir` helper that legitimately returns `None` on
+/// macOS / Windows (`state_dir`, `runtime_dir`). The return type at
+/// the language level is `String?`; users `??` a fallback when they
+/// run on a non-Linux host.
+fn dispatch_optional_dir(lookup: fn() -> Option<std::path::PathBuf>) -> Value {
+    lookup().map_or(Value::Null, |p| {
+        Value::plain_string(p.to_string_lossy().into_owned())
+    })
+}
+
+fn dispatch_split(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let s = call_string(args, env, "s", 0)?;
+    let sep = call_string(args, env, "sep", 1)?;
+    if sep.is_empty() {
+        bail!("split(s, sep): `sep` must not be empty");
+    }
+    let parts: Vec<Value> = s.split(&sep).map(Value::plain_string).collect();
+    Ok(Value::List(parts))
+}
+
+fn dispatch_join(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let xs = eval_call_arg(args, env, "xs", 0)?;
+    let sep = call_string(args, env, "sep", 1)?;
+    let Value::List(items) = xs else {
+        bail!(
+            "join(xs, sep): `xs` was {} (expected List<String>)",
+            xs.type_name()
+        );
+    };
+    let mut out = String::new();
+    let mut sensitive = false;
+    for (i, item) in items.into_iter().enumerate() {
+        let Value::String {
+            text,
+            sensitive: si,
+        } = item
+        else {
+            bail!(
+                "join(xs, sep): element {i} was {} (expected String)",
+                item.type_name()
+            );
+        };
+        if i > 0 {
+            out.push_str(&sep);
+        }
+        sensitive |= si;
+        out.push_str(&text);
+    }
+    Ok(if sensitive {
+        Value::sensitive_string(out)
+    } else {
+        Value::plain_string(out)
+    })
+}
+
+fn dispatch_contains(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let haystack = call_string(args, env, "haystack", 0)?;
+    let needle = call_string(args, env, "needle", 1)?;
+    Ok(Value::Bool(haystack.contains(&needle)))
+}
+
+fn dispatch_replace(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let s = call_string_value(args, env, "s", 0)?;
+    let from = call_string(args, env, "from", 1)?;
+    let to = call_string_value(args, env, "to", 2)?;
+    if from.is_empty() {
+        bail!("replace(s, from, to): `from` must not be empty");
+    }
+    let text = s.text.replace(&from, &to.text);
+    Ok(if s.sensitive || to.sensitive {
+        Value::sensitive_string(text)
+    } else {
+        Value::plain_string(text)
+    })
+}
+
+fn dispatch_trim(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let s = call_string_value(args, env, "s", 0)?;
+    let text = s.text.trim().to_string();
+    Ok(if s.sensitive {
+        Value::sensitive_string(text)
+    } else {
+        Value::plain_string(text)
+    })
 }
 
 fn dispatch_shell(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
@@ -3872,5 +4300,329 @@ reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
             msg.contains("outside the keron root"),
             "containment message missing: {msg}",
         );
+    }
+
+    /// Capture the rendered target path of `template(... target = X)`
+    /// so an intrinsic's string return value can be observed end-to-end
+    /// without leaving the evaluator. Trims any trailing newlines that
+    /// `trim` itself might leave in place.
+    fn first_target_path(src: &str) -> String {
+        let states = run(src);
+        let ResourceState::Template { path, .. } = &states[0] else {
+            panic!("expected template, got {:?}", states[0]);
+        };
+        path.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn split_then_join_round_trips_with_the_same_separator() {
+        let value = first_target_path(
+            "reconcile template(source = \"tmpl.tpl\", \
+             target = join(split(\"a:b:c\", \":\"), \":\"), \
+             vars = {\"body\": \"\"})\n",
+        );
+        assert!(
+            value.ends_with("a:b:c"),
+            "split/join round-trip should preserve content, got `{value}`",
+        );
+    }
+
+    #[test]
+    fn join_with_different_separator_changes_glue_not_pieces() {
+        let value = first_target_path(
+            "reconcile template(source = \"tmpl.tpl\", \
+             target = join(split(\"a:b:c\", \":\"), \"-\"), \
+             vars = {\"body\": \"\"})\n",
+        );
+        assert!(value.ends_with("a-b-c"), "got `{value}`");
+    }
+
+    #[test]
+    fn contains_returns_true_for_substring_match() {
+        let states = run("reconcile template(source = \"tmpl.tpl\", \
+             target = if contains(\"/usr/local/bin\", \"local\") { \"yes\" } else { \"no\" }, \
+             vars = {\"body\": \"\"})\n");
+        let ResourceState::Template { path, .. } = &states[0] else {
+            panic!("expected template, got {:?}", states[0]);
+        };
+        assert!(path.ends_with("yes"), "got `{}`", path.display());
+    }
+
+    #[test]
+    fn replace_swaps_every_occurrence_of_a_fixed_string() {
+        let value = first_target_path(
+            "reconcile template(source = \"tmpl.tpl\", \
+             target = replace(\"a-b-c-d\", \"-\", \"_\"), \
+             vars = {\"body\": \"\"})\n",
+        );
+        assert!(value.ends_with("a_b_c_d"), "got `{value}`");
+    }
+
+    #[test]
+    fn trim_drops_surrounding_whitespace_but_keeps_inner() {
+        let value = first_target_path(
+            "reconcile template(source = \"tmpl.tpl\", \
+             target = trim(\"   hello world   \"), \
+             vars = {\"body\": \"\"})\n",
+        );
+        assert!(value.ends_with("hello world"), "got `{value}`");
+    }
+
+    #[test]
+    fn split_rejects_empty_separator() {
+        let res = run_result_with_templates(
+            "reconcile template(source = \"tmpl.tpl\", \
+             target = join(split(\"abc\", \"\"), \"\"), \
+             vars = {\"body\": \"\"})\n",
+            &[],
+        );
+        let err = res.expect_err("empty separator must error");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("`sep` must not be empty"), "got: {msg}");
+    }
+
+    #[test]
+    fn replace_rejects_empty_from() {
+        let res = run_result_with_templates(
+            "reconcile template(source = \"tmpl.tpl\", \
+             target = replace(\"abc\", \"\", \"_\"), \
+             vars = {\"body\": \"\"})\n",
+            &[],
+        );
+        let err = res.expect_err("empty `from` must error");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("`from` must not be empty"), "got: {msg}");
+    }
+
+    #[test]
+    fn hostname_returns_a_non_empty_string() {
+        // The host's name varies, but `gethostname` should yield
+        // *something* on every supported platform — verify the result
+        // is at least a non-empty path component.
+        let value = first_target_path(
+            "reconcile template(source = \"tmpl.tpl\", \
+             target = hostname(), \
+             vars = {\"body\": \"\"})\n",
+        );
+        let last = std::path::Path::new(&value).file_name().unwrap_or_default();
+        assert!(!last.is_empty(), "hostname() was empty: `{value}`");
+    }
+
+    #[test]
+    fn len_intrinsic_counts_list_elements() {
+        // Raw string so nested keron `"..."` literals inside the
+        // interpolation don't need backslash-escaping — keron rejects
+        // `\"` inside expression position (it's only legal inside a
+        // keron string literal), and double-escaping through Rust
+        // string syntax makes the source unreadable.
+        let value = first_target_path(
+            r#"val n: Int = len(split("a:b:c:d", ":"))
+               reconcile template(source = "tmpl.tpl", target = "n=${n}", vars = {"body": ""})
+            "#,
+        );
+        assert!(value.ends_with("n=4"), "got `{value}`");
+    }
+
+    #[test]
+    fn list_contains_returns_true_for_present_element() {
+        let value = first_target_path(
+            "reconcile template(source = \"tmpl.tpl\", \
+             target = if list_contains(split(\"a:b:c\", \":\"), \"b\") { \"hit\" } else { \"miss\" }, \
+             vars = {\"body\": \"\"})\n",
+        );
+        assert!(value.ends_with("hit"), "got `{value}`");
+    }
+
+    #[test]
+    fn list_contains_returns_false_for_absent_element() {
+        let value = first_target_path(
+            "reconcile template(source = \"tmpl.tpl\", \
+             target = if list_contains(split(\"a:b:c\", \":\"), \"z\") { \"hit\" } else { \"miss\" }, \
+             vars = {\"body\": \"\"})\n",
+        );
+        assert!(value.ends_with("miss"), "got `{value}`");
+    }
+
+    #[test]
+    fn first_and_last_return_null_for_empty_list_through_coalesce() {
+        // `??` and pattern resolution are exercised in earlier tests;
+        // here we just need to confirm `first` / `last` return `Null`
+        // for an empty list. The string-literal escape soup gets
+        // unmanageable if we inline interpolations + nested coalesce,
+        // so each step is parked in its own `val`.
+        let value = first_target_path(
+            "val xs: List<String> = []\n\
+             val head: String = first(xs) ?? \"empty-first\"\n\
+             val tail: String = last(xs) ?? \"empty-last\"\n\
+             reconcile template(source = \"tmpl.tpl\", \
+             target = \"${head}/${tail}\", \
+             vars = {\"body\": \"\"})\n",
+        );
+        assert!(value.ends_with("empty-first/empty-last"), "got `{value}`");
+    }
+
+    #[test]
+    fn first_and_last_pick_correct_endpoints_for_non_empty_list() {
+        let value = first_target_path(
+            "val parts: List<String> = split(\"a:b:c\", \":\")\n\
+             val head: String = first(parts) ?? \"\"\n\
+             val tail: String = last(parts) ?? \"\"\n\
+             reconcile template(source = \"tmpl.tpl\", \
+             target = \"${head}/${tail}\", \
+             vars = {\"body\": \"\"})\n",
+        );
+        assert!(value.ends_with("a/c"), "got `{value}`");
+    }
+
+    #[test]
+    fn map_get_returns_bound_value_when_key_exists() {
+        let value = first_target_path(
+            "val m: Map<String, String> = {\"k\": \"hit\"}\n\
+             reconcile template(source = \"tmpl.tpl\", \
+             target = get(m, \"k\", \"miss\"), \
+             vars = {\"body\": \"\"})\n",
+        );
+        assert!(value.ends_with("hit"), "got `{value}`");
+    }
+
+    #[test]
+    fn map_get_falls_back_to_default_when_key_absent() {
+        let value = first_target_path(
+            "val m: Map<String, String> = {\"k\": \"hit\"}\n\
+             reconcile template(source = \"tmpl.tpl\", \
+             target = get(m, \"missing\", \"fallback\"), \
+             vars = {\"body\": \"\"})\n",
+        );
+        assert!(value.ends_with("fallback"), "got `{value}`");
+    }
+
+    #[test]
+    fn map_keys_and_values_return_declared_order() {
+        let value = first_target_path(
+            r#"val m: Map<String, String> = {"a": "1", "b": "2"}
+               val ks: String = join(keys(m), ",")
+               val vs: String = join(values(m), ",")
+               reconcile template(source = "tmpl.tpl", target = "${ks}-${vs}", vars = {"body": ""})
+            "#,
+        );
+        assert!(value.ends_with("a,b-1,2"), "got `{value}`");
+    }
+
+    #[test]
+    fn map_contains_distinguishes_present_and_absent_keys() {
+        let value = first_target_path(
+            r#"val m: Map<String, String> = {"a": "1"}
+               val present: Boolean = map_contains(m, "a")
+               val absent: Boolean = map_contains(m, "z")
+               reconcile template(source = "tmpl.tpl", target = "${present}-${absent}", vars = {"body": ""})
+            "#,
+        );
+        assert!(value.ends_with("true-false"), "got `{value}`");
+    }
+
+    #[test]
+    fn path_join_appends_a_relative_segment_with_a_separator() {
+        let value = first_target_path(
+            r#"val out: String = path_join("/a", "b")
+               reconcile template(source = "tmpl.tpl", target = out, vars = {"body": ""})
+            "#,
+        );
+        assert_eq!(value, "/a/b");
+    }
+
+    #[test]
+    fn path_join_replaces_when_segment_is_absolute() {
+        // Matches `PathBuf::join`: an absolute `segment` discards the
+        // base. Documenting the behaviour pins it against a regression
+        // that would silently glue two absolute paths.
+        let value = first_target_path(
+            r#"val out: String = path_join("/a", "/b")
+               reconcile template(source = "tmpl.tpl", target = out, vars = {"body": ""})
+            "#,
+        );
+        assert_eq!(value, "/b");
+    }
+
+    #[test]
+    fn path_parent_returns_null_for_root_through_coalesce() {
+        let value = first_target_path(
+            r#"val out: String = path_parent("/") ?? "<root>"
+               reconcile template(source = "tmpl.tpl", target = out, vars = {"body": ""})
+            "#,
+        );
+        assert!(value.ends_with("<root>"), "got `{value}`");
+    }
+
+    #[test]
+    fn path_parent_strips_the_final_component() {
+        let value = first_target_path(
+            r#"val out: String = path_parent("/a/b/c.txt") ?? ""
+               reconcile template(source = "tmpl.tpl", target = out, vars = {"body": ""})
+            "#,
+        );
+        assert_eq!(value, "/a/b");
+    }
+
+    #[test]
+    fn path_basename_and_extension_split_the_final_component() {
+        let value = first_target_path(
+            r#"val name: String = path_basename("/a/b/c.txt")
+               val ext: String = path_extension("/a/b/c.txt")
+               reconcile template(source = "tmpl.tpl", target = "${name}|${ext}", vars = {"body": ""})
+            "#,
+        );
+        assert!(value.ends_with("c.txt|txt"), "got `{value}`");
+    }
+
+    #[test]
+    fn path_is_absolute_distinguishes_absolute_and_relative() {
+        let value = first_target_path(
+            r#"val abs: Boolean = path_is_absolute("/a/b")
+               val rel: Boolean = path_is_absolute("a/b")
+               reconcile template(source = "tmpl.tpl", target = "${abs}|${rel}", vars = {"body": ""})
+            "#,
+        );
+        assert!(value.ends_with("true|false"), "got `{value}`");
+    }
+
+    #[test]
+    fn path_exists_returns_true_for_the_keron_root_and_false_for_missing_paths() {
+        let value = first_target_path(
+            r#"val here: Boolean = path_exists(keron_root())
+               val gone: Boolean = path_exists("/this/should/not/exist-xyz-keron-test")
+               reconcile template(source = "tmpl.tpl", target = "${here}|${gone}", vars = {"body": ""})
+            "#,
+        );
+        assert!(value.ends_with("true|false"), "got `{value}`");
+    }
+
+    #[test]
+    fn path_is_dir_and_is_file_route_metadata_to_the_right_predicate() {
+        // The keron root is itself a directory (every test harness
+        // sets it that way); the templated file we just wrote in
+        // earlier tests would be a regular file. We only assert the
+        // directory side here because the file-side input would need
+        // disk setup beyond the test scaffold.
+        let value = first_target_path(
+            r#"val dir: Boolean = path_is_dir(keron_root())
+               val file: Boolean = path_is_file(keron_root())
+               reconcile template(source = "tmpl.tpl", target = "${dir}|${file}", vars = {"body": ""})
+            "#,
+        );
+        assert!(value.ends_with("true|false"), "got `{value}`");
+    }
+
+    #[test]
+    fn home_dir_matches_dirs_home_dir_at_eval_time() {
+        let value = first_target_path(
+            "reconcile template(source = \"tmpl.tpl\", \
+             target = home_dir(), \
+             vars = {\"body\": \"\"})\n",
+        );
+        let expected = dirs::home_dir()
+            .expect("dirs::home_dir must resolve on this host")
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(value, expected);
     }
 }

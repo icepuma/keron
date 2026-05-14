@@ -1,0 +1,4 @@
+val x: String = match os_type() {
+  "Macos" if "yes" => "mac",
+  _ => "other",
+}

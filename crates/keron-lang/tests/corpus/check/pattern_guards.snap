@@ -1,0 +1,230 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "verdict",
+                    span: 188..195,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 197..203,
+                    },
+                ),
+                value: Spanned {
+                    node: Match {
+                        scrutinee: Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "os_type",
+                                    span: 212..219,
+                                },
+                                args: [],
+                            },
+                            span: 212..222,
+                        },
+                        arms: [
+                            MatchArm {
+                                pattern: Spanned {
+                                    node: Lit(
+                                        String(
+                                            "Macos",
+                                        ),
+                                    ),
+                                    span: 226..233,
+                                },
+                                guard: Some(
+                                    Spanned {
+                                        node: Binary {
+                                            op: Eq,
+                                            lhs: Spanned {
+                                                node: Call {
+                                                    callee: Spanned {
+                                                        node: "os_arch",
+                                                        span: 237..244,
+                                                    },
+                                                    args: [],
+                                                },
+                                                span: 237..247,
+                                            },
+                                            rhs: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "aarch64",
+                                                    ),
+                                                ),
+                                                span: 250..259,
+                                            },
+                                        },
+                                        span: 237..259,
+                                    },
+                                ),
+                                body: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "macos-arm",
+                                        ),
+                                    ),
+                                    span: 263..274,
+                                },
+                                span: 226..274,
+                            },
+                            MatchArm {
+                                pattern: Spanned {
+                                    node: Lit(
+                                        String(
+                                            "Macos",
+                                        ),
+                                    ),
+                                    span: 278..285,
+                                },
+                                guard: None,
+                                body: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "macos-intel",
+                                        ),
+                                    ),
+                                    span: 289..302,
+                                },
+                                span: 278..302,
+                            },
+                            MatchArm {
+                                pattern: Spanned {
+                                    node: Lit(
+                                        String(
+                                            "Linux",
+                                        ),
+                                    ),
+                                    span: 306..313,
+                                },
+                                guard: None,
+                                body: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "linux",
+                                        ),
+                                    ),
+                                    span: 317..324,
+                                },
+                                span: 306..324,
+                            },
+                            MatchArm {
+                                pattern: Spanned {
+                                    node: Wildcard,
+                                    span: 328..330,
+                                },
+                                guard: None,
+                                body: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "other",
+                                        ),
+                                    ),
+                                    span: 333..340,
+                                },
+                                span: 328..340,
+                            },
+                        ],
+                    },
+                    span: 206..415,
+                },
+                span: 184..415,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "tier",
+                    span: 419..423,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 425..431,
+                    },
+                ),
+                value: Spanned {
+                    node: Match {
+                        scrutinee: Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "os_type",
+                                    span: 440..447,
+                                },
+                                args: [],
+                            },
+                            span: 440..450,
+                        },
+                        arms: [
+                            MatchArm {
+                                pattern: Spanned {
+                                    node: Wildcard,
+                                    span: 454..456,
+                                },
+                                guard: Some(
+                                    Spanned {
+                                        node: Binary {
+                                            op: Eq,
+                                            lhs: Spanned {
+                                                node: Call {
+                                                    callee: Spanned {
+                                                        node: "os_arch",
+                                                        span: 459..466,
+                                                    },
+                                                    args: [],
+                                                },
+                                                span: 459..469,
+                                            },
+                                            rhs: Spanned {
+                                                node: Literal(
+                                                    String(
+                                                        "aarch64",
+                                                    ),
+                                                ),
+                                                span: 472..481,
+                                            },
+                                        },
+                                        span: 459..481,
+                                    },
+                                ),
+                                body: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "arm",
+                                        ),
+                                    ),
+                                    span: 485..490,
+                                },
+                                span: 454..490,
+                            },
+                            MatchArm {
+                                pattern: Spanned {
+                                    node: Wildcard,
+                                    span: 494..496,
+                                },
+                                guard: None,
+                                body: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "anything",
+                                        ),
+                                    ),
+                                    span: 499..509,
+                                },
+                                span: 494..509,
+                            },
+                        ],
+                    },
+                    span: 434..513,
+                },
+                span: 415..513,
+            },
+        ),
+    ],
+}

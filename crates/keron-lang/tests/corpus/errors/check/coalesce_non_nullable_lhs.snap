@@ -1,0 +1,9 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
+---
+error: `??` requires the left side to be a nullable type (`T?`), found `Int`
+  --> 1:14
+  |
+1 | val x: Int = 1 ?? 2
+  |              ^^^^^^

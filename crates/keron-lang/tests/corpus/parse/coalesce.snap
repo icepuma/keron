@@ -1,0 +1,247 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "a",
+                    span: 4..5,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 7..13,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Coalesce,
+                        lhs: Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "env",
+                                    span: 16..19,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: None,
+                                        value: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "HOME",
+                                                ),
+                                            ),
+                                            span: 20..26,
+                                        },
+                                        span: 20..26,
+                                    },
+                                ],
+                            },
+                            span: 16..28,
+                        },
+                        rhs: Spanned {
+                            node: Literal(
+                                String(
+                                    "/tmp",
+                                ),
+                            ),
+                            span: 31..37,
+                        },
+                    },
+                    span: 16..37,
+                },
+                span: 0..38,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "b",
+                    span: 42..43,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 45..51,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Coalesce,
+                        lhs: Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "env",
+                                    span: 54..57,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: None,
+                                        value: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "X",
+                                                ),
+                                            ),
+                                            span: 58..61,
+                                        },
+                                        span: 58..61,
+                                    },
+                                ],
+                            },
+                            span: 54..63,
+                        },
+                        rhs: Spanned {
+                            node: Binary {
+                                op: Coalesce,
+                                lhs: Spanned {
+                                    node: Call {
+                                        callee: Spanned {
+                                            node: "env",
+                                            span: 66..69,
+                                        },
+                                        args: [
+                                            CallArg {
+                                                name: None,
+                                                value: Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "Y",
+                                                        ),
+                                                    ),
+                                                    span: 70..73,
+                                                },
+                                                span: 70..73,
+                                            },
+                                        ],
+                                    },
+                                    span: 66..75,
+                                },
+                                rhs: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "z",
+                                        ),
+                                    ),
+                                    span: 78..81,
+                                },
+                            },
+                            span: 66..81,
+                        },
+                    },
+                    span: 54..81,
+                },
+                span: 38..82,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "c",
+                    span: 86..87,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Nullable(
+                            String,
+                        ),
+                        span: 89..97,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Coalesce,
+                        lhs: Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "env",
+                                    span: 99..102,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: None,
+                                        value: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "MAYBE",
+                                                ),
+                                            ),
+                                            span: 103..110,
+                                        },
+                                        span: 103..110,
+                                    },
+                                ],
+                            },
+                            span: 99..112,
+                        },
+                        rhs: Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "env",
+                                    span: 115..118,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: None,
+                                        value: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "OTHER",
+                                                ),
+                                            ),
+                                            span: 119..126,
+                                        },
+                                        span: 119..126,
+                                    },
+                                ],
+                            },
+                            span: 115..128,
+                        },
+                    },
+                    span: 99..128,
+                },
+                span: 82..128,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "d",
+                    span: 132..133,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Int,
+                        span: 135..138,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Add,
+                        lhs: Spanned {
+                            node: Literal(
+                                Int(
+                                    1,
+                                ),
+                            ),
+                            span: 141..142,
+                        },
+                        rhs: Spanned {
+                            node: Literal(
+                                Int(
+                                    2,
+                                ),
+                            ),
+                            span: 145..146,
+                        },
+                    },
+                    span: 141..146,
+                },
+                span: 128..147,
+            },
+        ),
+    ],
+}

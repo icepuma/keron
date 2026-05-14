@@ -1,5 +1,6 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
 ---
 Program {
     items: [
@@ -2721,6 +2722,7 @@ Program {
                                     ),
                                     span: 3947..3951,
                                 },
+                                guard: None,
                                 body: Spanned {
                                     node: Literal(
                                         String(
@@ -2738,6 +2740,7 @@ Program {
                                     ),
                                     span: 3967..3973,
                                 },
+                                guard: None,
                                 body: Spanned {
                                     node: Var(
                                         "value",
@@ -5990,6 +5993,7 @@ Program {
                                             ),
                                             span: 11421..11428,
                                         },
+                                        guard: None,
                                         body: Spanned {
                                             node: Literal(
                                                 String(
@@ -6009,6 +6013,7 @@ Program {
                                             ),
                                             span: 11447..11453,
                                         },
+                                        guard: None,
                                         body: Spanned {
                                             node: Literal(
                                                 String(
@@ -6028,6 +6033,7 @@ Program {
                                             ),
                                             span: 11472..11478,
                                         },
+                                        guard: None,
                                         body: Spanned {
                                             node: Literal(
                                                 String(
@@ -6047,6 +6053,7 @@ Program {
                                             ),
                                             span: 11499..11506,
                                         },
+                                        guard: None,
                                         body: Spanned {
                                             node: Literal(
                                                 String(
@@ -6149,6 +6156,7 @@ Program {
                                             ),
                                             span: 11702..11709,
                                         },
+                                        guard: None,
                                         body: Spanned {
                                             node: Literal(
                                                 String(
@@ -6168,6 +6176,7 @@ Program {
                                             ),
                                             span: 11731..11737,
                                         },
+                                        guard: None,
                                         body: Spanned {
                                             node: Literal(
                                                 String(
@@ -6185,6 +6194,7 @@ Program {
                                             ),
                                             span: 11759..11767,
                                         },
+                                        guard: None,
                                         body: Spanned {
                                             node: Interpolation(
                                                 [
@@ -6262,6 +6272,7 @@ Program {
                                             ),
                                             span: 11849..11851,
                                         },
+                                        guard: None,
                                         body: Spanned {
                                             node: Literal(
                                                 String(
@@ -6281,6 +6292,7 @@ Program {
                                             ),
                                             span: 11867..11869,
                                         },
+                                        guard: None,
                                         body: Spanned {
                                             node: Literal(
                                                 String(
@@ -6300,6 +6312,7 @@ Program {
                                             ),
                                             span: 11886..11889,
                                         },
+                                        guard: None,
                                         body: Spanned {
                                             node: Literal(
                                                 String(
@@ -6315,6 +6328,7 @@ Program {
                                             node: Wildcard,
                                             span: 11906..11910,
                                         },
+                                        guard: None,
                                         body: Spanned {
                                             node: Literal(
                                                 String(
@@ -6541,6 +6555,7 @@ Program {
                                             },
                                             span: 12211..12263,
                                         },
+                                        guard: None,
                                         body: Spanned {
                                             node: Literal(
                                                 String(
@@ -6596,6 +6611,7 @@ Program {
                                             },
                                             span: 12285..12314,
                                         },
+                                        guard: None,
                                         body: Spanned {
                                             node: Interpolation(
                                                 [
@@ -6665,6 +6681,7 @@ Program {
                                             },
                                             span: 12347..12376,
                                         },
+                                        guard: None,
                                         body: Spanned {
                                             node: Interpolation(
                                                 [
@@ -6712,6 +6729,7 @@ Program {
                                             node: Wildcard,
                                             span: 12413..12415,
                                         },
+                                        guard: None,
                                         body: Spanned {
                                             node: Literal(
                                                 String(
@@ -6842,6 +6860,7 @@ Program {
                                                     ),
                                                     span: 12713..12717,
                                                 },
+                                                guard: None,
                                                 body: Spanned {
                                                     node: Literal(
                                                         String(
@@ -6861,6 +6880,7 @@ Program {
                                                     ),
                                                     span: 12735..12740,
                                                 },
+                                                guard: None,
                                                 body: Spanned {
                                                     node: Literal(
                                                         String(
@@ -6880,6 +6900,7 @@ Program {
                                                     ),
                                                     span: 12755..12761,
                                                 },
+                                                guard: None,
                                                 body: Spanned {
                                                     node: Literal(
                                                         String(
@@ -6973,6 +6994,7 @@ Program {
                                     ),
                                     span: 13182..13186,
                                 },
+                                guard: None,
                                 body: Spanned {
                                     node: Literal(
                                         String(
@@ -6990,6 +7012,7 @@ Program {
                                     ),
                                     span: 13198..13203,
                                 },
+                                guard: None,
                                 body: Spanned {
                                     node: Var(
                                         "name",
@@ -7180,6 +7203,7 @@ Program {
                                     ),
                                     span: 13560..13567,
                                 },
+                                guard: None,
                                 body: Spanned {
                                     node: Literal(
                                         String(
@@ -7199,6 +7223,7 @@ Program {
                                     ),
                                     span: 13584..13591,
                                 },
+                                guard: None,
                                 body: Spanned {
                                     node: Literal(
                                         String(
@@ -7218,6 +7243,7 @@ Program {
                                     ),
                                     span: 13608..13617,
                                 },
+                                guard: None,
                                 body: Spanned {
                                     node: Literal(
                                         String(
@@ -7237,6 +7263,7 @@ Program {
                                     ),
                                     span: 13634..13643,
                                 },
+                                guard: None,
                                 body: Spanned {
                                     node: Literal(
                                         String(
@@ -7284,6 +7311,7 @@ Program {
                                     ),
                                     span: 13700..13708,
                                 },
+                                guard: None,
                                 body: Spanned {
                                     node: Literal(
                                         String(
@@ -7303,6 +7331,7 @@ Program {
                                     ),
                                     span: 13724..13733,
                                 },
+                                guard: None,
                                 body: Spanned {
                                     node: Literal(
                                         String(
@@ -7322,6 +7351,7 @@ Program {
                                     ),
                                     span: 13748..13753,
                                 },
+                                guard: None,
                                 body: Spanned {
                                     node: Literal(
                                         String(
@@ -7341,6 +7371,7 @@ Program {
                                     ),
                                     span: 13772..13777,
                                 },
+                                guard: None,
                                 body: Spanned {
                                     node: Literal(
                                         String(
@@ -7360,6 +7391,7 @@ Program {
                                     ),
                                     span: 13795..13804,
                                 },
+                                guard: None,
                                 body: Spanned {
                                     node: Literal(
                                         String(

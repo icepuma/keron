@@ -1,0 +1,9 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
+---
+error: type mismatch in `get`: type parameter `V` was inferred as `Int` from an earlier argument, but this argument is `String`
+  --> 2:26
+  |
+2 | val n: Int = get(m, "a", "fallback-string")
+  |                          ^^^^^^^^^^^^^^^^^

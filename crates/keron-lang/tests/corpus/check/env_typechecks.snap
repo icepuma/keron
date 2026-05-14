@@ -1,5 +1,6 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
 ---
 Program {
     items: [
@@ -182,6 +183,7 @@ Program {
                                     ),
                                     span: 645..649,
                                 },
+                                guard: None,
                                 body: Spanned {
                                     node: Literal(
                                         String(
@@ -199,6 +201,7 @@ Program {
                                     ),
                                     span: 663..669,
                                 },
+                                guard: None,
                                 body: Spanned {
                                     node: Var(
                                         "value",
@@ -261,6 +264,7 @@ Program {
                                             ),
                                             span: 807..811,
                                         },
+                                        guard: None,
                                         body: Spanned {
                                             node: Literal(
                                                 String(
@@ -278,6 +282,7 @@ Program {
                                             ),
                                             span: 830..835,
                                         },
+                                        guard: None,
                                         body: Spanned {
                                             node: Interpolation(
                                                 [

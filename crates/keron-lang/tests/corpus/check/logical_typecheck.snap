@@ -1,0 +1,257 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "on_arm_mac",
+                    span: 133..143,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 145..152,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: And,
+                        lhs: Spanned {
+                            node: Binary {
+                                op: Eq,
+                                lhs: Spanned {
+                                    node: Call {
+                                        callee: Spanned {
+                                            node: "os_type",
+                                            span: 155..162,
+                                        },
+                                        args: [],
+                                    },
+                                    span: 155..165,
+                                },
+                                rhs: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "Macos",
+                                        ),
+                                    ),
+                                    span: 168..175,
+                                },
+                            },
+                            span: 155..175,
+                        },
+                        rhs: Spanned {
+                            node: Binary {
+                                op: Eq,
+                                lhs: Spanned {
+                                    node: Call {
+                                        callee: Spanned {
+                                            node: "os_arch",
+                                            span: 179..186,
+                                        },
+                                        args: [],
+                                    },
+                                    span: 179..189,
+                                },
+                                rhs: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "aarch64",
+                                        ),
+                                    ),
+                                    span: 192..201,
+                                },
+                            },
+                            span: 179..201,
+                        },
+                    },
+                    span: 155..201,
+                },
+                span: 129..202,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "any_unix",
+                    span: 206..214,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 216..223,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Or,
+                        lhs: Spanned {
+                            node: Binary {
+                                op: Eq,
+                                lhs: Spanned {
+                                    node: Call {
+                                        callee: Spanned {
+                                            node: "os_type",
+                                            span: 226..233,
+                                        },
+                                        args: [],
+                                    },
+                                    span: 226..236,
+                                },
+                                rhs: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "Macos",
+                                        ),
+                                    ),
+                                    span: 239..246,
+                                },
+                            },
+                            span: 226..246,
+                        },
+                        rhs: Spanned {
+                            node: Binary {
+                                op: Eq,
+                                lhs: Spanned {
+                                    node: Call {
+                                        callee: Spanned {
+                                            node: "os_type",
+                                            span: 250..257,
+                                        },
+                                        args: [],
+                                    },
+                                    span: 250..260,
+                                },
+                                rhs: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "Linux",
+                                        ),
+                                    ),
+                                    span: 263..270,
+                                },
+                            },
+                            span: 250..270,
+                        },
+                    },
+                    span: 226..270,
+                },
+                span: 202..352,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "on_ci",
+                    span: 356..361,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 363..370,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Eq,
+                        lhs: Spanned {
+                            node: Binary {
+                                op: Coalesce,
+                                lhs: Spanned {
+                                    node: Call {
+                                        callee: Spanned {
+                                            node: "env",
+                                            span: 373..376,
+                                        },
+                                        args: [
+                                            CallArg {
+                                                name: None,
+                                                value: Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "CI",
+                                                        ),
+                                                    ),
+                                                    span: 377..381,
+                                                },
+                                                span: 377..381,
+                                            },
+                                        ],
+                                    },
+                                    span: 373..383,
+                                },
+                                rhs: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "false",
+                                        ),
+                                    ),
+                                    span: 386..393,
+                                },
+                            },
+                            span: 373..393,
+                        },
+                        rhs: Spanned {
+                            node: Literal(
+                                String(
+                                    "true",
+                                ),
+                            ),
+                            span: 397..403,
+                        },
+                    },
+                    span: 373..403,
+                },
+                span: 352..441,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "ready",
+                    span: 445..450,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 452..459,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Or,
+                        lhs: Spanned {
+                            node: Binary {
+                                op: And,
+                                lhs: Spanned {
+                                    node: Var(
+                                        "on_arm_mac",
+                                    ),
+                                    span: 462..472,
+                                },
+                                rhs: Spanned {
+                                    node: Var(
+                                        "any_unix",
+                                    ),
+                                    span: 476..484,
+                                },
+                            },
+                            span: 462..484,
+                        },
+                        rhs: Spanned {
+                            node: Var(
+                                "on_ci",
+                            ),
+                            span: 488..493,
+                        },
+                    },
+                    span: 462..493,
+                },
+                span: 441..494,
+            },
+        ),
+    ],
+}

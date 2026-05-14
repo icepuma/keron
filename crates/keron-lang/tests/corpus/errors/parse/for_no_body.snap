@@ -2,7 +2,7 @@
 source: crates/keron-lang/tests/harness/mod.rs
 assertion_line: 75
 ---
-error: unexpected end of input, expected `!`, `(`, `*`, `+`, `-`, `.`, `/`, `<`, `=`, `>`, or block
+error: unexpected end of input, expected `!`, `&`, `(`, `*`, `+`, `-`, `.`, `/`, `<`, `=`, `>`, `?`, `|`, or block
   --> 3:1
   |
 3 | 

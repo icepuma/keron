@@ -1,0 +1,9 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
+---
+error: `&&` requires `Boolean` operands, found `Int` and `Boolean`
+  --> 1:18
+  |
+1 | val x: Boolean = 1 && true
+  |                  ^^^^^^^^^

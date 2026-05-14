@@ -1,0 +1,9 @@
+# `&&` binds tighter than `||`, so `a || b && c` is `a || (b && c)`.
+# Both bind looser than comparison, so `a == b && c == d` is
+# `(a == b) && (c == d)`.
+
+val a: Boolean = true && false
+val b: Boolean = true || false
+val c: Boolean = true && false || true
+val d: Boolean = 1 == 1 && 2 == 2
+val e: Boolean = (true || false) && true

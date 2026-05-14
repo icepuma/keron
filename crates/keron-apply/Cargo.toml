@@ -14,6 +14,7 @@ keron-modules.workspace = true
 
 anyhow.workspace = true
 ariadne.workspace = true
+dirs.workspace = true
 os_info.workspace = true
 serde.workspace = true
 serde_json.workspace = true

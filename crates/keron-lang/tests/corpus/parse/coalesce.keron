@@ -1,0 +1,4 @@
+val a: String = env("HOME") ?? "/tmp"
+val b: String = env("X") ?? env("Y") ?? "z"
+val c: String? = env("MAYBE") ?? env("OTHER")
+val d: Int = 1 + 2

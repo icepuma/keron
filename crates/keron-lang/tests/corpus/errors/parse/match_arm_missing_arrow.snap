@@ -2,7 +2,7 @@
 source: crates/keron-lang/tests/harness/mod.rs
 assertion_line: 75
 ---
-error: unexpected `1`, expected `=`
+error: unexpected `1`, expected `=` or `if`
   --> 2:5
   |
 2 |   1 1,

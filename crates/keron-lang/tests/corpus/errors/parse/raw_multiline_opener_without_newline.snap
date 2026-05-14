@@ -2,7 +2,7 @@
 source: crates/keron-lang/tests/harness/mod.rs
 assertion_line: 75
 ---
-error: unexpected `"`, expected `!`, `(`, `*`, `+`, `-`, `.`, `/`, `<`, `=`, `>`, `fn`, `for`, `from`, `if`, `reconcile`, `struct`, `type`, `val`, or end of input
+error: unexpected `"`, expected `!`, `&`, `(`, `*`, `+`, `-`, `.`, `/`, `<`, `=`, `>`, `?`, `fn`, `for`, `from`, `if`, `reconcile`, `struct`, `type`, `val`, `|`, or end of input
   --> 1:12
   |
 1 | val bad = r"""nope"""

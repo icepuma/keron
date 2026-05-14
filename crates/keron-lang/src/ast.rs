@@ -157,10 +157,23 @@ pub enum IntrinsicId {
     /// when it is unset. Distinguishing "unset" from "empty" is the
     /// whole reason the return type is nullable rather than `String`.
     Env,
-    /// `secret(uri)` — resolve an external secret URI (currently
-    /// `op://` only) into a `Secret` value. Eager: the URI is read
-    /// at plan-build time and any resolution failure is a hard
-    /// error. The returned `Secret` cannot flow into any String sink
+    /// `secret(uri)` — resolve an external secret URI into a
+    /// `Secret` value. Eager: the URI is read at plan-build time and
+    /// any resolution failure is a hard error.
+    ///
+    /// **Design decision (fail-hard, not nullable):** the return
+    /// type is `Secret`, not `Secret?`. Adding `??` to the language
+    /// opened the question of whether `secret(...) ?? fallback`
+    /// should be expressible; we deliberately left it as a type
+    /// error. Two reasons: (1) silent fallback is dangerous —
+    /// imagine a typo in a URI silently substituting a placeholder
+    /// for a database password; (2) `Secret` is an audit-breadcrumb
+    /// type, and admitting non-secret fallbacks would dilute that
+    /// guarantee. Users who need "this credential or a fallback
+    /// non-secret value" can branch on `env(...)` (which *is*
+    /// nullable) before reaching for `secret`.
+    ///
+    /// The returned `Secret` cannot flow into any String sink
     /// without an explicit [`Self::UnwrapSecret`] call.
     Secret,
     /// `unwrap_secret(s)` — convert a `Secret` to a `String`. The
@@ -179,6 +192,130 @@ pub enum IntrinsicId {
     /// `"Microsoft.PowerShell"`). v1 carries only the id; sources
     /// can be added later as a second arg.
     Winget,
+    /// `hostname()` — the host's network name. Resolved at evaluation
+    /// time via `gethostname` on Unix and `$COMPUTERNAME` on Windows.
+    /// Returns `String`; a syscall failure is a hard error (the
+    /// failure mode is rare enough that wrapping every call site in a
+    /// `??` would be noise, and a missing hostname usually signals a
+    /// broken machine, not a manifest bug).
+    Hostname,
+    /// `user()` — the invoking user's login name. Sourced from `$USER`
+    /// on Unix and `$USERNAME` on Windows. Returns `String`; bails if
+    /// neither is set (rare outside of CI sandboxes — those almost
+    /// always set one of the two).
+    User,
+    /// `home_dir()` — the invoking user's home directory as an
+    /// absolute path. Resolved via the `dirs` crate so the value
+    /// matches the platform convention (`$HOME` on Unix,
+    /// `%USERPROFILE%` on Windows). Returns `String`; bails if the
+    /// crate can't determine it (effectively only when `$HOME` is
+    /// unset and there's no fallback the OS can supply).
+    HomeDir,
+    /// `config_dir()` — user config root. Linux: `$XDG_CONFIG_HOME`
+    /// or `~/.config`. macOS: `~/Library/Application Support`.
+    /// Windows: `%APPDATA%` (the roaming variant). Returns `String`;
+    /// bails on the same failure mode as [`Self::HomeDir`].
+    ConfigDir,
+    /// `cache_dir()` — user cache root. Linux: `$XDG_CACHE_HOME` or
+    /// `~/.cache`. macOS: `~/Library/Caches`. Windows: `%LOCALAPPDATA%`.
+    /// Same failure model as [`Self::HomeDir`].
+    CacheDir,
+    /// `data_dir()` — user data root for things that may sync across
+    /// machines. Linux: `$XDG_DATA_HOME` or `~/.local/share`. macOS:
+    /// `~/Library/Application Support`. Windows: `%APPDATA%`. Same
+    /// failure model as [`Self::HomeDir`].
+    DataDir,
+    /// `state_dir()` — user state root for ephemeral-but-resumable
+    /// data (Linux's XDG state slot). Linux: `$XDG_STATE_HOME` or
+    /// `~/.local/state`. macOS and Windows: `null` — no platform
+    /// equivalent exists, so the return type is `String?` and users
+    /// must `??` a fallback (or `match` for OS-specific handling).
+    StateDir,
+    /// `runtime_dir()` — user runtime root (Linux only). Linux:
+    /// `$XDG_RUNTIME_DIR`. macOS and Windows: `null`. Returns
+    /// `String?` for the same reason as [`Self::StateDir`].
+    RuntimeDir,
+    /// `split(s, sep)` — split `s` on every (non-overlapping) match of
+    /// `sep`. Returns `List<String>`. An empty `sep` is an error (no
+    /// well-defined split point). Result preserves empty pieces at
+    /// the ends and between adjacent separators.
+    Split,
+    /// `join(xs, sep)` — concatenate `xs` with `sep` between every
+    /// pair. Returns `String`. Empty list produces `""`.
+    Join,
+    /// `contains(haystack, needle)` — true when `needle` appears
+    /// anywhere in `haystack`. An empty `needle` is `true` for any
+    /// `haystack` (matches Rust's `str::contains`).
+    Contains,
+    /// `replace(s, from, to)` — replace every (non-overlapping)
+    /// occurrence of `from` in `s` with `to`. Empty `from` is an
+    /// error.
+    Replace,
+    /// `trim(s)` — strip leading and trailing Unicode whitespace.
+    Trim,
+    /// `len(xs: List<T>) -> Int` — element count. Generic in `T`.
+    ListLen,
+    /// `list_contains(xs: List<T>, x: T) -> Boolean` — membership
+    /// test (uses the same equality rule as `==`). Distinct from the
+    /// `std:string` `contains` (substring check) — both are useful
+    /// and live in the same flat namespace, so the list form gets a
+    /// `list_` prefix. Generic in `T`.
+    ListContains,
+    /// `first(xs: List<T>) -> T?` — first element, or `null` for an
+    /// empty list. Generic in `T`.
+    ListFirst,
+    /// `last(xs: List<T>) -> T?` — last element, or `null` for an
+    /// empty list. Generic in `T`.
+    ListLast,
+    /// `keys(m: Map<K, V>) -> List<K>` — the map's keys in declared
+    /// order. Generic in `K` and `V`.
+    MapKeys,
+    /// `values(m: Map<K, V>) -> List<V>` — the map's values in
+    /// declared order. Generic in `K` and `V`.
+    MapValues,
+    /// `get(m: Map<K, V>, k: K, default: V) -> V` — map lookup with a
+    /// caller-supplied fallback. Returns the bound `V`; if a future
+    /// release wants `V?`-returning lookup, that's a separate
+    /// intrinsic. Generic in `K` and `V`.
+    MapGet,
+    /// `map_contains(m: Map<K, V>, k: K) -> Boolean` — does the map
+    /// have a binding for `k`? Distinct from list `contains` because
+    /// the two have different shapes (key vs. element); shared name
+    /// would be ambiguous when both Lists and Maps are in scope.
+    MapContains,
+    /// `path_join(p: String, segment: String) -> String` — append
+    /// `segment` to `p` with platform-native separator handling. If
+    /// `segment` is absolute it replaces `p` (matching `PathBuf::join`),
+    /// so users who concatenate `home_dir()` with a `${maybe_abs_var}`
+    /// don't silently get a corrupted path.
+    PathJoin,
+    /// `path_parent(p: String) -> String?` — the directory portion of
+    /// `p`, or `null` when `p` is a root (`/`, `C:\`) or has no
+    /// parent. Use `??` to thread the "no parent" case through.
+    PathParent,
+    /// `path_basename(p: String) -> String` — the final component of
+    /// `p` (file name, or last directory segment). Empty for paths
+    /// ending in a separator.
+    PathBasename,
+    /// `path_extension(p: String) -> String` — the substring after
+    /// the final `.` of the basename, or `""` when there is none.
+    /// Mirrors `std::path::Path::extension` — leading-dot files (e.g.
+    /// `.zshrc`) are treated as having no extension.
+    PathExtension,
+    /// `path_is_absolute(p: String) -> Boolean` — true when `p` is a
+    /// platform-absolute path (`/...` on Unix, `C:\...` on Windows).
+    PathIsAbsolute,
+    /// `path_exists(p: String) -> Boolean` — filesystem probe. Like
+    /// `template(source = ...)` it makes plan output depend on the
+    /// disk state at evaluation time; use sparingly and only for
+    /// branching decisions the user expects to be live.
+    PathExists,
+    /// `path_is_dir(p: String) -> Boolean` — `true` only when the
+    /// path exists *and* is a directory (symlinks are followed).
+    PathIsDir,
+    /// `path_is_file(p: String) -> Boolean` — `true` only when the
+    /// path exists *and* is a regular file (symlinks are followed).
+    PathIsFile,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -305,10 +442,17 @@ pub enum Expr {
     },
 }
 
-/// One arm in a `match` expression: `pattern => body`.
+/// One arm in a `match` expression: `pattern ('if' guard)? '=>' body`.
+///
+/// `guard` is an optional `Boolean` expression evaluated after the
+/// pattern binds; the arm only fires when the guard returns `true`.
+/// A guarded arm does **not** count as covering for exhaustiveness
+/// (its guard may always be false) — the checker still requires a
+/// trailing catch-all / literal arm to close the match.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MatchArm {
     pub pattern: Spanned<Pattern>,
+    pub guard: Option<Spanned<Expr>>,
     pub body: Spanned<Expr>,
     pub span: Span,
 }
@@ -401,6 +545,17 @@ pub enum BinOp {
     Le,
     Gt,
     Ge,
+    /// `??` — null-coalesce. LHS must be `T?` (or the bare `null`
+    /// literal of type `Null`); RHS must be `T` (or `T?`). Evaluates
+    /// RHS only when LHS is `null`. Right-associative.
+    Coalesce,
+    /// `&&` / `||` — short-circuit logical conjunction / disjunction
+    /// over `Boolean`. Both operands must be `Boolean` (no coercion);
+    /// the RHS is evaluated only when the LHS doesn't already decide
+    /// the result. `&&` binds tighter than `||`; both bind looser than
+    /// comparison.
+    And,
+    Or,
 }
 
 impl BinOp {
@@ -419,6 +574,9 @@ impl BinOp {
             Self::Le => "<=",
             Self::Gt => ">",
             Self::Ge => ">=",
+            Self::Coalesce => "??",
+            Self::And => "&&",
+            Self::Or => "||",
         }
     }
 }
@@ -507,6 +665,18 @@ pub enum Type {
     /// `T??` to `T?` so this never nests; the type checker treats
     /// `Null` and `Nullable(_)` as the only types `null` can flow into.
     Nullable(Box<Self>),
+    /// A type variable used in **intrinsic** signatures. Carrier of
+    /// parametric polymorphism for builtins like `len(xs: List<T>) ->
+    /// Int`. The parser never produces this — only the stdlib registry
+    /// constructs `Type::Generic("T")` inside intrinsic `FnSig`s. The
+    /// type checker substitutes it with a concrete type at every call
+    /// site (see `bind_generics`/`substitute_generics`), so after
+    /// `check_call` returns it should never appear in user-facing
+    /// types. Encountering it outside the intrinsic signature path is
+    /// a bug — the type resolver and equality / subtyping helpers
+    /// treat it as an opaque leaf to keep that invariant loud rather
+    /// than papering over it.
+    Generic(String),
 }
 
 impl fmt::Display for Type {
@@ -533,6 +703,10 @@ impl fmt::Display for Type {
             }
             Self::Null => f.write_str("Null"),
             Self::Nullable(inner) => write!(f, "{inner}?"),
+            // The intrinsic-only generic leaks into Display only when
+            // a diagnostic prints a partially-substituted signature
+            // (a bug, but `{name}` is the most readable rendering).
+            Self::Generic(name) => f.write_str(name),
         }
     }
 }

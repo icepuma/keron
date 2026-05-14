@@ -1,0 +1,9 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
+---
+error: non-exhaustive `match` on `OsType`: missing `"Linux"`, `"Macos"`, `"Windows"`, `"Unknown"`
+  --> 5:23
+  |
+5 | val x: String = match os_type() {
+  |                       ^^^^^^^^^^

@@ -73,12 +73,33 @@ pub(super) fn match_type(
             }
             arm_env.bind(n, t, BindingKind::BodyLocal);
         }
+        // Guards see pattern bindings — that's the whole point of the
+        // feature (`Color { name } if contains(name, "red") => …`).
+        // The guard's type must be `Boolean`; reuse the regular
+        // expression-type pass so any nested type error surfaces with
+        // its normal diagnostic, and just enforce the outer shape.
+        if let Some(guard) = &arm.guard {
+            let gt = expr_type(guard, &arm_env, fns)?;
+            if gt != Type::Boolean {
+                return Err(Diagnostic::new(
+                    guard.span.clone(),
+                    format!("`match` arm guard must be `Boolean`, found `{gt}`"),
+                ));
+            }
+        }
         let this = expr_type(&arm.body, &arm_env, fns)?;
         body_ty = Some(match body_ty.take() {
             None => this,
             Some(prev) => unify_arm_types(&prev, &this, arm)?,
         });
-        if matches!(&scrut_ty, Type::Nullable(_)) && handles_null(&arm.pattern.node) {
+        // A guarded arm cannot be considered to "handle null" for
+        // narrowing purposes: the guard may always be false, in which
+        // case the null value would fall through to a later arm. Only
+        // unguarded null-handling arms flip the narrowing flag.
+        if matches!(&scrut_ty, Type::Nullable(_))
+            && arm.guard.is_none()
+            && handles_null(&arm.pattern.node)
+        {
             null_handled = true;
         }
     }
@@ -308,7 +329,12 @@ fn check_exhaustive(
     arms: &[MatchArm],
     scrutinee_span: Span,
 ) -> Result<(), Diagnostic> {
-    let has_catch_all = arms.iter().any(|a| is_catch_all(&a.pattern.node));
+    // A guarded arm cannot prove coverage — its guard may always be
+    // false at runtime, leaving the scrutinee unhandled. For every
+    // coverage-style question below we look only at *unguarded* arms.
+    let has_catch_all = arms
+        .iter()
+        .any(|a| a.guard.is_none() && is_catch_all(&a.pattern.node));
     match scrut_ty {
         Type::StringUnion { name, variants } => {
             if has_catch_all {
@@ -316,6 +342,7 @@ fn check_exhaustive(
             }
             let covered: Vec<&str> = arms
                 .iter()
+                .filter(|a| a.guard.is_none())
                 .filter_map(|a| match &a.pattern.node {
                     Pattern::Lit(Literal::String(s)) => Some(s.as_str()),
                     _ => None,
@@ -341,9 +368,9 @@ fn check_exhaustive(
             if has_catch_all {
                 return Ok(());
             }
-            let has_null_arm = arms
-                .iter()
-                .any(|a| matches!(&a.pattern.node, Pattern::Lit(Literal::Null)));
+            let has_null_arm = arms.iter().any(|a| {
+                a.guard.is_none() && matches!(&a.pattern.node, Pattern::Lit(Literal::Null))
+            });
             if !has_null_arm {
                 return Err(Diagnostic::new(
                     scrutinee_span,
@@ -401,6 +428,14 @@ fn check_unreachable_arms(arms: &[MatchArm]) -> Result<(), Diagnostic> {
                 arm.pattern.span.clone(),
                 "unreachable `match` arm: a previous wildcard or binding pattern matches every remaining value",
             ));
+        }
+        // A guarded arm carries a runtime predicate, so its literal
+        // pattern doesn't conclusively absorb the value — a later
+        // duplicate literal stays reachable when the guard is false.
+        // Same logic for catch-alls: `_ if cond => …` is not a true
+        // catch-all and following arms remain reachable.
+        if arm.guard.is_some() {
+            continue;
         }
         if let Some(key) = static_pattern_key(&arm.pattern.node)
             && !seen_literals.insert(key)

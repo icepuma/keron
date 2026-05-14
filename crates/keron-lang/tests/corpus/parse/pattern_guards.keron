@@ -1,0 +1,20 @@
+# `pat if cond => body`: guard runs after the pattern binds and only
+# fires the arm when it returns `true`. Bindings introduced by the
+# pattern are visible to the guard (`name` from the `Color` arm
+# below).
+
+struct Color { name: String, hex: String }
+
+val c: Color = Color(name = "red", hex = "#f00")
+
+val tag: String = match c {
+  Color { name } if contains(name, "red") => "warm",
+  Color { name } if contains(name, "blue") => "cool",
+  _ => "neutral",
+}
+
+val verdict: String = match os_type() {
+  "Macos" if os_arch() == "aarch64" => "macos-arm",
+  "Macos" => "macos-intel",
+  _ => "other",
+}

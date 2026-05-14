@@ -28,6 +28,13 @@ anyhow = "=1.0.102"
 clap = { version = "=4.6.1", features = ["derive"] }
 petgraph = "=0.8.3"
 os_info = { version = "=3.14.0", default-features = false }
+# Cross-platform standard directories. On Linux these follow the
+# XDG Base Directory spec (with documented fallbacks when the env
+# vars are unset); on macOS they map to `~/Library/...` and on
+# Windows to the corresponding `Known Folder`. Used by the
+# `std:host` builtins (`config_dir`, `cache_dir`, etc.) so manifests
+# don't have to assemble these paths by hand.
+dirs = "=6.0.0"
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.149"
 libc = "=0.2.186"

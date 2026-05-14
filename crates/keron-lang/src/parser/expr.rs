@@ -3,10 +3,13 @@
 //! Grammar (lowest to highest precedence):
 //!
 //! ```text
-//! expr           := comparison
-//! comparison     := additive (cmp_op additive)*                   -- left-assoc
+//! expr           := disjunction
+//! disjunction    := conjunction ('||' conjunction)*               -- left-assoc
+//! conjunction    := comparison ('&&' comparison)*                 -- left-assoc
+//! comparison     := coalesce (cmp_op coalesce)*                   -- left-assoc
 //! cmp_op         := '==' | '!=' | '<=' | '>=' | '<' | '>'
-//! additive       := multiplicative (('+' | '-') multiplicative)*  -- left-assoc
+//! coalesce       := additive ('??' coalesce)?                     -- right-assoc
+//! additive       := multiplicative (('+' | '-' | '++') mul)*      -- left-assoc
 //! multiplicative := unary (('*' | '/') unary)*                    -- left-assoc
 //! unary          := '-' unary | power
 //! power          := postfix ('**' unary)?                         -- right-assoc
@@ -23,6 +26,23 @@
 //! Field access is *postfix* — tighter than unary, so `-p.x` parses
 //! as `-(p.x)`. Chains fold left-associatively into nested
 //! [`Expr::Field`] nodes (e.g. `a.b.c` → `Field(Field(a, b), c)`).
+//!
+//! `??` is right-associative and sits between additive and
+//! comparison (matching Swift/Kotlin Elvis). This makes the common
+//! "fallback then compare" pattern parens-free:
+//!
+//! ```text
+//! env("X") ?? "default" == "match"   // (env("X") ?? "default") == "match"
+//! ```
+//!
+//! Mixing `??` with `+` requires parens because `+` is tighter — so
+//! `env("X") ?? home + "/etc"` parses as `env("X") ?? (home + "/etc")`
+//! (the fallback includes `/etc`, the success path does not). Concat
+//! around a fallback should be written `(env("X") ?? home) + "/etc"`.
+//!
+//! `&&` and `||` are short-circuit; both `Boolean`-only. `&&` binds
+//! tighter than `||` (so `a || b && c` is `a || (b && c)`); both bind
+//! looser than comparison.
 
 use chumsky::prelude::*;
 
@@ -82,81 +102,133 @@ pub(super) fn expr<'src>() -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<
                 })
             });
 
-        let unary = recursive(|unary| {
-            let power = postfix
-                .clone()
-                .then(
-                    just("**")
-                        .padded_by(pad())
-                        .ignore_then(unary.clone())
-                        .or_not(),
-                )
-                .map(|(lhs, rhs)| match rhs {
-                    None => lhs,
-                    Some(rhs) => merge_binary(BinOp::Pow, lhs, rhs),
-                });
+        let unary = unary_chain(postfix);
+        let multiplicative = left_assoc(unary, mul_op());
+        let additive = left_assoc(multiplicative, add_op());
+        let coalesce = coalesce_chain(additive);
+        let comparison = left_assoc(coalesce, cmp_op());
+        let conjunction = left_assoc(comparison, and_op());
+        left_assoc(conjunction, or_op()).labelled("expression")
+    })
+}
 
-            // Labelling the unary alternative as "expression" catches
-            // the failure mode "RHS of a binary op didn't parse" —
-            // e.g. `1 +` — where chumsky surfaces the unfinished
-            // multiplicand's `-` token alongside the atom-level
-            // "expression" label. Without this, the user sees
-            // `expected '-' or expression`; with it, both alternatives
-            // collapse to a single `expected expression`.
-            choice((
-                just('-')
+/// `unary := '-' unary | power`, where `power := postfix ('**' unary)?`.
+/// Kept together because `**` is right-associative *into* the unary
+/// position (so `-2 ** -3` parses as `-(2 ** -3)`); the two stages
+/// only make sense as a unit, hence one helper rather than two.
+///
+/// Labelling the outer choice as "expression" collapses the "RHS of a
+/// binary op didn't parse" failure mode — e.g. after `1 +`, chumsky
+/// would otherwise expose both the atom-level "expression" label and
+/// the leading `-` token of the unfailed unary alternative. With this
+/// label both collapse to a single `expected expression`.
+fn unary_chain<'src, P>(
+    postfix: P,
+) -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone
+where
+    P: Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone + 'src,
+{
+    recursive(|unary| {
+        let power = postfix
+            .clone()
+            .then(
+                just("**")
                     .padded_by(pad())
-                    .ignore_then(unary)
-                    .map_with(|operand, e| Spanned {
-                        node: Expr::Unary {
-                            op: UnaryOp::Neg,
-                            operand: Box::new(operand),
-                        },
-                        span: span_to_range(e.span()),
-                    }),
-                power,
-            ))
-            .labelled("expression")
-        });
+                    .ignore_then(unary.clone())
+                    .or_not(),
+            )
+            .map(|(lhs, rhs)| match rhs {
+                None => lhs,
+                Some(rhs) => merge_binary(BinOp::Pow, lhs, rhs),
+            });
 
-        let mul_op = choice((just('*').to(BinOp::Mul), just('/').to(BinOp::Div))).padded_by(pad());
-        let multiplicative = unary
-            .clone()
-            .then(mul_op.then(unary).repeated().collect::<Vec<_>>())
-            .map(|(lhs, ops)| ops.into_iter().fold(lhs, fold_left));
-
-        let add_op = choice((
-            just("++").to(BinOp::Concat),
-            just('+').to(BinOp::Add),
-            just('-').to(BinOp::Sub),
+        choice((
+            just('-')
+                .padded_by(pad())
+                .ignore_then(unary)
+                .map_with(|operand, e| Spanned {
+                    node: Expr::Unary {
+                        op: UnaryOp::Neg,
+                        operand: Box::new(operand),
+                    },
+                    span: span_to_range(e.span()),
+                }),
+            power,
         ))
-        .padded_by(pad());
-        let additive = multiplicative
-            .clone()
-            .then(add_op.then(multiplicative).repeated().collect::<Vec<_>>())
-            .map(|(lhs, ops)| ops.into_iter().fold(lhs, fold_left));
+        .labelled("expression")
+    })
+}
 
-        // Comparison ops bind looser than additive. Two-character ops
-        // (`==`, `!=`, `<=`, `>=`) must be tried before their
-        // single-character prefixes (`<`, `>`).
-        let cmp_op = choice((
-            just("==").to(BinOp::Eq),
-            just("!=").to(BinOp::Neq),
-            just("<=").to(BinOp::Le),
-            just(">=").to(BinOp::Ge),
-            just('<').to(BinOp::Lt),
-            just('>').to(BinOp::Gt),
-        ))
-        .padded_by(pad());
-        // Label the entire expression chain so any failure to start one
-        // (e.g. after `val x =`) surfaces as a single "expression"
-        // alternative rather than dumping every leading-char form
-        // (`-`, `'r'`, `'"true"'`, …) into the message.
+/// `tier := inner (op inner)*`, left-associative. Used for
+/// multiplicative, additive, and comparison stages — every
+/// left-fold-on-binary-op tier shares this shape.
+fn left_assoc<'src, P, O>(
+    inner: P,
+    op: O,
+) -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone
+where
+    P: Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone + 'src,
+    O: Parser<'src, &'src str, BinOp, Extra<'src>> + Clone + 'src,
+{
+    inner
+        .clone()
+        .then(op.then(inner).repeated().collect::<Vec<_>>())
+        .map(|(lhs, ops)| ops.into_iter().fold(lhs, fold_left))
+}
+
+fn mul_op<'src>() -> impl Parser<'src, &'src str, BinOp, Extra<'src>> + Clone {
+    choice((just('*').to(BinOp::Mul), just('/').to(BinOp::Div))).padded_by(pad())
+}
+
+fn add_op<'src>() -> impl Parser<'src, &'src str, BinOp, Extra<'src>> + Clone {
+    choice((
+        just("++").to(BinOp::Concat),
+        just('+').to(BinOp::Add),
+        just('-').to(BinOp::Sub),
+    ))
+    .padded_by(pad())
+}
+
+fn and_op<'src>() -> impl Parser<'src, &'src str, BinOp, Extra<'src>> + Clone {
+    just("&&").to(BinOp::And).padded_by(pad())
+}
+
+fn or_op<'src>() -> impl Parser<'src, &'src str, BinOp, Extra<'src>> + Clone {
+    just("||").to(BinOp::Or).padded_by(pad())
+}
+
+/// Two-character comparisons (`==`, `!=`, `<=`, `>=`) are tried before
+/// their single-character prefixes (`<`, `>`) so we don't commit to
+/// the prefix and then fail on the trailing `=`.
+fn cmp_op<'src>() -> impl Parser<'src, &'src str, BinOp, Extra<'src>> + Clone {
+    choice((
+        just("==").to(BinOp::Eq),
+        just("!=").to(BinOp::Neq),
+        just("<=").to(BinOp::Le),
+        just(">=").to(BinOp::Ge),
+        just('<').to(BinOp::Lt),
+        just('>').to(BinOp::Gt),
+    ))
+    .padded_by(pad())
+}
+
+/// `coalesce := additive ('??' coalesce)?`. Right-associative — sits
+/// between additive and comparison so the common "fallback then
+/// compare" pattern parses without parens. See the module doc.
+fn coalesce_chain<'src, P>(
+    additive: P,
+) -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone
+where
+    P: Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone + 'src,
+{
+    recursive(|coalesce| {
         additive
             .clone()
-            .then(cmp_op.then(additive).repeated().collect::<Vec<_>>())
-            .map(|(lhs, ops)| ops.into_iter().fold(lhs, fold_left))
-            .labelled("expression")
+            .then(just("??").padded_by(pad()).ignore_then(coalesce).or_not())
+            .map(|(lhs, rhs)| match rhs {
+                None => lhs,
+                Some(rhs) => merge_binary(BinOp::Coalesce, lhs, rhs),
+            })
     })
 }
 

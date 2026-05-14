@@ -57,6 +57,7 @@ Program {
                                     ),
                                     span: 75..79,
                                 },
+                                guard: None,
                                 body: Spanned {
                                     node: Literal(
                                         String(
@@ -74,6 +75,7 @@ Program {
                                     ),
                                     span: 98..100,
                                 },
+                                guard: None,
                                 body: Spanned {
                                     node: Var(
                                         "n",

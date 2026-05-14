@@ -3,10 +3,7 @@
 # tempdir per run); sources resolve relative to this `.keron` file
 # (which keron canonicalizes inside the keron root).
 
-val home: String = match env("HOME") {
-  null => keron_root(),
-  v => v,
-}
+val home: String = env("HOME") ?? keron_root()
 
 reconcile {
   symlink(source = "./zshrc", target = "${home}/.testrc");

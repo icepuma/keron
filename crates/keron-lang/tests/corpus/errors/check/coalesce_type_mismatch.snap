@@ -1,0 +1,9 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+assertion_line: 75
+---
+error: `??` requires the right side to be `String` or `String?`, found `Int`
+  --> 1:17
+  |
+1 | val x: String = env("X") ?? 5
+  |                 ^^^^^^^^^^^^^
