@@ -9,6 +9,7 @@
 
 #![allow(dead_code)]
 
+use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -319,6 +320,7 @@ pub fn build_prechecked_plan(
     keron_root: &Path,
 ) -> Result<PrecheckedPlan> {
     let resources = eval::eval_graph(graph, keron_root)?;
+    let resources = dedup_resources(&resources)?;
     let os = crate::platform::detect_os_family();
     let precheck = precheck_resources(&resources, os);
     let mut cache = PackageCache::new();
@@ -331,6 +333,45 @@ pub fn build_prechecked_plan(
         plan: Plan { changes },
         precheck,
     })
+}
+
+/// Collapse repeat declarations of the same resource. Two `reconcile`
+/// statements that name the same path (or the same `manager:name` /
+/// shell name) are common in real configs — composing a base list with
+/// per-host overrides, importing a library that already reconciles a
+/// shared dotfile, etc. Without dedup the plan would carry two `Create`
+/// changes for one address and the executor would fail at the second
+/// with `EEXIST` *after* the first had already landed, leaving the
+/// system in a half-applied state.
+///
+/// Equality is by full [`ResourceState`] value, not just by address:
+/// two same-address declarations with diverging payload (e.g. one
+/// template and another with different `vars`, or two symlinks pointing
+/// at different sources) is almost certainly a mistake — we surface it
+/// as a hard error at plan time so the user fixes the conflict before
+/// any change touches disk.
+///
+/// Order of the first occurrence is preserved so apply order matches
+/// declaration order.
+fn dedup_resources(resources: &[ResourceState]) -> Result<Vec<ResourceState>> {
+    let mut seen: HashMap<String, &ResourceState> = HashMap::new();
+    let mut out: Vec<ResourceState> = Vec::with_capacity(resources.len());
+    for state in resources {
+        let address = address_for(state);
+        if let Some(prev) = seen.get(&address) {
+            if *prev != state {
+                bail!(
+                    "duplicate resource `{address}` declared with conflicting state: \
+                     two reconciliations target the same address but with different values; \
+                     drop one of the declarations or align the values"
+                );
+            }
+            continue;
+        }
+        seen.insert(address, state);
+        out.push(state.clone());
+    }
+    Ok(out)
 }
 
 const fn include_in_plan(state: &ResourceState, os: OsFamily) -> bool {
@@ -775,6 +816,153 @@ mod tests {
         );
         let addrs: Vec<&str> = plan.changes.iter().map(|c| c.address.as_str()).collect();
         assert_eq!(addrs, vec!["/a", "/b"]);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dedup_resources_collapses_byte_identical_repeats() {
+        // Two reconciles of the same template — common when a base
+        // module declares it and a per-host overlay also references
+        // it. Pre-fix this would crash apply mid-stream with EEXIST;
+        // now both fold to a single Create.
+        let t = ResourceState::Template {
+            path: PathBuf::from("/a"),
+            content: "x".into(),
+            sensitive: false,
+        };
+        let deduped = dedup_resources(&[t.clone(), t.clone(), t]).unwrap();
+        assert_eq!(deduped.len(), 1);
+    }
+
+    #[test]
+    fn dedup_resources_preserves_first_occurrence_order() {
+        // Apply order matches declaration order: a duplicate later in
+        // the stream must not bump its counterpart up the queue.
+        let a = ResourceState::Template {
+            path: PathBuf::from("/a"),
+            content: "x".into(),
+            sensitive: false,
+        };
+        let b = ResourceState::Symlink {
+            from: PathBuf::from("/b"),
+            to: PathBuf::from("/source"),
+        };
+        let deduped = dedup_resources(&[a.clone(), b.clone(), a, b]).unwrap();
+        let addrs: Vec<String> = deduped.iter().map(address_for).collect();
+        assert_eq!(addrs, vec!["/a", "/b"]);
+    }
+
+    #[test]
+    fn dedup_resources_errors_on_conflicting_template_at_same_path() {
+        // Same target path, different rendered content — almost
+        // certainly a mistake (forgot to update a partial in one of
+        // the two callers, or pasted the wrong vars). Surface it as
+        // a hard error at plan time rather than letting one declaration
+        // silently win.
+        let a = ResourceState::Template {
+            path: PathBuf::from("/a"),
+            content: "first".into(),
+            sensitive: false,
+        };
+        let b = ResourceState::Template {
+            path: PathBuf::from("/a"),
+            content: "second".into(),
+            sensitive: false,
+        };
+        let err = dedup_resources(&[a, b]).expect_err("conflicting state must error");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("/a"), "error must name the address: {msg}");
+        assert!(
+            msg.contains("conflicting state"),
+            "error must call the conflict out: {msg}",
+        );
+    }
+
+    #[test]
+    fn dedup_resources_errors_on_conflicting_symlink_target() {
+        // Same link path, different sources — a real-world bug where
+        // two modules disagree on what `~/.zshrc` should point at.
+        let a = ResourceState::Symlink {
+            from: PathBuf::from("/link"),
+            to: PathBuf::from("/source-a"),
+        };
+        let b = ResourceState::Symlink {
+            from: PathBuf::from("/link"),
+            to: PathBuf::from("/source-b"),
+        };
+        let err = dedup_resources(&[a, b]).expect_err("conflicting symlinks must error");
+        assert!(format!("{err:#}").contains("/link"));
+    }
+
+    #[test]
+    fn build_prechecked_plan_dedups_repeated_template_into_one_change() {
+        // Pin the dedup at the public entry point: writing
+        // `reconcile t; reconcile t` for the same template now lands
+        // in the plan as a single Create. Pre-fix this produced two
+        // Create changes and apply crashed at the second with EEXIST.
+        use keron_modules::{EntrySource, ModuleId, resolve};
+        use std::env;
+        use std::fs;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static SEQ: AtomicUsize = AtomicUsize::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let dir = env::temp_dir().join(format!("keron-dedup-build-{}-{n}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let entry = dir.join("entry.keron");
+        fs::write(dir.join("tmpl.tpl"), "{{ body }}").unwrap();
+        let target = dir.join("dedup-target");
+        let src = format!(
+            "val t: Template = template(source = \"tmpl.tpl\", target = \"{}\", vars = {{\"body\": \"x\"}})\n\
+             reconcile t\n\
+             reconcile t\n",
+            target.display(),
+        );
+        fs::write(&entry, &src).unwrap();
+        let canonical = fs::canonicalize(&entry).unwrap();
+        let keron_root = canonical.parent().unwrap().to_path_buf();
+        let graph = resolve(vec![EntrySource {
+            text: src,
+            base_dir: canonical.parent().unwrap().to_path_buf(),
+            id: ModuleId(canonical),
+        }])
+        .unwrap();
+        let plan = build_plan(&graph, &keron_root).unwrap();
+        assert_eq!(plan.changes.len(), 1, "duplicate reconciles must dedup");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn build_prechecked_plan_errors_on_conflicting_template_at_same_target() {
+        // Two templates with the same target but different vars (and
+        // therefore different rendered content) is a conflict, not a
+        // dedup. The user must fix the manifest before any apply runs.
+        use keron_modules::{EntrySource, ModuleId, resolve};
+        use std::env;
+        use std::fs;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static SEQ: AtomicUsize = AtomicUsize::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let dir = env::temp_dir().join(format!("keron-conflict-build-{}-{n}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let entry = dir.join("entry.keron");
+        fs::write(dir.join("tmpl.tpl"), "{{ body }}").unwrap();
+        let target = dir.join("conflict-target");
+        let src = format!(
+            "reconcile template(source = \"tmpl.tpl\", target = \"{path}\", vars = {{\"body\": \"first\"}})\n\
+             reconcile template(source = \"tmpl.tpl\", target = \"{path}\", vars = {{\"body\": \"second\"}})\n",
+            path = target.display(),
+        );
+        fs::write(&entry, &src).unwrap();
+        let canonical = fs::canonicalize(&entry).unwrap();
+        let keron_root = canonical.parent().unwrap().to_path_buf();
+        let graph = resolve(vec![EntrySource {
+            text: src,
+            base_dir: canonical.parent().unwrap().to_path_buf(),
+            id: ModuleId(canonical),
+        }])
+        .unwrap();
+        let err = build_plan(&graph, &keron_root).expect_err("conflict must surface");
+        assert!(format!("{err:#}").contains("conflicting state"));
         let _ = fs::remove_dir_all(&dir);
     }
 
