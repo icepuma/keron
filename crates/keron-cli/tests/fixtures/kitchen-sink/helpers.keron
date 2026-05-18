@@ -1,0 +1,44 @@
+# Helper module imported by entry.keron via `from "./helpers.keron"`.
+# Exists so the e2e fixture exercises the cross-module import path
+# alongside the rest of the language surface — a struct definition
+# imported as both a type annotation *and* a constructor, a parameterized
+# symlink helper, and a struct-destructure match.
+
+struct Host {
+  name: String,
+  port: Int,
+  tls: Boolean,
+}
+
+type Tier = "core" | "extra" | "lab"
+
+# `home` is threaded in by the caller so the symlink target renders
+# inside the test's fake $HOME — keeps this helper free of `env(...)`
+# side effects so the tier of imports stays purely structural.
+fn link(home: String, name: String): Symlink {
+  symlink(
+    source = "./dotfiles/${name}",
+    target = "${home}/.testks-${name}",
+  )
+}
+
+# Struct-destructure match with literal sub-patterns and a wildcard
+# fallthrough. The wildcard arm is unreachable in practice — the
+# preceding `Host { name, port, tls }` arm covers every well-typed
+# Host — but the compiler still requires it on a struct scrutinee.
+fn label_host(h: Host): String {
+  match h {
+    Host { name, port: 22, tls: true }   => "ssh:${name}",
+    Host { name, port: 443, tls: true }  => "https:${name}",
+    Host { name, port, tls }             => "${name}:${port}/tls=${tls}",
+    _                                    => "unknown",
+  }
+}
+
+fn tier_label(t: Tier): String {
+  match t {
+    "core"  => "C",
+    "extra" => "X",
+    "lab"   => "L",
+  }
+}

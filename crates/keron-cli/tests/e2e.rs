@@ -425,6 +425,133 @@ fn write_unix_noop(_dir: &Path) -> PathBuf {
     unreachable!("write_unix_noop called on non-unix host")
 }
 
+#[test]
+fn kitchen_sink_exercises_imports_intrinsics_loops_and_resources() {
+    // Breadth test: drives the `kitchen-sink` fixture which composes
+    // cross-module import, structs, type-alias unions, host info,
+    // vendored partials, numeric/path/string/list/map intrinsics,
+    // mixed `List<Resource>` + `->` ordering, and `for` over both
+    // lists and maps. The first apply lands 8 resources; the second
+    // proves every codepath above is deterministic and idempotent.
+    //
+    // The fixture reads two opt-in env vars (`KERON_KS_TIER`,
+    // `KERON_KS_FLAVOR`); pinning both removes any flakiness from
+    // the surrounding shell and lets us assert exact substrings in
+    // the rendered summary.
+    let home = E2eHome::new("kitchen-sink");
+    let fixture = fixture_dir("kitchen-sink");
+
+    let mut first_cmd = keron_apply(&fixture, &home.path);
+    first_cmd
+        .env("KERON_KS_TIER", "extra")
+        .env("KERON_KS_FLAVOR", "midnight mocha");
+    let first = run(first_cmd, "yes\n");
+    assert!(
+        first.success,
+        "first run failed: stdout=\n{}\nstderr=\n{}",
+        first.stdout, first.stderr,
+    );
+    assert!(
+        first.stdout.contains("8 added"),
+        "first run should add 8 resources: {}",
+        first.stdout,
+    );
+
+    for name in ["zshrc", "vimrc", "gitconfig"] {
+        let link = home.path.join(format!(".testks-{name}"));
+        assert!(
+            link.is_symlink(),
+            "missing symlink ~/.testks-{name}: {}",
+            first.stdout,
+        );
+    }
+
+    let summary = home.path.join(".testks-summary");
+    let content = fs::read_to_string(&summary).expect("summary template written");
+    // Anchor on values that flow through several language features:
+    // env-supplied flavor (with `replace` rewriting the space),
+    // `parse_int` + `if` ladder over the seed, `len` over a struct
+    // list, `sort(unique(...))` on a path list, `merge`+`sort`+`keys`
+    // on the priority map, vendored header/footer joined into `body`,
+    // and the struct-destructure match labels.
+    for needle in [
+        "tier=X",
+        "size=medium",
+        "seed=42",
+        "flavor=midnight-mocha",
+        "hosts_count=3",
+        "labels=ssh:alpha.local | https:beta.local | delta:9000/tls=false",
+        "joined_paths=/opt/bin:/usr/bin:/usr/local/bin",
+        "sorted_keys=gitconfig,init.lua,vimrc,zshrc",
+        "seed_basename=seed.txt",
+        "seed_ext=txt",
+        "root_present=true",
+        "vendored header",
+        "vendored footer",
+    ] {
+        assert!(
+            content.contains(needle),
+            "summary missing `{needle}`: {content}",
+        );
+    }
+
+    let gitconfig_info = home.path.join(".testks-gitconfig-info");
+    let info_content =
+        fs::read_to_string(&gitconfig_info).expect("for+if branch wrote gitconfig-info");
+    assert!(
+        info_content.contains("labels=gitconfig"),
+        "gitconfig-info template missing per-iteration label: {info_content}",
+    );
+    // The `for` body is gated on `contains(name, "git")`, so only the
+    // gitconfig name passes — the other two link names must NOT
+    // produce a sibling `*-info` file.
+    for name in ["zshrc", "vimrc"] {
+        let unexpected = home.path.join(format!(".testks-{name}-info"));
+        assert!(
+            !unexpected.exists(),
+            "for+if guard should have skipped `{name}-info`: {}",
+            first.stdout,
+        );
+    }
+
+    // `for (k, v) in base_priorities { ... }` emits one template per
+    // map entry; check each renders the per-iteration `seed`/`flavor`.
+    for (name, expected_seed) in [("zshrc", "1"), ("vimrc", "2"), ("gitconfig", "3")] {
+        let priority = home.path.join(format!(".testks-priority-{name}"));
+        let body = fs::read_to_string(&priority).expect("priority template written");
+        assert!(
+            body.contains(&format!("seed={expected_seed}")),
+            "priority `{name}` missing seed={expected_seed}: {body}",
+        );
+        assert!(
+            body.contains(&format!("flavor={name}")),
+            "priority `{name}` missing flavor={name}: {body}",
+        );
+    }
+
+    // Idempotency: re-running with identical env produces no work.
+    // This is the most interesting assertion of the lot: every
+    // intrinsic above (env, read_file, parse_int, sort, unique,
+    // merge, with, keys, host info, struct destructure, …) must
+    // yield byte-identical output across runs, or the executor
+    // would see drift and re-render.
+    let mut second_cmd = keron_apply(&fixture, &home.path);
+    second_cmd
+        .env("KERON_KS_TIER", "extra")
+        .env("KERON_KS_FLAVOR", "midnight mocha");
+    let second = run(second_cmd, "yes\n");
+    assert!(
+        second.success,
+        "second run failed: stdout=\n{}\nstderr=\n{}",
+        second.stdout, second.stderr,
+    );
+    assert!(
+        second.stdout.contains("No changes"),
+        "second run should be idempotent, got: {}",
+        second.stdout,
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn elevated_symlink_into_protected_dir_is_owned_by_calling_user() {

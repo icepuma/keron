@@ -1,0 +1,2 @@
+# kitchen-sink fixture: linked zshrc
+export EDITOR=vi

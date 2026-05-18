@@ -1,0 +1,3 @@
+# kitchen-sink fixture: linked gitconfig
+[user]
+  name = kitchen-sink
