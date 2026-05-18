@@ -10,7 +10,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::{BindingKind, Env, FnEnv, expr_type, format_variants, is_subtype};
+use super::{BindingKind, Env, FnEnv, check_expr, expr_type, format_variants, is_subtype};
 use crate::ast::{Expr, Literal, MatchArm, Pattern, Span, Spanned, StructPatternField, Type};
 use crate::diagnostic::Diagnostic;
 
@@ -49,57 +49,13 @@ pub(super) fn match_type(
     let mut body_ty: Option<Type> = None;
     let mut null_handled = false;
     for arm in arms {
-        let arm_scrut_ty = narrowed_scrutinee(&scrut_ty, null_handled);
-        let mut bindings: HashMap<String, Type> = HashMap::new();
-        check_pattern(&arm.pattern, &arm_scrut_ty, &mut bindings)?;
-        let mut arm_env = env.clone();
-        for (n, t) in bindings {
-            // Pattern binds are body-locals; like `val` and `for`
-            // they must not shadow a param, outer val, or earlier
-            // body-local (per the "no shadowing" rule documented in
-            // `check/mod.rs`). Without this guard a pattern like
-            // `match … { x => … }` inside `fn pick(x: Int) { … }`
-            // would silently rebind `x` to the scrutinee value.
-            if let Some(kind) = arm_env.lookup_kind(&n) {
-                let what = match kind {
-                    BindingKind::Param => "parameter",
-                    BindingKind::OuterVal => "outer `val`",
-                    BindingKind::BodyLocal => "previous body `val`",
-                };
-                return Err(Diagnostic::new(
-                    arm.pattern.span.clone(),
-                    format!("pattern binding `{n}` would shadow a {what} in this scope"),
-                ));
-            }
-            arm_env.bind(n, t, BindingKind::BodyLocal);
-        }
-        // Guards see pattern bindings — that's the whole point of the
-        // feature (`Color { name } if contains(name, "red") => …`).
-        // The guard's type must be `Boolean`; reuse the regular
-        // expression-type pass so any nested type error surfaces with
-        // its normal diagnostic, and just enforce the outer shape.
-        if let Some(guard) = &arm.guard {
-            let gt = expr_type(guard, &arm_env, fns)?;
-            if gt != Type::Boolean {
-                return Err(Diagnostic::new(
-                    guard.span.clone(),
-                    format!("`match` arm guard must be `Boolean`, found `{gt}`"),
-                ));
-            }
-        }
+        let arm_env = build_arm_env(arm, &scrut_ty, null_handled, env, fns)?;
         let this = expr_type(&arm.body, &arm_env, fns)?;
         body_ty = Some(match body_ty.take() {
             None => this,
             Some(prev) => unify_arm_types(&prev, &this, arm)?,
         });
-        // A guarded arm cannot be considered to "handle null" for
-        // narrowing purposes: the guard may always be false, in which
-        // case the null value would fall through to a later arm. Only
-        // unguarded null-handling arms flip the narrowing flag.
-        if matches!(&scrut_ty, Type::Nullable(_))
-            && arm.guard.is_none()
-            && handles_null(&arm.pattern.node)
-        {
+        if flip_null_handled(arm, &scrut_ty) {
             null_handled = true;
         }
     }
@@ -107,6 +63,106 @@ pub(super) fn match_type(
     check_exhaustive(&scrut_ty, arms, scrutinee.span.clone())?;
 
     Ok(body_ty.expect("arms is non-empty so body_ty must be set"))
+}
+
+/// Bidirectional companion to [`match_type`]: same scrutinee /
+/// pattern / guard / exhaustiveness logic, but each arm body is
+/// *checked* against `expected` instead of synthesised + joined. This
+/// is what makes `val m: Mode = match … { _ => "on" }` typecheck —
+/// the `Mode` annotation flows into each arm body so a String literal
+/// is admitted as a union variant via the existing
+/// literal-into-`StringUnion` rule, instead of widening to `String`
+/// and then failing the outer subtype check.
+pub(super) fn check_match(
+    scrutinee: &Spanned<Expr>,
+    arms: &[MatchArm],
+    expected: &Type,
+    env: &Env,
+    fns: &FnEnv,
+) -> Result<(), Diagnostic> {
+    if arms.is_empty() {
+        return Err(Diagnostic::new(
+            scrutinee.span.clone(),
+            "`match` requires at least one arm",
+        ));
+    }
+    let scrut_ty = expr_type(scrutinee, env, fns)?;
+    check_unreachable_arms(arms)?;
+
+    let mut null_handled = false;
+    for arm in arms {
+        let arm_env = build_arm_env(arm, &scrut_ty, null_handled, env, fns)?;
+        check_expr(&arm.body, expected, &arm_env, fns)?;
+        if flip_null_handled(arm, &scrut_ty) {
+            null_handled = true;
+        }
+    }
+
+    check_exhaustive(&scrut_ty, arms, scrutinee.span.clone())?;
+
+    Ok(())
+}
+
+/// Build the per-arm environment shared by [`match_type`] (synth) and
+/// [`check_match`] (bidirectional): narrow the scrutinee if a prior
+/// arm covered `null`, validate the pattern against that narrowed
+/// type, install pattern bindings (with the standard
+/// no-shadow-an-outer-name guard), and type-check any guard. Returns
+/// the body-ready environment.
+fn build_arm_env(
+    arm: &MatchArm,
+    scrut_ty: &Type,
+    null_handled: bool,
+    env: &Env,
+    fns: &FnEnv,
+) -> Result<Env, Diagnostic> {
+    let arm_scrut_ty = narrowed_scrutinee(scrut_ty, null_handled);
+    let mut bindings: HashMap<String, Type> = HashMap::new();
+    check_pattern(&arm.pattern, &arm_scrut_ty, &mut bindings)?;
+    let mut arm_env = env.clone();
+    for (n, t) in bindings {
+        // Pattern binds are body-locals; like `val` and `for`
+        // they must not shadow a param, outer val, or earlier
+        // body-local (per the "no shadowing" rule documented in
+        // `check/mod.rs`). Without this guard a pattern like
+        // `match … { x => … }` inside `fn pick(x: Int) { … }`
+        // would silently rebind `x` to the scrutinee value.
+        if let Some(kind) = arm_env.lookup_kind(&n) {
+            let what = match kind {
+                BindingKind::Param => "parameter",
+                BindingKind::OuterVal => "outer `val`",
+                BindingKind::BodyLocal => "previous body `val`",
+            };
+            return Err(Diagnostic::new(
+                arm.pattern.span.clone(),
+                format!("pattern binding `{n}` would shadow a {what} in this scope"),
+            ));
+        }
+        arm_env.bind(n, t, BindingKind::BodyLocal);
+    }
+    // Guards see pattern bindings — that's the whole point of the
+    // feature (`Color { name } if contains(name, "red") => …`).
+    // The guard's type must be `Boolean`; reuse the regular
+    // expression-type pass so any nested type error surfaces with
+    // its normal diagnostic, and just enforce the outer shape.
+    if let Some(guard) = &arm.guard {
+        let gt = expr_type(guard, &arm_env, fns)?;
+        if gt != Type::Boolean {
+            return Err(Diagnostic::new(
+                guard.span.clone(),
+                format!("`match` arm guard must be `Boolean`, found `{gt}`"),
+            ));
+        }
+    }
+    Ok(arm_env)
+}
+
+/// Whether processing this arm should mark `null` as handled for the
+/// remaining arms. A guarded arm cannot prove coverage — its guard may
+/// always be false, in which case the null value would fall through
+/// to a later arm. Only unguarded null-handling arms flip the flag.
+const fn flip_null_handled(arm: &MatchArm, scrut_ty: &Type) -> bool {
+    matches!(scrut_ty, Type::Nullable(_)) && arm.guard.is_none() && handles_null(&arm.pattern.node)
 }
 
 /// If we've already covered `null` in a prior arm, peel one

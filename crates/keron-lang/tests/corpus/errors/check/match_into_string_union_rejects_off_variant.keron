@@ -1,0 +1,9 @@
+# Bidirectional `match` checking still enforces the union: a literal
+# RHS that isn't in the variant set is rejected (same diagnostic the
+# direct `val m: Mode = "bogus"` form gives).
+
+type Mode = "on" | "off"
+
+val current: Mode = match true {
+  _ => "bogus",
+}

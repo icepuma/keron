@@ -1,0 +1,36 @@
+# `match` is bidirectional when an outer annotation flows in: a String
+# literal RHS narrows into a closed `StringUnion` slot via the same
+# admission rule as `val m: Mode = "on"`. Without this, every arm
+# would synth to `String`, the join would be `String`, and the outer
+# subtype check `String <: Mode` would (correctly) reject — leaving
+# users to work around it with an `if`-ladder.
+
+type Mode = "on" | "off" | "auto"
+
+fn pick(name: String): Mode {
+  match name {
+    "active" => "on",
+    "idle"   => "off",
+    _        => "auto",
+  }
+}
+
+val current: Mode = match true {
+  true => "on",
+  _    => "off",
+}
+
+# Nested in `if` — both branches still flow `Mode` into their own
+# match arms.
+val by_flag: Mode = if true {
+  match 0 {
+    0 => "on",
+    _ => "off",
+  }
+} else {
+  "auto"
+}
+
+reconcile {
+  symlink(source = "${current}", target = "/tmp/${pick("active")}-${by_flag}");
+}

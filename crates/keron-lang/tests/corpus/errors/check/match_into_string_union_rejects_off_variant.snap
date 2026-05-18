@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `"bogus"` is not a variant of `Mode` (expected one of `"on"`, `"off"`)
+  --> 8:8
+  |
+8 |   _ => "bogus",
+  |        ^^^^^^^

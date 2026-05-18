@@ -53,7 +53,7 @@ enum BindingKind {
 }
 
 #[derive(Debug, Default, Clone)]
-struct Env {
+pub(super) struct Env {
     bindings: HashMap<String, (Type, BindingKind)>,
 }
 
@@ -1015,7 +1015,7 @@ fn check_top_expr_stmt(e: &Spanned<Expr>, env: &Env, fns: &FnEnv, diags: &mut Ve
 }
 
 /// Checking-mode judgment: verify `e` has type `expected`.
-fn check_expr(
+pub(super) fn check_expr(
     e: &Spanned<Expr>,
     expected: &Type,
     env: &Env,
@@ -1092,6 +1092,16 @@ fn check_expr(
             check_block(then_branch, expected, env, fns)?;
             check_block(else_branch, expected, env, fns)?;
             Ok(())
+        }
+        // `match` mirrors `if` here: flow `expected` into each arm
+        // body so a literal RHS narrows into a closed `StringUnion`
+        // slot via the existing literal-into-union admission rule
+        // (see [`check_expr`]'s top-of-function `Expr::Literal +
+        // StringUnion` arm). Synthesizing first and then comparing
+        // would widen each String literal to `String`, lose the
+        // narrowing, and reject the assignment.
+        Expr::Match { scrutinee, arms } => {
+            match_check::check_match(scrutinee, arms, expected, env, fns)
         }
         // `for` produces no value; it only flows at statement position
         // where `Void` is expected. Anywhere else (val initializer,

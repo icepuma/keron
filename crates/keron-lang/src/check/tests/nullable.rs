@@ -167,11 +167,21 @@ fn match_arm_unification_rejects_cross_type_results() {
     // BOTH arms are resource singletons. If the `&&` were a `||`,
     // a mismatched Int-vs-Symlink pair would silently lift to
     // `Resource` instead of erroring.
+    //
+    // We pin the synth-mode unify path here (no outer annotation
+    // flowing into the match) — when the user *does* annotate the
+    // val/fn return as `Resource`, the bidirectional `check_match`
+    // path fires first and reports a per-arm "expected Resource,
+    // found Int" instead, which is a strictly better diagnostic but
+    // doesn't exercise unify.
     let err = check_src(
-        "fn pick(b: Boolean): Resource { match b {\n\
-           true => 7,\n\
-           false => symlink(source = \"b\", target = \"a\"),\n\
-         }}",
+        "fn pick(b: Boolean): Resource {\n\
+           val r = match b {\n\
+             true => 7,\n\
+             false => symlink(source = \"b\", target = \"a\"),\n\
+           }\n\
+           symlink(source = \"x\", target = \"y\")\n\
+         }",
     )
     .expect_err("Int + Symlink should not unify");
     assert!(

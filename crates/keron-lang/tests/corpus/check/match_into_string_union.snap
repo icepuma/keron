@@ -1,0 +1,421 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        TypeAlias(
+            TypeAliasDecl {
+                name: Spanned {
+                    node: "Mode",
+                    span: 397..401,
+                },
+                variants: [
+                    Spanned {
+                        node: "on",
+                        span: 404..408,
+                    },
+                    Spanned {
+                        node: "off",
+                        span: 411..416,
+                    },
+                    Spanned {
+                        node: "auto",
+                        span: 419..425,
+                    },
+                ],
+                span: 392..427,
+            },
+        ),
+        Fn(
+            FnDecl {
+                name: Spanned {
+                    node: "pick",
+                    span: 430..434,
+                },
+                params: [
+                    Param {
+                        name: Spanned {
+                            node: "name",
+                            span: 435..439,
+                        },
+                        ty: Spanned {
+                            node: String,
+                            span: 441..447,
+                        },
+                        default: None,
+                        span: 435..447,
+                    },
+                ],
+                return_type: Spanned {
+                    node: StringUnion {
+                        name: "Mode",
+                        variants: [
+                            "on",
+                            "off",
+                            "auto",
+                        ],
+                    },
+                    span: 450..454,
+                },
+                body: Block {
+                    stmts: [],
+                    trailing: Some(
+                        Spanned {
+                            node: Match {
+                                scrutinee: Spanned {
+                                    node: Var(
+                                        "name",
+                                    ),
+                                    span: 465..469,
+                                },
+                                arms: [
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Lit(
+                                                String(
+                                                    "active",
+                                                ),
+                                            ),
+                                            span: 476..484,
+                                        },
+                                        guard: None,
+                                        body: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "on",
+                                                ),
+                                            ),
+                                            span: 488..492,
+                                        },
+                                        span: 476..492,
+                                    },
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Lit(
+                                                String(
+                                                    "idle",
+                                                ),
+                                            ),
+                                            span: 498..504,
+                                        },
+                                        guard: None,
+                                        body: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "off",
+                                                ),
+                                            ),
+                                            span: 510..515,
+                                        },
+                                        span: 498..515,
+                                    },
+                                    MatchArm {
+                                        pattern: Spanned {
+                                            node: Wildcard,
+                                            span: 521..530,
+                                        },
+                                        guard: None,
+                                        body: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "auto",
+                                                ),
+                                            ),
+                                            span: 533..539,
+                                        },
+                                        span: 521..539,
+                                    },
+                                ],
+                            },
+                            span: 459..545,
+                        },
+                    ),
+                    span: 455..548,
+                },
+                span: 427..548,
+                intrinsic: None,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "current",
+                    span: 552..559,
+                },
+                ty: Some(
+                    Spanned {
+                        node: StringUnion {
+                            name: "Mode",
+                            variants: [
+                                "on",
+                                "off",
+                                "auto",
+                            ],
+                        },
+                        span: 561..565,
+                    },
+                ),
+                value: Spanned {
+                    node: Match {
+                        scrutinee: Spanned {
+                            node: Literal(
+                                Boolean(
+                                    true,
+                                ),
+                            ),
+                            span: 574..578,
+                        },
+                        arms: [
+                            MatchArm {
+                                pattern: Spanned {
+                                    node: Lit(
+                                        Boolean(
+                                            true,
+                                        ),
+                                    ),
+                                    span: 583..587,
+                                },
+                                guard: None,
+                                body: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "on",
+                                        ),
+                                    ),
+                                    span: 591..595,
+                                },
+                                span: 583..595,
+                            },
+                            MatchArm {
+                                pattern: Spanned {
+                                    node: Wildcard,
+                                    span: 599..604,
+                                },
+                                guard: None,
+                                body: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "off",
+                                        ),
+                                    ),
+                                    span: 607..612,
+                                },
+                                span: 599..612,
+                            },
+                        ],
+                    },
+                    span: 568..699,
+                },
+                span: 548..699,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "by_flag",
+                    span: 703..710,
+                },
+                ty: Some(
+                    Spanned {
+                        node: StringUnion {
+                            name: "Mode",
+                            variants: [
+                                "on",
+                                "off",
+                                "auto",
+                            ],
+                        },
+                        span: 712..716,
+                    },
+                ),
+                value: Spanned {
+                    node: If {
+                        cond: Spanned {
+                            node: Literal(
+                                Boolean(
+                                    true,
+                                ),
+                            ),
+                            span: 722..726,
+                        },
+                        then_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: Match {
+                                        scrutinee: Spanned {
+                                            node: Literal(
+                                                Int(
+                                                    0,
+                                                ),
+                                            ),
+                                            span: 737..738,
+                                        },
+                                        arms: [
+                                            MatchArm {
+                                                pattern: Spanned {
+                                                    node: Lit(
+                                                        Int(
+                                                            0,
+                                                        ),
+                                                    ),
+                                                    span: 745..746,
+                                                },
+                                                guard: None,
+                                                body: Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "on",
+                                                        ),
+                                                    ),
+                                                    span: 750..754,
+                                                },
+                                                span: 745..754,
+                                            },
+                                            MatchArm {
+                                                pattern: Spanned {
+                                                    node: Wildcard,
+                                                    span: 760..762,
+                                                },
+                                                guard: None,
+                                                body: Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "off",
+                                                        ),
+                                                    ),
+                                                    span: 765..770,
+                                                },
+                                                span: 760..770,
+                                            },
+                                        ],
+                                    },
+                                    span: 731..776,
+                                },
+                            ),
+                            span: 727..778,
+                        },
+                        else_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: Literal(
+                                        String(
+                                            "auto",
+                                        ),
+                                    ),
+                                    span: 787..793,
+                                },
+                            ),
+                            span: 783..797,
+                        },
+                    },
+                    span: 719..797,
+                },
+                span: 699..797,
+            },
+        ),
+        Reconcile(
+            ReconcileDecl {
+                chains: [
+                    [
+                        Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "symlink",
+                                    span: 811..818,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: Some(
+                                            Spanned {
+                                                node: "source",
+                                                span: 819..825,
+                                            },
+                                        ),
+                                        value: Spanned {
+                                            node: Interpolation(
+                                                [
+                                                    Expr {
+                                                        expr: Spanned {
+                                                            node: Var(
+                                                                "current",
+                                                            ),
+                                                            span: 831..838,
+                                                        },
+                                                        indent: None,
+                                                    },
+                                                ],
+                                            ),
+                                            span: 828..840,
+                                        },
+                                        span: 819..840,
+                                    },
+                                    CallArg {
+                                        name: Some(
+                                            Spanned {
+                                                node: "target",
+                                                span: 842..848,
+                                            },
+                                        ),
+                                        value: Spanned {
+                                            node: Interpolation(
+                                                [
+                                                    Text(
+                                                        "/tmp/",
+                                                    ),
+                                                    Expr {
+                                                        expr: Spanned {
+                                                            node: Call {
+                                                                callee: Spanned {
+                                                                    node: "pick",
+                                                                    span: 859..863,
+                                                                },
+                                                                args: [
+                                                                    CallArg {
+                                                                        name: None,
+                                                                        value: Spanned {
+                                                                            node: Literal(
+                                                                                String(
+                                                                                    "active",
+                                                                                ),
+                                                                            ),
+                                                                            span: 864..872,
+                                                                        },
+                                                                        span: 864..872,
+                                                                    },
+                                                                ],
+                                                            },
+                                                            span: 859..873,
+                                                        },
+                                                        indent: None,
+                                                    },
+                                                    Text(
+                                                        "-",
+                                                    ),
+                                                    Expr {
+                                                        expr: Spanned {
+                                                            node: Var(
+                                                                "by_flag",
+                                                            ),
+                                                            span: 877..884,
+                                                        },
+                                                        indent: None,
+                                                    },
+                                                ],
+                                            ),
+                                            span: 851..886,
+                                        },
+                                        span: 842..886,
+                                    },
+                                ],
+                            },
+                            span: 811..887,
+                        },
+                    ],
+                ],
+                span: 797..891,
+            },
+        ),
+    ],
+}
