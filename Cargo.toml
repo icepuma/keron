@@ -8,7 +8,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.0.0"
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.95.0"
 license = "MIT OR Apache-2.0"
@@ -16,9 +16,9 @@ repository = "https://github.com/icepuma/keron"
 authors = ["Stefan Ruzitschka <stefan@icepuma.dev>"]
 
 [workspace.dependencies]
-keron-lang = { path = "crates/keron-lang", version = "=0.0.0" }
-keron-modules = { path = "crates/keron-modules", version = "=0.0.0" }
-keron-apply = { path = "crates/keron-apply", version = "=0.0.0" }
+keron-lang = { path = "crates/keron-lang", version = "=0.1.0" }
+keron-modules = { path = "crates/keron-modules", version = "=0.1.0" }
+keron-apply = { path = "crates/keron-apply", version = "=0.1.0" }
 
 chumsky = "=0.13.0"
 thiserror = "=2.0.18"
@@ -27,7 +27,7 @@ ariadne = "=0.6.0"
 anyhow = "=1.0.102"
 clap = { version = "=4.6.1", features = ["derive"] }
 petgraph = "=0.8.3"
-os_info = { version = "=3.14.0", default-features = false }
+os_info = { version = "=3.15.0", default-features = false }
 # Cross-platform standard directories. On Linux these follow the
 # XDG Base Directory spec (with documented fallbacks when the env
 # vars are unset); on macOS they map to `~/Library/...` and on
