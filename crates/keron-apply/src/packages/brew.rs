@@ -1,10 +1,8 @@
 //! Homebrew integration.
 //!
-//! State is observed through five read-only probes:
+//! State is observed through three read-only probes:
 //!   - `brew list --formula -1` — installed formulae (bare names)
 //!   - `brew list --cask -1` — installed casks (bare names)
-//!   - `brew outdated --formula --quiet` — formulae with updates
-//!   - `brew outdated --cask --quiet` — casks with updates
 //!   - `brew tap` — installed taps (`user/repo` per line)
 //!   - `brew tap-info --json USER/REPO` — one tap's remote URL
 //!
@@ -15,11 +13,14 @@
 //! `--formula` excludes casks; `-1` forces one entry per line so we
 //! don't have to deal with columnar output that varies with terminal
 //! width. Casks live in their own namespace because brew treats them
-//! distinctly (`--cask` flag, separate install root, separate
-//! "outdated" set).
+//! distinctly (`--cask` flag, separate install root).
 //!
-//! Mutating commands (`tap`, `install`, `upgrade`) inherit stdio so the
-//! user sees real progress bars and download status.
+//! `keron apply` only ensures *presence* — there is no `brew outdated`
+//! probe and no `brew upgrade` path. Upgrading installed packages is
+//! the user's job via the underlying manager.
+//!
+//! Mutating commands (`tap`, `install`) inherit stdio so the user
+//! sees real progress bars and download status.
 
 use std::collections::HashSet;
 use std::process::{Command, Stdio};
@@ -40,16 +41,6 @@ pub fn fetch_formulae() -> Result<HashSet<String>> {
 
 pub fn fetch_casks() -> Result<HashSet<String>> {
     let out = brew_probe(&["list", "--cask", "-1"])?;
-    Ok(parse_lines(&out))
-}
-
-pub fn fetch_outdated_formulae() -> Result<HashSet<String>> {
-    let out = brew_probe(&["outdated", "--formula", "--quiet"])?;
-    Ok(parse_lines(&out))
-}
-
-pub fn fetch_outdated_casks() -> Result<HashSet<String>> {
-    let out = brew_probe(&["outdated", "--cask", "--quiet"])?;
     Ok(parse_lines(&out))
 }
 
@@ -98,28 +89,6 @@ pub fn do_tap(user_tap: &str, url: Option<&str>, custom_remote: bool) -> Result<
         .with_context(|| format!("spawning `{binary} tap {user_tap}`"))?;
     if !status.success() {
         bail!("`{binary} tap {user_tap}` exited with status {status}");
-    }
-    Ok(())
-}
-
-/// Run `brew upgrade [--cask] NAME`. Used by the Update action; Create
-/// still routes through the manager-agnostic `install` in mod.rs.
-pub fn do_upgrade(name: &str, cask: bool) -> Result<()> {
-    let binary = test_binary_override().unwrap_or_else(|| "brew".to_string());
-    let mut cmd = Command::new(&binary);
-    cmd.arg("upgrade");
-    if cask {
-        cmd.arg("--cask");
-    }
-    cmd.arg(name);
-    let status = cmd
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .with_context(|| format!("spawning `{binary} upgrade {name}`"))?;
-    if !status.success() {
-        bail!("`{binary} upgrade {name}` exited with status {status}");
     }
     Ok(())
 }

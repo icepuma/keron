@@ -5,7 +5,22 @@
 //! update, no-op). Other resource kinds bail with a clear
 //! "not yet implemented" diagnostic — they land alongside the
 //! planner work that diffs them against live state.
+//!
+//! Package execution is *phased*: any contiguous run of `Package`
+//! changes is collapsed into one "package phase". Inside a phase, all
+//! changes are grouped by `(manager, action)` and each group becomes
+//! one subprocess. When a phase has multiple groups they run
+//! concurrently across `std::thread::scope` workers with captured
+//! stdio; the captures flush in stable manager order after the phase
+//! joins so the user's terminal stays readable. A single-group phase
+//! takes a fast path that inherits stdio for live progress bars.
+//!
+//! A non-package change (Symlink / Template / Tap / Shell) ends the
+//! current package phase and runs in declaration order, preserving the
+//! tap-before-install ordering the planner already synthesises and
+//! avoiding any surprise about side-effect interleaving.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
@@ -13,8 +28,10 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
 
-use crate::packages;
-use crate::plan::{Action, Plan, ResourceChange, ResourceKind, ResourceState, ShellKind};
+use crate::packages::{self, BatchOutput};
+use crate::plan::{
+    Action, PackageManager, Plan, ResourceChange, ResourceKind, ResourceState, ShellKind,
+};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ExecuteSummary {
@@ -26,19 +43,33 @@ pub struct ExecuteSummary {
 pub fn execute(plan: &Plan) -> Result<ExecuteSummary> {
     let mut summary = ExecuteSummary::default();
     let mut applied_addresses: Vec<&str> = Vec::new();
-    for change in &plan.changes {
-        if let Err(e) = apply_change(change, &mut summary) {
-            // Surface what already landed before the failure so the
-            // user knows the post-mortem state of their tree rather
-            // than seeing a single error with no context.
-            return Err(annotate_partial_apply(
-                e,
-                change.address.as_str(),
-                &applied_addresses,
-                plan.changes.len(),
-            ));
+    let total = plan.changes.len();
+    let mut i = 0;
+    while i < plan.changes.len() {
+        // Greedily collect a contiguous Package run. A non-package
+        // change forces a phase boundary so the user's apparent
+        // declaration order (e.g. a Template that bootstraps a config
+        // before a brew install hook reads it) lands deterministically.
+        let mut j = i;
+        while j < plan.changes.len() && plan.changes[j].kind == ResourceKind::Package {
+            j += 1;
         }
-        applied_addresses.push(change.address.as_str());
+        if j > i {
+            let phase = &plan.changes[i..j];
+            run_package_phase(phase, &mut summary)
+                .map_err(|e| annotate_phase_failure(e, phase, &applied_addresses, total))?;
+            for change in phase {
+                applied_addresses.push(change.address.as_str());
+            }
+            i = j;
+        } else {
+            let change = &plan.changes[i];
+            apply_change(change, &mut summary).map_err(|e| {
+                annotate_partial_apply(e, change.address.as_str(), &applied_addresses, total)
+            })?;
+            applied_addresses.push(change.address.as_str());
+            i += 1;
+        }
     }
     Ok(summary)
 }
@@ -66,6 +97,48 @@ fn annotate_partial_apply(
     err.context(summary)
 }
 
+/// Annotate a failure that happened inside a package phase. The phase
+/// may have fanned out across several `(manager, action)` batches, so
+/// the report names the failing batch(es) by manager and lists the
+/// addresses applied before the phase started (singletons + earlier
+/// phases) so the user can see exactly where the apply stopped.
+fn annotate_phase_failure(
+    err: anyhow::Error,
+    phase: &[ResourceChange],
+    applied: &[&str],
+    total: usize,
+) -> anyhow::Error {
+    let first = phase
+        .iter()
+        .map(|c| c.address.as_str())
+        .next()
+        .unwrap_or("<empty phase>");
+    let last = phase
+        .iter()
+        .map(|c| c.address.as_str())
+        .next_back()
+        .unwrap_or(first);
+    let mut summary = if applied.is_empty() {
+        format!(
+            "apply failed inside package phase (`{first}` … `{last}`, {} resources); nothing was applied before the phase",
+            phase.len(),
+        )
+    } else {
+        let mut s = format!(
+            "apply failed inside package phase (`{first}` … `{last}`, {} resources) of {total} total; {} resource(s) already applied before the phase:",
+            phase.len(),
+            applied.len(),
+        );
+        for addr in applied {
+            s.push_str("\n  - ");
+            s.push_str(addr);
+        }
+        s
+    };
+    let _ = &mut summary;
+    err.context(summary)
+}
+
 fn apply_change(change: &ResourceChange, summary: &mut ExecuteSummary) -> Result<()> {
     apply_change_one(change)?;
     match change.action {
@@ -75,6 +148,255 @@ fn apply_change(change: &ResourceChange, summary: &mut ExecuteSummary) -> Result
         Action::NoOp => {}
     }
     Ok(())
+}
+
+/// A `(manager, action)` group inside one package phase: every package
+/// change in the phase that maps to the same manager + action becomes
+/// one batched subprocess. Names are owned (cloned out of the slice)
+/// so the worker thread can take them across `std::thread::scope`.
+#[derive(Debug, Clone)]
+struct BatchGroup {
+    manager: PackageManager,
+    action: Action,
+    names: Vec<String>,
+}
+
+/// Result of running one [`BatchGroup`] inside a parallel package phase.
+struct GroupOutcome {
+    group: BatchGroup,
+    result: Result<BatchOutput>,
+}
+
+fn run_package_phase(phase: &[ResourceChange], summary: &mut ExecuteSummary) -> Result<()> {
+    let groups = group_package_changes(phase)?;
+    if groups.is_empty() {
+        return Ok(());
+    }
+    if groups.len() == 1 {
+        let group = groups.into_iter().next().expect("len == 1");
+        run_group_inherit(&group)?;
+        bump_summary(summary, group.action, group.names.len());
+        return Ok(());
+    }
+    run_phase_parallel(groups, summary)
+}
+
+/// Walk a phase slice, classify each change, group `Create` changes
+/// by `(manager, action)`. `NoOp` package changes are tracked by the
+/// caller (their addresses still go into `applied`) but don't produce
+/// a group. Returns groups in stable manager-and-action order so the
+/// parallel scheduler and the post-phase flush share a single
+/// canonical ordering.
+fn group_package_changes(phase: &[ResourceChange]) -> Result<Vec<BatchGroup>> {
+    let mut buckets: BTreeMap<(usize, usize), BatchGroup> = BTreeMap::new();
+    for change in phase {
+        if change.action == Action::NoOp {
+            continue;
+        }
+        let state = change
+            .after
+            .as_ref()
+            .or(change.before.as_ref())
+            .with_context(|| format!("package change `{}` has no state", change.address))?;
+        let ResourceState::Package { manager, name, .. } = state else {
+            bail!(
+                "non-package state inside package phase for `{}`",
+                change.address,
+            );
+        };
+        if !matches!(change.action, Action::Create) {
+            bail!(
+                "unsupported action {:?} on package `{}`; `keron apply` only ensures presence, expected Create/NoOp",
+                change.action,
+                change.address,
+            );
+        }
+        let key = (manager_order(*manager), action_order(change.action));
+        let entry = buckets.entry(key).or_insert_with(|| BatchGroup {
+            manager: *manager,
+            action: change.action,
+            names: Vec::new(),
+        });
+        entry.names.push(name.clone());
+    }
+    Ok(buckets.into_values().collect())
+}
+
+fn run_group_inherit(group: &BatchGroup) -> Result<()> {
+    let refs: Vec<&str> = group.names.iter().map(String::as_str).collect();
+    debug_assert!(
+        matches!(group.action, Action::Create),
+        "package batches only carry Create — apply does not upgrade",
+    );
+    packages::install_many(group.manager, &refs)
+}
+
+fn run_group_capture(group: &BatchGroup) -> Result<BatchOutput> {
+    let refs: Vec<&str> = group.names.iter().map(String::as_str).collect();
+    debug_assert!(
+        matches!(group.action, Action::Create),
+        "package batches only carry Create — apply does not upgrade",
+    );
+    packages::install_many_captured(group.manager, &refs)
+}
+
+fn run_phase_parallel(groups: Vec<BatchGroup>, summary: &mut ExecuteSummary) -> Result<()> {
+    let outcomes: Vec<GroupOutcome> = std::thread::scope(|s| {
+        // `collect::<Vec<_>>()` here is load-bearing: it materialises
+        // every spawn before any join, so the workers actually run in
+        // parallel. A chained `.map(spawn).map(join)` would interleave
+        // spawn-then-join lazily and serialise the phase. The
+        // `needless_collect` lint is therefore wrong in this context.
+        #[allow(clippy::needless_collect)]
+        let handles: Vec<(BatchGroup, _)> = groups
+            .into_iter()
+            .map(|group| {
+                let captured = group.clone();
+                let handle = s.spawn(move || run_group_capture(&captured));
+                (group, handle)
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|(group, handle)| {
+                let result = handle.join().unwrap_or_else(|_| {
+                    Err(anyhow::anyhow!(
+                        "batch worker for `{} {}` panicked",
+                        group.manager.label(),
+                        action_label(group.action),
+                    ))
+                });
+                GroupOutcome { group, result }
+            })
+            .collect()
+    });
+
+    flush_phase_outputs(&outcomes);
+
+    let mut first_err: Option<anyhow::Error> = None;
+    let mut succeeded: Vec<&BatchGroup> = Vec::new();
+    let mut failed_descriptions: Vec<String> = Vec::new();
+    for outcome in &outcomes {
+        match &outcome.result {
+            Ok(_) => succeeded.push(&outcome.group),
+            Err(e) => {
+                failed_descriptions.push(describe_group(&outcome.group));
+                if first_err.is_none() {
+                    let cause = format!("{e:#}");
+                    first_err = Some(anyhow::anyhow!(cause));
+                }
+            }
+        }
+    }
+    for group in &succeeded {
+        bump_summary(summary, group.action, group.names.len());
+    }
+    if let Some(err) = first_err {
+        let mut ctx = format!(
+            "package phase failed: {} batch(es) failed:",
+            failed_descriptions.len(),
+        );
+        for desc in &failed_descriptions {
+            ctx.push_str("\n  ✗ ");
+            ctx.push_str(desc);
+        }
+        if !succeeded.is_empty() {
+            use std::fmt::Write as _;
+            let _ = write!(
+                ctx,
+                "\n{} batch(es) succeeded in the same phase:",
+                succeeded.len(),
+            );
+            for group in &succeeded {
+                ctx.push_str("\n  ✓ ");
+                ctx.push_str(&describe_group(group));
+            }
+        }
+        return Err(err.context(ctx));
+    }
+    Ok(())
+}
+
+/// Flush each captured batch's stdout / stderr to the parent terminal
+/// in stable manager order. Runs after the parallel scope joins so the
+/// user sees one full manager block at a time. Errors from the stdout
+/// / stderr writers are intentionally ignored — losing the flush is
+/// strictly less bad than masking the underlying batch failure.
+fn flush_phase_outputs(outcomes: &[GroupOutcome]) {
+    let stdout = io::stdout();
+    let stderr = io::stderr();
+    let mut out = stdout.lock();
+    let mut err = stderr.lock();
+    flush_phase_outputs_to(outcomes, &mut out, &mut err);
+}
+
+/// Writer-parameterised variant used by [`flush_phase_outputs`] and by
+/// unit tests that need to capture the rendered flush into a `Vec<u8>`
+/// instead of going to the real terminal.
+fn flush_phase_outputs_to(outcomes: &[GroupOutcome], out: &mut dyn Write, err: &mut dyn Write) {
+    for outcome in outcomes {
+        let label = describe_group(&outcome.group);
+        let status = outcome.result.as_ref().map_or("FAILED", |_| "ok");
+        let _ = writeln!(out, "--- {label} [{status}] ---");
+        let (stdout_bytes, stderr_bytes) = outcome
+            .result
+            .as_ref()
+            .map_or((&[][..], &[][..]), |captured| {
+                (captured.stdout.as_slice(), captured.stderr.as_slice())
+            });
+        let _ = out.write_all(stdout_bytes);
+        let _ = err.write_all(stderr_bytes);
+    }
+}
+
+fn describe_group(group: &BatchGroup) -> String {
+    format!(
+        "{} {} ({} package{}: {})",
+        group.manager.label(),
+        action_label(group.action),
+        group.names.len(),
+        if group.names.len() == 1 { "" } else { "s" },
+        group.names.join(", "),
+    )
+}
+
+/// Stable ordering for the manager + action display. Drives both the
+/// `BTreeMap` keys in [`group_package_changes`] and the flush order in
+/// [`flush_phase_outputs`].
+const fn manager_order(m: PackageManager) -> usize {
+    match m {
+        PackageManager::Brew => 0,
+        PackageManager::BrewCask => 1,
+        PackageManager::Cargo => 2,
+        PackageManager::Winget => 3,
+    }
+}
+
+const fn action_order(a: Action) -> usize {
+    match a {
+        Action::Create => 0,
+        Action::Update => 1,
+        Action::Run => 2,
+        Action::NoOp => 3,
+    }
+}
+
+const fn action_label(a: Action) -> &'static str {
+    match a {
+        Action::Create => "install",
+        Action::Update => "upgrade",
+        Action::Run => "run",
+        Action::NoOp => "noop",
+    }
+}
+
+const fn bump_summary(summary: &mut ExecuteSummary, action: Action, count: usize) {
+    match action {
+        Action::Create => summary.added += count,
+        Action::Update => summary.changed += count,
+        Action::Run => summary.ran += count,
+        Action::NoOp => {}
+    }
 }
 
 /// Privilege context in which a change is being applied.
@@ -154,7 +476,16 @@ fn apply_create(state: &ResourceState, ctx: ApplyContext) -> Result<()> {
             content,
             sensitive,
         } => create_template(path, content, *sensitive, ctx),
-        ResourceState::Package { manager, name, .. } => packages::install(*manager, name),
+        ResourceState::Package { manager, name, .. } => {
+            // `apply_change_one` is the single-change entry used by the
+            // elevated child (and a couple of tests). The main executor
+            // routes Package changes through the phased / batched path
+            // in [`execute`]; reaching this arm means a singleton
+            // dispatch, so `install_many` with a one-element slice is
+            // the natural reuse — same validation, same argv, no
+            // duplicated spawn code.
+            packages::install_many(*manager, &[name.as_str()])
+        }
         ResourceState::Tap(spec) => packages::tap(spec, Action::Create),
         ResourceState::Shell { .. } => bail!(unsupported_kind(state)),
     }
@@ -212,13 +543,14 @@ fn apply_update(before: &ResourceState, after: &ResourceState) -> Result<()> {
             }
             replace_template(ap, content, *sensitive)
         }
-        // A Package Update is an outdated formula/cask — shell out to
-        // `brew upgrade [--cask] NAME`. Cargo/winget never produce an
-        // Update today (their `outdated` probe returns empty), so the
-        // upgrade path errors loudly if one ever does — better than
-        // silently doing nothing.
-        (ResourceState::Package { .. }, ResourceState::Package { manager, name, .. }) => {
-            packages::upgrade(*manager, name)
+        // `keron apply` does not upgrade packages — the classifier
+        // never produces `Update` for `ResourceState::Package`, so
+        // reaching this arm means a planner bug. Fail loudly with the
+        // address so the bug is easy to locate.
+        (ResourceState::Package { .. }, ResourceState::Package { name, .. }) => {
+            bail!(
+                "package `{name}` reached the Update path; `keron apply` only ensures presence — upgrade is the user's responsibility (e.g. `brew upgrade`). This indicates a planner bug.",
+            )
         }
         // Tap Update is a remote-URL drift — re-tap with
         // `--custom-remote` so brew rewrites the local git remote in
@@ -975,6 +1307,340 @@ mod tests {
         let err = open_new_leaf_no_follow(&link, 0o644).expect_err("symlink leaf must not open");
         assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
         assert_eq!(fs::read_to_string(real).unwrap(), "original");
+    }
+
+    fn pkg_change(manager: PackageManager, name: &str, action: Action) -> ResourceChange {
+        let state = ResourceState::Package {
+            manager,
+            name: name.into(),
+            tap: None,
+        };
+        change(action, Some(state.clone()), Some(state))
+    }
+
+    #[test]
+    fn group_package_changes_buckets_by_manager_in_stable_order() {
+        // Plan declaration order is intentionally mixed to pin that
+        // group_package_changes sorts by manager_order — the same key
+        // the parallel flush relies on.
+        let phase = vec![
+            pkg_change(PackageManager::Cargo, "sccache", Action::Create),
+            pkg_change(PackageManager::Brew, "fd", Action::Create),
+            pkg_change(PackageManager::BrewCask, "alacritty", Action::Create),
+            pkg_change(PackageManager::Brew, "ripgrep", Action::Create),
+        ];
+        let groups = group_package_changes(&phase).unwrap();
+        assert_eq!(groups.len(), 3);
+        assert_eq!(groups[0].manager, PackageManager::Brew);
+        assert_eq!(groups[0].action, Action::Create);
+        assert_eq!(groups[0].names, vec!["fd", "ripgrep"]);
+        assert_eq!(groups[1].manager, PackageManager::BrewCask);
+        assert_eq!(groups[1].names, vec!["alacritty"]);
+        assert_eq!(groups[2].manager, PackageManager::Cargo);
+        assert_eq!(groups[2].names, vec!["sccache"]);
+    }
+
+    #[test]
+    fn group_package_changes_rejects_update_on_package() {
+        // The classifier never returns Update for packages, so if one
+        // appears here it indicates a planner bug — surface it loudly
+        // instead of silently routing into a no-longer-existing
+        // upgrade path.
+        let phase = vec![pkg_change(PackageManager::Brew, "ripgrep", Action::Update)];
+        let err = group_package_changes(&phase).expect_err("Update on Package must error");
+        assert!(
+            format!("{err:#}").contains("only ensures presence"),
+            "got: {err:#}",
+        );
+    }
+
+    #[test]
+    fn group_package_changes_drops_noops() {
+        let phase = vec![
+            pkg_change(PackageManager::Brew, "ripgrep", Action::Create),
+            pkg_change(PackageManager::Brew, "fd", Action::NoOp),
+            pkg_change(PackageManager::Cargo, "sccache", Action::NoOp),
+        ];
+        let groups = group_package_changes(&phase).unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].manager, PackageManager::Brew);
+        assert_eq!(groups[0].names, vec!["ripgrep"]);
+    }
+
+    #[test]
+    fn flush_phase_outputs_writes_in_stable_manager_order() {
+        // Outcomes intentionally provided out of stable order to pin
+        // that flush prints brew before cargo regardless of the input
+        // sequence. (The real flow gets stable order from
+        // group_package_changes' BTreeMap, but the flush function
+        // itself should still write in the order it received — pinning
+        // that contract here keeps the two pieces honest.)
+        let cargo_group = BatchGroup {
+            manager: PackageManager::Cargo,
+            action: Action::Create,
+            names: vec!["sccache".into()],
+        };
+        let brew_group = BatchGroup {
+            manager: PackageManager::Brew,
+            action: Action::Create,
+            names: vec!["ripgrep".into(), "fd".into()],
+        };
+        let outcomes = vec![
+            GroupOutcome {
+                group: brew_group,
+                result: Ok(BatchOutput {
+                    stdout: b"brew-out\n".to_vec(),
+                    stderr: Vec::new(),
+                }),
+            },
+            GroupOutcome {
+                group: cargo_group,
+                result: Ok(BatchOutput {
+                    stdout: b"cargo-out\n".to_vec(),
+                    stderr: Vec::new(),
+                }),
+            },
+        ];
+        let mut out: Vec<u8> = Vec::new();
+        let mut err: Vec<u8> = Vec::new();
+        flush_phase_outputs_to(&outcomes, &mut out, &mut err);
+        let rendered = String::from_utf8(out).unwrap();
+        let brew_idx = rendered.find("brew install").expect("brew header present");
+        let cargo_idx = rendered
+            .find("cargo install")
+            .expect("cargo header present");
+        assert!(
+            brew_idx < cargo_idx,
+            "brew block must precede cargo block; got: {rendered:?}",
+        );
+        let brew_payload_idx = rendered.find("brew-out").expect("brew payload present");
+        let cargo_payload_idx = rendered.find("cargo-out").expect("cargo payload present");
+        assert!(brew_payload_idx < cargo_payload_idx);
+        assert!(brew_idx < brew_payload_idx);
+        assert!(cargo_idx < cargo_payload_idx);
+    }
+
+    #[test]
+    fn flush_phase_outputs_marks_failed_batches_in_the_banner() {
+        let group = BatchGroup {
+            manager: PackageManager::Brew,
+            action: Action::Create,
+            names: vec!["does-not-exist".into()],
+        };
+        let outcomes = vec![GroupOutcome {
+            group,
+            result: Err(anyhow::anyhow!("spy refused")),
+        }];
+        let mut out: Vec<u8> = Vec::new();
+        let mut err: Vec<u8> = Vec::new();
+        flush_phase_outputs_to(&outcomes, &mut out, &mut err);
+        let rendered = String::from_utf8(out).unwrap();
+        assert!(
+            rendered.contains("[FAILED]"),
+            "failed batch banner must be marked: {rendered:?}",
+        );
+    }
+
+    #[cfg(unix)]
+    fn write_argv_recording_spy(dir: &std::path::Path, log: &std::path::Path) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join("argv-spy.sh");
+        // Each invocation appends one line to the log: "<binary>\t<arg1>,<arg2>,…"
+        // — arg ',' is impossible in our argv (we validate package names), so the
+        // simple comma split in the assertion is unambiguous. Newline-separated
+        // entries are atomic appends ≤ PIPE_BUF on every relevant platform, so
+        // parallel writes from multiple workers don't interleave.
+        let script = "#!/bin/sh\n\
+                      log=\"$KERON_TEST_ARGV_LOG\"\n\
+                      printf '%s\\t' \"$0\" >> \"$log\"\n\
+                      first=1\n\
+                      for a in \"$@\"; do\n\
+                      \tif [ \"$first\" -eq 1 ]; then\n\
+                      \t\tprintf '%s' \"$a\" >> \"$log\"\n\
+                      \t\tfirst=0\n\
+                      \telse\n\
+                      \t\tprintf ',%s' \"$a\" >> \"$log\"\n\
+                      \tfi\n\
+                      done\n\
+                      printf '\\n' >> \"$log\"\n\
+                      exit 0\n";
+        fs::write(&path, script).unwrap();
+        let mut perm = fs::metadata(&path).unwrap().permissions();
+        perm.set_mode(0o755);
+        fs::set_permissions(&path, perm).unwrap();
+        let _ = log;
+        path
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn execute_collapses_multiple_brew_packages_into_one_subprocess() {
+        let _g = crate::packages::lock_env();
+        let _os = crate::platform::OsOverride::set(crate::platform::OsFamily::Macos);
+        let d = TempDir::new("batch-brew");
+        let log = d.path.join("argv.log");
+        let spy = write_argv_recording_spy(&d.path, &log);
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::set_var("KERON_ALLOW_TEST_OVERRIDES", "1");
+            std::env::set_var("KERON_TEST_PACKAGE_BIN_BREW", &spy);
+            std::env::set_var("KERON_TEST_ARGV_LOG", &log);
+        }
+        let plan = Plan {
+            changes: vec![
+                pkg_change(PackageManager::Brew, "ripgrep", Action::Create),
+                pkg_change(PackageManager::Brew, "bat", Action::Create),
+                pkg_change(PackageManager::Brew, "fd", Action::Create),
+            ],
+        };
+        let result = execute(&plan);
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::remove_var("KERON_TEST_PACKAGE_BIN_BREW");
+            std::env::remove_var("KERON_TEST_ARGV_LOG");
+            std::env::remove_var("KERON_ALLOW_TEST_OVERRIDES");
+        }
+        let summary = result.expect("spy should accept all batched packages");
+        assert_eq!(summary.added, 3, "all three packages count toward added");
+        let recorded = fs::read_to_string(&log).expect("log written");
+        let lines: Vec<&str> = recorded.lines().collect();
+        assert_eq!(
+            lines.len(),
+            1,
+            "three brew packages must collapse into one subprocess; got: {recorded:?}",
+        );
+        let line = lines[0];
+        let (_binary, args_str) = line.split_once('\t').expect("tab-separated row");
+        let args: Vec<&str> = args_str.split(',').collect();
+        assert_eq!(args, vec!["install", "ripgrep", "bat", "fd"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn execute_runs_distinct_manager_batches_concurrently() {
+        // Plan: 2 brew Create + 1 cargo Create + 1 cask Create, all in
+        // one Package phase → 3 batches (brew/cask share the brew bin
+        // but spawn separate subprocesses). Each spy sleeps 0.8 s.
+        // Sequential = 2.4 s; ideal parallel ≈ 0.8 s + spawn overhead.
+        // Threshold is 1.7 s — strictly under sequential, with a wide
+        // margin above ideal-parallel so a busy CI machine isn't
+        // flaky.
+        use std::os::unix::fs::PermissionsExt;
+        let _g = crate::packages::lock_env();
+        let _os = crate::platform::OsOverride::set(crate::platform::OsFamily::Macos);
+        let d = TempDir::new("batch-parallel");
+        let log = d.path.join("argv.log");
+        let spy_path = d.path.join("sleepy-spy.sh");
+        let script = "#!/bin/sh\n\
+                      log=\"$KERON_TEST_ARGV_LOG\"\n\
+                      sleep 0.8\n\
+                      printf '%s\\t' \"$0\" >> \"$log\"\n\
+                      first=1\n\
+                      for a in \"$@\"; do\n\
+                      \tif [ \"$first\" -eq 1 ]; then\n\
+                      \t\tprintf '%s' \"$a\" >> \"$log\"\n\
+                      \t\tfirst=0\n\
+                      \telse\n\
+                      \t\tprintf ',%s' \"$a\" >> \"$log\"\n\
+                      \tfi\n\
+                      done\n\
+                      printf '\\n' >> \"$log\"\n\
+                      exit 0\n";
+        fs::write(&spy_path, script).unwrap();
+        let mut perm = fs::metadata(&spy_path).unwrap().permissions();
+        perm.set_mode(0o755);
+        fs::set_permissions(&spy_path, perm).unwrap();
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::set_var("KERON_ALLOW_TEST_OVERRIDES", "1");
+            std::env::set_var("KERON_TEST_PACKAGE_BIN_BREW", &spy_path);
+            std::env::set_var("KERON_TEST_PACKAGE_BIN_CARGO", &spy_path);
+            std::env::set_var("KERON_TEST_ARGV_LOG", &log);
+        }
+        let plan = Plan {
+            changes: vec![
+                pkg_change(PackageManager::Brew, "ripgrep", Action::Create),
+                pkg_change(PackageManager::Brew, "fd", Action::Create),
+                pkg_change(PackageManager::Cargo, "sccache", Action::Create),
+                pkg_change(PackageManager::BrewCask, "alacritty", Action::Create),
+            ],
+        };
+        let start = std::time::Instant::now();
+        let result = execute(&plan);
+        let elapsed = start.elapsed();
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::remove_var("KERON_TEST_PACKAGE_BIN_BREW");
+            std::env::remove_var("KERON_TEST_PACKAGE_BIN_CARGO");
+            std::env::remove_var("KERON_TEST_ARGV_LOG");
+            std::env::remove_var("KERON_ALLOW_TEST_OVERRIDES");
+        }
+        let summary = result.expect("all spies should succeed");
+        assert_eq!(summary.added, 4);
+        assert!(
+            elapsed < std::time::Duration::from_millis(1700),
+            "batches must run in parallel; took {elapsed:?} (sequential lower bound ≈ 2.4 s)",
+        );
+        // Sanity: three subprocess invocations recorded — brew (2 names),
+        // cask (1 name), cargo (1 name).
+        let recorded = fs::read_to_string(&log).expect("log written");
+        assert_eq!(
+            recorded.lines().count(),
+            3,
+            "expected three subprocess invocations, got: {recorded:?}",
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn execute_failed_batch_in_parallel_phase_reports_succeeded_and_failed() {
+        use std::os::unix::fs::PermissionsExt;
+        let _g = crate::packages::lock_env();
+        let _os = crate::platform::OsOverride::set(crate::platform::OsFamily::Macos);
+        let d = TempDir::new("batch-mixed");
+        let ok_spy = d.path.join("ok.sh");
+        fs::write(&ok_spy, "#!/bin/sh\necho cargo-ok\nexit 0\n").unwrap();
+        let mut perm = fs::metadata(&ok_spy).unwrap().permissions();
+        perm.set_mode(0o755);
+        fs::set_permissions(&ok_spy, perm).unwrap();
+        let fail_spy = d.path.join("fail.sh");
+        fs::write(&fail_spy, "#!/bin/sh\necho >&2 spy-refused\nexit 7\n").unwrap();
+        let mut perm = fs::metadata(&fail_spy).unwrap().permissions();
+        perm.set_mode(0o755);
+        fs::set_permissions(&fail_spy, perm).unwrap();
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::set_var("KERON_ALLOW_TEST_OVERRIDES", "1");
+            std::env::set_var("KERON_TEST_PACKAGE_BIN_BREW", &fail_spy);
+            std::env::set_var("KERON_TEST_PACKAGE_BIN_CARGO", &ok_spy);
+        }
+        let plan = Plan {
+            changes: vec![
+                pkg_change(PackageManager::Brew, "broken", Action::Create),
+                pkg_change(PackageManager::Cargo, "sccache", Action::Create),
+            ],
+        };
+        let result = execute(&plan);
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::remove_var("KERON_TEST_PACKAGE_BIN_BREW");
+            std::env::remove_var("KERON_TEST_PACKAGE_BIN_CARGO");
+            std::env::remove_var("KERON_ALLOW_TEST_OVERRIDES");
+        }
+        let err = result.expect_err("failed batch must surface as an error");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("brew install (1 package: broken)"),
+            "error must name the failing batch; got: {msg}",
+        );
+        assert!(
+            msg.contains("cargo install (1 package: sccache)"),
+            "error must list the sibling success; got: {msg}",
+        );
+        assert!(
+            msg.contains("batch(es) succeeded"),
+            "error must call out the succeeded batch; got: {msg}",
+        );
     }
 
     #[test]

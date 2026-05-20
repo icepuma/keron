@@ -68,7 +68,6 @@ fn package_installs_when_absent_and_noops_when_present() {
         .arg(&entry)
         .env("KERON_ALLOW_TEST_OVERRIDES", "1")
         .env("KERON_TEST_BREW_PACKAGES", "")
-        .env("KERON_TEST_BREW_OUTDATED", "")
         .env("KERON_TEST_PACKAGE_BIN_BREW", "/usr/bin/true")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -108,7 +107,6 @@ fn package_installs_when_absent_and_noops_when_present() {
         .arg(&entry)
         .env("KERON_ALLOW_TEST_OVERRIDES", "1")
         .env("KERON_TEST_BREW_PACKAGES", "ripgrep")
-        .env("KERON_TEST_BREW_OUTDATED", "")
         .env("KERON_TEST_PACKAGE_BIN_BREW", "/usr/bin/false")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -149,7 +147,6 @@ fn tap_qualified_brew_synthesizes_tap_resource_in_plan() {
         .arg(&entry)
         .env("KERON_ALLOW_TEST_OVERRIDES", "1")
         .env("KERON_TEST_BREW_PACKAGES", "")
-        .env("KERON_TEST_BREW_OUTDATED", "")
         .env("KERON_TEST_BREW_TAPS", "")
         .env("KERON_TEST_PACKAGE_BIN_BREW", "/usr/bin/true")
         .output()
@@ -187,7 +184,6 @@ fn tap_already_installed_classifies_as_noop() {
         .arg(&entry)
         .env("KERON_ALLOW_TEST_OVERRIDES", "1")
         .env("KERON_TEST_BREW_PACKAGES", "")
-        .env("KERON_TEST_BREW_OUTDATED", "")
         .env("KERON_TEST_BREW_TAPS", "icepuma/keron")
         .env("KERON_TEST_PACKAGE_BIN_BREW", "/usr/bin/true")
         .output()
@@ -221,7 +217,6 @@ fn tap_url_drift_classifies_as_update() {
         .arg(&entry)
         .env("KERON_ALLOW_TEST_OVERRIDES", "1")
         .env("KERON_TEST_BREW_PACKAGES", "")
-        .env("KERON_TEST_BREW_OUTDATED", "")
         .env("KERON_TEST_BREW_TAPS", "icepuma/keron")
         .env(
             "KERON_TEST_BREW_TAP_REMOTES",
@@ -239,10 +234,12 @@ fn tap_url_drift_classifies_as_update() {
 }
 
 #[test]
-fn outdated_brew_formula_classifies_as_update() {
-    // Installed AND in the outdated set → the planner emits an
-    // Update so the executor runs `brew upgrade` instead of NoOp.
-    let proj = TempProject::new("outdated");
+fn installed_brew_formula_classifies_as_noop_even_when_locally_outdated() {
+    // `keron apply` only ensures presence — upgrading installed
+    // packages is the user's job via the underlying manager. An
+    // installed formula must therefore classify as NoOp regardless
+    // of whether the local brew copy considers it outdated.
+    let proj = TempProject::new("installed-noop");
     let entry = proj.write("entry.keron", "reconcile brew(\"ripgrep\")\n");
     let keron = keron_binary_path();
     let output = Command::new(&keron)
@@ -250,15 +247,18 @@ fn outdated_brew_formula_classifies_as_update() {
         .arg(&entry)
         .env("KERON_ALLOW_TEST_OVERRIDES", "1")
         .env("KERON_TEST_BREW_PACKAGES", "ripgrep")
-        .env("KERON_TEST_BREW_OUTDATED", "ripgrep")
         .env("KERON_TEST_PACKAGE_BIN_BREW", "/usr/bin/true")
         .output()
         .expect("keron run");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success(), "{stdout}");
     assert!(
-        stdout.contains("1 to change"),
-        "outdated brew formula should be reported as a change: {stdout}",
+        !stdout.contains("to add") || stdout.contains("0 to add"),
+        "installed brew formula must not be reported as an add: {stdout}",
+    );
+    assert!(
+        !stdout.contains("to change") || stdout.contains("0 to change"),
+        "installed brew formula must not be reported as a change: {stdout}",
     );
 }
 
@@ -275,7 +275,6 @@ fn cask_resource_routes_through_cask_namespace() {
         .arg(&entry)
         .env("KERON_ALLOW_TEST_OVERRIDES", "1")
         .env("KERON_TEST_BREW_CASK_PACKAGES", "")
-        .env("KERON_TEST_BREW_CASK_OUTDATED", "")
         .env("KERON_TEST_PACKAGE_BIN_BREW", "/usr/bin/true")
         .output()
         .expect("keron run");

@@ -1,6 +1,16 @@
 //! Package manager integration: list installed packages per
-//! manager, cache the result, and install / upgrade missing or
-//! outdated ones.
+//! manager, cache the result, and install missing ones.
+//!
+//! Scope: `keron apply` only ensures *presence*. Upgrading installed
+//! packages is left to the underlying manager (the user runs
+//! `brew upgrade` / `cargo install --force` / … themselves) — that
+//! keeps the apply phase predictable and avoids surprising version
+//! bumps mid-reconcile. As a consequence the classifier only emits
+//! `Create` (missing) or `NoOp` (already installed); there is no
+//! `Update` action for packages, and the executor has no
+//! upgrade-by-name path. (Taps still classify `Update` for URL
+//! drift — that's a different shape: re-tap with `--custom-remote`,
+//! not "upgrade".)
 //!
 //! The cache lives for the duration of one `keron apply` and is
 //! populated lazily — the first time a `brew(...)` resource is
@@ -10,21 +20,19 @@
 //! appears in the manifest, not one per resource.
 //!
 //! Idempotency: [`PackageCache::classify_package`] returns the
-//! `Action` to apply (Create / `NoOp` / Update). For brew/cask resources
-//! it consults both the "installed" set (by *bare* name — `brew list`
-//! reports tap-installed formulae without the tap prefix) and the
-//! "outdated" set (by *qualified* name) so an outdated tap-qualified
-//! formula upgrades correctly. The classifier also records each name
-//! it returned Create for, so two `brew("ripgrep")` resources in the
-//! same plan classify as Create / `NoOp` rather than Create / Create.
+//! `Action` to apply (`Create` / `NoOp`). It compares against the
+//! "installed" set by the *bare* tail of the qualified name (because
+//! `brew list` reports tap-installed formulae without the tap
+//! prefix). The classifier also records each name it returned
+//! `Create` for, so two `brew("ripgrep")` resources in the same plan
+//! classify as `Create` / `NoOp` rather than `Create` / `Create`.
 //!
 //! Test seam: each manager's fetch reads `KERON_TEST_<MGR>_PACKAGES`
 //! (comma-separated) instead of shelling out, so unit tests can
 //! drive any cache state without a real `brew` / `cargo` / `winget`
 //! on the host. Brew has additional seams for casks
-//! (`KERON_TEST_BREW_CASK_PACKAGES`), outdated formulae / casks
-//! (`KERON_TEST_BREW_OUTDATED`, `KERON_TEST_BREW_CASK_OUTDATED`),
-//! installed taps (`KERON_TEST_BREW_TAPS`), and per-tap remote URLs
+//! (`KERON_TEST_BREW_CASK_PACKAGES`), installed taps
+//! (`KERON_TEST_BREW_TAPS`), and per-tap remote URLs
 //! (`KERON_TEST_BREW_TAP_REMOTES=user/repo=URL;user2/repo2=URL2`).
 //! The install side reads `KERON_TEST_PACKAGE_BIN_<MGR>` to swap the
 //! binary path for a spy script. All seams require
@@ -40,10 +48,10 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
 
-use crate::plan::{Action, PackageManager, TapSpec};
+use crate::plan::{Action, PackageManager, ResourceState, TapSpec};
 
-/// Snapshot of "what's installed / outdated / tapped" per query.
-/// Populated lazily; one `PackageCache` per `keron apply` invocation.
+/// Snapshot of "what's installed / tapped" per query. Populated
+/// lazily; one `PackageCache` per `keron apply` invocation.
 #[derive(Debug, Default)]
 pub struct PackageCache {
     /// Bare names of installed packages, keyed by manager. For
@@ -51,12 +59,6 @@ pub struct PackageCache {
     /// `brew list --cask -1`; for cargo / winget, the manager's own
     /// list command. Loaded lazily on first access per manager.
     installed: HashMap<PackageManager, HashSet<String>>,
-    /// Qualified names (`user/tap/formula` or bare formula) of
-    /// outdated brew/cask packages. Loaded lazily on first
-    /// `classify_package` call for the relevant manager. Empty for
-    /// cargo / winget — their outdated semantics differ enough to
-    /// warrant separate work.
-    outdated: HashMap<PackageManager, HashSet<String>>,
     /// `user/repo` strings from `brew tap`. Loaded lazily on first
     /// `classify_tap` call.
     installed_taps: Option<HashSet<String>>,
@@ -76,22 +78,154 @@ impl PackageCache {
         Self::default()
     }
 
+    /// Pre-warm every probe the upcoming classify pass will touch by
+    /// running them concurrently. Walks `resources` to determine which
+    /// `(manager, query)` shell-outs would otherwise be incurred
+    /// lazily by [`Self::ensure_installed_loaded`] /
+    /// [`Self::ensure_taps_loaded`] / [`Self::tap_remote`], then fans
+    /// them out across `std::thread::scope` worker threads. Each
+    /// worker is I/O-bound (waiting on a subprocess), so the wall
+    /// time collapses to roughly the slowest probe rather than the
+    /// sum of all probes.
+    ///
+    /// Idempotent: probes whose target slot is already populated (e.g.
+    /// from a prior `prewarm` or a lazy `classify_*` call) are skipped.
+    /// Safe to call with an empty `resources` slice — returns Ok with
+    /// no work done.
+    ///
+    /// On any probe failure, returns the first error encountered with
+    /// the same `with_context` shape as the lazy paths, so callers see
+    /// identical diagnostics whether the cache was warmed eagerly or
+    /// loaded on demand.
+    ///
+    /// # Errors
+    /// Errors when any of the underlying probes fails (process spawn,
+    /// non-zero exit, malformed output).
+    pub fn prewarm(&mut self, resources: &[ResourceState]) -> Result<()> {
+        let mut needed_installed: HashSet<PackageManager> = HashSet::new();
+        let mut need_taps = false;
+        let mut needed_tap_remotes: Vec<String> = Vec::new();
+
+        for state in resources {
+            match state {
+                ResourceState::Package { manager, .. } => {
+                    if !self.installed.contains_key(manager) {
+                        needed_installed.insert(*manager);
+                    }
+                }
+                ResourceState::Tap(spec) => {
+                    if self.installed_taps.is_none() {
+                        need_taps = true;
+                    }
+                    if spec.url.is_some() && !self.tap_remotes.contains_key(&spec.user_tap) {
+                        needed_tap_remotes.push(spec.user_tap.clone());
+                    }
+                }
+                ResourceState::Symlink { .. }
+                | ResourceState::Template { .. }
+                | ResourceState::Shell { .. } => {}
+            }
+        }
+
+        needed_tap_remotes.sort();
+        needed_tap_remotes.dedup();
+
+        if needed_installed.is_empty() && !need_taps && needed_tap_remotes.is_empty() {
+            return Ok(());
+        }
+
+        let installed_managers: Vec<PackageManager> = needed_installed.into_iter().collect();
+
+        // `collect::<Vec<_>>()` on the spawn iterators below is
+        // load-bearing — it materialises every spawn before any join
+        // so the probes actually run in parallel. A chained
+        // `.map(spawn).map(join)` would interleave spawn-then-join
+        // lazily and serialise the prewarm.
+        let ProbeResults {
+            installed_results,
+            taps_result,
+            tap_remote_results,
+        } = std::thread::scope(|s| {
+            #[allow(clippy::needless_collect)]
+            let installed_handles: Vec<(PackageManager, _)> = installed_managers
+                .iter()
+                .copied()
+                .map(|m| (m, s.spawn(move || fetch_installed(m))))
+                .collect();
+            let taps_handle = if need_taps {
+                Some(s.spawn(fetch_taps))
+            } else {
+                None
+            };
+            #[allow(clippy::needless_collect)]
+            let tap_remote_handles: Vec<(String, _)> = needed_tap_remotes
+                .iter()
+                .cloned()
+                .map(|t| {
+                    let key = t.clone();
+                    (key, s.spawn(move || fetch_tap_remote(&t)))
+                })
+                .collect();
+
+            let installed_results: Vec<(PackageManager, Result<HashSet<String>>)> =
+                installed_handles
+                    .into_iter()
+                    .map(|(m, h)| (m, join_probe(h)))
+                    .collect();
+            let taps_result = taps_handle.map(join_probe);
+            let tap_remote_results: Vec<(String, Result<Option<String>>)> = tap_remote_handles
+                .into_iter()
+                .map(|(t, h)| (t, join_probe(h)))
+                .collect();
+
+            ProbeResults {
+                installed_results,
+                taps_result,
+                tap_remote_results,
+            }
+        });
+
+        for (m, r) in installed_results {
+            let set = r.with_context(|| {
+                format!(
+                    "listing installed packages for {} (`{} list ...`)",
+                    m.kind_label(),
+                    m.label()
+                )
+            })?;
+            self.installed.insert(m, set);
+        }
+        if let Some(r) = taps_result {
+            let set = r.context("listing installed brew taps (`brew tap`)")?;
+            self.installed_taps = Some(set);
+        }
+        for (t, r) in tap_remote_results {
+            let remote = r.with_context(|| {
+                format!("reading remote URL for tap `{t}` (`brew tap-info --json`)")
+            })?;
+            self.tap_remotes.insert(t, remote);
+        }
+
+        Ok(())
+    }
+
     /// Classify a package resource against the live state.
     ///
     /// Returns the action the planner should record:
-    ///   - `Update` — name is installed AND its qualified form is in
-    ///     the outdated set.
-    ///   - `NoOp` — name is installed (and not outdated), OR another
-    ///     resource in this same plan already claimed a Create for it.
+    ///   - `NoOp` — name is installed, OR another resource in this
+    ///     same plan already claimed a `Create` for it.
     ///   - `Create` — name isn't installed yet.
     ///
     /// "Installed" is compared by the *bare* tail of the qualified
     /// name (because `brew list` reports tap-installed formulae by
-    /// bare name); "outdated" by the full qualified name (matching
-    /// `brew outdated --quiet` output).
+    /// bare name).
+    ///
+    /// `keron apply` does **not** upgrade installed packages — that's
+    /// the user's job via the underlying manager — so `Update` is
+    /// never returned here. See the module docs for the rationale.
     ///
     /// # Errors
-    /// Errors when the underlying probes fail on first access. Cached
+    /// Errors when the underlying probe fails on first access. Cached
     /// snapshots on subsequent calls don't re-probe.
     pub fn classify_package(&mut self, manager: PackageManager, name: &str) -> Result<Action> {
         let bare = bare_name(name);
@@ -101,31 +235,15 @@ impl PackageCache {
             .get(&manager)
             .expect("just loaded above")
             .contains(bare);
-        if !installed {
-            // Not installed — short-circuit. No need to consult the
-            // outdated probe (saves a shell-out when nothing on the
-            // host is tapped yet).
-            let scheduled = self.scheduled.entry(manager).or_default();
-            return Ok(if scheduled.contains(name) {
-                Action::NoOp
-            } else {
-                scheduled.insert(name.to_string());
-                Action::Create
-            });
-        }
-        if !manager_uses_outdated_probe(manager) {
+        if installed {
             return Ok(Action::NoOp);
         }
-        self.ensure_outdated_loaded(manager)?;
-        let outdated = self
-            .outdated
-            .get(&manager)
-            .expect("just loaded above")
-            .contains(name);
-        Ok(if outdated {
-            Action::Update
-        } else {
+        let scheduled = self.scheduled.entry(manager).or_default();
+        Ok(if scheduled.contains(name) {
             Action::NoOp
+        } else {
+            scheduled.insert(name.to_string());
+            Action::Create
         })
     }
 
@@ -181,24 +299,6 @@ impl PackageCache {
         }
     }
 
-    fn ensure_outdated_loaded(&mut self, manager: PackageManager) -> Result<()> {
-        use std::collections::hash_map::Entry;
-        match self.outdated.entry(manager) {
-            Entry::Occupied(_) => Ok(()),
-            Entry::Vacant(e) => {
-                let set = fetch_outdated(manager).with_context(|| {
-                    format!(
-                        "listing outdated packages for {} (`{} outdated ...`)",
-                        manager.kind_label(),
-                        manager.label()
-                    )
-                })?;
-                e.insert(set);
-                Ok(())
-            }
-        }
-    }
-
     fn ensure_taps_loaded(&mut self) -> Result<()> {
         if self.installed_taps.is_some() {
             return Ok(());
@@ -227,8 +327,33 @@ fn bare_name(name: &str) -> &str {
     name.rsplit('/').next().unwrap_or(name)
 }
 
-const fn manager_uses_outdated_probe(manager: PackageManager) -> bool {
-    matches!(manager, PackageManager::Brew | PackageManager::BrewCask)
+/// Bundle of probe outcomes returned by [`PackageCache::prewarm`]'s
+/// `std::thread::scope` closure. Factored out so the closure's return
+/// type stays simple (clippy flags the bare tuple as too complex).
+struct ProbeResults {
+    installed_results: Vec<(PackageManager, Result<HashSet<String>>)>,
+    taps_result: Option<Result<HashSet<String>>>,
+    tap_remote_results: Vec<(String, Result<Option<String>>)>,
+}
+
+/// Join a probe worker, surfacing a panic as a hard error rather than
+/// silently swallowing it. A probe panic indicates a bug in this
+/// crate (parsing, env handling, …) — preserve it for diagnosis.
+fn join_probe<T>(handle: std::thread::ScopedJoinHandle<'_, Result<T>>) -> Result<T> {
+    match handle.join() {
+        Ok(r) => r,
+        Err(payload) => {
+            let msg = payload.downcast_ref::<&'static str>().map_or_else(
+                || {
+                    payload
+                        .downcast_ref::<String>()
+                        .map_or_else(|| "probe worker panicked".to_string(), String::clone)
+                },
+                |s| (*s).to_string(),
+            );
+            bail!("probe worker panicked: {msg}")
+        }
+    }
 }
 
 /// Shell out to the manager's list command and parse the output
@@ -243,22 +368,6 @@ fn fetch_installed(manager: PackageManager) -> Result<HashSet<String>> {
         PackageManager::BrewCask => brew::fetch_casks(),
         PackageManager::Cargo => cargo::fetch(),
         PackageManager::Winget => winget::fetch(),
-    }
-}
-
-fn fetch_outdated(manager: PackageManager) -> Result<HashSet<String>> {
-    if let Some(packages) = test_outdated_override(manager) {
-        return Ok(packages);
-    }
-    validate_package_manager_supported(manager)?;
-    match manager {
-        PackageManager::Brew => brew::fetch_outdated_formulae(),
-        PackageManager::BrewCask => brew::fetch_outdated_casks(),
-        // Cargo/winget don't share brew's outdated semantics — they
-        // get the empty set here, which classify_package treats as
-        // "no updates available" and falls back to NoOp. Adding a
-        // real probe per manager is a separate piece of work.
-        PackageManager::Cargo | PackageManager::Winget => Ok(HashSet::new()),
     }
 }
 
@@ -285,21 +394,6 @@ fn test_packages_override(manager: PackageManager) -> Option<HashSet<String>> {
         PackageManager::BrewCask => "KERON_TEST_BREW_CASK_PACKAGES",
         PackageManager::Cargo => "KERON_TEST_CARGO_PACKAGES",
         PackageManager::Winget => "KERON_TEST_WINGET_PACKAGES",
-    };
-    let raw = std::env::var(key).ok()?;
-    Some(parse_csv(&raw))
-}
-
-fn test_outdated_override(manager: PackageManager) -> Option<HashSet<String>> {
-    if !test_overrides_allowed() {
-        return None;
-    }
-    let key = match manager {
-        PackageManager::Brew => "KERON_TEST_BREW_OUTDATED",
-        PackageManager::BrewCask => "KERON_TEST_BREW_CASK_OUTDATED",
-        // No env seam for cargo/winget — fetch_outdated returns
-        // empty for those managers regardless.
-        PackageManager::Cargo | PackageManager::Winget => return None,
     };
     let raw = std::env::var(key).ok()?;
     Some(parse_csv(&raw))
@@ -349,50 +443,120 @@ fn parse_csv(raw: &str) -> HashSet<String> {
         .collect()
 }
 
-/// Install one package. Stdio is inherited so the user sees the
-/// underlying manager's output (progress bars, download status).
-/// The binary path is overridable per-manager via
-/// `KERON_TEST_PACKAGE_BIN_<MGR>` so tests can swap in a spy
-/// script.
+/// How a batched install/upgrade routes its child stdio.
 ///
-/// # Errors
-/// Errors when the manager binary is missing, fails to spawn, or
-/// exits non-zero.
-pub fn install(manager: PackageManager, name: &str) -> Result<()> {
-    validate_package_name(manager, name)?;
-    validate_package_manager_supported(manager)?;
-    let (binary, args) = install_invocation(manager, name);
-    let status = Command::new(&binary)
-        .args(&args)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .with_context(|| format!("spawning `{binary} {}` to install `{name}`", args.join(" ")))?;
-    if !status.success() {
-        bail!("`{binary} {}` exited with status {status}", args.join(" "));
-    }
-    Ok(())
+/// - `Inherit` — the manager's progress bars / download status pass
+///   directly to the user's terminal. Use when only one batch is
+///   running at a time so the output isn't interleaved with other
+///   managers' streams.
+/// - `Capture` — stdout and stderr are captured into byte buffers
+///   so the caller can flush them in a deterministic order after a
+///   parallel phase joins.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BatchStdio {
+    Inherit,
+    Capture,
 }
 
-/// Upgrade one already-installed package. Used by the Update action;
-/// only meaningful for brew / brew-cask today (cargo / winget would
-/// need their own upgrade story).
+/// Output captured from a batch run. Empty when the batch ran with
+/// [`BatchStdio::Inherit`] — there's nothing to return because the
+/// child wrote directly to the parent terminal.
+#[derive(Debug, Default, Clone)]
+pub struct BatchOutput {
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+}
+
+/// Install one or more packages in a single subprocess where the
+/// manager supports a multi-name argv. Brew, brew-cask, and cargo
+/// collapse into one invocation; winget loops internally one name at
+/// a time (its install command takes a single query). Stdio is
+/// inherited so the user sees live progress.
+///
+/// Validates every name (`validate_package_name`) and the manager
+/// (`validate_package_manager_supported`) up front so a malformed
+/// entry can't smuggle a flag into the batched argv mid-batch.
 ///
 /// # Errors
-/// Errors when the manager isn't brew-family, the binary is missing,
+/// Errors when validation fails, the manager binary is missing,
 /// fails to spawn, or exits non-zero.
-pub fn upgrade(manager: PackageManager, name: &str) -> Result<()> {
-    validate_package_name(manager, name)?;
+pub fn install_many(manager: PackageManager, names: &[&str]) -> Result<()> {
+    install_many_with_stdio(manager, names, BatchStdio::Inherit).map(|_| ())
+}
+
+/// [`install_many`] variant that captures child stdio for the caller
+/// to flush after a parallel phase completes. See [`BatchStdio`].
+///
+/// # Errors
+/// Same shape as [`install_many`].
+pub fn install_many_captured(manager: PackageManager, names: &[&str]) -> Result<BatchOutput> {
+    install_many_with_stdio(manager, names, BatchStdio::Capture)
+}
+
+fn install_many_with_stdio(
+    manager: PackageManager,
+    names: &[&str],
+    stdio: BatchStdio,
+) -> Result<BatchOutput> {
+    if names.is_empty() {
+        return Ok(BatchOutput::default());
+    }
     validate_package_manager_supported(manager)?;
-    match manager {
-        PackageManager::Brew => brew::do_upgrade(name, false),
-        PackageManager::BrewCask => brew::do_upgrade(name, true),
-        PackageManager::Cargo | PackageManager::Winget => {
-            bail!(
-                "upgrade not supported for {} packages yet — only brew formulae and casks have an outdated probe",
-                manager.kind_label()
-            )
+    for n in names {
+        validate_package_name(manager, n)?;
+    }
+    if let Some((binary, args)) = install_many_invocation(manager, names) {
+        return spawn_batch(&binary, &args, stdio);
+    }
+    // Managers without a native multi-name argv (winget) loop
+    // internally and concatenate any captured output.
+    let mut combined = BatchOutput::default();
+    for name in names {
+        let (binary, args) = install_invocation(manager, name);
+        let chunk = spawn_batch(&binary, &args, stdio)?;
+        if stdio == BatchStdio::Capture {
+            combined.stdout.extend_from_slice(&chunk.stdout);
+            combined.stderr.extend_from_slice(&chunk.stderr);
+        }
+    }
+    Ok(combined)
+}
+
+fn spawn_batch(binary: &str, args: &[String], stdio: BatchStdio) -> Result<BatchOutput> {
+    let mut cmd = Command::new(binary);
+    cmd.args(args);
+    match stdio {
+        BatchStdio::Inherit => {
+            cmd.stdin(Stdio::inherit())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit());
+            let status = cmd
+                .status()
+                .with_context(|| format!("spawning `{binary} {}`", args.join(" ")))?;
+            if !status.success() {
+                bail!("`{binary} {}` exited with status {status}", args.join(" "));
+            }
+            Ok(BatchOutput::default())
+        }
+        BatchStdio::Capture => {
+            cmd.stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            let out = cmd
+                .output()
+                .with_context(|| format!("spawning `{binary} {}`", args.join(" ")))?;
+            if !out.status.success() {
+                bail!(
+                    "`{binary} {}` exited with status {}; stderr: {}",
+                    args.join(" "),
+                    out.status,
+                    String::from_utf8_lossy(&out.stderr).trim(),
+                );
+            }
+            Ok(BatchOutput {
+                stdout: out.stdout,
+                stderr: out.stderr,
+            })
         }
     }
 }
@@ -475,6 +639,33 @@ fn install_invocation(manager: PackageManager, name: &str) -> (String, Vec<Strin
     (binary, args)
 }
 
+/// Argv for a multi-name `install` invocation. Returns `None` for
+/// managers without a native batch (`winget`) — the caller falls back
+/// to looping single-name installs.
+fn install_many_invocation(
+    manager: PackageManager,
+    names: &[&str],
+) -> Option<(String, Vec<String>)> {
+    let binary = test_binary_override(manager).unwrap_or_else(|| manager.label().to_string());
+    let args = match manager {
+        PackageManager::Brew | PackageManager::Cargo => {
+            let mut a = Vec::with_capacity(names.len() + 1);
+            a.push("install".to_string());
+            a.extend(names.iter().map(|s| (*s).to_string()));
+            a
+        }
+        PackageManager::BrewCask => {
+            let mut a = Vec::with_capacity(names.len() + 2);
+            a.push("install".to_string());
+            a.push("--cask".to_string());
+            a.extend(names.iter().map(|s| (*s).to_string()));
+            a
+        }
+        PackageManager::Winget => return None,
+    };
+    Some((binary, args))
+}
+
 fn test_binary_override(manager: PackageManager) -> Option<String> {
     if !test_overrides_allowed() {
         return None;
@@ -536,6 +727,145 @@ mod tests {
         }
     }
 
+    fn brew_pkg(name: &str) -> ResourceState {
+        ResourceState::Package {
+            manager: PackageManager::Brew,
+            name: name.to_string(),
+            tap: None,
+        }
+    }
+
+    fn cask_pkg(name: &str) -> ResourceState {
+        ResourceState::Package {
+            manager: PackageManager::BrewCask,
+            name: name.to_string(),
+            tap: None,
+        }
+    }
+
+    fn cargo_pkg(name: &str) -> ResourceState {
+        ResourceState::Package {
+            manager: PackageManager::Cargo,
+            name: name.to_string(),
+            tap: None,
+        }
+    }
+
+    fn tap_state(user_tap: &str, url: Option<&str>) -> ResourceState {
+        ResourceState::Tap(TapSpec {
+            user_tap: user_tap.to_string(),
+            url: url.map(str::to_string),
+        })
+    }
+
+    #[test]
+    fn prewarm_populates_every_needed_probe_in_one_pass() {
+        // Pins the contract that prewarm leaves the cache hot for
+        // every classify path the resource list will touch.
+        let _g = lock_env();
+        set_env("KERON_TEST_BREW_PACKAGES", "ripgrep,git");
+        set_env("KERON_TEST_BREW_CASK_PACKAGES", "alacritty");
+        set_env("KERON_TEST_CARGO_PACKAGES", "sccache");
+        set_env("KERON_TEST_BREW_TAPS", "icepuma/keron");
+        set_env(
+            "KERON_TEST_BREW_TAP_REMOTES",
+            "icepuma/keron=https://github.com/icepuma/keron",
+        );
+        let resources = vec![
+            brew_pkg("ripgrep"),
+            brew_pkg("fd"),
+            cask_pkg("alacritty"),
+            cargo_pkg("sccache"),
+            tap_state("icepuma/keron", Some("https://github.com/icepuma/keron")),
+        ];
+        let mut cache = PackageCache::new();
+        cache.prewarm(&resources).unwrap();
+        // Drop the env seams so any further probe would fall through
+        // to real `brew` / `cargo` and fail. The classify calls below
+        // must therefore hit the cache exclusively.
+        clear_env(&[
+            "KERON_TEST_BREW_PACKAGES",
+            "KERON_TEST_BREW_CASK_PACKAGES",
+            "KERON_TEST_CARGO_PACKAGES",
+            "KERON_TEST_BREW_TAPS",
+            "KERON_TEST_BREW_TAP_REMOTES",
+        ]);
+        assert_eq!(
+            cache
+                .classify_package(PackageManager::Brew, "ripgrep")
+                .unwrap(),
+            Action::NoOp,
+        );
+        assert_eq!(
+            cache.classify_package(PackageManager::Brew, "fd").unwrap(),
+            Action::Create,
+        );
+        assert_eq!(
+            cache
+                .classify_package(PackageManager::BrewCask, "alacritty")
+                .unwrap(),
+            Action::NoOp,
+        );
+        assert_eq!(
+            cache
+                .classify_package(PackageManager::Cargo, "sccache")
+                .unwrap(),
+            Action::NoOp,
+        );
+        let tap_action = cache
+            .classify_tap(&TapSpec {
+                user_tap: "icepuma/keron".into(),
+                url: Some("https://github.com/icepuma/keron".into()),
+            })
+            .unwrap();
+        assert_eq!(tap_action, Action::NoOp);
+    }
+
+    #[test]
+    fn prewarm_is_a_noop_when_no_package_or_tap_resources_present() {
+        // Walks resources without any Package/Tap and confirms prewarm
+        // doesn't spawn probes (no env seams set — a real `brew` shell-out
+        // would fail in CI). Pins that the empty-needs early return holds.
+        let _g = lock_env();
+        clear_env(&[]);
+        let resources = vec![ResourceState::Symlink {
+            from: std::path::PathBuf::from("/tmp/keron-prewarm-noop-link"),
+            to: std::path::PathBuf::from("/tmp/keron-prewarm-noop-target"),
+        }];
+        let mut cache = PackageCache::new();
+        cache.prewarm(&resources).unwrap();
+        assert!(cache.installed.is_empty());
+        assert!(cache.installed_taps.is_none());
+        assert!(cache.tap_remotes.is_empty());
+    }
+
+    #[test]
+    fn prewarm_skips_probes_already_populated_by_prior_lazy_load() {
+        // Pins idempotence: prewarm must not re-probe a slot that a
+        // prior classify_* already populated.
+        let _g = lock_env();
+        set_env("KERON_TEST_BREW_PACKAGES", "ripgrep");
+        let mut cache = PackageCache::new();
+        // Lazy load: classify_package fills `installed` for Brew with
+        // the env-seam contents.
+        cache
+            .classify_package(PackageManager::Brew, "ripgrep")
+            .unwrap();
+        // Re-bind env seam to a *different* value — if prewarm
+        // re-probes, the cache would change.
+        set_env("KERON_TEST_BREW_PACKAGES", "fd");
+        let resources = vec![brew_pkg("ripgrep")];
+        cache.prewarm(&resources).unwrap();
+        clear_env(&["KERON_TEST_BREW_PACKAGES"]);
+        // Cache still reflects the first probe's snapshot.
+        assert_eq!(
+            cache
+                .classify_package(PackageManager::Brew, "ripgrep")
+                .unwrap(),
+            Action::NoOp,
+        );
+    }
+
     #[test]
     fn classify_package_returns_create_for_missing_then_noop_for_repeat() {
         let _g = lock_env();
@@ -553,32 +883,36 @@ mod tests {
     }
 
     #[test]
-    fn classify_package_returns_noop_when_already_installed_and_not_outdated() {
+    fn classify_package_returns_noop_when_already_installed() {
         let _g = lock_env();
         set_env("KERON_TEST_BREW_PACKAGES", "git,ripgrep,fd");
-        // Empty outdated list — the test's whole point is "installed
-        // and *not* outdated → NoOp", so the outdated probe must be
-        // bypassed (otherwise it shells out to a real `brew`).
-        set_env("KERON_TEST_BREW_OUTDATED", "");
         let mut cache = PackageCache::new();
         let action = cache
             .classify_package(PackageManager::Brew, "ripgrep")
             .unwrap();
-        clear_env(&["KERON_TEST_BREW_PACKAGES", "KERON_TEST_BREW_OUTDATED"]);
+        clear_env(&["KERON_TEST_BREW_PACKAGES"]);
         assert_eq!(action, Action::NoOp);
     }
 
     #[test]
-    fn classify_package_returns_update_when_installed_and_outdated() {
+    fn classify_package_never_returns_update_even_when_outdated() {
+        // `keron apply` only ensures presence — upgrading installed
+        // packages is left to the underlying manager. The classifier
+        // therefore must not return Update for any package, regardless
+        // of how stale it is locally. Pins the contract documented in
+        // the module-level doc.
         let _g = lock_env();
         set_env("KERON_TEST_BREW_PACKAGES", "ripgrep");
-        set_env("KERON_TEST_BREW_OUTDATED", "ripgrep");
         let mut cache = PackageCache::new();
         let action = cache
             .classify_package(PackageManager::Brew, "ripgrep")
             .unwrap();
-        clear_env(&["KERON_TEST_BREW_PACKAGES", "KERON_TEST_BREW_OUTDATED"]);
-        assert_eq!(action, Action::Update);
+        clear_env(&["KERON_TEST_BREW_PACKAGES"]);
+        assert_eq!(
+            action,
+            Action::NoOp,
+            "installed brew package must classify NoOp, never Update",
+        );
     }
 
     #[test]
@@ -588,28 +922,12 @@ mod tests {
         // bare `keron`. A manifest naming the qualified form must
         // still classify as NoOp.
         set_env("KERON_TEST_BREW_PACKAGES", "keron");
-        set_env("KERON_TEST_BREW_OUTDATED", "");
         let mut cache = PackageCache::new();
         let action = cache
             .classify_package(PackageManager::Brew, "icepuma/keron/keron")
             .unwrap();
-        clear_env(&["KERON_TEST_BREW_PACKAGES", "KERON_TEST_BREW_OUTDATED"]);
+        clear_env(&["KERON_TEST_BREW_PACKAGES"]);
         assert_eq!(action, Action::NoOp);
-    }
-
-    #[test]
-    fn classify_package_uses_qualified_name_for_outdated_lookup() {
-        let _g = lock_env();
-        // `brew outdated` reports tap-installed formulae by the full
-        // qualified name; pin that the classifier matches that shape.
-        set_env("KERON_TEST_BREW_PACKAGES", "keron");
-        set_env("KERON_TEST_BREW_OUTDATED", "icepuma/keron/keron");
-        let mut cache = PackageCache::new();
-        let action = cache
-            .classify_package(PackageManager::Brew, "icepuma/keron/keron")
-            .unwrap();
-        clear_env(&["KERON_TEST_BREW_PACKAGES", "KERON_TEST_BREW_OUTDATED"]);
-        assert_eq!(action, Action::Update);
     }
 
     #[test]
@@ -619,8 +937,6 @@ mod tests {
         // mustn't be confused with the formula "alacritty".
         set_env("KERON_TEST_BREW_PACKAGES", "git");
         set_env("KERON_TEST_BREW_CASK_PACKAGES", "alacritty");
-        set_env("KERON_TEST_BREW_OUTDATED", "");
-        set_env("KERON_TEST_BREW_CASK_OUTDATED", "");
         let mut cache = PackageCache::new();
         let formula = cache
             .classify_package(PackageManager::Brew, "alacritty")
@@ -628,12 +944,7 @@ mod tests {
         let cask = cache
             .classify_package(PackageManager::BrewCask, "alacritty")
             .unwrap();
-        clear_env(&[
-            "KERON_TEST_BREW_PACKAGES",
-            "KERON_TEST_BREW_CASK_PACKAGES",
-            "KERON_TEST_BREW_OUTDATED",
-            "KERON_TEST_BREW_CASK_OUTDATED",
-        ]);
+        clear_env(&["KERON_TEST_BREW_PACKAGES", "KERON_TEST_BREW_CASK_PACKAGES"]);
         assert_eq!(formula, Action::Create);
         assert_eq!(cask, Action::NoOp);
     }
@@ -783,12 +1094,53 @@ mod tests {
     }
 
     #[test]
-    fn install_rejects_empty_name() {
+    fn install_many_rejects_empty_name() {
         let _g = lock_env();
-        let err = install(PackageManager::Brew, "").unwrap_err();
+        let err = install_many(PackageManager::Brew, &[""]).unwrap_err();
         assert!(
             format!("{err:#}").contains("must not be empty"),
             "got: {err:#}",
+        );
+    }
+
+    #[test]
+    fn install_many_invocation_brew_collapses_into_one_argv() {
+        let _g = lock_env();
+        let (bin, args) = install_many_invocation(PackageManager::Brew, &["ripgrep", "bat", "fd"])
+            .expect("brew supports multi-name install");
+        assert_eq!(bin, "brew");
+        assert_eq!(args, vec!["install", "ripgrep", "bat", "fd"]);
+    }
+
+    #[test]
+    fn install_many_invocation_cask_keeps_flag_then_names() {
+        let _g = lock_env();
+        let (bin, args) =
+            install_many_invocation(PackageManager::BrewCask, &["alacritty", "ghostty"])
+                .expect("cask supports multi-name install");
+        assert_eq!(bin, "brew");
+        assert_eq!(args, vec!["install", "--cask", "alacritty", "ghostty"]);
+    }
+
+    #[test]
+    fn install_many_invocation_cargo_collapses_into_one_argv() {
+        let _g = lock_env();
+        let (bin, args) =
+            install_many_invocation(PackageManager::Cargo, &["sccache", "cargo-edit"])
+                .expect("cargo supports multi-name install");
+        assert_eq!(bin, "cargo");
+        assert_eq!(args, vec!["install", "sccache", "cargo-edit"]);
+    }
+
+    #[test]
+    fn install_many_invocation_winget_is_none_so_caller_loops() {
+        // winget loses its `--id` field-restriction safety in batch
+        // mode, so we deliberately keep its install path single-name.
+        // The caller falls back to looping `install_invocation`
+        // per-name internally.
+        let _g = lock_env();
+        assert!(
+            install_many_invocation(PackageManager::Winget, &["Microsoft.PowerShell"]).is_none()
         );
     }
 
