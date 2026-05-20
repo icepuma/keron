@@ -8,7 +8,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.2.2"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.95.0"
 license = "MIT OR Apache-2.0"
@@ -16,9 +16,9 @@ repository = "https://github.com/icepuma/keron"
 authors = ["Stefan Ruzitschka <stefan@icepuma.dev>"]
 
 [workspace.dependencies]
-keron-lang = { path = "crates/keron-lang", version = "=0.2.2" }
-keron-modules = { path = "crates/keron-modules", version = "=0.2.2" }
-keron-apply = { path = "crates/keron-apply", version = "=0.2.2" }
+keron-lang = { path = "crates/keron-lang", version = "=0.3.0" }
+keron-modules = { path = "crates/keron-modules", version = "=0.3.0" }
+keron-apply = { path = "crates/keron-apply", version = "=0.3.0" }
 
 chumsky = "=0.13.0"
 thiserror = "=2.0.18"
@@ -47,6 +47,11 @@ libc = "=0.2.186"
 # manifest needs e.g. date formatting.
 tera = { version = "=1.20.1", default-features = false }
 which = "=8.0.2"
+# Line-level diff engine. Used by `keron format --check` for unified-
+# diff drift output and by `keron apply` for the verbose-mode body
+# diffs (template `content` and shell `script`) under the
+# `--verbose-will-reveal-sensitive-content` flag.
+similar = "=2.7.0"
 # Pinned platform binding for the elevated-rights flow on Windows:
 # parent-side SID capture (`OpenProcessToken` + `GetTokenInformation` +
 # `ConvertSidToStringSidW`), child-side ownership transfer

@@ -1616,6 +1616,13 @@ fn dispatch_trim(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
 fn dispatch_shell(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     let kind = call_string(args, env, "kind", 0)?;
     let name = call_string(args, env, "name", 1)?;
+    // `script` may carry a sensitive flag at the value level. We
+    // propagate it to the resource so the diff renderer can show a
+    // `[sensitive]` hint in the default-mode summary. The hint does
+    // not redact content — verbose mode reveals everything by design
+    // (see `--verbose-will-reveal-sensitive-content` for the consent
+    // story); the hint just tells the operator "this body field is
+    // going to print secrets if you opt in."
     let script = call_string_value(args, env, "script", 2)?;
     let kind = ShellKind::parse(&kind)?;
     Ok(Value::Resource(ResourceState::Shell {
@@ -4165,11 +4172,21 @@ reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
         assert_eq!(name, "refresh-font-cache");
         assert_eq!(cwd, &root);
         assert_eq!(script, "echo one\necho two\n");
+        // A plain shell script with no `secret(...)` inputs is not
+        // sensitive at the resource layer.
         assert!(!sensitive);
     }
 
     #[test]
-    fn shell_script_can_be_sensitive() {
+    fn shell_script_with_secret_marks_resource_sensitive() {
+        // The shell `script` carrying a sensitive value at the input
+        // layer (`Value::String { sensitive: true }`) propagates to
+        // the resource's `sensitive` flag. The diff renderer uses
+        // that flag to attach a `[sensitive]` hint to the default-mode
+        // summary so an operator scanning the plan can see "this body
+        // field is going to print secrets if I opt in to verbose."
+        // It does NOT redact — verbose mode reveals everything, per
+        // `--verbose-will-reveal-sensitive-content`.
         let uri = "op://vault/shell/token";
         let _g = secret_test::SecretOverride::ok(uri, "secret-token");
         let states = run(&format!(

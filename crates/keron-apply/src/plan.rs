@@ -145,6 +145,11 @@ pub enum ResourceState {
     Template {
         path: PathBuf,
         content: String,
+        /// Drives the file mode chosen by the executor: `true` →
+        /// `0o600` (owner-only), `false` → standard `0o644`-after-umask.
+        /// No longer affects diff rendering — verbose mode reveals
+        /// content regardless, default mode hides content regardless
+        /// (see `--verbose-will-reveal-sensitive-content`).
         #[serde(default)]
         sensitive: bool,
     },
@@ -161,6 +166,14 @@ pub enum ResourceState {
         name: String,
         cwd: PathBuf,
         script: String,
+        /// True when any input that flowed into `script` was marked
+        /// sensitive at the manifest layer. Surfaces a `[sensitive]`
+        /// hint in the default-mode diff summary so an operator can
+        /// see that a body block is going to print secrets before
+        /// they opt in (via `--verbose-will-reveal-sensitive-content`
+        /// or the interactive prompt) to see the actual content.
+        /// Does not affect the executor (shell scripts run via stdin
+        /// regardless).
         #[serde(default)]
         sensitive: bool,
     },
@@ -664,7 +677,7 @@ mod tests {
                 name: "refresh".into(),
                 cwd: PathBuf::from("/tmp"),
                 script: "echo ok".into(),
-                sensitive: false,
+            sensitive: false,
             }),
             requires_elevation: false,
             requires_force: false,

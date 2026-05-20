@@ -5,21 +5,49 @@
 //! ANSI escape codes are emitted inline rather than pulled in via a
 //! crate to keep the dep surface small. Color is opt-in per call —
 //! the caller decides based on `IsTerminal`.
+//!
+//! Body fields (template `content`, shell `script`) hide by default
+//! and render only a `lines added / lines removed` summary. The
+//! caller opts in to full unified-diff bodies via
+//! `RenderOptions::verbose`; the CLI exposes that as the
+//! `--verbose-will-reveal-sensitive-content` flag. The flag name *is*
+//! the warning — verbose mode does not redact, even values produced
+//! by inputs marked `sensitive`.
 
 use std::io::{self, Write};
 
 use crate::plan::{Action, Plan, ResourceChange, ResourceState};
-use crate::terminal_safe::{escape_inline, show_path, show_str};
+use crate::terminal_safe::{escape_inline, sanitize_terminal_message, show_path, show_str};
 
 const RESET: &str = "\x1b[0m";
 const GREEN: &str = "\x1b[32m";
 const YELLOW: &str = "\x1b[33m";
 const RED: &str = "\x1b[31m";
+const CYAN: &str = "\x1b[36m";
 const DIM: &str = "\x1b[2m";
+
+/// Hint shown in the default-mode body summary so the user can find
+/// the opt-in. Kept verbose on purpose: the flag name itself is the
+/// consent that subsequent verbose-mode output may print secrets to
+/// the terminal, screen-shares, CI logs, etc.
+const VERBOSE_HINT: &str = "use --verbose-will-reveal-sensitive-content to see";
+
+/// One-line warning emitted at the top of verbose output. Verbose
+/// mode prints body content verbatim — including the values of
+/// inputs marked `sensitive`. The banner makes that explicit so a
+/// `--verbose-will-reveal-sensitive-content` typed reflexively still
+/// surfaces a fresh reminder before the actual content scrolls.
+const VERBOSE_BANNER: &str =
+    "! Verbose mode: full content diffs follow. Sensitive values are not redacted.";
 
 #[derive(Debug, Clone, Copy)]
 pub struct RenderOptions {
     pub color: bool,
+    /// When true, template `content` and shell `script` render as a
+    /// full unified diff inside their resource block. When false, the
+    /// body is replaced by a one-line `N lines added / M lines
+    /// removed` summary with a hint pointing at the opt-in flag.
+    pub verbose: bool,
 }
 
 pub fn render_plan<W: Write>(out: &mut W, plan: &Plan, opts: RenderOptions) -> io::Result<()> {
@@ -33,6 +61,11 @@ pub fn render_plan<W: Write>(out: &mut W, plan: &Plan, opts: RenderOptions) -> i
     let has_unprivileged = plan.changes.iter().any(|c| !is_elevated(c));
     let has_unprivileged_actions = plan.changes.iter().any(|c| !is_elevated(c) && !is_noop(c));
     let has_elevated = plan.changes.iter().any(is_elevated);
+
+    if opts.verbose && plan_has_body_blocks(plan) {
+        writeln!(out, "{}", paint(opts.color, RED, VERBOSE_BANNER))?;
+        writeln!(out)?;
+    }
 
     if has_unprivileged {
         // Suppress the "will perform" header when the unprivileged
@@ -171,6 +204,176 @@ fn render_body<W: Write>(
     Ok(())
 }
 
+/// Whether the plan would emit at least one body-shaped field
+/// (template `content` or shell `script`) in default mode. Used by:
+///   - the verbose banner emission (no banner if nothing's going to
+///     reveal anything anyway), and
+///   - the CLI's interactive prompt — there's no point asking "show
+///     full content?" when there's no content to show.
+pub fn plan_has_body_blocks(plan: &Plan) -> bool {
+    plan.changes.iter().any(|c| {
+        if matches!(c.action, Action::NoOp) {
+            return false;
+        }
+        let body_of = |s: &Option<ResourceState>| -> Option<String> {
+            s.as_ref().and_then(|state| match state {
+                ResourceState::Template { content, .. } => Some(content.clone()),
+                ResourceState::Shell { script, .. } => Some(script.clone()),
+                _ => None,
+            })
+        };
+        match (body_of(&c.before), body_of(&c.after)) {
+            (None, None) => false,
+            (None, Some(_)) | (Some(_), None) => true,
+            (Some(b), Some(a)) => b != a,
+        }
+    })
+}
+
+/// Render a body-shaped field — template `content` or shell `script`.
+///
+/// `before = None` means a one-sided action (Create / Run); the
+/// helper counts the lines in `after` and emits one summary line, or
+/// a one-sided unified diff (all `+` / `>` lines) if verbose.
+///
+/// `before = Some(...)` and `before == after` suppresses output
+/// (matches the existing "only render changed fields" semantic). When
+/// they differ, default mode emits `~ field: N lines removed, M
+/// lines added (use --verbose-will-reveal-sensitive-content to see
+/// diff)` and verbose mode emits the full unified diff.
+///
+/// `sensitive` controls a `[sensitive]` hint that prefixes the
+/// summary in default mode. It is *informational only* — the body
+/// is hidden by default regardless of the flag, and verbose mode
+/// reveals it regardless. The hint exists so an operator scanning
+/// the plan can tell that a particular body field is going to print
+/// secrets if they opt in to verbose.
+fn render_body_field<W: Write>(
+    out: &mut W,
+    field: &str,
+    before: Option<&str>,
+    after: &str,
+    sign: &str,
+    sensitive: bool,
+    opts: RenderOptions,
+) -> io::Result<()> {
+    if let Some(b) = before
+        && b == after
+    {
+        return Ok(());
+    }
+    if opts.verbose {
+        render_body_verbose(out, field, before, after, sign, opts)
+    } else {
+        render_body_summary(out, field, before, after, sign, sensitive, opts)
+    }
+}
+
+fn render_body_summary<W: Write>(
+    out: &mut W,
+    field: &str,
+    before: Option<&str>,
+    after: &str,
+    sign: &str,
+    sensitive: bool,
+    opts: RenderOptions,
+) -> io::Result<()> {
+    // `[sensitive]` painted red so it draws the eye next to the
+    // otherwise-yellow `~` / green `+` / yellow `>` action sign.
+    // No color → plain `[sensitive]` text token.
+    let marker = if sensitive {
+        format!(" {}", paint(opts.color, RED, "[sensitive]"))
+    } else {
+        String::new()
+    };
+    if let Some(b) = before {
+        let diff = similar::TextDiff::from_lines(b, after);
+        let mut added = 0usize;
+        let mut removed = 0usize;
+        for change in diff.iter_all_changes() {
+            match change.tag() {
+                similar::ChangeTag::Insert => added += 1,
+                similar::ChangeTag::Delete => removed += 1,
+                similar::ChangeTag::Equal => {}
+            }
+        }
+        writeln!(
+            out,
+            "      {sign} {field}{marker}: {removed} {line_removed} removed, {added} {line_added} added ({VERBOSE_HINT} diff)",
+            line_removed = if removed == 1 { "line" } else { "lines" },
+            line_added = if added == 1 { "line" } else { "lines" },
+        )?;
+    } else {
+        let n = count_lines(after);
+        writeln!(
+            out,
+            "      {sign} {field}{marker}: {n} {word} ({VERBOSE_HINT})",
+            word = if n == 1 { "line" } else { "lines" },
+        )?;
+    }
+    Ok(())
+}
+
+/// Render a body field as a unified diff block, indented inside the
+/// resource body. Synthetic `---` / `+++` file-header lines are
+/// dropped — they carry no useful info here. Real `\n` / `\t` pass
+/// through; `\r` / ANSI / bidi controls inside any individual line
+/// are escaped via `sanitize_terminal_message` so a hostile content
+/// byte cannot redraw the rendered diff.
+///
+/// Verbose mode is opt-in via `--verbose-will-reveal-sensitive-content`
+/// — no redaction here by design. See `render_plan`'s banner.
+fn render_body_verbose<W: Write>(
+    out: &mut W,
+    field: &str,
+    before: Option<&str>,
+    after: &str,
+    sign: &str,
+    opts: RenderOptions,
+) -> io::Result<()> {
+    writeln!(out, "      {sign} {field}:")?;
+    let before_text = before.unwrap_or("");
+    let diff = similar::TextDiff::from_lines(before_text, after);
+    let rendered = diff.unified_diff().context_radius(3).to_string();
+    let safe = sanitize_terminal_message(&rendered);
+    for line in safe.split_inclusive('\n') {
+        let trimmed = line.trim_end_matches('\n');
+        // The two synthetic header lines (`--- file` / `+++ file`)
+        // are placeholders since `header(...)` wasn't supplied; drop
+        // them — the resource block already labels the field.
+        if trimmed.starts_with("--- ") || trimmed.starts_with("+++ ") {
+            continue;
+        }
+        let painted = if trimmed.starts_with("@@") {
+            paint(opts.color, CYAN, trimmed)
+        } else if trimmed.starts_with('-') {
+            paint(opts.color, RED, trimmed)
+        } else if trimmed.starts_with('+') {
+            paint(opts.color, GREEN, trimmed)
+        } else {
+            trimmed.to_string()
+        };
+        writeln!(out, "          {painted}")?;
+    }
+    Ok(())
+}
+
+/// Line counter for one-sided body summaries: each newline counts a
+/// line, plus a final trailing partial line if the content does not
+/// end with `\n`. `""` → 0, `"a"` → 1, `"a\n"` → 1, `"a\nb"` → 2,
+/// `"a\nb\n"` → 2. Matches what a reader counts when scanning the
+/// file by eye.
+fn count_lines(s: &str) -> usize {
+    if s.is_empty() {
+        return 0;
+    }
+    let mut n = s.matches('\n').count();
+    if !s.ends_with('\n') {
+        n += 1;
+    }
+    n
+}
+
 fn render_state_lines<W: Write>(
     out: &mut W,
     state: &ResourceState,
@@ -183,14 +386,15 @@ fn render_state_lines<W: Write>(
         ResourceState::Template {
             path,
             content,
+            // The resource-level `sensitive` flag drives two things:
+            // the executor's file-mode choice (0o600 vs 0o644) and
+            // the `[sensitive]` hint emitted by the default-mode body
+            // summary. It does NOT redact — verbose mode reveals the
+            // content regardless.
             sensitive,
         } => {
             writeln!(out, "      {s} target  = \"{}\"", show_path(path))?;
-            if *sensitive {
-                writeln!(out, "      {s} content = <sensitive>")?;
-            } else {
-                writeln!(out, "      {s} content = \"{}\"", escape_inline(content))?;
-            }
+            render_body_field(out, "content", None, content, &s, *sensitive, opts)?;
         }
         ResourceState::Symlink { from, to } => {
             writeln!(out, "      {s} source = \"{}\"", show_path(to))?;
@@ -210,11 +414,7 @@ fn render_state_lines<W: Write>(
             writeln!(out, "      {s} kind   = \"{}\"", kind.label())?;
             writeln!(out, "      {s} name   = \"{}\"", escape_inline(name))?;
             writeln!(out, "      {s} cwd    = \"{}\"", show_path(cwd))?;
-            if *sensitive {
-                writeln!(out, "      {s} script = <sensitive>")?;
-            } else {
-                writeln!(out, "      {s} script = \"{}\"", escape_inline(script))?;
-            }
+            render_body_field(out, "script", None, script, &s, *sensitive, opts)?;
         }
     }
     Ok(())
@@ -243,14 +443,16 @@ fn render_diff_lines<W: Write>(
             let before = TemplateRenderState {
                 path: before_path,
                 content: before_content,
-                sensitive: *before_sensitive,
             };
             let after = TemplateRenderState {
                 path: after_path,
                 content: after_content,
-                sensitive: *after_sensitive,
             };
-            render_template_diff(out, before, after, &s)?;
+            // Conservative: any side flagged sensitive → show the
+            // hint. Matches the "if either was a secret, treat both
+            // as secret-bearing for UI purposes" rule.
+            let sensitive = *before_sensitive || *after_sensitive;
+            render_template_diff(out, before, after, &s, sensitive, opts)?;
         }
         (
             ResourceState::Symlink {
@@ -292,8 +494,18 @@ fn render_diff_lines<W: Write>(
             };
             render_package_diff(out, before, after, &s)?;
         }
-        (ResourceState::Shell { .. }, ResourceState::Shell { .. }) => {
-            render_shell_resource_diff(out, before, after, &s)?;
+        (
+            ResourceState::Shell {
+                sensitive: before_sensitive,
+                ..
+            },
+            ResourceState::Shell {
+                sensitive: after_sensitive,
+                ..
+            },
+        ) => {
+            let sensitive = *before_sensitive || *after_sensitive;
+            render_shell_resource_diff(out, before, after, &s, sensitive, opts)?;
         }
         _ => {
             render_state_lines(out, before, "-", RED, opts)?;
@@ -307,7 +519,6 @@ fn render_diff_lines<W: Write>(
 struct TemplateRenderState<'a> {
     path: &'a std::path::Path,
     content: &'a str,
-    sensitive: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -328,7 +539,6 @@ struct ShellRenderState<'a> {
     name: &'a str,
     cwd: &'a std::path::Path,
     script: &'a str,
-    sensitive: bool,
 }
 
 fn render_template_diff<W: Write>(
@@ -336,6 +546,8 @@ fn render_template_diff<W: Write>(
     before: TemplateRenderState<'_>,
     after: TemplateRenderState<'_>,
     s: &str,
+    sensitive: bool,
+    opts: RenderOptions,
 ) -> io::Result<()> {
     if before.path != after.path {
         writeln!(
@@ -345,18 +557,15 @@ fn render_template_diff<W: Write>(
             show_path(after.path)
         )?;
     }
-    if before.sensitive || after.sensitive {
-        if before.content != after.content {
-            writeln!(out, "      {s} content = <sensitive> -> <sensitive>")?;
-        }
-    } else if before.content != after.content {
-        writeln!(
-            out,
-            "      {s} content = \"{}\" -> \"{}\"",
-            escape_inline(before.content),
-            escape_inline(after.content)
-        )?;
-    }
+    render_body_field(
+        out,
+        "content",
+        Some(before.content),
+        after.content,
+        s,
+        sensitive,
+        opts,
+    )?;
     Ok(())
 }
 
@@ -415,13 +624,15 @@ fn render_shell_resource_diff<W: Write>(
     before: &ResourceState,
     after: &ResourceState,
     s: &str,
+    sensitive: bool,
+    opts: RenderOptions,
 ) -> io::Result<()> {
     let ResourceState::Shell {
         kind: before_kind,
         name: before_name,
         cwd: before_cwd,
         script: before_script,
-        sensitive: before_sensitive,
+        sensitive: _,
     } = before
     else {
         unreachable!("caller already matched Shell before-state");
@@ -431,7 +642,7 @@ fn render_shell_resource_diff<W: Write>(
         name: after_name,
         cwd: after_cwd,
         script: after_script,
-        sensitive: after_sensitive,
+        sensitive: _,
     } = after
     else {
         unreachable!("caller already matched Shell after-state");
@@ -441,16 +652,14 @@ fn render_shell_resource_diff<W: Write>(
         name: before_name,
         cwd: before_cwd,
         script: before_script,
-        sensitive: *before_sensitive,
     };
     let after = ShellRenderState {
         kind: *after_kind,
         name: after_name,
         cwd: after_cwd,
         script: after_script,
-        sensitive: *after_sensitive,
     };
-    render_shell_diff(out, before, after, s)
+    render_shell_diff(out, before, after, s, sensitive, opts)
 }
 
 fn render_shell_diff<W: Write>(
@@ -458,6 +667,8 @@ fn render_shell_diff<W: Write>(
     before: ShellRenderState<'_>,
     after: ShellRenderState<'_>,
     s: &str,
+    sensitive: bool,
+    opts: RenderOptions,
 ) -> io::Result<()> {
     if before.kind != after.kind {
         writeln!(
@@ -483,18 +694,15 @@ fn render_shell_diff<W: Write>(
             show_path(after.cwd)
         )?;
     }
-    if before.sensitive || after.sensitive {
-        if before.script != after.script {
-            writeln!(out, "      {s} script = <sensitive> -> <sensitive>")?;
-        }
-    } else if before.script != after.script {
-        writeln!(
-            out,
-            "      {s} script = \"{}\" -> \"{}\"",
-            escape_inline(before.script),
-            escape_inline(after.script)
-        )?;
-    }
+    render_body_field(
+        out,
+        "script",
+        Some(before.script),
+        after.script,
+        s,
+        sensitive,
+        opts,
+    )?;
     Ok(())
 }
 
@@ -530,8 +738,16 @@ mod tests {
     use std::path::PathBuf;
 
     fn render(plan: &Plan) -> String {
+        render_with(plan, false, false)
+    }
+
+    fn render_verbose(plan: &Plan) -> String {
+        render_with(plan, false, true)
+    }
+
+    fn render_with(plan: &Plan, color: bool, verbose: bool) -> String {
         let mut buf = Vec::new();
-        render_plan(&mut buf, plan, RenderOptions { color: false }).unwrap();
+        render_plan(&mut buf, plan, RenderOptions { color, verbose }).unwrap();
         String::from_utf8(buf).unwrap()
     }
 
@@ -683,14 +899,12 @@ mod tests {
 
     #[test]
     fn color_path_includes_escape_codes() {
-        let mut buf = Vec::new();
-        render_plan(&mut buf, &Plan::sample(), RenderOptions { color: true }).unwrap();
-        let out = String::from_utf8(buf).unwrap();
+        let out = render_with(&Plan::sample(), true, false);
         assert!(out.contains('\x1b'));
     }
 
     #[test]
-    fn create_renders_target_and_content_lines() {
+    fn create_renders_target_and_content_summary_by_default() {
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "/etc/x".into(),
@@ -711,9 +925,42 @@ mod tests {
             out.contains("+ target  = \"/etc/x\""),
             "missing target line: {out}"
         );
+        // Default mode hides the body; a count-only summary stays.
         assert!(
-            out.contains("+ content = \"hi\""),
-            "missing content line: {out}"
+            out.contains("+ content: 1 line"),
+            "missing content summary: {out}",
+        );
+        assert!(
+            out.contains("--verbose-will-reveal-sensitive-content"),
+            "missing opt-in hint: {out}",
+        );
+        // The literal content must not leak.
+        assert!(!out.contains("\"hi\""), "raw content leaked: {out}");
+    }
+
+    #[test]
+    fn create_renders_full_content_in_verbose_mode() {
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/etc/x".into(),
+                kind: ResourceKind::Template,
+                action: Action::Create,
+                before: None,
+                after: Some(ResourceState::Template {
+                    path: PathBuf::from("/etc/x"),
+                    content: "hi".into(),
+                    sensitive: false,
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        let out = render_verbose(&plan);
+        assert!(out.contains("+ content:"), "missing content header: {out}");
+        assert!(out.contains("+hi"), "missing added line: {out}");
+        assert!(
+            out.contains("Verbose mode"),
+            "missing verbose banner: {out}",
         );
     }
 
@@ -766,11 +1013,46 @@ mod tests {
             }],
         };
         let out = render(&plan);
-        assert!(out.contains("~ content = \"old\" -> \"new\""), "got: {out}");
+        // Default mode: one summary line with line counts, no
+        // verbatim content.
+        assert!(
+            out.contains("~ content: 1 line removed, 1 line added"),
+            "missing content summary: {out}",
+        );
+        assert!(!out.contains("\"old\""), "old content leaked: {out}");
+        assert!(!out.contains("\"new\""), "new content leaked: {out}");
         assert!(
             !out.contains("~ target"),
-            "target should be unchanged: {out}"
+            "target should be unchanged: {out}",
         );
+    }
+
+    #[test]
+    fn update_file_renders_full_diff_in_verbose_mode() {
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/x".into(),
+                kind: ResourceKind::Template,
+                action: Action::Update,
+                before: Some(ResourceState::Template {
+                    path: PathBuf::from("/x"),
+                    content: "old\n".into(),
+                    sensitive: false,
+                }),
+                after: Some(ResourceState::Template {
+                    path: PathBuf::from("/x"),
+                    content: "new\n".into(),
+                    sensitive: false,
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        let out = render_verbose(&plan);
+        assert!(out.contains("~ content:"), "missing content header: {out}");
+        assert!(out.contains("@@"), "missing hunk header: {out}");
+        assert!(out.contains("-old"), "missing removed line: {out}");
+        assert!(out.contains("+new"), "missing added line: {out}");
     }
 
     #[test]
@@ -873,9 +1155,7 @@ mod tests {
 
     #[test]
     fn color_output_uses_action_specific_code_for_each_action() {
-        let mut buf = Vec::new();
-        render_plan(&mut buf, &Plan::sample(), RenderOptions { color: true }).unwrap();
-        let out = String::from_utf8(buf).unwrap();
+        let out = render_with(&Plan::sample(), true, false);
         assert!(out.contains(GREEN), "create should be green: {out}");
         assert!(out.contains(YELLOW), "update should be yellow: {out}");
     }
@@ -943,7 +1223,44 @@ mod tests {
     }
 
     #[test]
-    fn create_with_special_chars_in_content_escapes_them() {
+    fn verbose_mode_preserves_real_tabs_and_newlines() {
+        // In verbose mode the body is rendered as a real unified diff,
+        // so `\t` and `\n` are intentionally kept as literal control
+        // characters (otherwise the diff would be unreadable — the
+        // whole point of switching from the inline `"a\tb\n"` form is
+        // to make the structure visible). `\r`, ANSI, and bidi
+        // controls inside a single line are still escaped (covered by
+        // `verbose_mode_sanitizes_inline_control_chars` below).
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/x".into(),
+                kind: ResourceKind::Template,
+                action: Action::Create,
+                before: None,
+                after: Some(ResourceState::Template {
+                    path: PathBuf::from("/x"),
+                    content: "a\tb\nc\n".into(),
+                    sensitive: false,
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        let out = render_verbose(&plan);
+        // Body is split into lines by `\n`, so the literal newline
+        // separates two added lines; the tab stays inside its line.
+        assert!(out.contains("a\tb"), "tab not preserved in body: {out:?}");
+        assert!(
+            !out.contains("\\t"),
+            "tab should NOT be escaped in verbose mode: {out:?}",
+        );
+    }
+
+    #[test]
+    fn default_mode_hides_special_chars_entirely() {
+        // Default mode never prints body content, so even special
+        // chars in the content are absent from the output. This is
+        // the "safe-by-default" guarantee.
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "/x".into(),
@@ -960,12 +1277,18 @@ mod tests {
             }],
         };
         let out = render(&plan);
-        assert!(out.contains("\\t"), "tab not escaped: {out}");
-        assert!(out.contains("\\n"), "newline not escaped: {out}");
+        assert!(!out.contains('\t'), "tab leaked in default mode: {out:?}");
+        assert!(!out.contains("\\t"), "escaped tab leaked: {out:?}");
     }
 
     #[test]
-    fn sensitive_template_content_is_redacted() {
+    fn default_mode_hides_template_content_regardless_of_sensitive_flag() {
+        // The resource-level `sensitive` flag drives executor file
+        // mode (0o600 vs 0o644). For diff rendering it attaches a
+        // `[sensitive]` hint to the default-mode body summary so the
+        // operator sees which bodies will print secrets if they opt
+        // in to verbose. The hint does NOT redact — content is
+        // hidden by default for *every* template, sensitive or not.
         let plan = Plan {
             changes: vec![
                 ResourceChange {
@@ -1001,20 +1324,31 @@ mod tests {
             ],
         };
         let out = render(&plan);
-        assert!(out.contains("+ content = <sensitive>"), "got: {out}");
+        // Hint appears on both the one-sided Create and the two-sided
+        // Update summaries — they're the bodies that carry secrets.
         assert!(
-            out.contains("~ content = <sensitive> -> <sensitive>"),
-            "got: {out}"
+            out.contains("+ content [sensitive]: 1 line"),
+            "missing one-sided sensitive summary: {out}",
+        );
+        assert!(
+            out.contains("~ content [sensitive]: 1 line removed, 1 line added"),
+            "missing update sensitive summary: {out}",
         );
         assert!(
             out.contains("template.\"/y\" will be updated in-place  (force required)"),
-            "got: {out}"
+            "missing header: {out}",
         );
-        assert!(!out.contains("secret"), "secret leaked in diff: {out}");
+        // The literal secret-bearing content must not appear.
+        assert!(!out.contains("secret-value"), "create secret leaked: {out}");
+        assert!(!out.contains("old-secret"), "update before leaked: {out}");
+        assert!(!out.contains("new-secret"), "update after leaked: {out}");
     }
 
     #[test]
-    fn template_update_redacts_when_only_after_is_sensitive() {
+    fn default_mode_omits_sensitive_marker_when_flag_is_off() {
+        // Non-sensitive templates and scripts never see the
+        // `[sensitive]` marker — pin that so a future change to the
+        // hint-emission predicate doesn't accidentally tag everything.
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "/x".into(),
@@ -1022,25 +1356,115 @@ mod tests {
                 action: Action::Update,
                 before: Some(ResourceState::Template {
                     path: PathBuf::from("/x"),
-                    content: "old-public".into(),
+                    content: "old\n".into(),
                     sensitive: false,
                 }),
                 after: Some(ResourceState::Template {
                     path: PathBuf::from("/x"),
-                    content: "new-secret".into(),
+                    content: "new\n".into(),
+                    sensitive: false,
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        let out = render(&plan);
+        assert!(
+            out.contains("~ content: 1 line removed, 1 line added"),
+            "expected plain (no-marker) summary: {out}",
+        );
+        assert!(!out.contains("[sensitive]"), "marker leaked: {out}");
+    }
+
+    #[test]
+    fn default_mode_shell_script_sensitive_attaches_marker() {
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "with-secret".into(),
+                kind: ResourceKind::Shell,
+                action: Action::Run,
+                before: None,
+                after: Some(ResourceState::Shell {
+                    kind: ShellKind::Sh,
+                    name: "with-secret".into(),
+                    cwd: PathBuf::from("/repo"),
+                    script: "TOKEN=abc\necho ok\n".into(),
+                    sensitive: true,
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        let out = render(&plan);
+        assert!(
+            out.contains("> script [sensitive]: 2 lines"),
+            "missing sensitive shell summary: {out}",
+        );
+        assert!(!out.contains("TOKEN=abc"), "script content leaked: {out}");
+    }
+
+    #[test]
+    fn update_sensitive_either_side_attaches_marker() {
+        // Conservative rule: if either before or after carries the
+        // sensitive flag, the marker shows. This handles the typical
+        // public→secret transition (template was non-sensitive on
+        // disk; the new render is sensitive) without forcing the
+        // operator to mark both sides identically.
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/x".into(),
+                kind: ResourceKind::Template,
+                action: Action::Update,
+                before: Some(ResourceState::Template {
+                    path: PathBuf::from("/x"),
+                    content: "old\n".into(),
+                    sensitive: false,
+                }),
+                after: Some(ResourceState::Template {
+                    path: PathBuf::from("/x"),
+                    content: "new\n".into(),
+                    sensitive: true,
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        let out = render(&plan);
+        assert!(
+            out.contains("[sensitive]"),
+            "marker missing when only after-side sensitive: {out}",
+        );
+    }
+
+    #[test]
+    fn verbose_mode_reveals_content_even_when_sensitive_flag_is_set() {
+        // The flag name `--verbose-will-reveal-sensitive-content` is
+        // the consent — the renderer does not redact in verbose mode,
+        // even for templates the manifest tagged sensitive. The
+        // banner in `render_plan` advertises this.
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/x".into(),
+                kind: ResourceKind::Template,
+                action: Action::Update,
+                before: Some(ResourceState::Template {
+                    path: PathBuf::from("/x"),
+                    content: "old-public\n".into(),
+                    sensitive: false,
+                }),
+                after: Some(ResourceState::Template {
+                    path: PathBuf::from("/x"),
+                    content: "new-secret\n".into(),
                     sensitive: true,
                 }),
                 requires_elevation: false,
                 requires_force: true,
             }],
         };
-        let out = render(&plan);
-        assert!(
-            out.contains("~ content = <sensitive> -> <sensitive>"),
-            "got: {out}"
-        );
-        assert!(!out.contains("old-public"), "old content leaked: {out}");
-        assert!(!out.contains("new-secret"), "new content leaked: {out}");
+        let out = render_verbose(&plan);
+        assert!(out.contains("Verbose mode"), "missing banner: {out}");
+        assert!(out.contains("-old-public"), "old content missing: {out}");
+        assert!(out.contains("+new-secret"), "new content missing: {out}");
     }
 
     #[test]
@@ -1136,7 +1560,7 @@ mod tests {
     }
 
     #[test]
-    fn update_shell_renders_all_changed_fields() {
+    fn update_shell_renders_non_body_fields_inline_and_script_as_summary() {
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "refresh".into(),
@@ -1147,14 +1571,14 @@ mod tests {
                     name: "refresh".into(),
                     cwd: PathBuf::from("/repo"),
                     script: "echo old\n".into(),
-                    sensitive: false,
+                sensitive: false,
                 }),
                 after: Some(ResourceState::Shell {
                     kind: ShellKind::Bash,
                     name: "reload".into(),
                     cwd: PathBuf::from("/repo/subdir"),
                     script: "echo new\n".into(),
-                    sensitive: false,
+                sensitive: false,
                 }),
                 requires_elevation: false,
                 requires_force: false,
@@ -1174,13 +1598,15 @@ mod tests {
             "missing cwd diff: {out}"
         );
         assert!(
-            out.contains("~ script = \"echo old\\n\" -> \"echo new\\n\""),
-            "missing script diff: {out}"
+            out.contains("~ script: 1 line removed, 1 line added"),
+            "missing script summary: {out}",
         );
+        assert!(!out.contains("echo old"), "old script leaked: {out}");
+        assert!(!out.contains("echo new"), "new script leaked: {out}");
     }
 
     #[test]
-    fn update_shell_redacts_when_only_after_script_is_sensitive() {
+    fn update_shell_in_verbose_mode_shows_unified_script_diff() {
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "refresh".into(),
@@ -1190,31 +1616,28 @@ mod tests {
                     kind: ShellKind::Sh,
                     name: "refresh".into(),
                     cwd: PathBuf::from("/repo"),
-                    script: "echo public\n".into(),
-                    sensitive: false,
+                    script: "echo old\n".into(),
+                sensitive: false,
                 }),
                 after: Some(ResourceState::Shell {
                     kind: ShellKind::Sh,
                     name: "refresh".into(),
                     cwd: PathBuf::from("/repo"),
-                    script: "TOKEN=secret\n".into(),
-                    sensitive: true,
+                    script: "echo new\n".into(),
+                sensitive: false,
                 }),
                 requires_elevation: false,
                 requires_force: false,
             }],
         };
-        let out = render(&plan);
-        assert!(
-            out.contains("~ script = <sensitive> -> <sensitive>"),
-            "got: {out}"
-        );
-        assert!(!out.contains("echo public"), "old script leaked: {out}");
-        assert!(!out.contains("TOKEN=secret"), "new script leaked: {out}");
+        let out = render_verbose(&plan);
+        assert!(out.contains("~ script:"), "missing script header: {out}");
+        assert!(out.contains("-echo old"), "missing removed line: {out}");
+        assert!(out.contains("+echo new"), "missing added line: {out}");
     }
 
     #[test]
-    fn run_shell_renders_shell_fields() {
+    fn run_shell_renders_non_body_fields_inline_and_script_as_summary() {
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "refresh".into(),
@@ -1226,7 +1649,7 @@ mod tests {
                     name: "refresh".into(),
                     cwd: PathBuf::from("/repo"),
                     script: "echo ok\n".into(),
-                    sensitive: false,
+                sensitive: false,
                 }),
                 requires_elevation: false,
                 requires_force: false,
@@ -1251,14 +1674,15 @@ mod tests {
             "missing cwd line: {out}"
         );
         assert!(
-            out.contains("> script = \"echo ok\\n\""),
-            "missing script: {out}"
+            out.contains("> script: 1 line"),
+            "missing script summary: {out}",
         );
+        assert!(!out.contains("echo ok"), "script content leaked: {out}");
         assert!(out.contains("Plan: 0 to add, 0 to change, 1 to run."));
     }
 
     #[test]
-    fn sensitive_shell_script_is_redacted() {
+    fn run_shell_in_verbose_mode_shows_one_sided_script_diff() {
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "refresh".into(),
@@ -1269,15 +1693,247 @@ mod tests {
                     kind: ShellKind::Sh,
                     name: "refresh".into(),
                     cwd: PathBuf::from("/repo"),
-                    script: "TOKEN=secret".into(),
-                    sensitive: true,
+                    script: "echo ok\n".into(),
+                sensitive: false,
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        let out = render_verbose(&plan);
+        assert!(out.contains("> script:"), "missing script header: {out}");
+        assert!(out.contains("+echo ok"), "missing added line: {out}");
+    }
+
+    // --- Counts, banner, and sanitization for the verbose/default split ---
+
+    #[test]
+    fn default_mode_line_counts_match_textdiff_iter_changes() {
+        // Synthesize a 4-line→3-line update and verify the summary's
+        // counts agree with the underlying `similar` view, so a
+        // future refactor doesn't accidentally inflate / deflate the
+        // shown numbers.
+        let before = "a\nb\nc\nd\n";
+        let after = "a\nB\nd\n";
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/x".into(),
+                kind: ResourceKind::Template,
+                action: Action::Update,
+                before: Some(ResourceState::Template {
+                    path: PathBuf::from("/x"),
+                    content: before.into(),
+                    sensitive: false,
+                }),
+                after: Some(ResourceState::Template {
+                    path: PathBuf::from("/x"),
+                    content: after.into(),
+                    sensitive: false,
                 }),
                 requires_elevation: false,
                 requires_force: false,
             }],
         };
         let out = render(&plan);
-        assert!(out.contains("> script = <sensitive>"), "got: {out}");
-        assert!(!out.contains("TOKEN=secret"), "secret leaked: {out}");
+        // Two lines removed (`b`, `c`), one line added (`B`). Pin the
+        // exact pluralization too — line / lines.
+        assert!(
+            out.contains("~ content: 2 lines removed, 1 line added"),
+            "summary line counts off: {out}",
+        );
+    }
+
+    #[test]
+    fn count_lines_pins_pluralization_edge_cases() {
+        assert_eq!(count_lines(""), 0);
+        assert_eq!(count_lines("a"), 1);
+        assert_eq!(count_lines("a\n"), 1);
+        assert_eq!(count_lines("a\nb"), 2);
+        assert_eq!(count_lines("a\nb\n"), 2);
+    }
+
+    #[test]
+    fn verbose_banner_appears_only_when_body_blocks_present() {
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/x".into(),
+                kind: ResourceKind::Template,
+                action: Action::Create,
+                before: None,
+                after: Some(ResourceState::Template {
+                    path: PathBuf::from("/x"),
+                    content: "hi".into(),
+                    sensitive: false,
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        assert!(
+            render_verbose(&plan).contains("Verbose mode"),
+            "banner should appear when there's a body block to reveal",
+        );
+
+        // No body blocks: a package-only plan has nothing to reveal,
+        // so the banner is suppressed even with verbose set.
+        let packages_only = Plan {
+            changes: vec![ResourceChange {
+                address: "brew:ripgrep".into(),
+                kind: ResourceKind::Package,
+                action: Action::Create,
+                before: None,
+                after: Some(ResourceState::Package {
+                    manager: PackageManager::Brew,
+                    name: "ripgrep".into(),
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        assert!(
+            !render_verbose(&packages_only).contains("Verbose mode"),
+            "banner should NOT appear when there are no bodies to reveal",
+        );
+    }
+
+    #[test]
+    fn verbose_color_paints_hunk_header_minus_and_plus_lines() {
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/x".into(),
+                kind: ResourceKind::Template,
+                action: Action::Update,
+                before: Some(ResourceState::Template {
+                    path: PathBuf::from("/x"),
+                    content: "old\n".into(),
+                    sensitive: false,
+                }),
+                after: Some(ResourceState::Template {
+                    path: PathBuf::from("/x"),
+                    content: "new\n".into(),
+                    sensitive: false,
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        let out = render_with(&plan, true, true);
+        assert!(out.contains(CYAN), "hunk header should be cyan: {out:?}");
+        assert!(out.contains(RED), "removed line should be red: {out:?}");
+        assert!(out.contains(GREEN), "added line should be green: {out:?}");
+    }
+
+    #[test]
+    fn verbose_mode_sanitizes_inline_control_chars() {
+        // Inside a single rendered line, control bytes must not pass
+        // through (a hostile content could otherwise embed `\x1b[2J`
+        // to clear the screen between hunks). Real `\n` between
+        // lines is fine — that's the diff's natural line break.
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/x".into(),
+                kind: ResourceKind::Template,
+                action: Action::Create,
+                before: None,
+                after: Some(ResourceState::Template {
+                    path: PathBuf::from("/x"),
+                    content: "hello\x1b[2Jworld\n".into(),
+                    sensitive: false,
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        let out = render_verbose(&plan);
+        assert!(!out.contains('\x1b'), "ESC leaked: {out:?}");
+        assert!(
+            out.contains("\\u{001b}"),
+            "expected ESC escape: {out:?}",
+        );
+    }
+
+    #[test]
+    fn plan_has_body_blocks_predicate_matches_renderer_output() {
+        // The CLI uses this predicate to gate the interactive
+        // verbose-reveal prompt; it must agree with whether the
+        // renderer actually emits a body summary. Pinning this match
+        // means a future change to one path must also update the
+        // other.
+        let template_create = Plan {
+            changes: vec![ResourceChange {
+                address: "/x".into(),
+                kind: ResourceKind::Template,
+                action: Action::Create,
+                before: None,
+                after: Some(ResourceState::Template {
+                    path: PathBuf::from("/x"),
+                    content: "hi".into(),
+                    sensitive: false,
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        assert!(plan_has_body_blocks(&template_create));
+
+        let package_only = Plan {
+            changes: vec![ResourceChange {
+                address: "brew:ripgrep".into(),
+                kind: ResourceKind::Package,
+                action: Action::Create,
+                before: None,
+                after: Some(ResourceState::Package {
+                    manager: PackageManager::Brew,
+                    name: "ripgrep".into(),
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        assert!(!plan_has_body_blocks(&package_only));
+
+        // Template update with equal content: no body block.
+        let template_equal_update = Plan {
+            changes: vec![ResourceChange {
+                address: "/x".into(),
+                kind: ResourceKind::Template,
+                action: Action::Update,
+                before: Some(ResourceState::Template {
+                    path: PathBuf::from("/x"),
+                    content: "same".into(),
+                    sensitive: false,
+                }),
+                after: Some(ResourceState::Template {
+                    path: PathBuf::from("/x"),
+                    content: "same".into(),
+                    sensitive: false,
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        assert!(!plan_has_body_blocks(&template_equal_update));
+
+        // NoOp Template doesn't qualify either.
+        let template_noop = Plan {
+            changes: vec![ResourceChange {
+                address: "/x".into(),
+                kind: ResourceKind::Template,
+                action: Action::NoOp,
+                before: Some(ResourceState::Template {
+                    path: PathBuf::from("/x"),
+                    content: "same".into(),
+                    sensitive: false,
+                }),
+                after: Some(ResourceState::Template {
+                    path: PathBuf::from("/x"),
+                    content: "same".into(),
+                    sensitive: false,
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        assert!(!plan_has_body_blocks(&template_noop));
     }
 }

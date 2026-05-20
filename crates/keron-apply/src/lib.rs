@@ -103,36 +103,87 @@ pub enum Outcome {
     Cancelled,
 }
 
+/// Per-run flags bundled into a single argument so callers don't
+/// have to thread four bools through the public and test-only entry
+/// points. Grouped semantically — every field is set once at process
+/// boundary and never mutated. The clippy `struct_excessive_bools`
+/// allow is the explicit "this struct exists specifically to group
+/// config bools" scope.
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct RunFlags {
+    /// User passed `--execute`: prompt and apply after planning.
+    pub execute: bool,
+    /// Stdout is a terminal — paint ANSI escapes into the diff.
+    pub color: bool,
+    /// User passed `--verbose-will-reveal-sensitive-content`: render
+    /// body fields as full unified diffs from the start.
+    pub verbose: bool,
+    /// Both stdin and stdout are TTYs — safe to offer the
+    /// verbose-reveal prompt after the safe default has printed.
+    pub interactive: bool,
+}
+
 /// Plan a keron program at `path`. With `execute`, prompt and apply.
+///
+/// `verbose` is the CLI's
+/// `--verbose-will-reveal-sensitive-content` flag — when true, body
+/// fields (template `content`, shell `script`) render as full
+/// unified diffs from the start. When false, the renderer emits the
+/// one-line `N lines added / M lines removed` summary by default,
+/// and (only on an interactive TTY) prompts the user once whether to
+/// reveal the full content.
 ///
 /// # Errors
 /// Returns a [`RunError`] tagged with the failure phase so the CLI
 /// can map each phase to a distinct exit code (see
 /// [`RunError::exit_code`]).
-pub fn run(path: &Path, execute: bool) -> std::result::Result<Outcome, RunError> {
+pub fn run(
+    path: &Path,
+    execute: bool,
+    verbose: bool,
+) -> std::result::Result<Outcome, RunError> {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let color = stdout.is_terminal();
+    let interactive = stdin.is_terminal() && stdout.is_terminal();
     let mut sin = stdin.lock();
     let mut sout = stdout.lock();
-    run_with_io(path, execute, &mut sin, &mut sout, color)
+    let flags = RunFlags {
+        execute,
+        color,
+        verbose,
+        interactive,
+    };
+    run_with_io(path, &mut sin, &mut sout, flags)
 }
 
 /// Test-friendly entry: same logic as [`run`] but with explicit IO so
 /// tests can drive the prompt path without touching real stdio. The
 /// public `run` wrapper feeds in real `stdin`/`stdout` and detects
-/// terminal-ness for color.
+/// terminal-ness for color and the interactive-prompt gate.
+///
+/// `#[allow(too_many_lines)]` is intentional — this is the apply-pipeline
+/// orchestrator, and the natural read order (load → resolve → plan →
+/// render → execute) makes a serial implementation more legible than a
+/// graph of micro-helpers.
+#[allow(clippy::too_many_lines)]
 pub(crate) fn run_with_io<R, W>(
     path: &Path,
-    execute: bool,
     stdin: &mut R,
     stdout: &mut W,
-    color: bool,
+    flags: RunFlags,
 ) -> std::result::Result<Outcome, RunError>
 where
     R: BufRead,
     W: Write,
 {
+    let RunFlags {
+        execute,
+        color,
+        verbose,
+        interactive,
+    } = flags;
     refuse_direct_elevation().map_err(RunError::DirectElevation)?;
 
     let source = load::load(path).map_err(RunError::PreApply)?;
@@ -165,8 +216,21 @@ where
     let plan = prechecked.plan;
     let precheck = prechecked.precheck;
 
-    diff::render_plan(stdout, &plan, RenderOptions { color }).map_err(RunError::Io)?;
+    // Render once in the operator-requested mode. Default mode hides
+    // template `content` / shell `script` bodies as a `lines added /
+    // lines removed` summary; verbose mode (opt-in via the
+    // intentionally long `--verbose-will-reveal-sensitive-content`
+    // flag) prints the full unified diff. The flag's name carries the
+    // consent — the renderer does not redact in verbose mode.
+    diff::render_plan(
+        stdout,
+        &plan,
+        RenderOptions { color, verbose },
+    )
+    .map_err(RunError::Io)?;
     render_precheck(stdout, &precheck).map_err(RunError::Io)?;
+
+    maybe_offer_verbose_reveal(stdin, stdout, &plan, color, verbose, interactive)?;
 
     if !execute {
         return Ok(Outcome::Applied);
@@ -234,6 +298,44 @@ where
         .map_err(RunError::Io)?;
     }
     Ok(Outcome::Applied)
+}
+
+/// After the safe default-mode plan has printed, optionally offer to
+/// re-render the same plan with full body content visible. Only fires
+/// when:
+///   - the operator did NOT pass `--verbose-will-reveal-sensitive-content`,
+///   - the session is fully interactive (both stdin and stdout are TTYs),
+///     and
+///   - the plan actually has body blocks (template `content` / shell
+///     `script`) that would be hidden by the summary form.
+///
+/// The "safe view first" ordering is deliberate: a screen-share viewer
+/// or recorded terminal session never sees full content unless the
+/// operator explicitly opts in here.
+fn maybe_offer_verbose_reveal<R: BufRead, W: Write>(
+    stdin: &mut R,
+    stdout: &mut W,
+    plan: &plan::Plan,
+    color: bool,
+    verbose: bool,
+    interactive: bool,
+) -> std::result::Result<(), RunError> {
+    if verbose || !interactive || !diff::plan_has_body_blocks(plan) {
+        return Ok(());
+    }
+    let reveal = confirm::prompt_verbose_reveal(stdin, stdout).map_err(RunError::Io)?;
+    if reveal {
+        diff::render_plan(
+            stdout,
+            plan,
+            RenderOptions {
+                color,
+                verbose: true,
+            },
+        )
+        .map_err(RunError::Io)?;
+    }
+    Ok(())
 }
 
 fn render_precheck<W: Write>(stdout: &mut W, precheck: &plan::Precheck) -> io::Result<()> {
@@ -375,6 +477,9 @@ mod tests {
     }
 
     /// Drives `run_with_io` and returns (result, captured stdout).
+    /// Tests drive with `interactive=false` so the verbose-reveal
+    /// prompt never fires — existing tests pre-date that prompt and
+    /// would otherwise consume their stdin script.
     fn drive(
         path: &Path,
         execute: bool,
@@ -382,7 +487,17 @@ mod tests {
     ) -> (std::result::Result<Outcome, RunError>, String) {
         let mut sin = Cursor::new(stdin.as_bytes().to_vec());
         let mut sout: Vec<u8> = Vec::new();
-        let res = run_with_io(path, execute, &mut sin, &mut sout, false);
+        let res = run_with_io(
+            path,
+            &mut sin,
+            &mut sout,
+            RunFlags {
+                execute,
+                color: false,
+                verbose: false,
+                interactive: false,
+            },
+        );
         (res, String::from_utf8(sout).unwrap())
     }
 
@@ -439,7 +554,7 @@ mod tests {
             std::process::id(),
             SEQ.fetch_add(1, Ordering::Relaxed),
         ));
-        let res = run(&missing, false);
+        let res = run(&missing, false, false);
         assert!(res.is_err(), "expected Err for missing path");
     }
 

@@ -35,6 +35,16 @@ enum Command {
         /// After showing the plan, prompt for confirmation and apply.
         #[arg(long)]
         execute: bool,
+
+        /// Show full content diffs in the plan. WARNING: this will
+        /// print sensitive values (private keys, tokens, secrets)
+        /// verbatim to stdout. The flag name is deliberately long so
+        /// it cannot be confused with a generic `--verbose` — typing
+        /// it is the consent. When omitted on an interactive TTY,
+        /// keron will offer to reveal full content once after
+        /// printing the default-mode summary.
+        #[arg(long)]
+        verbose_will_reveal_sensitive_content: bool,
     },
 
     /// Normalize `.keron` files. Writes in place by default; in
@@ -177,7 +187,11 @@ where
 {
     let cli = Cli::parse_from(args);
     match cli.command {
-        Command::Apply { path, execute } => match keron_apply::run(&path, execute) {
+        Command::Apply {
+            path,
+            execute,
+            verbose_will_reveal_sensitive_content,
+        } => match keron_apply::run(&path, execute, verbose_will_reveal_sensitive_content) {
             Ok(keron_apply::Outcome::Applied) => Ok(ExitCode::SUCCESS),
             Ok(keron_apply::Outcome::Cancelled) => Ok(ExitCode::from(130)),
             Err(e) => {
