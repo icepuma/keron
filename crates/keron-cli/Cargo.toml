@@ -18,6 +18,10 @@ keron-apply.workspace = true
 
 anyhow.workspace = true
 clap.workspace = true
+# Unified-diff renderer for `keron format --check`. Pinned to the
+# version that `insta` already vendors transitively so the lockfile
+# stays single-version.
+similar = "=2.7.0"
 
 [dev-dependencies]
 mutants.workspace = true

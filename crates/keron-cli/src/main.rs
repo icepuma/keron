@@ -37,15 +37,25 @@ enum Command {
         execute: bool,
     },
 
-    /// Normalize `.keron` files in place.
+    /// Normalize `.keron` files. Writes in place by default; in
+    /// `--check` mode prints a unified diff per file that would
+    /// change.
     Format {
-        /// Path to a `.keron` file or directory tree containing
-        /// `.keron` files.
-        path: PathBuf,
+        /// One or more `.keron` files or directories. When empty,
+        /// reads source from stdin and writes formatted output to
+        /// stdout. A single `-` is treated identically to no paths.
+        paths: Vec<PathBuf>,
 
-        /// Check whether files are normalized without writing changes.
+        /// Print a unified diff per file that would change and exit
+        /// with status 2; don't modify files on disk.
         #[arg(long)]
         check: bool,
+
+        /// Suppress per-file informational output ("Formatted …").
+        /// Errors still print to stderr, and `--check` still prints
+        /// its diff — that's the requested artifact, not chatter.
+        #[arg(long, short)]
+        quiet: bool,
     },
 
     /// Internal: invoked by the unprivileged keron process under
@@ -178,7 +188,21 @@ where
                 })
             }
         },
-        Command::Format { path, check } => run_format(&path, check).map_err(CliError::from),
+        Command::Format {
+            paths,
+            check,
+            quiet,
+        } => {
+            // Lock stdin/stdout *here*, not at the top of run_cli —
+            // `Stdin::lock()` is a regular Mutex, not reentrant, so
+            // holding it across the dispatch would deadlock `Apply`'s
+            // own `stdin.lock()` in `keron_apply::run`.
+            let stdin = io::stdin();
+            let stdout = io::stdout();
+            let target = resolve_format_target(paths)?;
+            run_format(target, check, quiet, &mut stdin.lock(), &mut stdout.lock())
+                .map_err(CliError::from)
+        }
         Command::ApplyElevated { payload } => {
             keron_apply::run_elevated_child(&payload)?;
             Ok(ExitCode::SUCCESS)
@@ -186,13 +210,105 @@ where
     }
 }
 
-fn run_format(path: &std::path::Path, check: bool) -> anyhow::Result<ExitCode> {
-    let files = collect_keron_files(path)?;
-    let mut changed = Vec::new();
+#[derive(Debug)]
+enum FormatTarget {
+    Stdin,
+    Paths(Vec<PathBuf>),
+}
+
+/// Resolve the positional `paths` arg into a format target:
+/// - `[]` or `[-]` → stdin
+/// - anything containing `-` mixed with real paths → error
+/// - otherwise → the path list
+fn resolve_format_target(paths: Vec<PathBuf>) -> Result<FormatTarget, CliError> {
+    let dash = std::path::Path::new("-");
+    if paths.is_empty() {
+        return Ok(FormatTarget::Stdin);
+    }
+    if paths.len() == 1 && paths[0] == dash {
+        return Ok(FormatTarget::Stdin);
+    }
+    if paths.iter().any(|p| p == dash) {
+        return Err(CliError {
+            error: anyhow::anyhow!("`-` (stdin) cannot be mixed with file paths"),
+            exit_code: 1,
+        });
+    }
+    Ok(FormatTarget::Paths(paths))
+}
+
+fn run_format<R, W>(
+    target: FormatTarget,
+    check: bool,
+    quiet: bool,
+    stdin: &mut R,
+    stdout: &mut W,
+) -> anyhow::Result<ExitCode>
+where
+    R: io::Read,
+    W: io::Write,
+{
+    match target {
+        FormatTarget::Stdin => run_format_stdin(check, stdin, stdout),
+        FormatTarget::Paths(paths) => run_format_paths(&paths, check, quiet, stdout),
+    }
+}
+
+fn run_format_stdin<R, W>(check: bool, stdin: &mut R, stdout: &mut W) -> anyhow::Result<ExitCode>
+where
+    R: io::Read,
+    W: io::Write,
+{
+    let mut before = String::new();
+    stdin
+        .read_to_string(&mut before)
+        .map_err(|e| anyhow::anyhow!("reading stdin: {e}"))?;
+    let after = match keron_lang::format(&before) {
+        Ok(s) => s,
+        Err(diags) => {
+            let msg = diags
+                .into_iter()
+                .map(|d| d.message)
+                .collect::<Vec<_>>()
+                .join("; ");
+            anyhow::bail!("cannot format stdin: {msg}");
+        }
+    };
+    if check {
+        if before == after {
+            return Ok(ExitCode::SUCCESS);
+        }
+        let diff = render_diff("<stdin>", &before, &after, color_enabled());
+        stdout
+            .write_all(diff.as_bytes())
+            .map_err(|e| anyhow::anyhow!("writing diff: {e}"))?;
+        return Ok(ExitCode::from(2));
+    }
+    stdout
+        .write_all(after.as_bytes())
+        .map_err(|e| anyhow::anyhow!("writing stdout: {e}"))?;
+    Ok(ExitCode::SUCCESS)
+}
+
+fn run_format_paths<W>(
+    paths: &[PathBuf],
+    check: bool,
+    quiet: bool,
+    stdout: &mut W,
+) -> anyhow::Result<ExitCode>
+where
+    W: io::Write,
+{
+    let mut files = Vec::new();
+    for path in paths {
+        let mut sub = collect_keron_files(path)?;
+        files.append(&mut sub);
+    }
+    let mut drifted: Vec<(PathBuf, String, String)> = Vec::new();
     for file in files {
-        let text = fs::read_to_string(&file)
+        let before = fs::read_to_string(&file)
             .map_err(|e| anyhow::anyhow!("reading `{}`: {e}", file.display()))?;
-        let formatted = match keron_lang::format(&text) {
+        let after = match keron_lang::format(&before) {
             Ok(s) => s,
             Err(diags) => {
                 let msg = diags
@@ -203,31 +319,115 @@ fn run_format(path: &std::path::Path, check: bool) -> anyhow::Result<ExitCode> {
                 anyhow::bail!("cannot format `{}`: {msg}", file.display());
             }
         };
-        if formatted != text {
-            changed.push(file.clone());
-            if !check {
-                write_atomically(&file, formatted.as_bytes())
-                    .map_err(|e| anyhow::anyhow!("writing `{}`: {e}", file.display()))?;
+        if before == after {
+            continue;
+        }
+        if check {
+            drifted.push((file, before, after));
+        } else {
+            write_atomically(&file, after.as_bytes())
+                .map_err(|e| anyhow::anyhow!("writing `{}`: {e}", file.display()))?;
+            if !quiet {
+                let line = format!("Formatted {}\n", file.display());
+                stdout
+                    .write_all(keron_apply::sanitize_terminal_message(&line).as_bytes())
+                    .map_err(|e| anyhow::anyhow!("writing stdout: {e}"))?;
             }
         }
     }
-    if check && !changed.is_empty() {
+    if check && !drifted.is_empty() {
+        let color = color_enabled();
+        for (path, before, after) in &drifted {
+            let label = path.display().to_string();
+            let diff = render_diff(&label, before, after, color);
+            stdout
+                .write_all(diff.as_bytes())
+                .map_err(|e| anyhow::anyhow!("writing diff: {e}"))?;
+        }
         // Drift-reported, not a tool error: exit 2 so CI can
-        // distinguish "rerun format" from "tool broke". Sanitize
-        // each filename so a hostile checkout whose paths contain
-        // control bytes can't forge this output.
-        let raw = format!(
-            "formatting needed for {}",
-            changed
-                .iter()
-                .map(|p| p.display().to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-        eprintln!("{}", keron_apply::sanitize_terminal_message(&raw));
+        // distinguish "rerun format" from "tool broke".
         return Ok(ExitCode::from(2));
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// Render a unified diff comparing `before` (the source as-found) to
+/// `after` (the formatter's canonical output) with a `cargo fmt`-style
+/// header. Sanitizes through `keron_apply::sanitize_terminal_message`
+/// to defuse `\r` / `\x1b` / U+202E in either the path or the source
+/// content before optionally applying ANSI color, so a hostile file
+/// can't forge or rewrite the displayed output.
+fn render_diff(label: &str, before: &str, after: &str, color: bool) -> String {
+    let diff = similar::TextDiff::from_lines(before, after);
+    let rendered = diff
+        .unified_diff()
+        .context_radius(3)
+        .header(label, &format!("{label} (formatted)"))
+        .to_string();
+    let safe = keron_apply::sanitize_terminal_message(&rendered);
+    if color { colorize_diff(&safe) } else { safe }
+}
+
+/// Apply ANSI colors to a unified-diff string. The structure follows
+/// the universal `diff -u` convention recognized by `git`, `gofmt`,
+/// `rustfmt`, and `prettier`:
+/// - `---`/`+++` file headers: bold.
+/// - `@@ ... @@` hunk headers: cyan.
+/// - lines beginning with `-` (and not `---`): red.
+/// - lines beginning with `+` (and not `+++`): green.
+/// - context lines: untouched.
+fn colorize_diff(diff: &str) -> String {
+    const RESET: &str = "\x1b[0m";
+    const RED: &str = "\x1b[31m";
+    const GREEN: &str = "\x1b[32m";
+    const CYAN: &str = "\x1b[36m";
+    const BOLD: &str = "\x1b[1m";
+    let mut out = String::with_capacity(diff.len() + 64);
+    for line in diff.split_inclusive('\n') {
+        if line.starts_with("--- ") || line.starts_with("+++ ") {
+            out.push_str(BOLD);
+            out.push_str(line.trim_end_matches('\n'));
+            out.push_str(RESET);
+            if line.ends_with('\n') {
+                out.push('\n');
+            }
+        } else if line.starts_with("@@") {
+            out.push_str(CYAN);
+            out.push_str(line.trim_end_matches('\n'));
+            out.push_str(RESET);
+            if line.ends_with('\n') {
+                out.push('\n');
+            }
+        } else if line.starts_with('-') {
+            out.push_str(RED);
+            out.push_str(line.trim_end_matches('\n'));
+            out.push_str(RESET);
+            if line.ends_with('\n') {
+                out.push('\n');
+            }
+        } else if line.starts_with('+') {
+            out.push_str(GREEN);
+            out.push_str(line.trim_end_matches('\n'));
+            out.push_str(RESET);
+            if line.ends_with('\n') {
+                out.push('\n');
+            }
+        } else {
+            out.push_str(line);
+        }
+    }
+    out
+}
+
+/// Color is enabled when stdout is a real terminal AND the user
+/// hasn't opted out via the de-facto `NO_COLOR` env var (honored by
+/// rustfmt, cargo, ripgrep, prettier, ...).
+fn color_enabled() -> bool {
+    use std::io::IsTerminal;
+    if std::env::var_os("NO_COLOR").is_some() {
+        return false;
+    }
+    io::stdout().is_terminal()
 }
 
 /// Write `bytes` to `target` via a sibling tempfile + rename. A
@@ -461,9 +661,13 @@ mod tests {
     fn run_cli_format_check_accepts_parseable_corpus_fixtures() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../keron-lang/tests/corpus");
         for rel in ["parse", "check", "errors/check"] {
-            let code = run_format(&root.join(rel), true).unwrap_or_else(|err| {
-                panic!("parseable corpus fixtures under {rel} should be normalized: {err:#}")
-            });
+            let mut stdin: &[u8] = &[];
+            let mut stdout = Vec::<u8>::new();
+            let target = FormatTarget::Paths(vec![root.join(rel)]);
+            let code =
+                run_format(target, true, false, &mut stdin, &mut stdout).unwrap_or_else(|err| {
+                    panic!("parseable corpus fixtures under {rel} should be normalized: {err:#}")
+                });
             assert_eq!(
                 format!("{code:?}"),
                 format!("{:?}", ExitCode::SUCCESS),
@@ -514,6 +718,163 @@ mod tests {
         assert!(
             msg.contains("neither a regular file nor a directory"),
             "got: {msg}",
+        );
+    }
+
+    // -----------------------------------------------------------
+    // cargo-fmt parity: diff in --check, stdin mode, color gating
+    //
+    // These exercise `run_format` directly (not `run_cli`) because
+    // the in-process harness can pump bytes through `&[u8]` /
+    // `Vec<u8>` without spawning a child or touching the real
+    // stdin/stdout. The clap-routing layer is covered by the
+    // existing `run_cli_format_*` tests above.
+    // -----------------------------------------------------------
+
+    /// Drift in a single file → unified diff on stdout with the
+    /// conventional `--- ` / `+++ ` headers and at least one `-` /
+    /// `+` line. Exit 2. Under `cargo test`, stdout is a pipe (not a
+    /// TTY), so `color_enabled()` returns false and the diff is
+    /// plain ASCII — no env-var fiddling needed.
+    #[test]
+    fn run_cli_format_check_emits_unified_diff() {
+        let dir = TempDir::new("format-diff");
+        let file = dir.path.join("main.keron");
+        fs::write(&file, "val x: Int = 1  ").unwrap();
+        let mut stdin: &[u8] = &[];
+        let mut stdout = Vec::<u8>::new();
+        let target = FormatTarget::Paths(vec![file]);
+        let code = run_format(target, true, false, &mut stdin, &mut stdout).expect("format check");
+        assert_eq!(format!("{code:?}"), format!("{:?}", ExitCode::from(2)));
+        let out = String::from_utf8(stdout).expect("utf8 diff");
+        assert!(out.contains("--- "), "missing --- header: {out:?}");
+        assert!(out.contains("+++ "), "missing +++ header: {out:?}");
+        assert!(
+            out.lines()
+                .any(|l| l.starts_with('-') && !l.starts_with("---")),
+            "missing - line: {out:?}",
+        );
+        assert!(
+            out.lines()
+                .any(|l| l.starts_with('+') && !l.starts_with("+++")),
+            "missing + line: {out:?}",
+        );
+    }
+
+    /// Two paths in one invocation: only the drifted file is
+    /// touched; the clean one stays byte-for-byte identical.
+    #[test]
+    fn run_cli_format_multiple_paths() {
+        let dir = TempDir::new("format-multi");
+        let clean = dir.path.join("clean.keron");
+        let drifted = dir.path.join("drift.keron");
+        fs::write(&clean, "val x: Int = 1\n").unwrap();
+        fs::write(&drifted, "val y: Int = 2  ").unwrap();
+        let mut stdin: &[u8] = &[];
+        let mut stdout = Vec::<u8>::new();
+        let target = FormatTarget::Paths(vec![clean.clone(), drifted.clone()]);
+        let code = run_format(target, false, true, &mut stdin, &mut stdout).expect("format multi");
+        assert_eq!(format!("{code:?}"), format!("{:?}", ExitCode::SUCCESS));
+        assert_eq!(
+            fs::read_to_string(&clean).unwrap(),
+            "val x: Int = 1\n",
+            "clean file was rewritten",
+        );
+        assert_eq!(
+            fs::read_to_string(&drifted).unwrap(),
+            "val y: Int = 2\n",
+            "drifted file wasn't normalized",
+        );
+    }
+
+    /// Stdin mode (empty paths, default flags): reads source, writes
+    /// formatted output to stdout, exit 0.
+    #[test]
+    fn run_cli_format_stdin_writes_stdout() {
+        let mut stdin: &[u8] = b"val x : Int=1";
+        let mut stdout = Vec::<u8>::new();
+        let target = FormatTarget::Stdin;
+        let code = run_format(target, false, false, &mut stdin, &mut stdout).expect("format stdin");
+        assert_eq!(format!("{code:?}"), format!("{:?}", ExitCode::SUCCESS));
+        assert_eq!(String::from_utf8(stdout).unwrap(), "val x: Int = 1\n",);
+    }
+
+    /// Stdin mode with `--check`: drift produces a unified diff
+    /// labelled `<stdin>` and exit 2. Stdout-is-not-TTY under cargo
+    /// test → color stays disabled, no env mutation needed.
+    #[test]
+    fn run_cli_format_stdin_check_emits_diff() {
+        let mut stdin: &[u8] = b"val x : Int=1";
+        let mut stdout = Vec::<u8>::new();
+        let target = FormatTarget::Stdin;
+        let code =
+            run_format(target, true, false, &mut stdin, &mut stdout).expect("format stdin check");
+        assert_eq!(format!("{code:?}"), format!("{:?}", ExitCode::from(2)));
+        let out = String::from_utf8(stdout).unwrap();
+        assert!(out.contains("<stdin>"), "missing <stdin> label: {out:?}");
+        assert!(out.contains("--- "), "missing --- header: {out:?}");
+    }
+
+    /// `resolve_format_target` collapses `[]` and `[-]` to Stdin and
+    /// surfaces the mixed-paths error.
+    #[test]
+    fn run_cli_format_dash_is_stdin() {
+        assert!(matches!(
+            resolve_format_target(vec![]).unwrap(),
+            FormatTarget::Stdin,
+        ));
+        assert!(matches!(
+            resolve_format_target(vec![PathBuf::from("-")]).unwrap(),
+            FormatTarget::Stdin,
+        ));
+        let err = resolve_format_target(vec![PathBuf::from("-"), PathBuf::from("file.keron")])
+            .expect_err("mixed `-` + path should error");
+        assert!(
+            err.error.to_string().contains("cannot be mixed"),
+            "got: {err}",
+        );
+    }
+
+    /// `color_enabled` returns false when stdout isn't a TTY (the
+    /// state under `cargo test` and any pipe / CI), and
+    /// `render_diff(..., color=false)` produces strictly plain ASCII
+    /// with no ANSI escapes. The `NO_COLOR` override is exercised via
+    /// the smoke step in CI rather than here — touching env vars from
+    /// a parallel-test process is hazardous (env-mutation is global)
+    /// and the practical guarantee users care about is the
+    /// "captured-output path stays plain" one we assert here.
+    #[test]
+    fn run_cli_format_check_stays_plain_in_non_tty() {
+        assert!(
+            !color_enabled(),
+            "cargo test's stdout is captured into a pipe; color_enabled \
+             must report false there"
+        );
+        let diff = render_diff("foo.keron", "val x : Int=1\n", "val x: Int = 1\n", false);
+        assert!(!diff.contains('\x1b'), "ANSI escape leaked: {diff:?}");
+    }
+
+    /// `--quiet` suppresses the per-file "Formatted …" line that
+    /// non-check mode otherwise prints to stdout.
+    #[test]
+    fn run_cli_format_quiet_suppresses_per_file_summary() {
+        let dir = TempDir::new("format-quiet");
+        let file = dir.path.join("main.keron");
+        fs::write(&file, "val x: Int = 1  ").unwrap();
+        let mut stdin: &[u8] = &[];
+        let mut stdout = Vec::<u8>::new();
+        let target = FormatTarget::Paths(vec![file.clone()]);
+        let code = run_format(target, false, true, &mut stdin, &mut stdout).expect("format quiet");
+        assert_eq!(format!("{code:?}"), format!("{:?}", ExitCode::SUCCESS));
+        assert!(stdout.is_empty(), "expected no chatter: {stdout:?}");
+        // Sanity: without --quiet the same call would print a line.
+        let mut stdout2 = Vec::<u8>::new();
+        fs::write(&file, "val x: Int = 1  ").unwrap();
+        let target2 = FormatTarget::Paths(vec![file]);
+        run_format(target2, false, false, &mut stdin, &mut stdout2).expect("format loud");
+        assert!(
+            String::from_utf8_lossy(&stdout2).contains("Formatted "),
+            "loud mode missing summary: {stdout2:?}",
         );
     }
 }
