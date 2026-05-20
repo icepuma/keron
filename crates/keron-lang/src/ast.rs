@@ -206,10 +206,21 @@ pub enum IntrinsicId {
     /// breadcrumb for "here is where the secret leaves the marker
     /// type and becomes plain text."
     UnwrapSecret,
-    /// `brew(name)` — declares a Homebrew formula or cask the apply
-    /// step should `brew install`. v1 carries only the name; taps
-    /// can be encoded inline (`brew("home/repo/formula")`).
+    /// `brew(name, tap_url? = null)` — declares a Homebrew formula. The
+    /// apply step runs `brew install`. A slash-qualified `name` of the
+    /// form `user/tap/formula` declares the formula's tap inline; the
+    /// optional `tap_url` overrides the auto-derived `homebrew-<tap>`
+    /// GitHub URL for taps whose repo doesn't follow that naming
+    /// convention. State is classified Create / `NoOp` / Update by diffing
+    /// against `brew list --formula -1` (bare-name match) and
+    /// `brew outdated --formula --quiet` (qualified-name match).
     Brew,
+    /// `cask(name, tap_url? = null)` — declares a Homebrew cask. The
+    /// apply step runs `brew install --cask`. Same tap rules and same
+    /// Create / `NoOp` / Update upsert as [`Self::Brew`], but diffed
+    /// against the cask-side lists (`brew list --cask -1` and
+    /// `brew outdated --cask --quiet`). Cask resources are macOS-only.
+    Cask,
     /// `cargo(name)` — declares a `cargo install` binary. v1
     /// carries only the crate name.
     Cargo,

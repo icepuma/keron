@@ -58,7 +58,10 @@ order).
 - Imports: `from "./other.keron" use a, b` — user files only; the stdlib is
   implicit.
 - Resources: `symlink`, `template`, `shell`, package constructors (`brew`,
-  `cargo`, `winget`).
+  `cask`, `cargo`, `winget`). `brew`/`cask` accept an optional tap URL
+  (`brew("icepuma/keron/keron", "https://github.com/icepuma/keron")`)
+  and a slash-qualified name (`brew("user/tap/formula")`) auto-derives
+  the conventional `homebrew-<tap>` URL.
 - `reconcile { ... }` blocks emit the resources to apply; chain with `->` for
   ordering.
 - Eval-time file IO is confined to the keron root.

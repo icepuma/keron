@@ -410,9 +410,29 @@ fn render_state_lines<W: Write>(
             writeln!(out, "      {s} source = \"{}\"", show_path(to))?;
             writeln!(out, "      {s} target = \"{}\"", show_path(from))?;
         }
-        ResourceState::Package { manager, name } => {
-            writeln!(out, "      {s} manager = \"{}\"", manager.label())?;
+        ResourceState::Package { manager, name, tap } => {
+            writeln!(out, "      {s} manager = \"{}\"", manager.kind_label())?;
             writeln!(out, "      {s} name    = \"{}\"", escape_inline(name))?;
+            if let Some(spec) = tap {
+                writeln!(
+                    out,
+                    "      {s} tap     = \"{}\"",
+                    escape_inline(&spec.user_tap)
+                )?;
+                if let Some(url) = &spec.url {
+                    writeln!(out, "      {s} tap_url = \"{}\"", escape_inline(url))?;
+                }
+            }
+        }
+        ResourceState::Tap(spec) => {
+            writeln!(
+                out,
+                "      {s} user_tap = \"{}\"",
+                escape_inline(&spec.user_tap)
+            )?;
+            if let Some(url) = &spec.url {
+                writeln!(out, "      {s} url      = \"{}\"", escape_inline(url))?;
+            }
         }
         ResourceState::Shell {
             kind,
@@ -488,21 +508,38 @@ fn render_diff_lines<W: Write>(
             ResourceState::Package {
                 manager: before_manager,
                 name: before_name,
+                tap: before_tap,
             },
             ResourceState::Package {
                 manager: after_manager,
                 name: after_name,
+                tap: after_tap,
             },
         ) => {
             let before = PackageRenderState {
                 manager: *before_manager,
                 name: before_name,
+                tap: before_tap.as_ref(),
             };
             let after = PackageRenderState {
                 manager: *after_manager,
                 name: after_name,
+                tap: after_tap.as_ref(),
             };
             render_package_diff(out, before, after, &s)?;
+        }
+        (ResourceState::Tap(before_spec), ResourceState::Tap(after_spec)) => {
+            // The only field that meaningfully changes between
+            // before/after for a tap Update is the remote URL; the
+            // `user_tap` identity is the address itself.
+            if before_spec.url != after_spec.url {
+                writeln!(
+                    out,
+                    "      {s} url = \"{}\" -> \"{}\"",
+                    before_spec.url.as_deref().unwrap_or("(none)"),
+                    after_spec.url.as_deref().unwrap_or("(none)"),
+                )?;
+            }
         }
         (
             ResourceState::Shell {
@@ -541,6 +578,7 @@ struct SymlinkRenderState<'a> {
 struct PackageRenderState<'a> {
     manager: crate::plan::PackageManager,
     name: &'a str,
+    tap: Option<&'a crate::plan::TapSpec>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -614,8 +652,8 @@ fn render_package_diff<W: Write>(
         writeln!(
             out,
             "      {s} manager = \"{}\" -> \"{}\"",
-            before.manager.label(),
-            after.manager.label()
+            before.manager.kind_label(),
+            after.manager.kind_label()
         )?;
     }
     if before.name != after.name {
@@ -624,6 +662,25 @@ fn render_package_diff<W: Write>(
             "      {s} name    = \"{}\" -> \"{}\"",
             escape_inline(before.name),
             escape_inline(after.name)
+        )?;
+    }
+    if before.tap != after.tap {
+        let render = |t: Option<&crate::plan::TapSpec>| {
+            t.map_or_else(
+                || "(none)".to_string(),
+                |spec| {
+                    spec.url.as_ref().map_or_else(
+                        || spec.user_tap.clone(),
+                        |url| format!("{} ({url})", spec.user_tap),
+                    )
+                },
+            )
+        };
+        writeln!(
+            out,
+            "      {s} tap     = \"{}\" -> \"{}\"",
+            render(before.tap),
+            render(after.tap),
         )?;
     }
     Ok(())
@@ -782,10 +839,12 @@ mod tests {
                     before: Some(ResourceState::Package {
                         manager: PackageManager::Brew,
                         name: "git".into(),
+                        tap: None,
                     }),
                     after: Some(ResourceState::Package {
                         manager: PackageManager::Brew,
                         name: "git".into(),
+                        tap: None,
                     }),
                     requires_elevation: false,
                     requires_force: false,
@@ -797,10 +856,12 @@ mod tests {
                     before: Some(ResourceState::Package {
                         manager: PackageManager::Brew,
                         name: "fd".into(),
+                        tap: None,
                     }),
                     after: Some(ResourceState::Package {
                         manager: PackageManager::Brew,
                         name: "fd".into(),
+                        tap: None,
                     }),
                     requires_elevation: false,
                     requires_force: false,
@@ -837,6 +898,7 @@ mod tests {
                 after: Some(ResourceState::Package {
                     manager: PackageManager::Brew,
                     name: "git".into(),
+                    tap: None,
                 }),
                 requires_elevation: false,
                 requires_force: false,
@@ -859,10 +921,12 @@ mod tests {
             before: Some(ResourceState::Package {
                 manager: PackageManager::Brew,
                 name: "git".into(),
+                tap: None,
             }),
             after: Some(ResourceState::Package {
                 manager: PackageManager::Brew,
                 name: "git".into(),
+                tap: None,
             }),
             requires_elevation: false,
             requires_force: false,
@@ -998,6 +1062,7 @@ mod tests {
                 after: Some(ResourceState::Package {
                     manager: PackageManager::Brew,
                     name: "ripgrep".into(),
+                    tap: None,
                 }),
                 requires_elevation: false,
                 requires_force: false,
@@ -1582,6 +1647,7 @@ mod tests {
                 after: Some(ResourceState::Package {
                     manager: PackageManager::Brew,
                     name: "ripgrep".into(),
+                    tap: None,
                 }),
                 requires_elevation: false,
                 requires_force: false,
@@ -1616,10 +1682,12 @@ mod tests {
                 before: Some(ResourceState::Package {
                     manager: PackageManager::Brew,
                     name: "git".into(),
+                    tap: None,
                 }),
                 after: Some(ResourceState::Package {
                     manager: PackageManager::Brew,
                     name: "git@2".into(),
+                    tap: None,
                 }),
                 requires_elevation: false,
                 requires_force: false,
@@ -1646,10 +1714,12 @@ mod tests {
                 before: Some(ResourceState::Package {
                     manager: PackageManager::Brew,
                     name: "ripgrep".into(),
+                    tap: None,
                 }),
                 after: Some(ResourceState::Package {
                     manager: PackageManager::Cargo,
                     name: "ripgrep".into(),
+                    tap: None,
                 }),
                 requires_elevation: false,
                 requires_force: false,
@@ -1889,6 +1959,7 @@ mod tests {
                 after: Some(ResourceState::Package {
                     manager: PackageManager::Brew,
                     name: "ripgrep".into(),
+                    tap: None,
                 }),
                 requires_elevation: false,
                 requires_force: false,
@@ -1987,6 +2058,7 @@ mod tests {
                 after: Some(ResourceState::Package {
                     manager: PackageManager::Brew,
                     name: "ripgrep".into(),
+                    tap: None,
                 }),
                 requires_elevation: false,
                 requires_force: false,

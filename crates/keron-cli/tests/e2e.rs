@@ -315,7 +315,7 @@ fn package_resource_installs_then_no_ops_via_cache_seam() {
     let fixture = fixture_dir("packages");
     let noop = write_noop_binary(&home.path);
 
-    let (manager_env, cache_env, bin_env) = pick_manager_env_keys();
+    let (manager_env, cache_env, bin_env, outdated_env) = pick_manager_env_keys();
 
     let mut first_cmd = keron_apply(&fixture, &home.path);
     first_cmd
@@ -323,6 +323,9 @@ fn package_resource_installs_then_no_ops_via_cache_seam() {
         .env(manager_env.0, manager_env.1)
         .env(cache_env, "")
         .env(bin_env, &noop);
+    if let Some(key) = outdated_env {
+        first_cmd.env(key, "");
+    }
     let first = run(first_cmd, "yes\n");
     assert!(
         first.success,
@@ -344,6 +347,11 @@ fn package_resource_installs_then_no_ops_via_cache_seam() {
         .env(manager_env.0, manager_env.1)
         .env(cache_env, package_name_for_manager(manager_env.1))
         .env(bin_env, home.path.join("does-not-exist"));
+    if let Some(key) = outdated_env {
+        // Empty outdated set → installed package is not outdated →
+        // the classifier short-circuits to NoOp without shelling out.
+        second_cmd.env(key, "");
+    }
     let second = run(second_cmd, "yes\n");
     assert!(
         second.success,
@@ -368,18 +376,21 @@ const fn pick_manager_env_keys() -> (
     (&'static str, &'static str), // KERON_E2E_MANAGER → "brew"/"cargo"/"winget"
     &'static str,                 // KERON_TEST_<MGR>_PACKAGES
     &'static str,                 // KERON_TEST_PACKAGE_BIN_<MGR>
+    Option<&'static str>, // KERON_TEST_<MGR>_OUTDATED (None when manager has no outdated probe)
 ) {
     if cfg!(windows) {
         (
             ("KERON_E2E_MANAGER", "winget"),
             "KERON_TEST_WINGET_PACKAGES",
             "KERON_TEST_PACKAGE_BIN_WINGET",
+            None,
         )
     } else {
         (
             ("KERON_E2E_MANAGER", "brew"),
             "KERON_TEST_BREW_PACKAGES",
             "KERON_TEST_PACKAGE_BIN_BREW",
+            Some("KERON_TEST_BREW_OUTDATED"),
         )
     }
 }

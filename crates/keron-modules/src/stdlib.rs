@@ -12,7 +12,7 @@
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
-use keron_lang::{Block, FnDecl, IntrinsicId, Item, Param, Program, Spanned, Type};
+use keron_lang::{Block, Expr, FnDecl, IntrinsicId, Item, Literal, Param, Program, Spanned, Type};
 
 #[derive(Debug)]
 pub struct StdModule {
@@ -204,33 +204,76 @@ fn build_secrets() -> StdModule {
     StdModule { fns, types }
 }
 
-/// `std:packages` builtins — `brew`, `cargo`, and `winget`
+/// `std:packages` builtins — `brew`, `cask`, `cargo`, and `winget`
 /// constructors for the unified `Package` resource. Each returns a
 /// `Package` (which widens to `Resource`, so a list / reconcile arm
 /// can mix them with files and symlinks). The manager identity is
 /// preserved on the produced value so the executor picks the right
 /// CLI at apply time; the user-facing type system sees one shape.
 ///
-/// v1 carries only the package name. Version pinning, taps, sources,
-/// and feature flags can be added as a second positional arg later
-/// without changing the existing signatures.
+/// `brew` and `cask` take an optional `tap_url: String? = null` second
+/// arg: when the formula/cask name is slash-qualified
+/// (`user/tap/formula`), `tap_url` overrides the auto-derived
+/// `homebrew-<tap>` URL for taps whose repo doesn't follow the
+/// convention. `cargo` and `winget` keep the single-name shape — their
+/// upstream registries don't have tap-like indirection.
 fn build_packages() -> StdModule {
     let mut fns = BTreeMap::new();
-    for name in ["brew", "cargo", "winget"] {
-        let id = match name {
-            "brew" => IntrinsicId::Brew,
-            "cargo" => IntrinsicId::Cargo,
-            "winget" => IntrinsicId::Winget,
-            _ => unreachable!(),
-        };
-        fns.insert(
-            name.into(),
-            intrinsic_fn(name, &[("name", Type::String)], Type::Package, id),
-        );
-    }
+    fns.insert("brew".into(), build_brewish_fn("brew", IntrinsicId::Brew));
+    fns.insert("cask".into(), build_brewish_fn("cask", IntrinsicId::Cask));
+    fns.insert(
+        "cargo".into(),
+        intrinsic_fn(
+            "cargo",
+            &[("name", Type::String)],
+            Type::Package,
+            IntrinsicId::Cargo,
+        ),
+    );
+    fns.insert(
+        "winget".into(),
+        intrinsic_fn(
+            "winget",
+            &[("name", Type::String)],
+            Type::Package,
+            IntrinsicId::Winget,
+        ),
+    );
     let mut types = BTreeMap::new();
     types.insert("Package".into(), Type::Package);
     StdModule { fns, types }
+}
+
+/// Build the two-arg `(name, tap_url? = null)` signature shared by
+/// `brew` and `cask`. Inline rather than threaded through
+/// [`intrinsic_fn`] because no other intrinsic needs a default value
+/// today and an extra helper signature would be dead weight.
+fn build_brewish_fn(name: &str, intrinsic: IntrinsicId) -> FnDecl {
+    FnDecl {
+        name: spanned(name.to_string()),
+        params: vec![
+            Param {
+                name: spanned("name".to_string()),
+                ty: spanned(Type::String),
+                default: None,
+                span: 0..0,
+            },
+            Param {
+                name: spanned("tap_url".to_string()),
+                ty: spanned(Type::Nullable(Box::new(Type::String))),
+                default: Some(spanned(Expr::Literal(Literal::Null))),
+                span: 0..0,
+            },
+        ],
+        return_type: spanned(Type::Package),
+        body: Block {
+            stmts: Vec::new(),
+            trailing: None,
+            span: 0..0,
+        },
+        span: 0..0,
+        intrinsic: Some(intrinsic),
+    }
 }
 
 /// `std:shell` builtins — explicit, always-run shell resources.
@@ -874,11 +917,10 @@ mod tests {
     }
 
     #[test]
-    fn packages_module_registers_all_three_managers() {
+    fn packages_module_registers_all_managers() {
         let reg = registry();
         let p = reg.get("packages").expect("packages module present");
         for (name, intrinsic) in [
-            ("brew", IntrinsicId::Brew),
             ("cargo", IntrinsicId::Cargo),
             ("winget", IntrinsicId::Winget),
         ] {
@@ -890,6 +932,24 @@ mod tests {
             assert_eq!(f.params.len(), 1);
             assert_eq!(f.params[0].name.node, "name");
             assert_eq!(f.params[0].ty.node, Type::String);
+            assert_eq!(f.return_type.node, Type::Package);
+        }
+        for (name, intrinsic) in [("brew", IntrinsicId::Brew), ("cask", IntrinsicId::Cask)] {
+            let f = p
+                .fns
+                .get(name)
+                .unwrap_or_else(|| panic!("{name} fn present"));
+            assert_eq!(f.intrinsic, Some(intrinsic));
+            assert_eq!(f.params.len(), 2);
+            assert_eq!(f.params[0].name.node, "name");
+            assert_eq!(f.params[0].ty.node, Type::String);
+            assert!(f.params[0].default.is_none());
+            assert_eq!(f.params[1].name.node, "tap_url");
+            assert_eq!(f.params[1].ty.node, Type::Nullable(Box::new(Type::String)));
+            assert!(
+                f.params[1].default.is_some(),
+                "tap_url should default to null"
+            );
             assert_eq!(f.return_type.node, Type::Package);
         }
         assert_eq!(p.types.get("Package"), Some(&Type::Package));

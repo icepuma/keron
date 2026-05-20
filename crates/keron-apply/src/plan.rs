@@ -36,6 +36,10 @@ pub enum ResourceKind {
     Symlink,
     Package,
     Shell,
+    /// Homebrew tap registration. Synthesized by the planner from any
+    /// [`ResourceState::Package`] whose `tap` field is `Some`; never
+    /// constructed directly by user code.
+    Tap,
 }
 
 impl ResourceKind {
@@ -45,6 +49,7 @@ impl ResourceKind {
             Self::Symlink => "symlink",
             Self::Package => "package",
             Self::Shell => "shell",
+            Self::Tap => "tap",
         }
     }
 }
@@ -88,17 +93,38 @@ impl ShellKind {
 /// Carried as a discriminator on the unified `Package` resource so
 /// the executor picks the right CLI at apply time; the user-facing
 /// type system sees one `Package` shape regardless.
+///
+/// `BrewCask` shares the `brew` binary with `Brew` but routes through
+/// `brew install --cask` / `brew list --cask -1` / etc. — distinct from
+/// `Brew` so the cache namespaces installed casks separately and the
+/// classifier compares against the right "outdated" set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PackageManager {
     Brew,
+    BrewCask,
     Cargo,
     Winget,
 }
 
 impl PackageManager {
+    /// The CLI binary name. `Brew` and `BrewCask` share `"brew"` —
+    /// the cask/formula split is a flag at invocation time, not a
+    /// different program.
     pub const fn label(self) -> &'static str {
         match self {
+            Self::Brew | Self::BrewCask => "brew",
+            Self::Cargo => "cargo",
+            Self::Winget => "winget",
+        }
+    }
+
+    /// User-facing manager name used in addresses and diagnostics.
+    /// Diverges from [`Self::label`] for `BrewCask` so the diff reads
+    /// `cask:font-jetbrains-mono` rather than `brew:font-jetbrains-mono`.
+    pub const fn kind_label(self) -> &'static str {
+        match self {
             Self::Brew => "brew",
+            Self::BrewCask => "cask",
             Self::Cargo => "cargo",
             Self::Winget => "winget",
         }
@@ -110,7 +136,7 @@ impl PackageManager {
     /// package-manager subprocess.
     ///
     /// v1 returns `false` for every variant:
-    ///   - `Brew` — refuses to run under sudo by design.
+    ///   - `Brew` / `BrewCask` — refuse to run under sudo by design.
     ///   - `Cargo` — installs to `~/.cargo/bin`, per-user.
     ///   - `Winget` — brokers its own UAC at install time for
     ///     machine-scope packages.
@@ -119,13 +145,15 @@ impl PackageManager {
     /// their arm to `true` without rewiring callers.
     pub const fn requires_elevation(self) -> bool {
         match self {
-            Self::Brew | Self::Cargo | Self::Winget => false,
+            Self::Brew | Self::BrewCask | Self::Cargo | Self::Winget => false,
         }
     }
 
     pub const fn is_supported_on(self, os: OsFamily) -> bool {
         match self {
             Self::Brew => matches!(os, OsFamily::Linux | OsFamily::Macos),
+            // Casks are macOS-only — Linux brew rejects `--cask`.
+            Self::BrewCask => matches!(os, OsFamily::Macos),
             Self::Cargo => true,
             Self::Winget => matches!(os, OsFamily::Windows),
         }
@@ -134,10 +162,25 @@ impl PackageManager {
     pub const fn supported_os_label(self) -> &'static str {
         match self {
             Self::Brew => "Linux or Macos",
+            Self::BrewCask => "Macos",
             Self::Cargo => "any OS",
             Self::Winget => "Windows",
         }
     }
+}
+
+/// A Homebrew tap declaration carried alongside a `Package`. Synthesized
+/// by the evaluator from `user/tap/formula` name parsing plus an
+/// optional `tap_url` second arg.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct TapSpec {
+    /// `user/tap` — the canonical homebrew tap identifier. Always
+    /// lowercase ASCII per brew's conventions.
+    pub user_tap: String,
+    /// Custom remote URL. `None` means brew derives the URL from the
+    /// `homebrew-<tap>` GitHub convention; `Some(url)` means we pass
+    /// `--custom-remote` to ensure the tap points at this remote.
+    pub url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -160,7 +203,19 @@ pub enum ResourceState {
     Package {
         manager: PackageManager,
         name: String,
+        /// Optional tap binding for `Brew` / `BrewCask` packages.
+        /// `Some(_)` means the planner will synthesize a sibling
+        /// [`ResourceState::Tap`] change so the tap registration
+        /// appears in the plan diff before the package install. Always
+        /// `None` for `Cargo` / `Winget` — they have no tap concept.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tap: Option<TapSpec>,
     },
+    /// Homebrew tap registration. Materialized by the planner from
+    /// [`ResourceState::Package::tap`]; not constructible from user
+    /// source. Carries enough state for the executor to call
+    /// `brew tap [--custom-remote] user/tap [URL]`.
+    Tap(TapSpec),
     Shell {
         kind: ShellKind,
         name: String,
@@ -301,8 +356,12 @@ impl ResourceChange {
         let state = self.after.as_ref().or(self.before.as_ref());
         match state {
             Some(ResourceState::Package { manager, .. }) => manager.requires_elevation(),
+            // Tap operations shell out to `brew`, which refuses to run
+            // under sudo — no elevation involved. Same fall-through as
+            // the `None` arm, but kept explicit so a future kind that
+            // forgets to opt in trips the exhaustiveness check.
+            Some(ResourceState::Tap(_)) | None => false,
             Some(other) => elevated::detect::path_requires_elevation(other, self.action),
-            None => false,
         }
     }
 
@@ -341,6 +400,7 @@ pub fn build_prechecked_plan(
 ) -> Result<PrecheckedPlan> {
     let resources = eval::eval_graph(graph, keron_root)?;
     let resources = dedup_resources(&resources)?;
+    let resources = synthesize_taps(&resources)?;
     let os = crate::platform::detect_os_family();
     let precheck = precheck_resources(&resources, os);
     let mut cache = PackageCache::new();
@@ -353,6 +413,59 @@ pub fn build_prechecked_plan(
         plan: Plan { changes },
         precheck,
     })
+}
+
+/// Expand every `Package { tap: Some(_) }` into a `[Tap, Package]`
+/// pair, deduping taps that share the same `user_tap`. The synthesized
+/// `Tap` is inserted **before** its first dependent package so the
+/// executor's source-order pass runs `brew tap` before `brew install`.
+///
+/// Multiple packages may share a tap. URL merge rules:
+///   - bare + bare → bare (no URL implied)
+///   - bare + custom URL → custom URL wins (it's strictly more
+///     specific — the bare form auto-derives the same URL when the
+///     repo follows `homebrew-<tap>` convention; if it doesn't, the
+///     custom URL is what the user intended)
+///   - custom URL A + custom URL B where A != B → hard error
+///     (silently picking one would produce surprising runtime behavior)
+fn synthesize_taps(resources: &[ResourceState]) -> Result<Vec<ResourceState>> {
+    let mut out: Vec<ResourceState> = Vec::with_capacity(resources.len());
+    let mut tap_pos: HashMap<String, usize> = HashMap::new();
+    for state in resources {
+        if let ResourceState::Package {
+            tap: Some(spec), ..
+        } = state
+        {
+            match tap_pos.get(&spec.user_tap) {
+                None => {
+                    tap_pos.insert(spec.user_tap.clone(), out.len());
+                    out.push(ResourceState::Tap(spec.clone()));
+                }
+                Some(&idx) => {
+                    let ResourceState::Tap(existing) = &mut out[idx] else {
+                        unreachable!("tap_pos must point at a Tap entry");
+                    };
+                    match (&existing.url, &spec.url) {
+                        // A second mention with a custom URL upgrades
+                        // a previously bare tap declaration.
+                        (None, Some(_)) => existing.url.clone_from(&spec.url),
+                        // Same URL or both bare → no-op.
+                        (Some(a), Some(b)) if a == b => {}
+                        (None | Some(_), None) => {}
+                        // Two different custom URLs for the same tap
+                        // is almost certainly a manifest bug.
+                        (Some(a), Some(b)) => bail!(
+                            "tap `{}` is declared with conflicting URLs: `{a}` and `{b}`; \
+                             pick one or drop the second `tap_url`",
+                            spec.user_tap,
+                        ),
+                    }
+                }
+            }
+        }
+        out.push(state.clone());
+    }
+    Ok(out)
 }
 
 /// Collapse repeat declarations of the same resource. Two `reconcile`
@@ -397,6 +510,9 @@ fn dedup_resources(resources: &[ResourceState]) -> Result<Vec<ResourceState>> {
 const fn include_in_plan(state: &ResourceState, os: OsFamily) -> bool {
     match state {
         ResourceState::Package { manager, .. } => manager.is_supported_on(os),
+        // Taps are macOS/Linux only — they ride along whenever a brew
+        // package they back is in scope, so check brew's supported OS.
+        ResourceState::Tap(_) => PackageManager::Brew.is_supported_on(os),
         ResourceState::Symlink { .. }
         | ResourceState::Template { .. }
         | ResourceState::Shell { .. } => true,
@@ -407,7 +523,7 @@ fn precheck_resources(resources: &[ResourceState], os: OsFamily) -> Precheck {
     let unsupported_packages = resources
         .iter()
         .filter_map(|state| {
-            let ResourceState::Package { manager, name } = state else {
+            let ResourceState::Package { manager, name, .. } = state else {
                 return None;
             };
             if manager.is_supported_on(os) {
@@ -430,7 +546,10 @@ fn classify(state: &ResourceState, cache: &mut PackageCache) -> Result<ResourceC
     let mut change = match state {
         ResourceState::Symlink { from, to } => classify_symlink(from, to, state)?,
         ResourceState::Template { path, content, .. } => classify_template(path, content, state)?,
-        ResourceState::Package { manager, name } => classify_package(*manager, name, state, cache)?,
+        ResourceState::Package { manager, name, .. } => {
+            classify_package(*manager, name, state, cache)?
+        }
+        ResourceState::Tap(spec) => classify_tap(spec, state, cache)?,
         ResourceState::Shell { kind, .. } => classify_shell(*kind, state)?,
     };
     change.requires_elevation = change.compute_requires_elevation();
@@ -452,29 +571,62 @@ fn classify_shell(kind: ShellKind, state: &ResourceState) -> Result<ResourceChan
     })
 }
 
-/// Classify a package resource by checking the cache. The cache is
-/// populated lazily — the first time a given manager is queried, we
-/// shell out to `<mgr> list`; subsequent queries reuse the snapshot.
-/// `mark_to_install` both checks and inserts, so two
-/// `brew("ripgrep")` resources in the same plan classify as
-/// Create / `NoOp` rather than Create / Create.
+/// Classify a package resource against the live state.
+///
+/// For brew formulae and casks, the cache holds two sets:
+///   - `installed_*` — bare names from `brew list --formula -1` (resp.
+///     `--cask -1`). Tap-installed formulae appear here under their
+///     bare formula name, not the qualified `user/tap/formula` form.
+///   - `outdated_*` — qualified names from `brew outdated`.
+///
+/// So we look the bare tail of the manifest name (`"ripgrep"` for both
+/// `brew("ripgrep")` and `brew("icepuma/keron/keron")`) up in installed,
+/// and the qualified name (`"icepuma/keron/keron"` or the bare form) up
+/// in outdated. Update wins over `NoOp` wins over Create.
+///
+/// Cargo / winget keep today's behavior: bare name only, install-only,
+/// no outdated probe. The cache's per-package "scheduled" dedup also
+/// stays: two `brew("ripgrep")` resources in the same plan collapse to
+/// Create + `NoOp` rather than Create + Create.
 fn classify_package(
     manager: PackageManager,
     name: &str,
     state: &ResourceState,
     cache: &mut PackageCache,
 ) -> Result<ResourceChange> {
-    let already = cache.mark_to_install(manager, name)?;
-    let action = if already {
-        Action::NoOp
-    } else {
-        Action::Create
-    };
+    let action = cache.classify_package(manager, name)?;
     Ok(ResourceChange {
         address: address_for(state),
         kind: ResourceKind::Package,
         action,
-        before: if already { Some(state.clone()) } else { None },
+        before: if matches!(action, Action::Create) {
+            None
+        } else {
+            Some(state.clone())
+        },
+        after: Some(state.clone()),
+        requires_elevation: false,
+        requires_force: false,
+    })
+}
+
+/// Classify a `Tap` change against the live state of tapped repos.
+/// See [`PackageCache::classify_tap`] for the three-state rule.
+fn classify_tap(
+    spec: &TapSpec,
+    state: &ResourceState,
+    cache: &mut PackageCache,
+) -> Result<ResourceChange> {
+    let action = cache.classify_tap(spec)?;
+    Ok(ResourceChange {
+        address: address_for(state),
+        kind: ResourceKind::Tap,
+        action,
+        before: if matches!(action, Action::Create) {
+            None
+        } else {
+            Some(state.clone())
+        },
         after: Some(state.clone()),
         requires_elevation: false,
         requires_force: false,
@@ -617,7 +769,10 @@ fn address_for(state: &ResourceState) -> String {
     match state {
         ResourceState::Template { path, .. } => path.display().to_string(),
         ResourceState::Symlink { from, .. } => from.display().to_string(),
-        ResourceState::Package { manager, name } => format!("{}:{}", manager.label(), name),
+        ResourceState::Package { manager, name, .. } => {
+            format!("{}:{}", manager.kind_label(), name)
+        }
+        ResourceState::Tap(spec) => format!("tap:{}", spec.user_tap),
         ResourceState::Shell { name, .. } => name.clone(),
     }
 }
@@ -781,10 +936,12 @@ mod tests {
             ResourceState::Package {
                 manager: PackageManager::Winget,
                 name: "Microsoft.PowerShell".into(),
+                tap: None,
             },
             ResourceState::Package {
                 manager: PackageManager::Brew,
                 name: "ripgrep".into(),
+                tap: None,
             },
             ResourceState::Template {
                 path: PathBuf::from("/tmp/out"),

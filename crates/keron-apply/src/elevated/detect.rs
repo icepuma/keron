@@ -34,7 +34,10 @@ pub fn path_requires_elevation(state: &ResourceState, action: Action) -> bool {
         ResourceState::Template { path, .. } => path.parent().is_none_or(|p| !dir_is_writable(p)),
         // Packages defer to `PackageManager::requires_elevation`;
         // returning false here lets that policy stay authoritative.
-        ResourceState::Package { .. } | ResourceState::Shell { .. } => false,
+        // Taps shell out to `brew`, which refuses sudo by design.
+        ResourceState::Package { .. } | ResourceState::Tap(_) | ResourceState::Shell { .. } => {
+            false
+        }
     }
 }
 
@@ -141,6 +144,7 @@ mod tests {
         let state = ResourceState::Package {
             manager: crate::plan::PackageManager::Brew,
             name: "ripgrep".into(),
+            tap: None,
         };
         assert!(!path_requires_elevation(&state, Action::Create));
     }

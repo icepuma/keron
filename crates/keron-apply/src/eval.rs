@@ -1075,6 +1075,7 @@ fn dispatch_intrinsic(id: IntrinsicId, args: &[CallArg], env: &Env<'_, '_>) -> R
             }
         }
         IntrinsicId::Brew => dispatch_package(args, env, PackageManager::Brew),
+        IntrinsicId::Cask => dispatch_package(args, env, PackageManager::BrewCask),
         IntrinsicId::Cargo => dispatch_package(args, env, PackageManager::Cargo),
         IntrinsicId::Winget => dispatch_package(args, env, PackageManager::Winget),
         IntrinsicId::Hostname => dispatch_hostname(),
@@ -1641,7 +1642,67 @@ fn dispatch_shell(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
 fn dispatch_package(args: &[CallArg], env: &Env<'_, '_>, manager: PackageManager) -> Result<Value> {
     let name = call_string(args, env, "name", 0)?;
     crate::packages::validate_package_name(manager, &name)?;
-    Ok(Value::Resource(ResourceState::Package { manager, name }))
+    // Only brew/cask understand tap qualification; cargo/winget reject
+    // a tap_url even if one snuck through the type system (it can't —
+    // their stdlib signatures don't accept it — but a defensive bail
+    // here is cheap).
+    let tap_url = match manager {
+        PackageManager::Brew | PackageManager::BrewCask => {
+            call_optional_string(args, env, "tap_url", 1)?
+        }
+        PackageManager::Cargo | PackageManager::Winget => None,
+    };
+    let tap = build_tap_spec(manager, &name, tap_url)?;
+    Ok(Value::Resource(ResourceState::Package {
+        manager,
+        name,
+        tap,
+    }))
+}
+
+/// Parse `name` into an optional tap segment and validate the
+/// shape / URL combo.
+///
+/// Rules:
+///   - bare `name` (no `/`): tap is `None`. `tap_url` here is a user
+///     error (URL given for a tap that doesn't exist).
+///   - `user/tap/formula` (exactly two slashes, no empty segments):
+///     tap is `Some(TapSpec { "user/tap", tap_url })`.
+///   - anything else (one slash, three or more, empty segment): hard
+///     error — these would silently produce wrong shell invocations.
+fn build_tap_spec(
+    manager: PackageManager,
+    name: &str,
+    tap_url: Option<String>,
+) -> Result<Option<crate::plan::TapSpec>> {
+    let segments: Vec<&str> = name.split('/').collect();
+    match segments.as_slice() {
+        [_single] => {
+            if tap_url.is_some() {
+                bail!(
+                    "{} call: `tap_url` given but name `{name}` has no `user/tap/` prefix — \
+                     drop the URL or qualify the name",
+                    manager.kind_label()
+                );
+            }
+            Ok(None)
+        }
+        [user, tap, _formula] if !user.is_empty() && !tap.is_empty() => {
+            if let Some(url) = tap_url.as_deref() {
+                crate::packages::brew::validate_tap_url(url)?;
+            }
+            Ok(Some(crate::plan::TapSpec {
+                user_tap: format!("{user}/{tap}"),
+                url: tap_url,
+            }))
+        }
+        _ => bail!(
+            "{} package name `{name}` must be either a bare formula (`ripgrep`) \
+             or a fully-qualified `user/tap/formula` (`icepuma/keron/keron`); \
+             one slash or more than two is not accepted",
+            manager.kind_label()
+        ),
+    }
 }
 
 /// Dispatch a `secret(uri)` call to the right resolver based on the
@@ -2094,6 +2155,40 @@ fn call_string(
     Ok(v.text)
 }
 
+/// Like [`call_string`] but tolerates the arg being omitted *or*
+/// supplied as `null`. Intrinsics receive their args slice raw — they
+/// don't go through [`bind_params`] — so defaults declared on the
+/// stdlib signature aren't substituted; this helper papers over that
+/// for `String? = null` intrinsic params.
+fn call_optional_string(
+    args: &[CallArg],
+    env: &Env<'_, '_>,
+    name: &str,
+    positional_idx: usize,
+) -> Result<Option<String>> {
+    let named = args
+        .iter()
+        .find(|a| a.name.as_ref().is_some_and(|n| n.node == name));
+    let arg = if let Some(a) = named {
+        a
+    } else {
+        let Some(a) = args.iter().filter(|a| a.name.is_none()).nth(positional_idx) else {
+            return Ok(None);
+        };
+        a
+    };
+    match eval_expr(&arg.value, env)? {
+        Value::Null => Ok(None),
+        Value::String { text, sensitive } => {
+            if sensitive {
+                bail!("sensitive String cannot be used for `{name}`");
+            }
+            Ok(Some(text))
+        }
+        other => bail!("expected String? for `{name}`, got {}", other.type_name()),
+    }
+}
+
 struct EvalString {
     text: String,
     sensitive: bool,
@@ -2290,13 +2385,19 @@ mod tests {
             // resources don't have a path, so callers shouldn't reach
             // for it here. Loud failure beats silently picking the
             // name field as a "path".
-            ResourceState::Package { manager, name } => {
+            ResourceState::Package { manager, name, .. } => {
                 panic!(
                     "first_file_path: expected filesystem resource, got Package({manager:?}, {name:?})"
                 )
             }
             ResourceState::Shell { name, .. } => {
                 panic!("first_file_path: expected filesystem resource, got Shell({name:?})")
+            }
+            ResourceState::Tap(spec) => {
+                panic!(
+                    "first_file_path: expected filesystem resource, got Tap({user_tap:?})",
+                    user_tap = spec.user_tap
+                )
             }
         }
     }
@@ -4125,7 +4226,7 @@ reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
     fn brew_builds_a_package_resource_with_brew_manager() {
         let states = run("reconcile brew(\"ripgrep\")\n");
         assert_eq!(states.len(), 1);
-        let ResourceState::Package { manager, name } = &states[0] else {
+        let ResourceState::Package { manager, name, .. } = &states[0] else {
             panic!("expected Package, got {:?}", states[0]);
         };
         assert_eq!(*manager, PackageManager::Brew);
@@ -4135,7 +4236,7 @@ reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
     #[test]
     fn cargo_builds_a_package_resource_with_cargo_manager() {
         let states = run("reconcile cargo(\"sccache\")\n");
-        let ResourceState::Package { manager, name } = &states[0] else {
+        let ResourceState::Package { manager, name, .. } = &states[0] else {
             panic!("expected Package, got {:?}", states[0]);
         };
         assert_eq!(*manager, PackageManager::Cargo);
@@ -4145,7 +4246,7 @@ reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
     #[test]
     fn winget_builds_a_package_resource_with_winget_manager() {
         let states = run("reconcile winget(\"Microsoft.PowerShell\")\n");
-        let ResourceState::Package { manager, name } = &states[0] else {
+        let ResourceState::Package { manager, name, .. } = &states[0] else {
             panic!("expected Package, got {:?}", states[0]);
         };
         assert_eq!(*manager, PackageManager::Winget);
@@ -4266,11 +4367,11 @@ reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
         );
         assert_eq!(states.len(), 3);
         assert!(
-            matches!(&states[0], ResourceState::Package { manager: PackageManager::Brew, name } if name == "ripgrep"),
+            matches!(&states[0], ResourceState::Package { manager: PackageManager::Brew, name, .. } if name == "ripgrep"),
         );
         assert!(matches!(&states[1], ResourceState::Symlink { .. }));
         assert!(
-            matches!(&states[2], ResourceState::Package { manager: PackageManager::Cargo, name } if name == "sccache"),
+            matches!(&states[2], ResourceState::Package { manager: PackageManager::Cargo, name, .. } if name == "sccache"),
         );
     }
 

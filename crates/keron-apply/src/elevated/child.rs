@@ -163,7 +163,7 @@ fn leaf_path(change: &ResourceChange) -> Option<PathBuf> {
     match state {
         ResourceState::Symlink { from, .. } => Some(from.clone()),
         ResourceState::Template { path, .. } => Some(path.clone()),
-        ResourceState::Package { .. } | ResourceState::Shell { .. } => None,
+        ResourceState::Package { .. } | ResourceState::Tap(_) | ResourceState::Shell { .. } => None,
     }
 }
 
@@ -216,6 +216,7 @@ mod tests {
         let c = change(ResourceState::Package {
             manager: crate::plan::PackageManager::Brew,
             name: "ripgrep".into(),
+            tap: None,
         });
         assert_eq!(leaf_path(&c), None);
     }

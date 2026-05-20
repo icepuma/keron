@@ -68,6 +68,7 @@ fn package_installs_when_absent_and_noops_when_present() {
         .arg(&entry)
         .env("KERON_ALLOW_TEST_OVERRIDES", "1")
         .env("KERON_TEST_BREW_PACKAGES", "")
+        .env("KERON_TEST_BREW_OUTDATED", "")
         .env("KERON_TEST_PACKAGE_BIN_BREW", "/usr/bin/true")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -107,6 +108,7 @@ fn package_installs_when_absent_and_noops_when_present() {
         .arg(&entry)
         .env("KERON_ALLOW_TEST_OVERRIDES", "1")
         .env("KERON_TEST_BREW_PACKAGES", "ripgrep")
+        .env("KERON_TEST_BREW_OUTDATED", "")
         .env("KERON_TEST_PACKAGE_BIN_BREW", "/usr/bin/false")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -132,6 +134,161 @@ fn package_installs_when_absent_and_noops_when_present() {
     assert!(
         stdout2.contains("No changes"),
         "second run should be NoOp: {stdout2}",
+    );
+}
+
+#[test]
+fn tap_qualified_brew_synthesizes_tap_resource_in_plan() {
+    // A `brew("user/tap/formula")` call should expand into a `Tap`
+    // change plus the package Create, both visible in the plan diff.
+    let proj = TempProject::new("tap-inline");
+    let entry = proj.write("entry.keron", "reconcile brew(\"icepuma/keron/keron\")\n");
+    let keron = keron_binary_path();
+    let output = Command::new(&keron)
+        .args(["apply"])
+        .arg(&entry)
+        .env("KERON_ALLOW_TEST_OVERRIDES", "1")
+        .env("KERON_TEST_BREW_PACKAGES", "")
+        .env("KERON_TEST_BREW_OUTDATED", "")
+        .env("KERON_TEST_BREW_TAPS", "")
+        .env("KERON_TEST_PACKAGE_BIN_BREW", "/usr/bin/true")
+        .output()
+        .expect("keron run");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "tap-inline plan failed: {:?}\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        output.status,
+    );
+    assert!(
+        stdout.contains("tap:icepuma/keron"),
+        "plan should mention the synthesized tap resource: {stdout}",
+    );
+    assert!(
+        stdout.contains("brew:icepuma/keron/keron"),
+        "plan should mention the qualified brew formula: {stdout}",
+    );
+    assert!(
+        stdout.contains("2 to add"),
+        "plan should count both tap and package: {stdout}",
+    );
+}
+
+#[test]
+fn tap_already_installed_classifies_as_noop() {
+    // When the tap is already present and no custom URL is asserted,
+    // the tap change collapses to NoOp.
+    let proj = TempProject::new("tap-noop");
+    let entry = proj.write("entry.keron", "reconcile brew(\"icepuma/keron/keron\")\n");
+    let keron = keron_binary_path();
+    let output = Command::new(&keron)
+        .args(["apply"])
+        .arg(&entry)
+        .env("KERON_ALLOW_TEST_OVERRIDES", "1")
+        .env("KERON_TEST_BREW_PACKAGES", "")
+        .env("KERON_TEST_BREW_OUTDATED", "")
+        .env("KERON_TEST_BREW_TAPS", "icepuma/keron")
+        .env("KERON_TEST_PACKAGE_BIN_BREW", "/usr/bin/true")
+        .output()
+        .expect("keron run");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "{stdout}");
+    // 1 added (the package); the tap is NoOp and is counted in
+    // `unchanged`, not `to add`.
+    assert!(
+        stdout.contains("1 to add"),
+        "only the package should be added: {stdout}",
+    );
+    assert!(
+        stdout.contains("1 unchanged"),
+        "the tap should be reported as unchanged: {stdout}",
+    );
+}
+
+#[test]
+fn tap_url_drift_classifies_as_update() {
+    // When the tap is present but its remote URL differs from the
+    // manifest, the tap change is Update.
+    let proj = TempProject::new("tap-drift");
+    let entry = proj.write(
+        "entry.keron",
+        "reconcile brew(\"icepuma/keron/keron\", \"https://github.com/icepuma/keron\")\n",
+    );
+    let keron = keron_binary_path();
+    let output = Command::new(&keron)
+        .args(["apply"])
+        .arg(&entry)
+        .env("KERON_ALLOW_TEST_OVERRIDES", "1")
+        .env("KERON_TEST_BREW_PACKAGES", "")
+        .env("KERON_TEST_BREW_OUTDATED", "")
+        .env("KERON_TEST_BREW_TAPS", "icepuma/keron")
+        .env(
+            "KERON_TEST_BREW_TAP_REMOTES",
+            "icepuma/keron=https://old.example/keron",
+        )
+        .env("KERON_TEST_PACKAGE_BIN_BREW", "/usr/bin/true")
+        .output()
+        .expect("keron run");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "{stdout}");
+    assert!(
+        stdout.contains("1 to change"),
+        "tap URL drift should produce a change action: {stdout}",
+    );
+}
+
+#[test]
+fn outdated_brew_formula_classifies_as_update() {
+    // Installed AND in the outdated set → the planner emits an
+    // Update so the executor runs `brew upgrade` instead of NoOp.
+    let proj = TempProject::new("outdated");
+    let entry = proj.write("entry.keron", "reconcile brew(\"ripgrep\")\n");
+    let keron = keron_binary_path();
+    let output = Command::new(&keron)
+        .args(["apply"])
+        .arg(&entry)
+        .env("KERON_ALLOW_TEST_OVERRIDES", "1")
+        .env("KERON_TEST_BREW_PACKAGES", "ripgrep")
+        .env("KERON_TEST_BREW_OUTDATED", "ripgrep")
+        .env("KERON_TEST_PACKAGE_BIN_BREW", "/usr/bin/true")
+        .output()
+        .expect("keron run");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "{stdout}");
+    assert!(
+        stdout.contains("1 to change"),
+        "outdated brew formula should be reported as a change: {stdout}",
+    );
+}
+
+#[test]
+fn cask_resource_routes_through_cask_namespace() {
+    // A `cask("alacritty")` call is a distinct resource from
+    // `brew("alacritty")`; the address renders as `cask:` and the
+    // installed-set lookup uses the cask namespace.
+    let proj = TempProject::new("cask");
+    let entry = proj.write("entry.keron", "reconcile cask(\"font-jetbrains-mono\")\n");
+    let keron = keron_binary_path();
+    let output = Command::new(&keron)
+        .args(["apply"])
+        .arg(&entry)
+        .env("KERON_ALLOW_TEST_OVERRIDES", "1")
+        .env("KERON_TEST_BREW_CASK_PACKAGES", "")
+        .env("KERON_TEST_BREW_CASK_OUTDATED", "")
+        .env("KERON_TEST_PACKAGE_BIN_BREW", "/usr/bin/true")
+        .output()
+        .expect("keron run");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "cask plan failed: {:?}\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        output.status,
+    );
+    assert!(
+        stdout.contains("cask:font-jetbrains-mono"),
+        "plan should show the cask address: {stdout}",
     );
 }
 

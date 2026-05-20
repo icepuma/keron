@@ -154,7 +154,8 @@ fn apply_create(state: &ResourceState, ctx: ApplyContext) -> Result<()> {
             content,
             sensitive,
         } => create_template(path, content, *sensitive, ctx),
-        ResourceState::Package { manager, name } => packages::install(*manager, name),
+        ResourceState::Package { manager, name, .. } => packages::install(*manager, name),
+        ResourceState::Tap(spec) => packages::tap(spec, Action::Create),
         ResourceState::Shell { .. } => bail!(unsupported_kind(state)),
     }
 }
@@ -210,6 +211,20 @@ fn apply_update(before: &ResourceState, after: &ResourceState) -> Result<()> {
                 );
             }
             replace_template(ap, content, *sensitive)
+        }
+        // A Package Update is an outdated formula/cask — shell out to
+        // `brew upgrade [--cask] NAME`. Cargo/winget never produce an
+        // Update today (their `outdated` probe returns empty), so the
+        // upgrade path errors loudly if one ever does — better than
+        // silently doing nothing.
+        (ResourceState::Package { .. }, ResourceState::Package { manager, name, .. }) => {
+            packages::upgrade(*manager, name)
+        }
+        // Tap Update is a remote-URL drift — re-tap with
+        // `--custom-remote` so brew rewrites the local git remote in
+        // place. No untap+retap (which would force a re-clone).
+        (ResourceState::Tap(_), ResourceState::Tap(after_spec)) => {
+            packages::tap(after_spec, Action::Update)
         }
         _ => bail!(unsupported_kind(after)),
     }
@@ -432,6 +447,7 @@ fn unsupported_kind(state: &ResourceState) -> String {
         ResourceState::Symlink { .. } => ResourceKind::Symlink,
         ResourceState::Template { .. } => ResourceKind::Template,
         ResourceState::Package { .. } => ResourceKind::Package,
+        ResourceState::Tap(_) => ResourceKind::Tap,
         ResourceState::Shell { .. } => ResourceKind::Shell,
     };
     format!(
@@ -563,13 +579,17 @@ mod tests {
             address: match probe {
                 ResourceState::Symlink { from, .. } => from.display().to_string(),
                 ResourceState::Template { path, .. } => path.display().to_string(),
-                ResourceState::Package { manager, name } => format!("{}:{}", manager.label(), name),
+                ResourceState::Package { manager, name, .. } => {
+                    format!("{}:{}", manager.kind_label(), name)
+                }
+                ResourceState::Tap(spec) => format!("tap:{}", spec.user_tap),
                 ResourceState::Shell { name, .. } => name.clone(),
             },
             kind: match probe {
                 ResourceState::Symlink { .. } => ResourceKind::Symlink,
                 ResourceState::Template { .. } => ResourceKind::Template,
                 ResourceState::Package { .. } => ResourceKind::Package,
+                ResourceState::Tap(_) => ResourceKind::Tap,
                 ResourceState::Shell { .. } => ResourceKind::Shell,
             },
             action,
@@ -959,12 +979,15 @@ mod tests {
 
     #[test]
     fn create_package_dispatches_to_packages_install() {
+        // Share the process-wide env lock with packages::tests so a
+        // concurrent test there doesn't clobber `KERON_ALLOW_TEST_OVERRIDES`
+        // mid-classify.
+        let _g = crate::packages::lock_env();
         let _os = crate::platform::OsOverride::set(crate::platform::OsFamily::Macos);
         let d = TempDir::new("package-noop");
         let noop = write_noop_binary(&d.path);
-        // SAFETY: edition 2024 env mutation; test serialises via
-        // SEQ-based temp dir naming and restores PATH-style env on
-        // exit.
+        // SAFETY: edition 2024 env mutation; the ENV_LOCK guard above
+        // serialises against the packages::tests env mutators.
         #[allow(unsafe_code)]
         unsafe {
             std::env::set_var("KERON_ALLOW_TEST_OVERRIDES", "1");
@@ -977,6 +1000,7 @@ mod tests {
                 Some(ResourceState::Package {
                     manager: PackageManager::Brew,
                     name: "ripgrep".into(),
+                    tap: None,
                 }),
             )],
         };
