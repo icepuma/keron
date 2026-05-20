@@ -3,59 +3,51 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
-
-permissions:
-  contents: write
+      - "v*.*.*"
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
   RUST_TOOLCHAIN: 1.95.0
 
 jobs:
-  create-release:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Create or update release from tag
-        uses: softprops/action-gh-release@v3.0.0
-        with:
-          tag_name: ${{ github.ref_name }}
-          generate_release_notes: true
-
   build:
-    needs: create-release
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
+
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - archive_suffix: x86_64-unknown-linux-musl
+            runner: ubuntu-latest
             target: x86_64-unknown-linux-musl
-            slug: linux_amd64
             build_tool: zigbuild
-            smoke_test: true
-          - os: ubuntu-latest
+            smoke_test: "true"
+          - archive_suffix: aarch64-unknown-linux-musl
+            runner: ubuntu-latest
             target: aarch64-unknown-linux-musl
-            slug: linux_arm64
             build_tool: zigbuild
-            smoke_test: false
-          - os: macos-14
+            smoke_test: "false"
+          - archive_suffix: aarch64-apple-darwin
+            runner: macos-14
             target: aarch64-apple-darwin
-            slug: darwin_arm64
             build_tool: cargo
-            smoke_test: true
-          - os: macos-14
+            smoke_test: "true"
+          - archive_suffix: x86_64-apple-darwin
+            runner: macos-14
             target: x86_64-apple-darwin
-            slug: darwin_amd64
             build_tool: cargo
-            smoke_test: false
+            smoke_test: "false"
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6.0.2
+      - name: Check out repository
+        uses: actions/checkout@v6
 
       - name: Install Zig
         if: matrix.build_tool == 'zigbuild'
@@ -75,18 +67,13 @@ jobs:
           rustup override set "${RUST_TOOLCHAIN}"
           rustup target add "${{ matrix.target }}"
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2.9.1
-        with:
-          shared-key: release-${{ matrix.target }}
-
       - name: Build release binary with cargo-zigbuild
         if: matrix.build_tool == 'zigbuild'
-        run: cargo zigbuild --locked --release -p keron-cli --target ${{ matrix.target }}
+        run: cargo zigbuild --locked --release -p keron-cli --target "${{ matrix.target }}"
 
       - name: Build release binary with cargo
         if: matrix.build_tool == 'cargo'
-        run: cargo build --locked --release -p keron-cli --target ${{ matrix.target }}
+        run: cargo build --locked --release -p keron-cli --target "${{ matrix.target }}"
 
       # Ad-hoc sign the macOS Mach-O so syspolicyd/AMFI gets a stable
       # code-directory hash on first run. Without this, an unsigned
@@ -96,93 +83,89 @@ jobs:
       # but still hashed, which is what AMFI caches.
       - name: Ad-hoc sign macOS binary
         if: runner.os == 'macOS'
-        run: codesign --force --sign - "target/${{ matrix.target }}/release/keron"
+        run: codesign --force --sign - "./target/${{ matrix.target }}/release/keron"
+
+      - name: Inspect binary
+        run: file "./target/${{ matrix.target }}/release/keron"
 
       - name: Smoke test binary
-        if: matrix.smoke_test
+        if: matrix.smoke_test == 'true'
         run: ./target/${{ matrix.target }}/release/keron --version
 
-      - name: Package binary and checksum
+      - name: Package release archive
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          archive="keron_${version}_${{ matrix.slug }}.tar.gz"
-          echo "VERSION=${version}" >> "$GITHUB_ENV"
-          echo "ARCHIVE=${archive}" >> "$GITHUB_ENV"
-          mkdir -p dist
-          cp "target/${{ matrix.target }}/release/keron" "dist/keron"
-          (
-            cd dist
-            tar -czf "${archive}" keron
-            shasum -a 256 "${archive}" > "${archive}.sha256"
-          )
-          rm dist/keron
+          archive_root="keron-${TAG}-${{ matrix.archive_suffix }}"
+          package_dir="dist/${archive_root}"
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v7.0.1
+          mkdir -p "$package_dir"
+          cp "./target/${{ matrix.target }}/release/keron" "$package_dir/"
+          cp README.md LICENSE "$package_dir/"
+          tar -C dist -czf "dist/${archive_root}.tar.gz" "${archive_root}"
+
+      - name: Upload archive artifact
+        uses: actions/upload-artifact@v7
         with:
-          name: ${{ env.ARCHIVE }}
-          path: |
-            dist/${{ env.ARCHIVE }}
-            dist/${{ env.ARCHIVE }}.sha256
+          name: package-${{ matrix.archive_suffix }}
+          path: dist/*.tar.gz
           if-no-files-found: error
 
-  publish:
+  release:
     needs: build
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6.0.2
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@v8.0.1
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v8
         with:
           path: dist
+          pattern: package-*
           merge-multiple: true
 
-      - name: Assemble combined checksums file
+      - name: Write checksums
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          combined="dist/keron_${version}_checksums.txt"
-          (cd dist && cat *.tar.gz.sha256) > "${combined}"
-          echo "Combined checksums:"
-          cat "${combined}"
+          cd dist
+          sha256sum *.tar.gz > SHA256SUMS
 
-      - name: Upload archives and checksums to release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          gh release upload "${GITHUB_REF_NAME}" \
-            dist/keron_${version}_darwin_arm64.tar.gz \
-            dist/keron_${version}_darwin_amd64.tar.gz \
-            dist/keron_${version}_linux_arm64.tar.gz \
-            dist/keron_${version}_linux_amd64.tar.gz \
-            "dist/keron_${version}_checksums.txt" \
-            --clobber
+      - name: Create or update GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          fail_on_unmatched_files: true
+          files: |
+            dist/*.tar.gz
+            dist/SHA256SUMS
+          generate_release_notes: true
+          make_latest: ${{ contains(github.ref_name, '-') && 'false' || 'true' }}
+          overwrite_files: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          tag_name: ${{ github.ref_name }}
 
       - name: Update Homebrew formula
+        if: ${{ !contains(github.ref_name, '-') }}
         env:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          version="${TAG#v}"
 
           git fetch origin main
           git checkout -B main origin/main
 
           ./scripts/update-homebrew-formula.sh \
             --tag "${TAG}" \
-            --checksums "dist/keron_${version}_checksums.txt"
+            --checksums dist/SHA256SUMS
 
           if git diff --quiet --exit-code -- Formula/keron.rb; then
-            echo "Formula already up to date."
             exit 0
           fi
 
-          git config user.name  "github-actions[bot]"
+          git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Formula/keron.rb
           git commit -m "chore(homebrew): update formula for ${TAG}"
