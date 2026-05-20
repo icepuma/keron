@@ -1,29 +1,29 @@
 class Keron < Formula
   desc "User-level dotfile and package manager"
   homepage "https://github.com/icepuma/keron"
-  version "0.1.4"
+  version "0.2.0"
 
   on_macos do
     on_arm do
-      url "https://github.com/icepuma/keron/releases/download/v0.1.4/keron_0.1.4_darwin_arm64.tar.gz"
-      sha256 "f2f65c4d658c464fd6e145c748b7ec5886a3bc55406c153e5f877b8fb33128f7"
+      url "https://github.com/icepuma/keron/releases/download/v0.2.0/keron_0.2.0_darwin_arm64.tar.gz"
+      sha256 "17e48b0aab48a001ebfdd249292bce64ce4c42c4b885986c9244622b36c3a43e"
     end
 
     on_intel do
-      url "https://github.com/icepuma/keron/releases/download/v0.1.4/keron_0.1.4_darwin_amd64.tar.gz"
-      sha256 "91772a1de096bd8dd7e160241e0d424a19ac067a7c4f17852035711d81c1e610"
+      url "https://github.com/icepuma/keron/releases/download/v0.2.0/keron_0.2.0_darwin_amd64.tar.gz"
+      sha256 "0bccf46a4535da69443048553c75dee353ffa3f67abf6f1b89d8a978f1219aae"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/icepuma/keron/releases/download/v0.1.4/keron_0.1.4_linux_arm64.tar.gz"
-      sha256 "8b1f2961c480d7cadf625c6e38a3e6312953c0b8b41f5392be33994e948de331"
+      url "https://github.com/icepuma/keron/releases/download/v0.2.0/keron_0.2.0_linux_arm64.tar.gz"
+      sha256 "d1caf4f914acc61619fcc959a3b3a13e921e95fbe83b5d90658e44b1ca1da3ee"
     end
 
     on_intel do
-      url "https://github.com/icepuma/keron/releases/download/v0.1.4/keron_0.1.4_linux_amd64.tar.gz"
-      sha256 "9de800be7cbb98122a6e040aad8420ba736d032aa6c9ab297ea96c29883f5abd"
+      url "https://github.com/icepuma/keron/releases/download/v0.2.0/keron_0.2.0_linux_amd64.tar.gz"
+      sha256 "a3b308d933077f2ad58f2a8d8c9b3877f9de542f4cdd06517c99bd27f6491fb7"
     end
   end
 
