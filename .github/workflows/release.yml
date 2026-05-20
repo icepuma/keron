@@ -78,6 +78,16 @@ jobs:
             cargo build --locked --release -p keron-cli --target ${{ matrix.target }}
           fi
 
+      # Ad-hoc sign the macOS Mach-O so syspolicyd/AMFI gets a stable
+      # code-directory hash on first run. Without this, an unsigned
+      # binary triggers a one-time verification pause (30-90s) the
+      # first time a user invokes `keron` after `brew install`.
+      # No Apple Developer cert needed — ad-hoc is unsigned-by-identity
+      # but still hashed, which is what AMFI caches.
+      - name: Ad-hoc sign macOS binary
+        if: runner.os == 'macOS'
+        run: codesign --force --sign - "target/${{ matrix.target }}/release/keron"
+
       - name: Package binary and checksum
         run: |
           mkdir -p dist
