@@ -403,7 +403,7 @@ pub fn build_prechecked_plan(
     let resources = synthesize_taps(&resources)?;
     let os = crate::platform::detect_os_family();
     let precheck = precheck_resources(&resources, os);
-    let mut cache = PackageCache::new();
+    let mut cache = PackageCache::new(os);
     // Eagerly fan out every probe the upcoming classify pass will
     // need (brew list / outdated / tap, cargo install --list, …) on
     // worker threads so the wall time collapses to roughly the slowest
@@ -1308,7 +1308,7 @@ mod tests {
             script: "echo ok".into(),
             sensitive: false,
         };
-        let change = classify(&state, &mut PackageCache::new()).unwrap();
+        let change = classify(&state, &mut PackageCache::for_tests()).unwrap();
         assert_eq!(change.kind, ResourceKind::Shell);
         assert_eq!(change.action, Action::Run);
         assert!(!change.requires_elevation);
@@ -1329,7 +1329,8 @@ mod tests {
             script: "echo ok".into(),
             sensitive: false,
         };
-        let err = classify(&state, &mut PackageCache::new()).expect_err("missing bash should fail");
+        let err =
+            classify(&state, &mut PackageCache::for_tests()).expect_err("missing bash should fail");
         let msg = format!("{err:#}");
         assert!(msg.contains("shell `bash` is not available on PATH"));
     }
@@ -1340,7 +1341,7 @@ mod tests {
         let from = d.path.join("alias");
         let to = d.path.join("real");
         let state = desired(&from, &to);
-        let change = classify(&state, &mut PackageCache::new()).unwrap();
+        let change = classify(&state, &mut PackageCache::for_tests()).unwrap();
         assert_eq!(change.action, Action::Create);
         assert!(change.before.is_none());
         assert_eq!(change.after, Some(state));
@@ -1355,7 +1356,7 @@ mod tests {
         make_symlink(&to, &from).unwrap();
 
         let state = desired(&from, &to);
-        let change = classify(&state, &mut PackageCache::new()).unwrap();
+        let change = classify(&state, &mut PackageCache::for_tests()).unwrap();
         assert_eq!(change.action, Action::NoOp);
         let before = change.before.expect("before populated for noop");
         let ResourceState::Symlink { from: bf, to: bt } = before else {
@@ -1376,7 +1377,7 @@ mod tests {
         make_symlink(&old_target, &from).unwrap();
 
         let state = desired(&from, &new_target);
-        let change = classify(&state, &mut PackageCache::new()).unwrap();
+        let change = classify(&state, &mut PackageCache::for_tests()).unwrap();
         assert_eq!(change.action, Action::Update);
         assert!(change.requires_force);
         let before = change.before.expect("before populated for update");
@@ -1406,7 +1407,7 @@ mod tests {
 
         let new_target = d.path.join("new");
         fs::write(&new_target, "new").unwrap();
-        let change = classify(&desired(&from, &new_target), &mut PackageCache::new())
+        let change = classify(&desired(&from, &new_target), &mut PackageCache::for_tests())
             .expect("dangling symlink must classify, not bail");
         assert_eq!(change.action, Action::Update);
         let before = change.before.expect("before populated for dangling update");
@@ -1439,7 +1440,7 @@ mod tests {
 
         let new_target = d.path.join("target");
         fs::write(&new_target, "x").unwrap();
-        let err = classify(&desired(&a, &new_target), &mut PackageCache::new())
+        let err = classify(&desired(&a, &new_target), &mut PackageCache::for_tests())
             .expect_err("symlink loop must surface a canonicalize error, not be papered over");
         let msg = format!("{err:#}");
         assert!(
@@ -1455,7 +1456,7 @@ mod tests {
         fs::write(&from, "user data").unwrap();
         let to = d.path.join("target");
 
-        let err = classify(&desired(&from, &to), &mut PackageCache::new())
+        let err = classify(&desired(&from, &to), &mut PackageCache::for_tests())
             .expect_err("real file must be refused");
         let msg = format!("{err:#}");
         assert!(msg.contains("not a symlink"), "got: {msg}");
@@ -1475,7 +1476,7 @@ mod tests {
         let d = TempDir::new("template-missing");
         let path = d.path.join("config.toml");
         let state = template(&path, "x = 1\n");
-        let change = classify(&state, &mut PackageCache::new()).unwrap();
+        let change = classify(&state, &mut PackageCache::for_tests()).unwrap();
         assert_eq!(change.action, Action::Create);
         assert!(change.before.is_none());
         assert_eq!(change.after, Some(state));
@@ -1487,7 +1488,7 @@ mod tests {
         let path = d.path.join("config.toml");
         fs::write(&path, "hello\n").unwrap();
         let state = template(&path, "hello\n");
-        let change = classify(&state, &mut PackageCache::new()).unwrap();
+        let change = classify(&state, &mut PackageCache::for_tests()).unwrap();
         assert_eq!(change.action, Action::NoOp);
         let before = change.before.expect("before populated for noop");
         let ResourceState::Template { content: bc, .. } = before else {
@@ -1502,7 +1503,7 @@ mod tests {
         let path = d.path.join("config.toml");
         fs::write(&path, "old\n").unwrap();
         let state = template(&path, "new\n");
-        let change = classify(&state, &mut PackageCache::new()).unwrap();
+        let change = classify(&state, &mut PackageCache::for_tests()).unwrap();
         assert_eq!(change.action, Action::Update);
         assert!(change.requires_force);
         let before = change.before.expect("before populated for update");
@@ -1518,7 +1519,7 @@ mod tests {
         let path = d.path.join("binary");
         fs::write(&path, [0xFFu8, 0xFE, 0xFD]).unwrap();
         let state = template(&path, "ascii only\n");
-        let change = classify(&state, &mut PackageCache::new()).unwrap();
+        let change = classify(&state, &mut PackageCache::for_tests()).unwrap();
         assert_eq!(change.action, Action::Update);
         assert!(change.before.is_some());
     }
@@ -1530,7 +1531,7 @@ mod tests {
         fs::write(&real, "x").unwrap();
         let path = d.path.join("alias");
         make_symlink(&real, &path).unwrap();
-        let err = classify(&template(&path, "y"), &mut PackageCache::new())
+        let err = classify(&template(&path, "y"), &mut PackageCache::for_tests())
             .expect_err("symlink should not be treated as a template target");
         let msg = format!("{err:#}");
         assert!(msg.contains("not a regular file"), "got: {msg}");

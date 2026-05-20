@@ -49,11 +49,17 @@ use std::process::{Command, Stdio};
 use anyhow::{Context, Result, bail};
 
 use crate::plan::{Action, PackageManager, ResourceState, TapSpec};
+use crate::platform::OsFamily;
 
 /// Snapshot of "what's installed / tapped" per query. Populated
 /// lazily; one `PackageCache` per `keron apply` invocation.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct PackageCache {
+    /// Host OS snapshot taken at construction. The planner's prewarm
+    /// fans probes out across worker threads, so we cannot rely on
+    /// the thread-local test-override fallback in `detect_os_family`
+    /// — every probe gets the OS as a value instead.
+    os: OsFamily,
     /// Bare names of installed packages, keyed by manager. For
     /// `Brew` this is `brew list --formula -1`; for `BrewCask`,
     /// `brew list --cask -1`; for cargo / winget, the manager's own
@@ -74,8 +80,24 @@ pub struct PackageCache {
 }
 
 impl PackageCache {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(os: OsFamily) -> Self {
+        Self {
+            os,
+            installed: HashMap::new(),
+            installed_taps: None,
+            tap_remotes: HashMap::new(),
+            scheduled: HashMap::new(),
+            scheduled_taps: HashSet::new(),
+        }
+    }
+
+    /// Test helper: build a cache snapshotting whatever the current
+    /// thread's `detect_os_family()` reports (which honours the
+    /// `OsOverride` test seam). Production callers pass an explicit
+    /// `OsFamily` via [`Self::new`].
+    #[cfg(test)]
+    pub fn for_tests() -> Self {
+        Self::new(crate::platform::detect_os_family())
     }
 
     /// Pre-warm every probe the upcoming classify pass will touch by
@@ -135,6 +157,7 @@ impl PackageCache {
         }
 
         let installed_managers: Vec<PackageManager> = needed_installed.into_iter().collect();
+        let os = self.os;
 
         // `collect::<Vec<_>>()` on the spawn iterators below is
         // load-bearing — it materialises every spawn before any join
@@ -150,7 +173,7 @@ impl PackageCache {
             let installed_handles: Vec<(PackageManager, _)> = installed_managers
                 .iter()
                 .copied()
-                .map(|m| (m, s.spawn(move || fetch_installed(m))))
+                .map(|m| (m, s.spawn(move || fetch_installed(m, os))))
                 .collect();
             let taps_handle = if need_taps {
                 Some(s.spawn(fetch_taps))
@@ -286,7 +309,7 @@ impl PackageCache {
         match self.installed.entry(manager) {
             Entry::Occupied(_) => Ok(()),
             Entry::Vacant(e) => {
-                let set = fetch_installed(manager).with_context(|| {
+                let set = fetch_installed(manager, self.os).with_context(|| {
                     format!(
                         "listing installed packages for {} (`{} list ...`)",
                         manager.kind_label(),
@@ -358,11 +381,11 @@ fn join_probe<T>(handle: std::thread::ScopedJoinHandle<'_, Result<T>>) -> Result
 
 /// Shell out to the manager's list command and parse the output
 /// into a set of installed package names / IDs.
-fn fetch_installed(manager: PackageManager) -> Result<HashSet<String>> {
+fn fetch_installed(manager: PackageManager, os: OsFamily) -> Result<HashSet<String>> {
     if let Some(packages) = test_packages_override(manager) {
         return Ok(packages);
     }
-    validate_package_manager_supported(manager)?;
+    validate_package_manager_supported(manager, os)?;
     match manager {
         PackageManager::Brew => brew::fetch_formulae(),
         PackageManager::BrewCask => brew::fetch_casks(),
@@ -480,8 +503,8 @@ pub struct BatchOutput {
 /// # Errors
 /// Errors when validation fails, the manager binary is missing,
 /// fails to spawn, or exits non-zero.
-pub fn install_many(manager: PackageManager, names: &[&str]) -> Result<()> {
-    install_many_with_stdio(manager, names, BatchStdio::Inherit).map(|_| ())
+pub fn install_many(manager: PackageManager, names: &[&str], os: OsFamily) -> Result<()> {
+    install_many_with_stdio(manager, names, BatchStdio::Inherit, os).map(|_| ())
 }
 
 /// [`install_many`] variant that captures child stdio for the caller
@@ -489,19 +512,24 @@ pub fn install_many(manager: PackageManager, names: &[&str]) -> Result<()> {
 ///
 /// # Errors
 /// Same shape as [`install_many`].
-pub fn install_many_captured(manager: PackageManager, names: &[&str]) -> Result<BatchOutput> {
-    install_many_with_stdio(manager, names, BatchStdio::Capture)
+pub fn install_many_captured(
+    manager: PackageManager,
+    names: &[&str],
+    os: OsFamily,
+) -> Result<BatchOutput> {
+    install_many_with_stdio(manager, names, BatchStdio::Capture, os)
 }
 
 fn install_many_with_stdio(
     manager: PackageManager,
     names: &[&str],
     stdio: BatchStdio,
+    os: OsFamily,
 ) -> Result<BatchOutput> {
     if names.is_empty() {
         return Ok(BatchOutput::default());
     }
-    validate_package_manager_supported(manager)?;
+    validate_package_manager_supported(manager, os)?;
     for n in names {
         validate_package_name(manager, n)?;
     }
@@ -573,8 +601,7 @@ pub fn tap(spec: &TapSpec, action: Action) -> Result<()> {
     brew::do_tap(&spec.user_tap, spec.url.as_deref(), custom_remote)
 }
 
-pub fn validate_package_manager_supported(manager: PackageManager) -> Result<()> {
-    let os = crate::platform::detect_os_family();
+pub fn validate_package_manager_supported(manager: PackageManager, os: OsFamily) -> Result<()> {
     if manager.is_supported_on(os) {
         return Ok(());
     }
@@ -778,7 +805,7 @@ mod tests {
             cargo_pkg("sccache"),
             tap_state("icepuma/keron", Some("https://github.com/icepuma/keron")),
         ];
-        let mut cache = PackageCache::new();
+        let mut cache = PackageCache::for_tests();
         cache.prewarm(&resources).unwrap();
         // Drop the env seams so any further probe would fall through
         // to real `brew` / `cargo` and fail. The classify calls below
@@ -832,7 +859,7 @@ mod tests {
             from: std::path::PathBuf::from("/tmp/keron-prewarm-noop-link"),
             to: std::path::PathBuf::from("/tmp/keron-prewarm-noop-target"),
         }];
-        let mut cache = PackageCache::new();
+        let mut cache = PackageCache::for_tests();
         cache.prewarm(&resources).unwrap();
         assert!(cache.installed.is_empty());
         assert!(cache.installed_taps.is_none());
@@ -845,7 +872,7 @@ mod tests {
         // prior classify_* already populated.
         let _g = lock_env();
         set_env("KERON_TEST_BREW_PACKAGES", "ripgrep");
-        let mut cache = PackageCache::new();
+        let mut cache = PackageCache::for_tests();
         // Lazy load: classify_package fills `installed` for Brew with
         // the env-seam contents.
         cache
@@ -870,7 +897,7 @@ mod tests {
     fn classify_package_returns_create_for_missing_then_noop_for_repeat() {
         let _g = lock_env();
         set_env("KERON_TEST_BREW_PACKAGES", "");
-        let mut cache = PackageCache::new();
+        let mut cache = PackageCache::for_tests();
         let first = cache
             .classify_package(PackageManager::Brew, "ripgrep")
             .unwrap();
@@ -886,7 +913,7 @@ mod tests {
     fn classify_package_returns_noop_when_already_installed() {
         let _g = lock_env();
         set_env("KERON_TEST_BREW_PACKAGES", "git,ripgrep,fd");
-        let mut cache = PackageCache::new();
+        let mut cache = PackageCache::for_tests();
         let action = cache
             .classify_package(PackageManager::Brew, "ripgrep")
             .unwrap();
@@ -903,7 +930,7 @@ mod tests {
         // the module-level doc.
         let _g = lock_env();
         set_env("KERON_TEST_BREW_PACKAGES", "ripgrep");
-        let mut cache = PackageCache::new();
+        let mut cache = PackageCache::for_tests();
         let action = cache
             .classify_package(PackageManager::Brew, "ripgrep")
             .unwrap();
@@ -922,7 +949,7 @@ mod tests {
         // bare `keron`. A manifest naming the qualified form must
         // still classify as NoOp.
         set_env("KERON_TEST_BREW_PACKAGES", "keron");
-        let mut cache = PackageCache::new();
+        let mut cache = PackageCache::for_tests();
         let action = cache
             .classify_package(PackageManager::Brew, "icepuma/keron/keron")
             .unwrap();
@@ -937,7 +964,7 @@ mod tests {
         // mustn't be confused with the formula "alacritty".
         set_env("KERON_TEST_BREW_PACKAGES", "git");
         set_env("KERON_TEST_BREW_CASK_PACKAGES", "alacritty");
-        let mut cache = PackageCache::new();
+        let mut cache = PackageCache::for_tests();
         let formula = cache
             .classify_package(PackageManager::Brew, "alacritty")
             .unwrap();
@@ -953,7 +980,7 @@ mod tests {
     fn classify_tap_returns_create_when_not_installed() {
         let _g = lock_env();
         set_env("KERON_TEST_BREW_TAPS", "");
-        let mut cache = PackageCache::new();
+        let mut cache = PackageCache::for_tests();
         let spec = TapSpec {
             user_tap: "icepuma/keron".into(),
             url: None,
@@ -967,7 +994,7 @@ mod tests {
     fn classify_tap_returns_noop_when_installed_and_no_url_required() {
         let _g = lock_env();
         set_env("KERON_TEST_BREW_TAPS", "icepuma/keron");
-        let mut cache = PackageCache::new();
+        let mut cache = PackageCache::for_tests();
         let spec = TapSpec {
             user_tap: "icepuma/keron".into(),
             url: None,
@@ -985,7 +1012,7 @@ mod tests {
             "KERON_TEST_BREW_TAP_REMOTES",
             "icepuma/keron=https://github.com/icepuma/keron",
         );
-        let mut cache = PackageCache::new();
+        let mut cache = PackageCache::for_tests();
         let spec = TapSpec {
             user_tap: "icepuma/keron".into(),
             url: Some("https://github.com/icepuma/keron".into()),
@@ -1003,7 +1030,7 @@ mod tests {
             "KERON_TEST_BREW_TAP_REMOTES",
             "icepuma/keron=https://github.com/old/url",
         );
-        let mut cache = PackageCache::new();
+        let mut cache = PackageCache::for_tests();
         let spec = TapSpec {
             user_tap: "icepuma/keron".into(),
             url: Some("https://github.com/icepuma/keron".into()),
@@ -1017,7 +1044,7 @@ mod tests {
     fn classify_tap_dedup_in_same_run_returns_noop_on_repeat() {
         let _g = lock_env();
         set_env("KERON_TEST_BREW_TAPS", "");
-        let mut cache = PackageCache::new();
+        let mut cache = PackageCache::for_tests();
         let spec = TapSpec {
             user_tap: "icepuma/keron".into(),
             url: None,
@@ -1096,7 +1123,7 @@ mod tests {
     #[test]
     fn install_many_rejects_empty_name() {
         let _g = lock_env();
-        let err = install_many(PackageManager::Brew, &[""]).unwrap_err();
+        let err = install_many(PackageManager::Brew, &[""], OsFamily::Macos).unwrap_err();
         assert!(
             format!("{err:#}").contains("must not be empty"),
             "got: {err:#}",
@@ -1188,8 +1215,8 @@ mod tests {
     #[test]
     fn validate_package_manager_supported_rejects_wrong_os_manager() {
         let _g = lock_env();
-        let _os = crate::platform::OsOverride::set(crate::platform::OsFamily::Windows);
-        let err = validate_package_manager_supported(PackageManager::Brew).unwrap_err();
+        let err = validate_package_manager_supported(PackageManager::Brew, OsFamily::Windows)
+            .unwrap_err();
         let msg = format!("{err:#}");
         assert!(msg.contains("brew"), "got: {msg}");
         assert!(msg.contains("Windows"), "got: {msg}");
@@ -1199,16 +1226,15 @@ mod tests {
     #[test]
     fn validate_package_manager_supported_accepts_matching_manager() {
         let _g = lock_env();
-        let _os = crate::platform::OsOverride::set(crate::platform::OsFamily::Windows);
-        validate_package_manager_supported(PackageManager::Winget).unwrap();
-        validate_package_manager_supported(PackageManager::Cargo).unwrap();
+        validate_package_manager_supported(PackageManager::Winget, OsFamily::Windows).unwrap();
+        validate_package_manager_supported(PackageManager::Cargo, OsFamily::Windows).unwrap();
     }
 
     #[test]
     fn validate_package_manager_brew_cask_is_macos_only() {
         let _g = lock_env();
-        let _os = crate::platform::OsOverride::set(crate::platform::OsFamily::Linux);
-        let err = validate_package_manager_supported(PackageManager::BrewCask).unwrap_err();
+        let err = validate_package_manager_supported(PackageManager::BrewCask, OsFamily::Linux)
+            .unwrap_err();
         let msg = format!("{err:#}");
         assert!(msg.contains("cask"), "got: {msg}");
         assert!(msg.contains("Macos"), "got: {msg}");

@@ -32,6 +32,7 @@ use crate::packages::{self, BatchOutput};
 use crate::plan::{
     Action, PackageManager, Plan, ResourceChange, ResourceKind, ResourceState, ShellKind,
 };
+use crate::platform::{OsFamily, detect_os_family};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ExecuteSummary {
@@ -41,6 +42,12 @@ pub struct ExecuteSummary {
 }
 
 pub fn execute(plan: &Plan) -> Result<ExecuteSummary> {
+    // Snapshot the host OS once on the calling (main) thread so the
+    // parallel package phase can pass it as a value to its workers
+    // instead of relying on the `OsOverride` thread-local — which is
+    // per-thread and would silently fall back to the real host OS
+    // inside spawned probe / install workers.
+    let os = detect_os_family();
     let mut summary = ExecuteSummary::default();
     let mut applied_addresses: Vec<&str> = Vec::new();
     let total = plan.changes.len();
@@ -56,7 +63,7 @@ pub fn execute(plan: &Plan) -> Result<ExecuteSummary> {
         }
         if j > i {
             let phase = &plan.changes[i..j];
-            run_package_phase(phase, &mut summary)
+            run_package_phase(phase, &mut summary, os)
                 .map_err(|e| annotate_phase_failure(e, phase, &applied_addresses, total))?;
             for change in phase {
                 applied_addresses.push(change.address.as_str());
@@ -64,7 +71,7 @@ pub fn execute(plan: &Plan) -> Result<ExecuteSummary> {
             i = j;
         } else {
             let change = &plan.changes[i];
-            apply_change(change, &mut summary).map_err(|e| {
+            apply_change(change, &mut summary, os).map_err(|e| {
                 annotate_partial_apply(e, change.address.as_str(), &applied_addresses, total)
             })?;
             applied_addresses.push(change.address.as_str());
@@ -139,8 +146,8 @@ fn annotate_phase_failure(
     err.context(summary)
 }
 
-fn apply_change(change: &ResourceChange, summary: &mut ExecuteSummary) -> Result<()> {
-    apply_change_one(change)?;
+fn apply_change(change: &ResourceChange, summary: &mut ExecuteSummary, os: OsFamily) -> Result<()> {
+    apply_change_one_in_with_os(change, ApplyContext::Unprivileged, os)?;
     match change.action {
         Action::Create => summary.added += 1,
         Action::Update => summary.changed += 1,
@@ -167,18 +174,22 @@ struct GroupOutcome {
     result: Result<BatchOutput>,
 }
 
-fn run_package_phase(phase: &[ResourceChange], summary: &mut ExecuteSummary) -> Result<()> {
+fn run_package_phase(
+    phase: &[ResourceChange],
+    summary: &mut ExecuteSummary,
+    os: OsFamily,
+) -> Result<()> {
     let groups = group_package_changes(phase)?;
     if groups.is_empty() {
         return Ok(());
     }
     if groups.len() == 1 {
         let group = groups.into_iter().next().expect("len == 1");
-        run_group_inherit(&group)?;
+        run_group_inherit(&group, os)?;
         bump_summary(summary, group.action, group.names.len());
         return Ok(());
     }
-    run_phase_parallel(groups, summary)
+    run_phase_parallel(groups, summary, os)
 }
 
 /// Walk a phase slice, classify each change, group `Create` changes
@@ -222,25 +233,29 @@ fn group_package_changes(phase: &[ResourceChange]) -> Result<Vec<BatchGroup>> {
     Ok(buckets.into_values().collect())
 }
 
-fn run_group_inherit(group: &BatchGroup) -> Result<()> {
+fn run_group_inherit(group: &BatchGroup, os: OsFamily) -> Result<()> {
     let refs: Vec<&str> = group.names.iter().map(String::as_str).collect();
     debug_assert!(
         matches!(group.action, Action::Create),
         "package batches only carry Create — apply does not upgrade",
     );
-    packages::install_many(group.manager, &refs)
+    packages::install_many(group.manager, &refs, os)
 }
 
-fn run_group_capture(group: &BatchGroup) -> Result<BatchOutput> {
+fn run_group_capture(group: &BatchGroup, os: OsFamily) -> Result<BatchOutput> {
     let refs: Vec<&str> = group.names.iter().map(String::as_str).collect();
     debug_assert!(
         matches!(group.action, Action::Create),
         "package batches only carry Create — apply does not upgrade",
     );
-    packages::install_many_captured(group.manager, &refs)
+    packages::install_many_captured(group.manager, &refs, os)
 }
 
-fn run_phase_parallel(groups: Vec<BatchGroup>, summary: &mut ExecuteSummary) -> Result<()> {
+fn run_phase_parallel(
+    groups: Vec<BatchGroup>,
+    summary: &mut ExecuteSummary,
+    os: OsFamily,
+) -> Result<()> {
     let outcomes: Vec<GroupOutcome> = std::thread::scope(|s| {
         // `collect::<Vec<_>>()` here is load-bearing: it materialises
         // every spawn before any join, so the workers actually run in
@@ -252,7 +267,7 @@ fn run_phase_parallel(groups: Vec<BatchGroup>, summary: &mut ExecuteSummary) -> 
             .into_iter()
             .map(|group| {
                 let captured = group.clone();
-                let handle = s.spawn(move || run_group_capture(&captured));
+                let handle = s.spawn(move || run_group_capture(&captured, os));
                 (group, handle)
             })
             .collect();
@@ -420,18 +435,26 @@ pub enum ApplyContext {
 /// # Errors
 /// Errors when the underlying filesystem call fails or when the
 /// resource kind has no executor support yet for the action.
-pub fn apply_change_one(change: &ResourceChange) -> Result<()> {
-    apply_change_one_in(change, ApplyContext::Unprivileged)
-}
-
 /// Apply a single change with an explicit privilege context. The
 /// elevated child should always pass [`ApplyContext::Elevated`] so
 /// Create actions route through the TOCTOU-safe `openat` walk
 /// (`elevated::safe_write`).
 ///
 /// # Errors
-/// See [`apply_change_one`].
+/// Errors when the underlying filesystem call fails or when the
+/// resource kind has no executor support yet for the action.
 pub fn apply_change_one_in(change: &ResourceChange, ctx: ApplyContext) -> Result<()> {
+    // Single-change entry: snapshot OS on the caller's thread and pass
+    // it down. Same rationale as `execute` — keeps the package
+    // validation path off the `OsOverride` thread-local.
+    apply_change_one_in_with_os(change, ctx, detect_os_family())
+}
+
+fn apply_change_one_in_with_os(
+    change: &ResourceChange,
+    ctx: ApplyContext,
+    os: OsFamily,
+) -> Result<()> {
     match change.action {
         Action::NoOp => Ok(()),
         Action::Create => {
@@ -439,7 +462,7 @@ pub fn apply_change_one_in(change: &ResourceChange, ctx: ApplyContext) -> Result
                 .after
                 .as_ref()
                 .with_context(|| format!("create `{}` has no desired state", change.address))?;
-            apply_create(state, ctx).with_context(|| format!("creating `{}`", change.address))
+            apply_create(state, ctx, os).with_context(|| format!("creating `{}`", change.address))
         }
         Action::Update => {
             let before = change
@@ -468,7 +491,7 @@ pub fn apply_change_one_in(change: &ResourceChange, ctx: ApplyContext) -> Result
     }
 }
 
-fn apply_create(state: &ResourceState, ctx: ApplyContext) -> Result<()> {
+fn apply_create(state: &ResourceState, ctx: ApplyContext, os: OsFamily) -> Result<()> {
     match state {
         ResourceState::Symlink { from, to } => create_symlink(from, to, ctx),
         ResourceState::Template {
@@ -477,14 +500,14 @@ fn apply_create(state: &ResourceState, ctx: ApplyContext) -> Result<()> {
             sensitive,
         } => create_template(path, content, *sensitive, ctx),
         ResourceState::Package { manager, name, .. } => {
-            // `apply_change_one` is the single-change entry used by the
-            // elevated child (and a couple of tests). The main executor
-            // routes Package changes through the phased / batched path
-            // in [`execute`]; reaching this arm means a singleton
-            // dispatch, so `install_many` with a one-element slice is
-            // the natural reuse — same validation, same argv, no
-            // duplicated spawn code.
-            packages::install_many(*manager, &[name.as_str()])
+            // `apply_change_one_in` is the single-change entry used by
+            // the elevated child (and a couple of tests). The main
+            // executor routes Package changes through the phased /
+            // batched path in [`execute`]; reaching this arm means a
+            // singleton dispatch, so `install_many` with a one-element
+            // slice is the natural reuse — same validation, same argv,
+            // no duplicated spawn code.
+            packages::install_many(*manager, &[name.as_str()], os)
         }
         ResourceState::Tap(spec) => packages::tap(spec, Action::Create),
         ResourceState::Shell { .. } => bail!(unsupported_kind(state)),

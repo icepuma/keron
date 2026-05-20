@@ -3,7 +3,7 @@
 //! Invoked as `keron __apply-elevated <payload-path>` by the
 //! unprivileged parent through sudo / `ShellExecuteExW`. Reads the
 //! JSON payload, applies each [`crate::plan::ResourceChange`] via the
-//! shared [`crate::execute::apply_change_one`], then `chown`s every
+//! shared [`crate::execute::apply_change_one_in`], then `chown`s every
 //! affected filesystem path back to the calling user.
 
 use std::io::Write;
