@@ -1,9 +1,8 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 error: type mismatch: expected `String`, found `String?`
-  --> 2:20
+  --> 3:20
   |
-2 | val name: String = maybe_name
+3 | val name: String = maybe_name
   |                    ^^^^^^^^^^

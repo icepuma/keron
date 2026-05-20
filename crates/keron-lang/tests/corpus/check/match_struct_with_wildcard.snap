@@ -1,6 +1,5 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 Program {
     items: [
@@ -36,20 +35,20 @@ Program {
                         span: 23..30,
                     },
                 ],
-                span: 0..32,
+                span: 0..33,
             },
         ),
         Fn(
             FnDecl {
                 name: Spanned {
                     node: "axis",
-                    span: 35..39,
+                    span: 36..40,
                 },
                 params: [
                     Param {
                         name: Spanned {
                             node: "p",
-                            span: 40..41,
+                            span: 41..42,
                         },
                         ty: Spanned {
                             node: Struct {
@@ -65,15 +64,15 @@ Program {
                                     ),
                                 ],
                             },
-                            span: 43..48,
+                            span: 44..49,
                         },
                         default: None,
-                        span: 40..48,
+                        span: 41..49,
                     },
                 ],
                 return_type: Spanned {
                     node: String,
-                    span: 51..57,
+                    span: 52..58,
                 },
                 body: Block {
                     stmts: [],
@@ -84,7 +83,7 @@ Program {
                                     node: Var(
                                         "p",
                                     ),
-                                    span: 68..69,
+                                    span: 69..70,
                                 },
                                 arms: [
                                     MatchArm {
@@ -92,13 +91,13 @@ Program {
                                             node: Struct {
                                                 name: Spanned {
                                                     node: "Point",
-                                                    span: 76..81,
+                                                    span: 77..82,
                                                 },
                                                 fields: [
                                                     StructPatternField {
                                                         name: Spanned {
                                                             node: "x",
-                                                            span: 84..85,
+                                                            span: 85..86,
                                                         },
                                                         pattern: Some(
                                                             Spanned {
@@ -107,15 +106,15 @@ Program {
                                                                         0,
                                                                     ),
                                                                 ),
-                                                                span: 87..88,
+                                                                span: 88..89,
                                                             },
                                                         ),
-                                                        span: 84..88,
+                                                        span: 85..89,
                                                     },
                                                     StructPatternField {
                                                         name: Spanned {
                                                             node: "y",
-                                                            span: 90..91,
+                                                            span: 91..92,
                                                         },
                                                         pattern: Some(
                                                             Spanned {
@@ -124,14 +123,14 @@ Program {
                                                                         0,
                                                                     ),
                                                                 ),
-                                                                span: 93..94,
+                                                                span: 94..95,
                                                             },
                                                         ),
-                                                        span: 90..95,
+                                                        span: 91..96,
                                                     },
                                                 ],
                                             },
-                                            span: 76..97,
+                                            span: 77..98,
                                         },
                                         guard: None,
                                         body: Spanned {
@@ -140,14 +139,14 @@ Program {
                                                     "origin",
                                                 ),
                                             ),
-                                            span: 100..108,
+                                            span: 101..109,
                                         },
-                                        span: 76..108,
+                                        span: 77..109,
                                     },
                                     MatchArm {
                                         pattern: Spanned {
                                             node: Wildcard,
-                                            span: 114..116,
+                                            span: 115..117,
                                         },
                                         guard: None,
                                         body: Spanned {
@@ -156,18 +155,18 @@ Program {
                                                     "other",
                                                 ),
                                             ),
-                                            span: 119..126,
+                                            span: 120..127,
                                         },
-                                        span: 114..126,
+                                        span: 115..127,
                                     },
                                 ],
                             },
-                            span: 62..132,
+                            span: 63..133,
                         },
                     ),
-                    span: 58..134,
+                    span: 59..135,
                 },
-                span: 32..134,
+                span: 33..135,
                 intrinsic: None,
             },
         ),

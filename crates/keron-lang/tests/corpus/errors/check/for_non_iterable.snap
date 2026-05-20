@@ -2,7 +2,7 @@
 source: crates/keron-lang/tests/harness/mod.rs
 ---
 error: `for` expects `List<T>` or `Map<K, V>`, found `Int`
-  --> 2:10
+  --> 3:10
   |
-2 | for x in n { reconcile x }
+3 | for x in n {
   |          ^

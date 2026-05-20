@@ -46,9 +46,9 @@ Program {
                             },
                         ],
                     ),
-                    span: 20..30,
+                    span: 20..31,
                 },
-                span: 0..30,
+                span: 0..31,
             },
         ),
         ExprStmt(
@@ -57,14 +57,14 @@ Program {
                     pattern: Elem(
                         Spanned {
                             node: "x",
-                            span: 34..35,
+                            span: 35..36,
                         },
                     ),
                     iter_expr: Spanned {
                         node: Var(
                             "xs",
                         ),
-                        span: 39..41,
+                        span: 40..42,
                     },
                     body: Block {
                         stmts: [
@@ -76,19 +76,19 @@ Program {
                                                 node: Var(
                                                     "x",
                                                 ),
-                                                span: 54..55,
+                                                span: 57..58,
                                             },
                                         ],
                                     ],
-                                    span: 44..56,
+                                    span: 47..59,
                                 },
                             ),
                         ],
                         trailing: None,
-                        span: 42..58,
+                        span: 43..61,
                     },
                 },
-                span: 30..58,
+                span: 31..61,
             },
         ),
     ],

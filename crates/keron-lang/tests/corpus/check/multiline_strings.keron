@@ -1,20 +1,7 @@
-val cooked: String = """
-  [user]
-    email = me@example.com
-    name = Me
-  """
+val cooked: String = "[user]\n  email = me@example.com\n  name = Me"
 
-val raw: String = r#"""
-  export PATH="${HOME}/bin:$PATH"
-  echo \n
-  """#
+val raw: String = "export PATH=\"\${HOME}/bin:$PATH\"\necho \\n"
 
-val body: String = """
-  first
-  second
-  """
+val body: String = "first\nsecond"
 
-val nested: String = """
-  block:
-    ${body}
-  """
+val nested: String = "block:\n  ${body}"

@@ -1,6 +1,5 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 Program {
     items: [
@@ -36,14 +35,14 @@ Program {
                         span: 28..38,
                     },
                 ],
-                span: 0..40,
+                span: 0..41,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "h",
-                    span: 44..45,
+                    span: 45..46,
                 },
                 ty: Some(
                     Spanned {
@@ -60,21 +59,21 @@ Program {
                                 ),
                             ],
                         },
-                        span: 47..51,
+                        span: 48..52,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "Host",
-                            span: 54..58,
+                            span: 55..59,
                         },
                         args: [
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "name",
-                                        span: 59..63,
+                                        span: 60..64,
                                     },
                                 ),
                                 value: Spanned {
@@ -83,15 +82,15 @@ Program {
                                             "alpha",
                                         ),
                                     ),
-                                    span: 66..73,
+                                    span: 67..74,
                                 },
-                                span: 59..73,
+                                span: 60..74,
                             },
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "port",
-                                        span: 75..79,
+                                        span: 76..80,
                                     },
                                 ),
                                 value: Spanned {
@@ -100,27 +99,27 @@ Program {
                                             22,
                                         ),
                                     ),
-                                    span: 82..84,
+                                    span: 83..85,
                                 },
-                                span: 75..84,
+                                span: 76..85,
                             },
                         ],
                     },
-                    span: 54..86,
+                    span: 55..88,
                 },
-                span: 40..86,
+                span: 41..88,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "n",
-                    span: 90..91,
+                    span: 92..93,
                 },
                 ty: Some(
                     Spanned {
                         node: String,
-                        span: 93..99,
+                        span: 95..101,
                     },
                 ),
                 value: Spanned {
@@ -129,28 +128,28 @@ Program {
                             node: Var(
                                 "h",
                             ),
-                            span: 102..103,
+                            span: 104..105,
                         },
                         field: Spanned {
                             node: "name",
-                            span: 104..108,
+                            span: 106..110,
                         },
                     },
-                    span: 102..108,
+                    span: 104..110,
                 },
-                span: 86..108,
+                span: 88..110,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "p",
-                    span: 113..114,
+                    span: 116..117,
                 },
                 ty: Some(
                     Spanned {
                         node: Int,
-                        span: 116..119,
+                        span: 119..122,
                     },
                 ),
                 value: Spanned {
@@ -159,16 +158,16 @@ Program {
                             node: Var(
                                 "h",
                             ),
-                            span: 122..123,
+                            span: 125..126,
                         },
                         field: Spanned {
                             node: "port",
-                            span: 124..128,
+                            span: 127..131,
                         },
                     },
-                    span: 122..128,
+                    span: 125..131,
                 },
-                span: 109..128,
+                span: 112..131,
             },
         ),
     ],

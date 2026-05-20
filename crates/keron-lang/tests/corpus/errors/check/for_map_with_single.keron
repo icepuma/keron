@@ -1,2 +1,5 @@
 val m: Map<String, Int> = {"a": 1}
-for x in m { reconcile m }
+
+for x in m {
+  reconcile m
+}

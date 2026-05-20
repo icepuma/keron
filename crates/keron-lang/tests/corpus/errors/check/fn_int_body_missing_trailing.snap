@@ -4,5 +4,5 @@ source: crates/keron-lang/tests/harness/mod.rs
 error: expected `Int`, found block with no trailing expression (type `Void`)
   --> 1:19
   |
-1 | fn nothing(): Int { }
-  |                   ^^^^
+1 | fn nothing(): Int {}
+  |                   ^^^

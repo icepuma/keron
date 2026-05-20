@@ -2,7 +2,7 @@
 source: crates/keron-lang/tests/harness/mod.rs
 ---
 error: `name` is already defined
-  --> 2:5
+  --> 3:5
   |
-2 | val name = "other"
+3 | val name = "other"
   |     ^^^^

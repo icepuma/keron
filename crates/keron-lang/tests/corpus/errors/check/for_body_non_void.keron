@@ -1,2 +1,5 @@
 val xs: List<Int> = [1, 2]
-for x in xs { x }
+
+for x in xs {
+  x
+}

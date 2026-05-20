@@ -1,2 +1,3 @@
 val host: OsType = os_type()
+
 val arch: OsArch = os_arch()

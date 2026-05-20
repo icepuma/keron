@@ -2,10 +2,12 @@
 # `winget`. The manager identity is preserved on the value (via the
 # intrinsic tag) — the type system sees one `Package` regardless of
 # which constructor produced it.
-
 val ripgrep: Package = brew("ripgrep")
+
 val starship: Package = brew("starship")
+
 val just_bin: Package = cargo("just")
+
 val pwsh: Package = winget("Microsoft.PowerShell")
 
 # `Package <: Resource` — a `Package` flows into a `Resource` slot
@@ -28,11 +30,13 @@ val together: List<Resource> = brew_tools ++ [symlink(source = "b", target = "a"
 
 # Packages are reconcilable like any other resource.
 reconcile ripgrep
+
 reconcile just_bin -> pwsh
+
 reconcile {
   starship;
   brew_tools;
-  mixed
+  mixed;
 }
 
 # `for` over packages: a list iteration with a `reconcile` body.

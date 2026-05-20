@@ -1,4 +1,3 @@
-
 reconcile [
   symlink(source = "~/.zshrc", target = "~/df/zshrc"),
   symlink(source = "~/.vimrc", target = "~/df/vimrc"),

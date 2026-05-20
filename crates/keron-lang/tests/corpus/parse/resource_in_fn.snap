@@ -7,27 +7,27 @@ Program {
             FnDecl {
                 name: Spanned {
                     node: "link",
-                    span: 4..8,
+                    span: 3..7,
                 },
                 params: [
                     Param {
                         name: Spanned {
                             node: "name",
-                            span: 9..13,
+                            span: 8..12,
                         },
                         ty: Spanned {
                             node: String,
-                            span: 15..21,
+                            span: 14..20,
                         },
                         default: None,
-                        span: 9..21,
+                        span: 8..20,
                     },
                 ],
                 return_type: Spanned {
                     node: Named(
                         "Symlink",
                     ),
-                    span: 24..31,
+                    span: 23..30,
                 },
                 body: Block {
                     stmts: [],
@@ -36,14 +36,14 @@ Program {
                             node: Call {
                                 callee: Spanned {
                                     node: "symlink",
-                                    span: 36..43,
+                                    span: 35..42,
                                 },
                                 args: [
                                     CallArg {
                                         name: Some(
                                             Spanned {
                                                 node: "source",
-                                                span: 44..50,
+                                                span: 43..49,
                                             },
                                         ),
                                         value: Spanned {
@@ -57,21 +57,21 @@ Program {
                                                             node: Var(
                                                                 "name",
                                                             ),
-                                                            span: 59..63,
+                                                            span: 58..62,
                                                         },
                                                         indent: None,
                                                     },
                                                 ],
                                             ),
-                                            span: 53..65,
+                                            span: 52..64,
                                         },
-                                        span: 44..65,
+                                        span: 43..64,
                                     },
                                     CallArg {
                                         name: Some(
                                             Spanned {
                                                 node: "target",
-                                                span: 67..73,
+                                                span: 66..72,
                                             },
                                         ),
                                         value: Spanned {
@@ -85,24 +85,24 @@ Program {
                                                             node: Var(
                                                                 "name",
                                                             ),
-                                                            span: 90..94,
+                                                            span: 89..93,
                                                         },
                                                         indent: None,
                                                     },
                                                 ],
                                             ),
-                                            span: 76..96,
+                                            span: 75..95,
                                         },
-                                        span: 67..96,
+                                        span: 66..95,
                                     },
                                 ],
                             },
-                            span: 36..98,
+                            span: 35..97,
                         },
                     ),
-                    span: 32..101,
+                    span: 31..100,
                 },
-                span: 1..101,
+                span: 0..100,
                 intrinsic: None,
             },
         ),
@@ -110,21 +110,21 @@ Program {
             ValDecl {
                 name: Spanned {
                     node: "zshrc",
-                    span: 105..110,
+                    span: 104..109,
                 },
                 ty: Some(
                     Spanned {
                         node: Named(
                             "Symlink",
                         ),
-                        span: 112..119,
+                        span: 111..118,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "link",
-                            span: 122..126,
+                            span: 121..125,
                         },
                         args: [
                             CallArg {
@@ -135,15 +135,15 @@ Program {
                                             "zshrc",
                                         ),
                                     ),
-                                    span: 127..134,
+                                    span: 126..133,
                                 },
-                                span: 127..134,
+                                span: 126..133,
                             },
                         ],
                     },
-                    span: 122..136,
+                    span: 121..135,
                 },
-                span: 101..136,
+                span: 100..135,
             },
         ),
     ],

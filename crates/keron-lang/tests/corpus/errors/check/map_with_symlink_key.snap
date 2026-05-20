@@ -2,7 +2,7 @@
 source: crates/keron-lang/tests/harness/mod.rs
 ---
 error: `Symlink` is not a valid `Map` key type; allowed keys are `String` and `Int`
-  --> 2:8
+  --> 1:8
   |
-2 | val m: Map<Symlink, Int> = {}
+1 | val m: Map<Symlink, Int> = {}
   |        ^^^^^^^^^^^^^^^^^^

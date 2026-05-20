@@ -2,7 +2,7 @@
 source: crates/keron-lang/tests/harness/mod.rs
 ---
 error: `if` branches have mismatched types: `then` is `Int`, `else` is `String`
-  --> 1:28
+  --> 3:8
   |
-1 | val r = if true { 1 } else { "two" }
-  |                            ^^^^^^^^^^
+3 | } else {
+  |        ^^^^^^^^^^^^

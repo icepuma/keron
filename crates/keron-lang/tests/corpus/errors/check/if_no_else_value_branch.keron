@@ -1,1 +1,3 @@
-val r = if true { 1 }
+val r = if true {
+  1
+}

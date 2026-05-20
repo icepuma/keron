@@ -7,4 +7,5 @@ fn odd(n: Int): Boolean {
 }
 
 val a: Boolean = even(4)
+
 val b: Boolean = odd(5)

@@ -38,9 +38,9 @@ Program {
                             },
                         ],
                     ),
-                    span: 20..27,
+                    span: 20..28,
                 },
-                span: 0..27,
+                span: 0..28,
             },
         ),
         ExprStmt(
@@ -49,14 +49,14 @@ Program {
                     pattern: Elem(
                         Spanned {
                             node: "x",
-                            span: 31..32,
+                            span: 32..33,
                         },
                     ),
                     iter_expr: Spanned {
                         node: Var(
                             "xs",
                         ),
-                        span: 36..38,
+                        span: 37..39,
                     },
                     body: Block {
                         stmts: [
@@ -64,12 +64,12 @@ Program {
                                 ValDecl {
                                     name: Spanned {
                                         node: "doubled",
-                                        span: 47..54,
+                                        span: 48..55,
                                     },
                                     ty: Some(
                                         Spanned {
                                             node: Int,
-                                            span: 56..59,
+                                            span: 57..60,
                                         },
                                     ),
                                     value: Spanned {
@@ -79,7 +79,7 @@ Program {
                                                 node: Var(
                                                     "x",
                                                 ),
-                                                span: 62..63,
+                                                span: 63..64,
                                             },
                                             rhs: Spanned {
                                                 node: Literal(
@@ -87,12 +87,12 @@ Program {
                                                         2,
                                                     ),
                                                 ),
-                                                span: 66..67,
+                                                span: 67..68,
                                             },
                                         },
-                                        span: 62..67,
+                                        span: 63..68,
                                     },
-                                    span: 43..70,
+                                    span: 44..71,
                                 },
                             ),
                             Reconcile(
@@ -103,19 +103,19 @@ Program {
                                                 node: Var(
                                                     "doubled",
                                                 ),
-                                                span: 80..87,
+                                                span: 81..88,
                                             },
                                         ],
                                     ],
-                                    span: 70..88,
+                                    span: 71..89,
                                 },
                             ),
                         ],
                         trailing: None,
-                        span: 39..90,
+                        span: 40..91,
                     },
                 },
-                span: 27..90,
+                span: 28..91,
             },
         ),
     ],

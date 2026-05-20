@@ -1,6 +1,5 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 Program {
     items: [
@@ -36,35 +35,35 @@ Program {
                         span: 23..30,
                     },
                 ],
-                span: 0..32,
+                span: 0..33,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "p",
-                    span: 36..37,
+                    span: 37..38,
                 },
                 ty: Some(
                     Spanned {
                         node: Named(
                             "Point",
                         ),
-                        span: 39..44,
+                        span: 40..45,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "Point",
-                            span: 47..52,
+                            span: 48..53,
                         },
                         args: [
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "x",
-                                        span: 53..54,
+                                        span: 54..55,
                                     },
                                 ),
                                 value: Spanned {
@@ -73,15 +72,15 @@ Program {
                                             1,
                                         ),
                                     ),
-                                    span: 57..58,
+                                    span: 58..59,
                                 },
-                                span: 53..58,
+                                span: 54..59,
                             },
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "y",
-                                        span: 60..61,
+                                        span: 61..62,
                                     },
                                 ),
                                 value: Spanned {
@@ -90,15 +89,15 @@ Program {
                                             2,
                                         ),
                                     ),
-                                    span: 64..65,
+                                    span: 65..66,
                                 },
-                                span: 60..65,
+                                span: 61..66,
                             },
                         ],
                     },
-                    span: 47..67,
+                    span: 48..68,
                 },
-                span: 32..67,
+                span: 33..68,
             },
         ),
     ],

@@ -1,6 +1,5 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 Program {
     items: [
@@ -8,12 +7,12 @@ Program {
             ValDecl {
                 name: Spanned {
                     node: "home",
-                    span: 143..147,
+                    span: 142..146,
                 },
                 ty: Some(
                     Spanned {
                         node: String,
-                        span: 149..155,
+                        span: 148..154,
                     },
                 ),
                 value: Spanned {
@@ -23,7 +22,7 @@ Program {
                             node: Call {
                                 callee: Spanned {
                                     node: "env",
-                                    span: 158..161,
+                                    span: 157..160,
                                 },
                                 args: [
                                     CallArg {
@@ -34,13 +33,13 @@ Program {
                                                     "HOME",
                                                 ),
                                             ),
-                                            span: 162..168,
+                                            span: 161..167,
                                         },
-                                        span: 162..168,
+                                        span: 161..167,
                                     },
                                 ],
                             },
-                            span: 158..170,
+                            span: 157..169,
                         },
                         rhs: Spanned {
                             node: Literal(
@@ -48,12 +47,12 @@ Program {
                                     "/tmp",
                                 ),
                             ),
-                            span: 173..179,
+                            span: 172..178,
                         },
                     },
-                    span: 158..179,
+                    span: 157..178,
                 },
-                span: 139..180,
+                span: 138..180,
             },
         ),
         Val(
@@ -134,21 +133,21 @@ Program {
                     },
                     span: 202..244,
                 },
-                span: 180..245,
+                span: 180..246,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "still_optional",
-                    span: 249..263,
+                    span: 250..264,
                 },
                 ty: Some(
                     Spanned {
                         node: Nullable(
                             String,
                         ),
-                        span: 265..273,
+                        span: 266..274,
                     },
                 ),
                 value: Spanned {
@@ -158,7 +157,7 @@ Program {
                             node: Call {
                                 callee: Spanned {
                                     node: "env",
-                                    span: 275..278,
+                                    span: 276..279,
                                 },
                                 args: [
                                     CallArg {
@@ -169,19 +168,19 @@ Program {
                                                     "X",
                                                 ),
                                             ),
-                                            span: 279..282,
+                                            span: 280..283,
                                         },
-                                        span: 279..282,
+                                        span: 280..283,
                                     },
                                 ],
                             },
-                            span: 275..284,
+                            span: 276..285,
                         },
                         rhs: Spanned {
                             node: Call {
                                 callee: Spanned {
                                     node: "env",
-                                    span: 287..290,
+                                    span: 288..291,
                                 },
                                 args: [
                                     CallArg {
@@ -192,30 +191,30 @@ Program {
                                                     "Y",
                                                 ),
                                             ),
-                                            span: 291..294,
+                                            span: 292..295,
                                         },
-                                        span: 291..294,
+                                        span: 292..295,
                                     },
                                 ],
                             },
-                            span: 287..296,
+                            span: 288..298,
                         },
                     },
-                    span: 275..296,
+                    span: 276..298,
                 },
-                span: 245..296,
+                span: 246..298,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "null_lhs",
-                    span: 300..308,
+                    span: 302..310,
                 },
                 ty: Some(
                     Spanned {
                         node: String,
-                        span: 310..316,
+                        span: 312..318,
                     },
                 ),
                 value: Spanned {
@@ -225,7 +224,7 @@ Program {
                             node: Literal(
                                 Null,
                             ),
-                            span: 319..323,
+                            span: 321..325,
                         },
                         rhs: Spanned {
                             node: Literal(
@@ -233,26 +232,26 @@ Program {
                                     "always-this",
                                 ),
                             ),
-                            span: 327..340,
+                            span: 329..342,
                         },
                     },
-                    span: 319..340,
+                    span: 321..342,
                 },
-                span: 296..341,
+                span: 298..344,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "rhs_null",
-                    span: 345..353,
+                    span: 348..356,
                 },
                 ty: Some(
                     Spanned {
                         node: Nullable(
                             String,
                         ),
-                        span: 355..363,
+                        span: 358..366,
                     },
                 ),
                 value: Spanned {
@@ -262,7 +261,7 @@ Program {
                             node: Call {
                                 callee: Spanned {
                                     node: "env",
-                                    span: 365..368,
+                                    span: 368..371,
                                 },
                                 args: [
                                     CallArg {
@@ -273,24 +272,24 @@ Program {
                                                     "X",
                                                 ),
                                             ),
-                                            span: 369..372,
+                                            span: 372..375,
                                         },
-                                        span: 369..372,
+                                        span: 372..375,
                                     },
                                 ],
                             },
-                            span: 365..374,
+                            span: 368..377,
                         },
                         rhs: Spanned {
                             node: Literal(
                                 Null,
                             ),
-                            span: 377..381,
+                            span: 380..384,
                         },
                     },
-                    span: 365..381,
+                    span: 368..384,
                 },
-                span: 341..382,
+                span: 344..385,
             },
         ),
     ],

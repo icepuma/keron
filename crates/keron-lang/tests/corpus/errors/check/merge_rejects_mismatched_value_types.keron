@@ -2,5 +2,7 @@
 # `b` must match. A `Map<String, String>` overlaid with a
 # `Map<String, Int>` is a type error rather than a silent widening.
 val a: Map<String, String> = {"k": "v"}
+
 val b: Map<String, Int> = {"k": 1}
+
 val m: Map<String, String> = merge(a, b)

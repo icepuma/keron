@@ -1,9 +1,8 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 error: type mismatch: expected `Int`, found `String`
-  --> 5:15
+  --> 4:26
   |
-5 |   port: Int = "eighty-eighty",
-  |               ^^^^^^^^^^^^^^^
+4 | struct Bad { port: Int = "eighty-eighty" }
+  |                          ^^^^^^^^^^^^^^^

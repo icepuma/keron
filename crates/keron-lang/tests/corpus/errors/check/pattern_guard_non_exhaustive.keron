@@ -1,7 +1,6 @@
 # Every variant has only a guarded arm, so exhaustiveness fails —
 # the runtime might evaluate every guard to `false` and have no arm
 # left to take.
-
 val x: String = match os_type() {
   "Macos" if true => "mac",
   "Linux" if true => "linux",

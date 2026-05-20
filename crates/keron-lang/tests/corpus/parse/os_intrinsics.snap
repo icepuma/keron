@@ -25,36 +25,36 @@ Program {
                         },
                         args: [],
                     },
-                    span: 19..29,
+                    span: 19..30,
                 },
-                span: 0..29,
+                span: 0..30,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "arch",
-                    span: 33..37,
+                    span: 34..38,
                 },
                 ty: Some(
                     Spanned {
                         node: Named(
                             "OsArch",
                         ),
-                        span: 39..45,
+                        span: 40..46,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "os_arch",
-                            span: 48..55,
+                            span: 49..56,
                         },
                         args: [],
                     },
-                    span: 48..58,
+                    span: 49..59,
                 },
-                span: 29..58,
+                span: 30..59,
             },
         ),
     ],

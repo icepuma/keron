@@ -2,7 +2,7 @@
 source: crates/keron-lang/tests/harness/mod.rs
 ---
 error: `symlink` is a builtin and cannot be redefined
-  --> 2:4
+  --> 1:4
   |
-2 | fn symlink(): Int { 1 }
+1 | fn symlink(): Int {
   |    ^^^^^^^

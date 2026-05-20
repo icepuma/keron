@@ -4,5 +4,5 @@ source: crates/keron-lang/tests/harness/mod.rs
 error: cannot infer type of empty list; add a `List<T>` annotation
   --> 1:10
   |
-1 | for x in [] { reconcile x }
+1 | for x in [] {
   |          ^^^

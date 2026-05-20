@@ -1,3 +1,5 @@
 val ripgrep: Package = brew("ripgrep")
+
 val just_tool: Package = cargo("just")
+
 val pwsh: Package = winget("Microsoft.PowerShell")

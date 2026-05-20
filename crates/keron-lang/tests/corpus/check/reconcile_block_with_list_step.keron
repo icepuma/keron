@@ -1,6 +1,7 @@
-
 val a: Symlink = symlink(source = "~/.a", target = "df/a")
+
 val b: Symlink = symlink(source = "~/.b", target = "df/b")
+
 val c: Symlink = symlink(source = "~/.c", target = "df/c")
 
 val shells: List<Symlink> = [
@@ -11,5 +12,5 @@ val shells: List<Symlink> = [
 reconcile {
   [a, b];
   shells;
-  c
+  c;
 }

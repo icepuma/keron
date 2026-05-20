@@ -1,4 +1,7 @@
 val name = "keron"
+
 val count = 3
+
 val ratio = 0.75
+
 val enabled = true

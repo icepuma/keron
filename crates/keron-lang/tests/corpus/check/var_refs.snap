@@ -23,19 +23,19 @@ Program {
                     ),
                     span: 19..26,
                 },
-                span: 0..27,
+                span: 0..28,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "major",
-                    span: 31..36,
+                    span: 32..37,
                 },
                 ty: Some(
                     Spanned {
                         node: Int,
-                        span: 38..41,
+                        span: 39..42,
                     },
                 ),
                 value: Spanned {
@@ -44,21 +44,21 @@ Program {
                             0,
                         ),
                     ),
-                    span: 44..45,
+                    span: 45..46,
                 },
-                span: 27..46,
+                span: 28..48,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "minor",
-                    span: 50..55,
+                    span: 52..57,
                 },
                 ty: Some(
                     Spanned {
                         node: Int,
-                        span: 57..60,
+                        span: 59..62,
                     },
                 ),
                 value: Spanned {
@@ -67,21 +67,21 @@ Program {
                             1,
                         ),
                     ),
-                    span: 63..64,
+                    span: 65..66,
                 },
-                span: 46..66,
+                span: 48..68,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "banner",
-                    span: 70..76,
+                    span: 72..78,
                 },
                 ty: Some(
                     Spanned {
                         node: String,
-                        span: 78..84,
+                        span: 80..86,
                     },
                 ),
                 value: Spanned {
@@ -91,7 +91,7 @@ Program {
                             node: Var(
                                 "name",
                             ),
-                            span: 87..91,
+                            span: 89..93,
                         },
                         rhs: Spanned {
                             node: Interpolation(
@@ -104,7 +104,7 @@ Program {
                                             node: Var(
                                                 "major",
                                             ),
-                                            span: 99..104,
+                                            span: 101..106,
                                         },
                                         indent: None,
                                     },
@@ -116,32 +116,32 @@ Program {
                                             node: Var(
                                                 "minor",
                                             ),
-                                            span: 108..113,
+                                            span: 110..115,
                                         },
                                         indent: None,
                                     },
                                 ],
                             ),
-                            span: 94..115,
+                            span: 96..117,
                         },
                     },
-                    span: 87..115,
+                    span: 89..117,
                 },
-                span: 66..116,
+                span: 68..119,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "numbers",
-                    span: 120..127,
+                    span: 123..130,
                 },
                 ty: Some(
                     Spanned {
                         node: List(
                             Int,
                         ),
-                        span: 129..139,
+                        span: 132..142,
                     },
                 ),
                 value: Spanned {
@@ -151,13 +151,13 @@ Program {
                                 node: Var(
                                     "major",
                                 ),
-                                span: 142..147,
+                                span: 145..150,
                             },
                             Spanned {
                                 node: Var(
                                     "minor",
                                 ),
-                                span: 149..154,
+                                span: 152..157,
                             },
                             Spanned {
                                 node: Binary {
@@ -166,36 +166,36 @@ Program {
                                         node: Var(
                                             "major",
                                         ),
-                                        span: 156..161,
+                                        span: 159..164,
                                     },
                                     rhs: Spanned {
                                         node: Var(
                                             "minor",
                                         ),
-                                        span: 164..169,
+                                        span: 167..172,
                                     },
                                 },
-                                span: 156..169,
+                                span: 159..172,
                             },
                         ],
                     ),
-                    span: 141..171,
+                    span: 144..175,
                 },
-                span: 116..171,
+                span: 119..175,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "doubled",
-                    span: 175..182,
+                    span: 179..186,
                 },
                 ty: Some(
                     Spanned {
                         node: List(
                             Int,
                         ),
-                        span: 184..194,
+                        span: 188..198,
                     },
                 ),
                 value: Spanned {
@@ -205,7 +205,7 @@ Program {
                             node: Var(
                                 "numbers",
                             ),
-                            span: 196..203,
+                            span: 200..207,
                         },
                         rhs: Spanned {
                             node: List(
@@ -217,7 +217,7 @@ Program {
                                                 node: Var(
                                                     "major",
                                                 ),
-                                                span: 208..213,
+                                                span: 212..217,
                                             },
                                             rhs: Spanned {
                                                 node: Literal(
@@ -225,10 +225,10 @@ Program {
                                                         2,
                                                     ),
                                                 ),
-                                                span: 216..217,
+                                                span: 220..221,
                                             },
                                         },
-                                        span: 208..217,
+                                        span: 212..221,
                                     },
                                     Spanned {
                                         node: Binary {
@@ -237,7 +237,7 @@ Program {
                                                 node: Var(
                                                     "minor",
                                                 ),
-                                                span: 219..224,
+                                                span: 223..228,
                                             },
                                             rhs: Spanned {
                                                 node: Literal(
@@ -245,19 +245,19 @@ Program {
                                                         2,
                                                     ),
                                                 ),
-                                                span: 227..228,
+                                                span: 231..232,
                                             },
                                         },
-                                        span: 219..228,
+                                        span: 223..232,
                                     },
                                 ],
                             ),
-                            span: 207..230,
+                            span: 211..234,
                         },
                     },
-                    span: 196..230,
+                    span: 200..234,
                 },
-                span: 171..230,
+                span: 175..234,
             },
         ),
     ],

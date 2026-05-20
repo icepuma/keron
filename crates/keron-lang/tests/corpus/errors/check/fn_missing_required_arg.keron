@@ -1,2 +1,5 @@
-fn add(a: Int, b: Int): Int { a + b }
+fn add(a: Int, b: Int): Int {
+  a + b
+}
+
 val x: Int = add(1)

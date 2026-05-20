@@ -1,2 +1,3 @@
 val m: Map<String, Int> = {"a": 1}
+
 val n: Int = get(m, "a", "fallback-string")

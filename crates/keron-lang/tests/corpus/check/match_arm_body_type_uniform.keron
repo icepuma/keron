@@ -1,4 +1,5 @@
 type Mode = "on" | "off"
+
 fn flag(m: Mode): Int {
   match m {
     "on" => 1,

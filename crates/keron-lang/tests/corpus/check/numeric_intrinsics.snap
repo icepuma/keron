@@ -1,6 +1,5 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 Program {
     items: [
@@ -8,12 +7,12 @@ Program {
             ValDecl {
                 name: Spanned {
                     node: "n",
-                    span: 200..201,
+                    span: 199..200,
                 },
                 ty: Some(
                     Spanned {
                         node: Int,
-                        span: 203..206,
+                        span: 202..205,
                     },
                 ),
                 value: Spanned {
@@ -23,7 +22,7 @@ Program {
                             node: Call {
                                 callee: Spanned {
                                     node: "parse_int",
-                                    span: 209..218,
+                                    span: 208..217,
                                 },
                                 args: [
                                     CallArg {
@@ -34,13 +33,13 @@ Program {
                                                     "42",
                                                 ),
                                             ),
-                                            span: 219..223,
+                                            span: 218..222,
                                         },
-                                        span: 219..223,
+                                        span: 218..222,
                                     },
                                 ],
                             },
-                            span: 209..225,
+                            span: 208..224,
                         },
                         rhs: Spanned {
                             node: Literal(
@@ -48,12 +47,12 @@ Program {
                                     0,
                                 ),
                             ),
-                            span: 228..229,
+                            span: 227..228,
                         },
                     },
-                    span: 209..229,
+                    span: 208..228,
                 },
-                span: 196..230,
+                span: 195..230,
             },
         ),
         Val(

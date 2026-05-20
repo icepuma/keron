@@ -82,30 +82,30 @@ Program {
                                             node: Var(
                                                 "r",
                                             ),
-                                            span: 46..47,
+                                            span: 48..49,
                                         },
                                         rhs: Spanned {
                                             node: Var(
                                                 "g",
                                             ),
-                                            span: 50..51,
+                                            span: 52..53,
                                         },
                                     },
-                                    span: 46..51,
+                                    span: 48..53,
                                 },
                                 rhs: Spanned {
                                     node: Var(
                                         "b",
                                     ),
-                                    span: 54..55,
+                                    span: 56..57,
                                 },
                             },
-                            span: 46..55,
+                            span: 48..57,
                         },
                     ),
-                    span: 44..58,
+                    span: 44..61,
                 },
-                span: 0..58,
+                span: 0..61,
                 intrinsic: None,
             },
         ),
@@ -113,19 +113,19 @@ Program {
             ValDecl {
                 name: Spanned {
                     node: "color",
-                    span: 62..67,
+                    span: 65..70,
                 },
                 ty: Some(
                     Spanned {
                         node: Int,
-                        span: 69..72,
+                        span: 72..75,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "rgb",
-                            span: 75..78,
+                            span: 78..81,
                         },
                         args: [
                             CallArg {
@@ -136,15 +136,15 @@ Program {
                                             255,
                                         ),
                                     ),
-                                    span: 79..82,
+                                    span: 82..85,
                                 },
-                                span: 79..82,
+                                span: 82..85,
                             },
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "b",
-                                        span: 84..85,
+                                        span: 87..88,
                                     },
                                 ),
                                 value: Spanned {
@@ -153,15 +153,15 @@ Program {
                                             128,
                                         ),
                                     ),
-                                    span: 88..91,
+                                    span: 91..94,
                                 },
-                                span: 84..91,
+                                span: 87..94,
                             },
                         ],
                     },
-                    span: 75..93,
+                    span: 78..96,
                 },
-                span: 58..93,
+                span: 61..96,
             },
         ),
     ],

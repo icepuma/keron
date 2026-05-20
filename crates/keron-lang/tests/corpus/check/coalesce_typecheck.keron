@@ -1,8 +1,11 @@
 # `??` unwraps `T?` when paired with a `T` fallback, and stays `T?`
 # when the fallback is itself nullable. Every form below should type.
-
 val home: String = env("HOME") ?? "/tmp"
+
 val chained: String = env("FIRST") ?? env("SECOND") ?? "default"
+
 val still_optional: String? = env("X") ?? env("Y")
+
 val null_lhs: String = null ?? "always-this"
+
 val rhs_null: String? = env("X") ?? null

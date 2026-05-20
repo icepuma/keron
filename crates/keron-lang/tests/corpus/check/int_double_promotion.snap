@@ -37,19 +37,19 @@ Program {
                     },
                     span: 20..27,
                 },
-                span: 0..28,
+                span: 0..29,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "pure_int",
-                    span: 32..40,
+                    span: 33..41,
                 },
                 ty: Some(
                     Spanned {
                         node: Int,
-                        span: 42..45,
+                        span: 43..46,
                     },
                 ),
                 value: Spanned {
@@ -64,7 +64,7 @@ Program {
                                             2,
                                         ),
                                     ),
-                                    span: 48..49,
+                                    span: 49..50,
                                 },
                                 rhs: Spanned {
                                     node: Literal(
@@ -72,10 +72,10 @@ Program {
                                             10,
                                         ),
                                     ),
-                                    span: 53..55,
+                                    span: 54..56,
                                 },
                             },
-                            span: 48..55,
+                            span: 49..56,
                         },
                         rhs: Spanned {
                             node: Literal(
@@ -83,24 +83,24 @@ Program {
                                     1,
                                 ),
                             ),
-                            span: 58..59,
+                            span: 59..60,
                         },
                     },
-                    span: 48..59,
+                    span: 49..60,
                 },
-                span: 28..60,
+                span: 29..62,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "pure_double",
-                    span: 64..75,
+                    span: 66..77,
                 },
                 ty: Some(
                     Spanned {
                         node: Double,
-                        span: 77..83,
+                        span: 79..85,
                     },
                 ),
                 value: Spanned {
@@ -115,7 +115,7 @@ Program {
                                             1.0,
                                         ),
                                     ),
-                                    span: 86..89,
+                                    span: 88..91,
                                 },
                                 rhs: Spanned {
                                     node: Literal(
@@ -123,10 +123,10 @@ Program {
                                             2.0,
                                         ),
                                     ),
-                                    span: 92..95,
+                                    span: 94..97,
                                 },
                             },
-                            span: 86..95,
+                            span: 88..97,
                         },
                         rhs: Spanned {
                             node: Literal(
@@ -134,12 +134,12 @@ Program {
                                     3.0,
                                 ),
                             ),
-                            span: 98..101,
+                            span: 100..103,
                         },
                     },
-                    span: 86..101,
+                    span: 88..103,
                 },
-                span: 60..102,
+                span: 62..104,
             },
         ),
     ],

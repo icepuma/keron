@@ -5,5 +5,7 @@ fn install(): Void {
 }
 
 fn install_if(flag: Boolean): Void {
-  if flag { reconcile target }
+  if flag {
+    reconcile target
+  }
 }

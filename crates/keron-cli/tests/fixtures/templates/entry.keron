@@ -2,7 +2,6 @@
 # `greeting.tpl` (two `{{ ... }}` Tera placeholders) into a file
 # under the test's fake `$HOME`. Pins template render + write +
 # idempotency end-to-end through the `keron` CLI.
-
 val home: String = env("HOME") ?? keron_root()
 
 reconcile template(

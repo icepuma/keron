@@ -1,6 +1,5 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 Program {
     items: [
@@ -57,19 +56,19 @@ Program {
                     },
                     span: 54..72,
                 },
-                span: 32..73,
+                span: 32..74,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "also_set",
-                    span: 77..85,
+                    span: 78..86,
                 },
                 ty: Some(
                     Spanned {
                         node: Boolean,
-                        span: 87..94,
+                        span: 88..95,
                     },
                 ),
                 value: Spanned {
@@ -79,18 +78,18 @@ Program {
                             node: Literal(
                                 Null,
                             ),
-                            span: 97..101,
+                            span: 98..102,
                         },
                         rhs: Spanned {
                             node: Var(
                                 "maybe_name",
                             ),
-                            span: 105..115,
+                            span: 106..116,
                         },
                     },
-                    span: 97..115,
+                    span: 98..116,
                 },
-                span: 73..116,
+                span: 74..117,
             },
         ),
     ],

@@ -1,3 +1,5 @@
 val annotated: String = "n = ${1 + 2}"
+
 val inferred = "${true} and ${1.5 * 2}"
+
 val mixed = "${"nested ${10}"} done"

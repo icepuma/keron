@@ -1,8 +1,13 @@
-
 val zshrc: Symlink = symlink(source = "~/.zshrc", target = "~/df/zshrc")
-val gitcfg: Template = template(source = "tmpl.tpl", target = "~/.gitconfig", vars = {"body": "[user]"})
+
+val gitcfg: Template = template(
+  source = "tmpl.tpl",
+  target = "~/.gitconfig",
+  vars = {"body": "[user]"},
+)
 
 reconcile zshrc
+
 reconcile gitcfg
 
 reconcile [

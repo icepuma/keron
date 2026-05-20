@@ -1,4 +1,11 @@
 type Color = "red" | "green" | "blue"
+
 val c: Color = "red"
+
 val warm: Boolean = c == "red"
-val tag: String = if c == "red" { "warm" } else { "cool" }
+
+val tag: String = if c == "red" {
+  "warm"
+} else {
+  "cool"
+}

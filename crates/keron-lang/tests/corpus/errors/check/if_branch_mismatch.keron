@@ -1,1 +1,5 @@
-val r = if true { 1 } else { "two" }
+val r = if true {
+  1
+} else {
+  "two"
+}

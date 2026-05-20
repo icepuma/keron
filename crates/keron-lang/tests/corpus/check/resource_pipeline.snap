@@ -7,25 +7,25 @@ Program {
             FnDecl {
                 name: Spanned {
                     node: "link",
-                    span: 200..204,
+                    span: 198..202,
                 },
                 params: [
                     Param {
                         name: Spanned {
                             node: "name",
-                            span: 205..209,
+                            span: 203..207,
                         },
                         ty: Spanned {
                             node: String,
-                            span: 211..217,
+                            span: 209..215,
                         },
                         default: None,
-                        span: 205..217,
+                        span: 203..215,
                     },
                 ],
                 return_type: Spanned {
                     node: Symlink,
-                    span: 220..227,
+                    span: 218..225,
                 },
                 body: Block {
                     stmts: [],
@@ -34,14 +34,14 @@ Program {
                             node: Call {
                                 callee: Spanned {
                                     node: "symlink",
-                                    span: 232..239,
+                                    span: 230..237,
                                 },
                                 args: [
                                     CallArg {
                                         name: Some(
                                             Spanned {
                                                 node: "source",
-                                                span: 240..246,
+                                                span: 238..244,
                                             },
                                         ),
                                         value: Spanned {
@@ -55,21 +55,21 @@ Program {
                                                             node: Var(
                                                                 "name",
                                                             ),
-                                                            span: 255..259,
+                                                            span: 253..257,
                                                         },
                                                         indent: None,
                                                     },
                                                 ],
                                             ),
-                                            span: 249..261,
+                                            span: 247..259,
                                         },
-                                        span: 240..261,
+                                        span: 238..259,
                                     },
                                     CallArg {
                                         name: Some(
                                             Spanned {
                                                 node: "target",
-                                                span: 263..269,
+                                                span: 261..267,
                                             },
                                         ),
                                         value: Spanned {
@@ -83,24 +83,24 @@ Program {
                                                             node: Var(
                                                                 "name",
                                                             ),
-                                                            span: 286..290,
+                                                            span: 284..288,
                                                         },
                                                         indent: None,
                                                     },
                                                 ],
                                             ),
-                                            span: 272..292,
+                                            span: 270..290,
                                         },
-                                        span: 263..292,
+                                        span: 261..290,
                                     },
                                 ],
                             },
-                            span: 232..294,
+                            span: 230..292,
                         },
                     ),
-                    span: 228..297,
+                    span: 226..295,
                 },
-                span: 197..297,
+                span: 195..295,
                 intrinsic: None,
             },
         ),
@@ -108,14 +108,14 @@ Program {
             ValDecl {
                 name: Spanned {
                     node: "configs",
-                    span: 301..308,
+                    span: 299..306,
                 },
                 ty: Some(
                     Spanned {
                         node: List(
                             Symlink,
                         ),
-                        span: 310..324,
+                        span: 308..322,
                     },
                 ),
                 value: Spanned {
@@ -125,7 +125,7 @@ Program {
                                 node: Call {
                                     callee: Spanned {
                                         node: "link",
-                                        span: 330..334,
+                                        span: 325..329,
                                     },
                                     args: [
                                         CallArg {
@@ -136,19 +136,19 @@ Program {
                                                         "zshrc",
                                                     ),
                                                 ),
-                                                span: 335..342,
+                                                span: 330..337,
                                             },
-                                            span: 335..342,
+                                            span: 330..337,
                                         },
                                     ],
                                 },
-                                span: 330..343,
+                                span: 325..338,
                             },
                             Spanned {
                                 node: Call {
                                     callee: Spanned {
                                         node: "link",
-                                        span: 347..351,
+                                        span: 340..344,
                                     },
                                     args: [
                                         CallArg {
@@ -159,19 +159,19 @@ Program {
                                                         "vimrc",
                                                     ),
                                                 ),
-                                                span: 352..359,
+                                                span: 345..352,
                                             },
-                                            span: 352..359,
+                                            span: 345..352,
                                         },
                                     ],
                                 },
-                                span: 347..360,
+                                span: 340..353,
                             },
                             Spanned {
                                 node: Call {
                                     callee: Spanned {
                                         node: "link",
-                                        span: 364..368,
+                                        span: 355..359,
                                     },
                                     args: [
                                         CallArg {
@@ -182,19 +182,19 @@ Program {
                                                         "tmux.conf",
                                                     ),
                                                 ),
-                                                span: 369..380,
+                                                span: 360..371,
                                             },
-                                            span: 369..380,
+                                            span: 360..371,
                                         },
                                     ],
                                 },
-                                span: 364..381,
+                                span: 355..372,
                             },
                         ],
                     ),
-                    span: 326..386,
+                    span: 324..375,
                 },
-                span: 297..386,
+                span: 295..375,
             },
         ),
         Reconcile(
@@ -205,11 +205,11 @@ Program {
                             node: Var(
                                 "configs",
                             ),
-                            span: 396..403,
+                            span: 385..392,
                         },
                     ],
                 ],
-                span: 386..404,
+                span: 375..393,
             },
         ),
     ],

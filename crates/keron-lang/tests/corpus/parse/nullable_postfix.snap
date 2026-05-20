@@ -1,6 +1,5 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 Program {
     items: [
@@ -24,21 +23,21 @@ Program {
                     ),
                     span: 17..21,
                 },
-                span: 0..22,
+                span: 0..23,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "y",
-                    span: 26..27,
+                    span: 27..28,
                 },
                 ty: Some(
                     Spanned {
                         node: Nullable(
                             Int,
                         ),
-                        span: 29..34,
+                        span: 30..35,
                     },
                 ),
                 value: Spanned {
@@ -47,16 +46,16 @@ Program {
                             7,
                         ),
                     ),
-                    span: 36..37,
+                    span: 37..38,
                 },
-                span: 22..38,
+                span: 23..40,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "z",
-                    span: 42..43,
+                    span: 44..45,
                 },
                 ty: Some(
                     Spanned {
@@ -65,7 +64,7 @@ Program {
                                 Boolean,
                             ),
                         ),
-                        span: 45..60,
+                        span: 47..62,
                     },
                 ),
                 value: Spanned {
@@ -77,13 +76,13 @@ Program {
                                         true,
                                     ),
                                 ),
-                                span: 63..67,
+                                span: 65..69,
                             },
                             Spanned {
                                 node: Literal(
                                     Null,
                                 ),
-                                span: 69..73,
+                                span: 71..75,
                             },
                             Spanned {
                                 node: Literal(
@@ -91,13 +90,13 @@ Program {
                                         false,
                                     ),
                                 ),
-                                span: 75..80,
+                                span: 77..82,
                             },
                         ],
                     ),
-                    span: 62..82,
+                    span: 64..84,
                 },
-                span: 38..82,
+                span: 40..84,
             },
         ),
     ],

@@ -1,7 +1,4 @@
 # Required fields must precede defaulted ones — same rule fn
 # parameters follow. Otherwise positional resolution becomes
 # ambiguous about which positional fills which field.
-struct Bad {
-  a: Int = 1,
-  b: Int,
-}
+struct Bad { a: Int = 1, b: Int }

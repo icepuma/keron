@@ -2,7 +2,7 @@
 source: crates/keron-lang/tests/harness/mod.rs
 ---
 error: `f` has no parameter `b`
-  --> 2:16
+  --> 5:16
   |
-2 | val x: Int = f(b = 1)
+5 | val x: Int = f(b = 1)
   |                ^

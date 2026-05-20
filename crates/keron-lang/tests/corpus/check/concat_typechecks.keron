@@ -1,4 +1,7 @@
 val s: String = "hello " + "world"
+
 val xs: List<Int> = [1, 2] ++ [3]
+
 val nested: List<List<String>> = [["a"]] ++ [["b", "c"]]
+
 val mixed_inferred = ["x"] ++ ["y", "z"]

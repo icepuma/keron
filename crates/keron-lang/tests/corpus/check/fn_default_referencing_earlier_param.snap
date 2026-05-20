@@ -121,28 +121,28 @@ Program {
                             },
                         ],
                     },
-                    span: 82..90,
+                    span: 82..91,
                 },
-                span: 69..90,
+                span: 69..91,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "y",
-                    span: 94..95,
+                    span: 95..96,
                 },
                 ty: Some(
                     Spanned {
                         node: Int,
-                        span: 97..100,
+                        span: 98..101,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "pad",
-                            span: 103..106,
+                            span: 104..107,
                         },
                         args: [
                             CallArg {
@@ -153,15 +153,15 @@ Program {
                                             10,
                                         ),
                                     ),
-                                    span: 107..109,
+                                    span: 108..110,
                                 },
-                                span: 107..109,
+                                span: 108..110,
                             },
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "slack",
-                                        span: 111..116,
+                                        span: 112..117,
                                     },
                                 ),
                                 value: Spanned {
@@ -170,15 +170,15 @@ Program {
                                             5,
                                         ),
                                     ),
-                                    span: 119..120,
+                                    span: 120..121,
                                 },
-                                span: 111..120,
+                                span: 112..121,
                             },
                         ],
                     },
-                    span: 103..122,
+                    span: 104..123,
                 },
-                span: 90..122,
+                span: 91..123,
             },
         ),
     ],

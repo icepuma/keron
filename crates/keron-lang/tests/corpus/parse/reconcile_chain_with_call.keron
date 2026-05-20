@@ -1,2 +1,1 @@
-
 reconcile symlink(source = "to-a", target = "from-a") -> symlink(source = "to-b", target = "from-b")

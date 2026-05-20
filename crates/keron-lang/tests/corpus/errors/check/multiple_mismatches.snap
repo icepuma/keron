@@ -8,13 +8,13 @@ error: type mismatch: expected `Int`, found `String`
   |              ^^^
 
 error: type mismatch: expected `String`, found `Int`
-  --> 2:17
+  --> 3:17
   |
-2 | val b: String = 2
+3 | val b: String = 2
   |                 ^
 
 error: type mismatch: expected `Boolean`, found `Double`
-  --> 3:18
+  --> 5:18
   |
-3 | val c: Boolean = 0.5
+5 | val c: Boolean = 0.5
   |                  ^^^

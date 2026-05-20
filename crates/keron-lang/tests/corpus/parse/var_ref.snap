@@ -18,14 +18,14 @@ Program {
                     ),
                     span: 8..9,
                 },
-                span: 0..10,
+                span: 0..11,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "b",
-                    span: 14..15,
+                    span: 15..16,
                 },
                 ty: None,
                 value: Spanned {
@@ -35,7 +35,7 @@ Program {
                             node: Var(
                                 "a",
                             ),
-                            span: 18..19,
+                            span: 19..20,
                         },
                         rhs: Spanned {
                             node: Literal(
@@ -43,26 +43,26 @@ Program {
                                     1,
                                 ),
                             ),
-                            span: 22..23,
+                            span: 23..24,
                         },
                     },
-                    span: 18..23,
+                    span: 19..24,
                 },
-                span: 10..24,
+                span: 11..26,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "c",
-                    span: 28..29,
+                    span: 30..31,
                 },
                 ty: Some(
                     Spanned {
                         node: List(
                             Int,
                         ),
-                        span: 31..41,
+                        span: 33..43,
                     },
                 ),
                 value: Spanned {
@@ -72,13 +72,13 @@ Program {
                                 node: Var(
                                     "a",
                                 ),
-                                span: 44..45,
+                                span: 46..47,
                             },
                             Spanned {
                                 node: Var(
                                     "b",
                                 ),
-                                span: 47..48,
+                                span: 49..50,
                             },
                             Spanned {
                                 node: Binary {
@@ -87,22 +87,22 @@ Program {
                                         node: Var(
                                             "a",
                                         ),
-                                        span: 50..51,
+                                        span: 52..53,
                                     },
                                     rhs: Spanned {
                                         node: Var(
                                             "b",
                                         ),
-                                        span: 54..55,
+                                        span: 56..57,
                                     },
                                 },
-                                span: 50..55,
+                                span: 52..57,
                             },
                         ],
                     ),
-                    span: 43..57,
+                    span: 45..59,
                 },
-                span: 24..57,
+                span: 26..59,
             },
         ),
     ],

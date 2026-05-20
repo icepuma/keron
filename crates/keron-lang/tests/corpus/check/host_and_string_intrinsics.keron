@@ -1,24 +1,33 @@
 # Per-machine signals and string helpers from `std:host` and
 # `std:string`. Everything resolves through implicit builtins.
-
 # Host identity — universally-available signals return `String` so
 # manifests don't have to handle a null case on every reference.
 val host: String = hostname()
+
 val who: String = user()
+
 val home: String = home_dir()
+
 val cfg: String = config_dir()
+
 val cache: String = cache_dir()
+
 val data: String = data_dir()
 
 # Linux-only XDG dirs return `String?` — `??` plus a sensible
 # fallback keeps the manifest portable.
 val state: String = state_dir() ?? "${home}/.local/state"
+
 val runtime: String = runtime_dir() ?? "${cache}/runtime"
 
 # String intrinsics compose without touching the language; common
 # path-building idioms type cleanly.
 val path_parts: List<String> = split("/usr/local/bin:/usr/bin", ":")
+
 val joined: String = join(path_parts, ";")
+
 val has_local: Boolean = contains("/usr/local/bin", "local")
+
 val rewritten: String = replace("dotfile-mgr-keron", "-", "_")
+
 val cleaned: String = trim("   hello\n")

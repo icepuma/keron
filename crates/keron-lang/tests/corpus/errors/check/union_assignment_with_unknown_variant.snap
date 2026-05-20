@@ -2,7 +2,7 @@
 source: crates/keron-lang/tests/harness/mod.rs
 ---
 error: `"yellow"` is not a variant of `Color` (expected one of `"red"`, `"green"`, `"blue"`)
-  --> 2:16
+  --> 3:16
   |
-2 | val c: Color = "yellow"
+3 | val c: Color = "yellow"
   |                ^^^^^^^^

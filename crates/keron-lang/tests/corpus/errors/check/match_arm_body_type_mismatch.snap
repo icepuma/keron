@@ -2,7 +2,7 @@
 source: crates/keron-lang/tests/harness/mod.rs
 ---
 error: type mismatch: expected `Int`, found `String`
-  --> 5:14
+  --> 6:14
   |
-5 |     "off" => "zero",
+6 |     "off" => "zero",
   |              ^^^^^^

@@ -15,21 +15,21 @@ Program {
                         span: 12..18,
                     },
                 ],
-                span: 0..19,
+                span: 0..20,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "m",
-                    span: 23..24,
+                    span: 24..25,
                 },
                 ty: Some(
                     Spanned {
                         node: Named(
                             "Mode",
                         ),
-                        span: 26..30,
+                        span: 27..31,
                     },
                 ),
                 value: Spanned {
@@ -38,9 +38,9 @@ Program {
                             "auto",
                         ),
                     ),
-                    span: 33..39,
+                    span: 34..40,
                 },
-                span: 19..40,
+                span: 20..41,
             },
         ),
     ],

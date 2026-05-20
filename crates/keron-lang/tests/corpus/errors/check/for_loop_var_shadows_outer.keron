@@ -1,3 +1,7 @@
 val x: Int = 0
+
 val xs: List<Int> = [1, 2]
-for x in xs { reconcile x }
+
+for x in xs {
+  reconcile x
+}

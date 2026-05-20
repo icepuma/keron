@@ -1,1 +1,1 @@
-fn nothing(): Int { }
+fn nothing(): Int {}

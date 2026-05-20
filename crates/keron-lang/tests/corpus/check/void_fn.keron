@@ -1,4 +1,3 @@
-
 fn noop(): Void {}
 
 fn noop_if(flag: Boolean): Void {

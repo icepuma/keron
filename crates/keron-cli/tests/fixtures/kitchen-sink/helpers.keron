@@ -3,12 +3,7 @@
 # alongside the rest of the language surface — a struct definition
 # imported as both a type annotation *and* a constructor, a parameterized
 # symlink helper, and a struct-destructure match.
-
-struct Host {
-  name: String,
-  port: Int,
-  tls: Boolean,
-}
+struct Host { name: String, port: Int, tls: Boolean }
 
 type Tier = "core" | "extra" | "lab"
 
@@ -16,10 +11,7 @@ type Tier = "core" | "extra" | "lab"
 # inside the test's fake $HOME — keeps this helper free of `env(...)`
 # side effects so the tier of imports stays purely structural.
 fn link(home: String, name: String): Symlink {
-  symlink(
-    source = "./dotfiles/${name}",
-    target = "${home}/.testks-${name}",
-  )
+  symlink(source = "./dotfiles/${name}", target = "${home}/.testks-${name}")
 }
 
 # Struct-destructure match with literal sub-patterns and a wildcard
@@ -28,17 +20,17 @@ fn link(home: String, name: String): Symlink {
 # Host — but the compiler still requires it on a struct scrutinee.
 fn label_host(h: Host): String {
   match h {
-    Host { name, port: 22, tls: true }   => "ssh:${name}",
-    Host { name, port: 443, tls: true }  => "https:${name}",
-    Host { name, port, tls }             => "${name}:${port}/tls=${tls}",
-    _                                    => "unknown",
+    Host { name, port: 22, tls: true } => "ssh:${name}",
+    Host { name, port: 443, tls: true } => "https:${name}",
+    Host { name, port, tls } => "${name}:${port}/tls=${tls}",
+    _ => "unknown",
   }
 }
 
 fn tier_label(t: Tier): String {
   match t {
-    "core"  => "C",
+    "core" => "C",
     "extra" => "X",
-    "lab"   => "L",
+    "lab" => "L",
   }
 }

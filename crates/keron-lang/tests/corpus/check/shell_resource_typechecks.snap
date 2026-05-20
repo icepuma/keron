@@ -327,7 +327,7 @@ Program {
                         },
                     ],
                 ],
-                span: 423..454,
+                span: 423..455,
             },
         ),
         Reconcile(
@@ -338,11 +338,11 @@ Program {
                             node: Var(
                                 "mixed",
                             ),
-                            span: 464..469,
+                            span: 465..470,
                         },
                     ],
                 ],
-                span: 454..470,
+                span: 455..471,
             },
         ),
     ],

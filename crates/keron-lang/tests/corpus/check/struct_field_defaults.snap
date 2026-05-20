@@ -1,6 +1,5 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 Program {
     items: [
@@ -8,29 +7,29 @@ Program {
             StructDecl {
                 name: Spanned {
                     node: "Server",
-                    span: 288..294,
+                    span: 287..293,
                 },
                 fields: [
                     StructField {
                         name: Spanned {
                             node: "host",
-                            span: 299..303,
+                            span: 296..300,
                         },
                         ty: Spanned {
                             node: String,
-                            span: 305..311,
+                            span: 302..308,
                         },
                         default: None,
-                        span: 299..311,
+                        span: 296..308,
                     },
                     StructField {
                         name: Spanned {
                             node: "port",
-                            span: 315..319,
+                            span: 310..314,
                         },
                         ty: Spanned {
                             node: Int,
-                            span: 321..324,
+                            span: 316..319,
                         },
                         default: Some(
                             Spanned {
@@ -39,19 +38,19 @@ Program {
                                         8080,
                                     ),
                                 ),
-                                span: 327..331,
+                                span: 322..326,
                             },
                         ),
-                        span: 315..331,
+                        span: 310..326,
                     },
                     StructField {
                         name: Spanned {
                             node: "tls",
-                            span: 335..338,
+                            span: 328..331,
                         },
                         ty: Spanned {
                             node: Boolean,
-                            span: 340..347,
+                            span: 333..340,
                         },
                         default: Some(
                             Spanned {
@@ -60,20 +59,20 @@ Program {
                                         false,
                                     ),
                                 ),
-                                span: 350..355,
+                                span: 343..348,
                             },
                         ),
-                        span: 335..355,
+                        span: 328..349,
                     },
                 ],
-                span: 281..360,
+                span: 280..352,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "explicit",
-                    span: 364..372,
+                    span: 356..364,
                 },
                 ty: Some(
                     Spanned {
@@ -94,14 +93,14 @@ Program {
                                 ),
                             ],
                         },
-                        span: 374..380,
+                        span: 366..372,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "Server",
-                            span: 383..389,
+                            span: 375..381,
                         },
                         args: [
                             CallArg {
@@ -112,9 +111,9 @@ Program {
                                             "api",
                                         ),
                                     ),
-                                    span: 390..395,
+                                    span: 382..387,
                                 },
-                                span: 390..395,
+                                span: 382..387,
                             },
                             CallArg {
                                 name: None,
@@ -124,9 +123,9 @@ Program {
                                             443,
                                         ),
                                     ),
-                                    span: 397..400,
+                                    span: 389..392,
                                 },
-                                span: 397..400,
+                                span: 389..392,
                             },
                             CallArg {
                                 name: None,
@@ -136,22 +135,22 @@ Program {
                                             true,
                                         ),
                                     ),
-                                    span: 402..406,
+                                    span: 394..398,
                                 },
-                                span: 402..406,
+                                span: 394..398,
                             },
                         ],
                     },
-                    span: 383..408,
+                    span: 375..401,
                 },
-                span: 360..408,
+                span: 352..401,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "with_default_port",
-                    span: 412..429,
+                    span: 405..422,
                 },
                 ty: Some(
                     Spanned {
@@ -172,14 +171,14 @@ Program {
                                 ),
                             ],
                         },
-                        span: 431..437,
+                        span: 424..430,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "Server",
-                            span: 440..446,
+                            span: 433..439,
                         },
                         args: [
                             CallArg {
@@ -190,22 +189,22 @@ Program {
                                             "api",
                                         ),
                                     ),
-                                    span: 447..452,
+                                    span: 440..445,
                                 },
-                                span: 447..452,
+                                span: 440..445,
                             },
                         ],
                     },
-                    span: 440..454,
+                    span: 433..448,
                 },
-                span: 408..454,
+                span: 401..448,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "partial_named",
-                    span: 458..471,
+                    span: 452..465,
                 },
                 ty: Some(
                     Spanned {
@@ -226,21 +225,21 @@ Program {
                                 ),
                             ],
                         },
-                        span: 473..479,
+                        span: 467..473,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "Server",
-                            span: 482..488,
+                            span: 476..482,
                         },
                         args: [
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "host",
-                                        span: 489..493,
+                                        span: 483..487,
                                     },
                                 ),
                                 value: Spanned {
@@ -249,15 +248,15 @@ Program {
                                             "api",
                                         ),
                                     ),
-                                    span: 496..501,
+                                    span: 490..495,
                                 },
-                                span: 489..501,
+                                span: 483..495,
                             },
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "tls",
-                                        span: 503..506,
+                                        span: 497..500,
                                     },
                                 ),
                                 value: Spanned {
@@ -266,15 +265,15 @@ Program {
                                             true,
                                         ),
                                     ),
-                                    span: 509..513,
+                                    span: 503..507,
                                 },
-                                span: 503..513,
+                                span: 497..507,
                             },
                         ],
                     },
-                    span: 482..515,
+                    span: 476..509,
                 },
-                span: 454..515,
+                span: 448..509,
             },
         ),
     ],

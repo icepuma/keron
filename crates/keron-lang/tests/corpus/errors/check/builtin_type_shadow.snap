@@ -4,11 +4,11 @@ source: crates/keron-lang/tests/harness/mod.rs
 error: `Resource` is a builtin and cannot be redefined
   --> 1:8
   |
-1 | struct Resource {
+1 | struct Resource { path: String }
   |        ^^^^^^^^
 
 error: `Secret` is a builtin and cannot be redefined
-  --> 5:6
+  --> 3:6
   |
-5 | type Secret = "plain"
+3 | type Secret = "plain"
   |      ^^^^^^

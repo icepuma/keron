@@ -7,43 +7,43 @@ Program {
             TypeAliasDecl {
                 name: Spanned {
                     node: "Mode",
-                    span: 397..401,
+                    span: 396..400,
                 },
                 variants: [
                     Spanned {
                         node: "on",
-                        span: 404..408,
+                        span: 403..407,
                     },
                     Spanned {
                         node: "off",
-                        span: 411..416,
+                        span: 410..415,
                     },
                     Spanned {
                         node: "auto",
-                        span: 419..425,
+                        span: 418..424,
                     },
                 ],
-                span: 392..427,
+                span: 391..426,
             },
         ),
         Fn(
             FnDecl {
                 name: Spanned {
                     node: "pick",
-                    span: 430..434,
+                    span: 429..433,
                 },
                 params: [
                     Param {
                         name: Spanned {
                             node: "name",
-                            span: 435..439,
+                            span: 434..438,
                         },
                         ty: Spanned {
                             node: String,
-                            span: 441..447,
+                            span: 440..446,
                         },
                         default: None,
-                        span: 435..447,
+                        span: 434..446,
                     },
                 ],
                 return_type: Spanned {
@@ -55,7 +55,7 @@ Program {
                             "auto",
                         ],
                     },
-                    span: 450..454,
+                    span: 449..453,
                 },
                 body: Block {
                     stmts: [],
@@ -66,7 +66,7 @@ Program {
                                     node: Var(
                                         "name",
                                     ),
-                                    span: 465..469,
+                                    span: 464..468,
                                 },
                                 arms: [
                                     MatchArm {
@@ -76,7 +76,7 @@ Program {
                                                     "active",
                                                 ),
                                             ),
-                                            span: 476..484,
+                                            span: 475..483,
                                         },
                                         guard: None,
                                         body: Spanned {
@@ -85,9 +85,9 @@ Program {
                                                     "on",
                                                 ),
                                             ),
-                                            span: 488..492,
+                                            span: 487..491,
                                         },
-                                        span: 476..492,
+                                        span: 475..491,
                                     },
                                     MatchArm {
                                         pattern: Spanned {
@@ -96,7 +96,7 @@ Program {
                                                     "idle",
                                                 ),
                                             ),
-                                            span: 498..504,
+                                            span: 497..503,
                                         },
                                         guard: None,
                                         body: Spanned {
@@ -105,14 +105,14 @@ Program {
                                                     "off",
                                                 ),
                                             ),
-                                            span: 510..515,
+                                            span: 507..512,
                                         },
-                                        span: 498..515,
+                                        span: 497..512,
                                     },
                                     MatchArm {
                                         pattern: Spanned {
                                             node: Wildcard,
-                                            span: 521..530,
+                                            span: 518..520,
                                         },
                                         guard: None,
                                         body: Spanned {
@@ -121,18 +121,18 @@ Program {
                                                     "auto",
                                                 ),
                                             ),
-                                            span: 533..539,
+                                            span: 523..529,
                                         },
-                                        span: 521..539,
+                                        span: 518..529,
                                     },
                                 ],
                             },
-                            span: 459..545,
+                            span: 458..535,
                         },
                     ),
-                    span: 455..548,
+                    span: 454..538,
                 },
-                span: 427..548,
+                span: 426..538,
                 intrinsic: None,
             },
         ),
@@ -140,7 +140,7 @@ Program {
             ValDecl {
                 name: Spanned {
                     node: "current",
-                    span: 552..559,
+                    span: 542..549,
                 },
                 ty: Some(
                     Spanned {
@@ -152,7 +152,7 @@ Program {
                                 "auto",
                             ],
                         },
-                        span: 561..565,
+                        span: 551..555,
                     },
                 ),
                 value: Spanned {
@@ -163,7 +163,7 @@ Program {
                                     true,
                                 ),
                             ),
-                            span: 574..578,
+                            span: 564..568,
                         },
                         arms: [
                             MatchArm {
@@ -173,7 +173,7 @@ Program {
                                             true,
                                         ),
                                     ),
-                                    span: 583..587,
+                                    span: 573..577,
                                 },
                                 guard: None,
                                 body: Spanned {
@@ -182,14 +182,14 @@ Program {
                                             "on",
                                         ),
                                     ),
-                                    span: 591..595,
+                                    span: 581..585,
                                 },
-                                span: 583..595,
+                                span: 573..585,
                             },
                             MatchArm {
                                 pattern: Spanned {
                                     node: Wildcard,
-                                    span: 599..604,
+                                    span: 589..591,
                                 },
                                 guard: None,
                                 body: Spanned {
@@ -198,22 +198,22 @@ Program {
                                             "off",
                                         ),
                                     ),
-                                    span: 607..612,
+                                    span: 594..599,
                                 },
-                                span: 599..612,
+                                span: 589..599,
                             },
                         ],
                     },
-                    span: 568..699,
+                    span: 558..686,
                 },
-                span: 548..699,
+                span: 538..686,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "by_flag",
-                    span: 703..710,
+                    span: 690..697,
                 },
                 ty: Some(
                     Spanned {
@@ -225,7 +225,7 @@ Program {
                                 "auto",
                             ],
                         },
-                        span: 712..716,
+                        span: 699..703,
                     },
                 ),
                 value: Spanned {
@@ -236,7 +236,7 @@ Program {
                                     true,
                                 ),
                             ),
-                            span: 722..726,
+                            span: 709..713,
                         },
                         then_branch: Block {
                             stmts: [],
@@ -249,7 +249,7 @@ Program {
                                                     0,
                                                 ),
                                             ),
-                                            span: 737..738,
+                                            span: 724..725,
                                         },
                                         arms: [
                                             MatchArm {
@@ -259,7 +259,7 @@ Program {
                                                             0,
                                                         ),
                                                     ),
-                                                    span: 745..746,
+                                                    span: 732..733,
                                                 },
                                                 guard: None,
                                                 body: Spanned {
@@ -268,14 +268,14 @@ Program {
                                                             "on",
                                                         ),
                                                     ),
-                                                    span: 750..754,
+                                                    span: 737..741,
                                                 },
-                                                span: 745..754,
+                                                span: 732..741,
                                             },
                                             MatchArm {
                                                 pattern: Spanned {
                                                     node: Wildcard,
-                                                    span: 760..762,
+                                                    span: 747..749,
                                                 },
                                                 guard: None,
                                                 body: Spanned {
@@ -284,16 +284,16 @@ Program {
                                                             "off",
                                                         ),
                                                     ),
-                                                    span: 765..770,
+                                                    span: 752..757,
                                                 },
-                                                span: 760..770,
+                                                span: 747..757,
                                             },
                                         ],
                                     },
-                                    span: 731..776,
+                                    span: 718..763,
                                 },
                             ),
-                            span: 727..778,
+                            span: 714..765,
                         },
                         else_branch: Block {
                             stmts: [],
@@ -304,15 +304,15 @@ Program {
                                             "auto",
                                         ),
                                     ),
-                                    span: 787..793,
+                                    span: 774..780,
                                 },
                             ),
-                            span: 783..797,
+                            span: 770..784,
                         },
                     },
-                    span: 719..797,
+                    span: 706..784,
                 },
-                span: 699..797,
+                span: 686..784,
             },
         ),
         Reconcile(
@@ -323,14 +323,14 @@ Program {
                             node: Call {
                                 callee: Spanned {
                                     node: "symlink",
-                                    span: 811..818,
+                                    span: 794..801,
                                 },
                                 args: [
                                     CallArg {
                                         name: Some(
                                             Spanned {
                                                 node: "source",
-                                                span: 819..825,
+                                                span: 802..808,
                                             },
                                         ),
                                         value: Spanned {
@@ -341,21 +341,21 @@ Program {
                                                             node: Var(
                                                                 "current",
                                                             ),
-                                                            span: 831..838,
+                                                            span: 814..821,
                                                         },
                                                         indent: None,
                                                     },
                                                 ],
                                             ),
-                                            span: 828..840,
+                                            span: 811..823,
                                         },
-                                        span: 819..840,
+                                        span: 802..823,
                                     },
                                     CallArg {
                                         name: Some(
                                             Spanned {
                                                 node: "target",
-                                                span: 842..848,
+                                                span: 825..831,
                                             },
                                         ),
                                         value: Spanned {
@@ -369,7 +369,7 @@ Program {
                                                             node: Call {
                                                                 callee: Spanned {
                                                                     node: "pick",
-                                                                    span: 859..863,
+                                                                    span: 842..846,
                                                                 },
                                                                 args: [
                                                                     CallArg {
@@ -380,13 +380,13 @@ Program {
                                                                                     "active",
                                                                                 ),
                                                                             ),
-                                                                            span: 864..872,
+                                                                            span: 847..855,
                                                                         },
-                                                                        span: 864..872,
+                                                                        span: 847..855,
                                                                     },
                                                                 ],
                                                             },
-                                                            span: 859..873,
+                                                            span: 842..856,
                                                         },
                                                         indent: None,
                                                     },
@@ -398,23 +398,23 @@ Program {
                                                             node: Var(
                                                                 "by_flag",
                                                             ),
-                                                            span: 877..884,
+                                                            span: 860..867,
                                                         },
                                                         indent: None,
                                                     },
                                                 ],
                                             ),
-                                            span: 851..886,
+                                            span: 834..869,
                                         },
-                                        span: 842..886,
+                                        span: 825..869,
                                     },
                                 ],
                             },
-                            span: 811..887,
+                            span: 794..871,
                         },
                     ],
                 ],
-                span: 797..891,
+                span: 784..871,
             },
         ),
     ],

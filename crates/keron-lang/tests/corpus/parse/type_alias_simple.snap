@@ -23,21 +23,21 @@ Program {
                         span: 31..37,
                     },
                 ],
-                span: 0..38,
+                span: 0..39,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "c",
-                    span: 42..43,
+                    span: 43..44,
                 },
                 ty: Some(
                     Spanned {
                         node: Named(
                             "Color",
                         ),
-                        span: 45..50,
+                        span: 46..51,
                     },
                 ),
                 value: Spanned {
@@ -46,9 +46,9 @@ Program {
                             "red",
                         ),
                     ),
-                    span: 53..58,
+                    span: 54..59,
                 },
-                span: 38..59,
+                span: 39..60,
             },
         ),
     ],

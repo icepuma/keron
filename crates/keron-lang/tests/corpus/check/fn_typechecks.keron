@@ -16,6 +16,9 @@ fn loop_(n: Int): Int {
 }
 
 val a: Int = double(21)
+
 val b: Int = add(1, 2)
+
 val c: Int = sum_squares(5)
+
 val d: Int = double(double(double(1)))

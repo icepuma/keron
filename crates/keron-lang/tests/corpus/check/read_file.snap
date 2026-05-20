@@ -1,6 +1,5 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 Program {
     items: [
@@ -8,12 +7,12 @@ Program {
             ValDecl {
                 name: Spanned {
                     node: "prefix",
-                    span: 185..191,
+                    span: 184..190,
                 },
                 ty: Some(
                     Spanned {
                         node: String,
-                        span: 193..199,
+                        span: 192..198,
                     },
                 ),
                 value: Spanned {
@@ -23,7 +22,7 @@ Program {
                             node: Call {
                                 callee: Spanned {
                                     node: "read_file",
-                                    span: 202..211,
+                                    span: 201..210,
                                 },
                                 args: [
                                     CallArg {
@@ -34,13 +33,13 @@ Program {
                                                     "./partials/header.txt",
                                                 ),
                                             ),
-                                            span: 212..235,
+                                            span: 211..234,
                                         },
-                                        span: 212..235,
+                                        span: 211..234,
                                     },
                                 ],
                             },
-                            span: 202..237,
+                            span: 201..236,
                         },
                         rhs: Spanned {
                             node: Literal(
@@ -48,12 +47,12 @@ Program {
                                     "",
                                 ),
                             ),
-                            span: 240..242,
+                            span: 239..241,
                         },
                     },
-                    span: 202..242,
+                    span: 201..241,
                 },
-                span: 181..243,
+                span: 180..243,
             },
         ),
         Val(
@@ -120,19 +119,19 @@ Program {
                     },
                     span: 264..313,
                 },
-                span: 243..314,
+                span: 243..315,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "merged",
-                    span: 318..324,
+                    span: 319..325,
                 },
                 ty: Some(
                     Spanned {
                         node: String,
-                        span: 326..332,
+                        span: 327..333,
                     },
                 ),
                 value: Spanned {
@@ -142,18 +141,18 @@ Program {
                             node: Var(
                                 "prefix",
                             ),
-                            span: 335..341,
+                            span: 336..342,
                         },
                         rhs: Spanned {
                             node: Var(
                                 "suffix",
                             ),
-                            span: 344..350,
+                            span: 345..351,
                         },
                     },
-                    span: 335..350,
+                    span: 336..351,
                 },
-                span: 314..351,
+                span: 315..352,
             },
         ),
     ],

@@ -1,9 +1,8 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 error: type mismatch: expected `String`, found `String?`
-  --> 5:22
+  --> 4:22
   |
-5 | val direct: String = read_file("./partials/header.txt")
+4 | val direct: String = read_file("./partials/header.txt")
   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

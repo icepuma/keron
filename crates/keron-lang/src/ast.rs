@@ -37,6 +37,23 @@ pub enum Item {
     ExprStmt(Spanned<Expr>),
 }
 
+impl Item {
+    /// Source span of this top-level item, used by the trivia
+    /// extractor to attach comments to the right node.
+    #[must_use]
+    pub fn span(&self) -> Span {
+        match self {
+            Self::Use(u) => u.span.clone(),
+            Self::Val(v) => v.span.clone(),
+            Self::Fn(f) => f.span.clone(),
+            Self::Struct(s) => s.span.clone(),
+            Self::TypeAlias(t) => t.span.clone(),
+            Self::Reconcile(r) => r.span.clone(),
+            Self::ExprStmt(e) => e.span.clone(),
+        }
+    }
+}
+
 /// `from "<path>" use name1, name2, …`.
 ///
 /// The path is a literal string with no interpolation. Permitted
@@ -799,5 +816,78 @@ impl Literal {
             Self::Double(_) => Type::Double,
             Self::Null => Type::Null,
         }
+    }
+}
+
+// =====================================================================
+// Trivia (comments)
+//
+// Comments are not parsed as tokens — `parser::util::pad` discards
+// them along with whitespace, so they never appear in the AST itself.
+// To round-trip them through a pretty-printer, we capture them in a
+// side `CommentMap` produced by `trivia::extract_comments` and keyed
+// by which AST span they attach to. Existing callers that only care
+// about parse output (`parser::parse`) are unaffected; only the
+// formatter needs the map.
+// =====================================================================
+
+/// One `#...` comment captured from source. `text` includes the
+/// leading `#` and any whitespace after it but excludes the
+/// terminating newline.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Comment {
+    pub text: String,
+    pub span: Span,
+}
+
+/// How a comment relates to the AST.
+///
+/// Resolution order when more than one attachment is plausible (e.g.
+/// a comment between two top-level items could be trailing the
+/// previous OR leading the next): `Trailing` > `Leading` >
+/// `BlockInterior` > `ModuleTrailing`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommentAttachment {
+    /// Comment appears immediately before an AST node, separated from
+    /// it by whitespace only (blank lines allowed). The held span is
+    /// the node's full span.
+    Leading(Span),
+    /// Comment starts on the same source line as the node ends.
+    Trailing(Span),
+    /// Comment sits inside a block (`{ ... }`, `[ ... ]`, `( ... )`)
+    /// but not adjacent to any specific item. `after = None` means
+    /// it precedes the first item; `Some(s)` means it follows the
+    /// item with span `s`. `block_span` is the full block including
+    /// delimiters.
+    BlockInterior {
+        block_span: Span,
+        after: Option<Span>,
+    },
+    /// Comment appears after the last top-level item in the module.
+    ModuleTrailing,
+}
+
+/// All comments extracted from a source file, paired with their
+/// attachment policy.
+///
+/// Stored as a `Vec` rather than a map because the formatter walks
+/// comments in source order during emission and doesn't benefit from
+/// random-access lookup by span.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CommentMap {
+    pub comments: Vec<(Comment, CommentAttachment)>,
+}
+
+impl CommentMap {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            comments: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.comments.is_empty()
     }
 }

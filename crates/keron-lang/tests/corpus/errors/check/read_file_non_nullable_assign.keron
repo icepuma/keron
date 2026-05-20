@@ -1,5 +1,4 @@
 # `read_file` always returns `String?` — assigning the bare result
 # to a non-nullable `String` is a type error. Users have to `??` a
 # fallback (or `match` on null) to recover the inhabitant.
-
 val direct: String = read_file("./partials/header.txt")

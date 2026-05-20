@@ -38,37 +38,37 @@ Program {
                             },
                         ],
                     },
-                    span: 20..32,
+                    span: 20..33,
                 },
-                span: 0..32,
+                span: 0..33,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "missing",
-                    span: 36..43,
+                    span: 37..44,
                 },
                 ty: Some(
                     Spanned {
                         node: Nullable(
                             String,
                         ),
-                        span: 45..53,
+                        span: 46..54,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "env",
-                            span: 55..58,
+                            span: 56..59,
                         },
                         args: [
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "name",
-                                        span: 59..63,
+                                        span: 60..64,
                                     },
                                 ),
                                 value: Spanned {
@@ -77,15 +77,15 @@ Program {
                                             "DEFINITELY_UNSET_XYZ",
                                         ),
                                     ),
-                                    span: 66..88,
+                                    span: 67..89,
                                 },
-                                span: 59..88,
+                                span: 60..89,
                             },
                         ],
                     },
-                    span: 55..90,
+                    span: 56..91,
                 },
-                span: 32..90,
+                span: 33..91,
             },
         ),
     ],

@@ -1,9 +1,8 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 error: cannot interpolate a `String?` directly; `match` it to extract the inhabitant first
-  --> 2:33
+  --> 3:33
   |
-2 | val greeting: String = "hello ${maybe_name}"
+3 | val greeting: String = "hello ${maybe_name}"
   |                                 ^^^^^^^^^^

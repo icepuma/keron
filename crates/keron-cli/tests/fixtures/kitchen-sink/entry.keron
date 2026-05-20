@@ -16,7 +16,6 @@
 # Targets resolve under the test's fake $HOME so nothing escapes the
 # tempdir. Two `keron apply --execute` runs are expected: the first
 # adds 8 resources, the second is a clean no-op.
-
 from "./helpers.keron" use Host, Tier, link, label_host, tier_label
 
 val home: String = env("HOME") ?? keron_root()
@@ -24,12 +23,15 @@ val home: String = env("HOME") ?? keron_root()
 # `read_file` is keron-root-confined; both partials live in this
 # fixture directory so the path resolves cleanly.
 val header: String = read_file("./header.txt") ?? ""
+
 val footer: String = read_file("./footer.txt") ?? ""
+
 val body: String = header + "\n" + footer
 
 # Numeric parsing: read a number from a vendored file, trim trailing
 # whitespace, then `parse_int` + `??` to cement the fallback path.
 val seed_text: String = read_file("./data/seed.txt") ?? "0"
+
 val seed: Int = parse_int(trim(seed_text)) ?? 0
 
 # Match on a nullable env var: covers the `null` arm + a wildcard
@@ -37,7 +39,7 @@ val seed: Int = parse_int(trim(seed_text)) ?? 0
 fn env_with_default(name: String, fallback: String): String {
   match env(name) {
     null => fallback,
-    set  => set,
+    set => set,
   }
 }
 
@@ -48,54 +50,71 @@ val flavor: String = env_with_default("KERON_KS_FLAVOR", "vanilla")
 # union via the existing literal-into-`StringUnion` admission rule.
 # Covers the `null` arm + a wildcard catch-all required for `String?`.
 val tier: Tier = match env("KERON_KS_TIER") {
-  null    => "core",
+  null => "core",
   "extra" => "extra",
-  "lab"   => "lab",
-  _       => "core",
+  "lab" => "lab",
+  _ => "core",
 }
 
 # Host info from the platform. Both intrinsics return string-union
 # types so they flow into interpolation as ordinary strings.
 val host_os: OsType = os_type()
+
 val host_arch: OsArch = os_arch()
+
 val platform: String = "${host_os}/${host_arch}"
 
 # Struct construction (positional + named) + struct-destructure match
 # imported from the helpers module.
 val origin: Host = Host(name = "alpha.local", port = 22, tls = true)
+
 val mirror: Host = Host("beta.local", 443, tls = true)
+
 val backup: Host = Host(name = "delta", port = 9000, tls = false)
+
 val hosts: List<Host> = [origin, mirror, backup]
+
 val total_hosts: Int = len(hosts)
+
 val labels: String = "${label_host(origin)} | ${label_host(mirror)} | ${label_host(backup)}"
 
 # List intrinsics: `unique` dedups, `sort` stabilizes order, `join`
 # stitches the result back into a PATH-like string.
 val raw_paths: List<String> = ["/usr/bin", "/usr/local/bin", "/usr/bin", "/opt/bin"]
+
 val sorted_unique: List<String> = sort(unique(raw_paths))
+
 val joined_paths: String = join(sorted_unique, ":")
 
 # Map intrinsics: `with` extends a literal, `merge` combines, `keys`
 # pulls the keyset out as a List<String> for sorting.
 val base_priorities: Map<String, Int> = {"zshrc": 1, "vimrc": 2, "gitconfig": 3}
+
 val extended: Map<String, Int> = with(base_priorities, "init.lua", 4)
+
 val overrides: Map<String, Int> = {"zshrc": 10}
+
 val merged: Map<String, Int> = merge(extended, overrides)
+
 val sorted_keys: String = join(sort(keys(merged)), ",")
 
 # Path intrinsics on a known-good path (keron_root is canonical and
 # always exists; `path_exists` returns Boolean we can stringify).
 val seed_basename: String = path_basename("./data/seed.txt")
+
 val seed_ext: String = path_extension("./data/seed.txt")
+
 val root_present: Boolean = path_exists(keron_root())
 
 # Plain `if` ladder over the parsed seed.
 val seed_size: String = if seed > 100 {
   "large"
-} else if seed >= 10 {
-  "medium"
 } else {
-  "small"
+  if seed >= 10 {
+    "medium"
+  } else {
+    "small"
+  }
 }
 
 # String intrinsics: a fixed-string `replace`, `contains` later in the
@@ -116,19 +135,19 @@ val main_summary: Template = template(
   source = "./summary.tpl",
   target = "${home}/.testks-summary",
   vars = {
-    "platform":      platform,
-    "tier":          tier_label(tier),
-    "size":          seed_size,
-    "seed":          "${seed}",
-    "flavor":        sanitized_flavor,
-    "hosts_count":   "${total_hosts}",
-    "labels":        labels,
-    "joined_paths":  joined_paths,
-    "sorted_keys":   sorted_keys,
+    "platform": platform,
+    "tier": tier_label(tier),
+    "size": seed_size,
+    "seed": "${seed}",
+    "flavor": sanitized_flavor,
+    "hosts_count": "${total_hosts}",
+    "labels": labels,
+    "joined_paths": joined_paths,
+    "sorted_keys": sorted_keys,
     "seed_basename": seed_basename,
-    "seed_ext":      seed_ext,
-    "root_present":  "${root_present}",
-    "body":          body,
+    "seed_ext": seed_ext,
+    "root_present": "${root_present}",
+    "body": body,
   },
 )
 
@@ -150,19 +169,19 @@ for name in link_names {
       source = "./summary.tpl",
       target = "${home}/.testks-${name}-info",
       vars = {
-        "platform":      platform,
-        "tier":          tier_label(tier),
-        "size":          seed_size,
-        "seed":          "${seed}",
-        "flavor":        sanitized_flavor,
-        "hosts_count":   "${total_hosts}",
-        "labels":        name,
-        "joined_paths":  joined_paths,
-        "sorted_keys":   sorted_keys,
+        "platform": platform,
+        "tier": tier_label(tier),
+        "size": seed_size,
+        "seed": "${seed}",
+        "flavor": sanitized_flavor,
+        "hosts_count": "${total_hosts}",
+        "labels": name,
+        "joined_paths": joined_paths,
+        "sorted_keys": sorted_keys,
         "seed_basename": seed_basename,
-        "seed_ext":      seed_ext,
-        "root_present":  "${root_present}",
-        "body":          body,
+        "seed_ext": seed_ext,
+        "root_present": "${root_present}",
+        "body": body,
       },
     )
   }
@@ -174,19 +193,19 @@ for (k, v) in base_priorities {
     source = "./summary.tpl",
     target = "${home}/.testks-priority-${k}",
     vars = {
-      "platform":      platform,
-      "tier":          tier_label(tier),
-      "size":          seed_size,
-      "seed":          "${v}",
-      "flavor":        k,
-      "hosts_count":   "${total_hosts}",
-      "labels":        k,
-      "joined_paths":  joined_paths,
-      "sorted_keys":   sorted_keys,
+      "platform": platform,
+      "tier": tier_label(tier),
+      "size": seed_size,
+      "seed": "${v}",
+      "flavor": k,
+      "hosts_count": "${total_hosts}",
+      "labels": k,
+      "joined_paths": joined_paths,
+      "sorted_keys": sorted_keys,
       "seed_basename": seed_basename,
-      "seed_ext":      seed_ext,
-      "root_present":  "${root_present}",
-      "body":          body,
+      "seed_ext": seed_ext,
+      "root_present": "${root_present}",
+      "body": body,
     },
   )
 }

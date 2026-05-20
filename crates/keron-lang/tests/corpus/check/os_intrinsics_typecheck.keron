@@ -3,33 +3,36 @@
 # (the union closes the domain). Equality with a literal variant is
 # also legal because a `StringUnion` is comparable with `String` and
 # with itself.
-
 val host: OsType = os_type()
+
 val arch: OsArch = os_arch()
 
 val label: String = match host {
-  "Linux"   => "linux box",
-  "Macos"   => "mac",
+  "Linux" => "linux box",
+  "Macos" => "mac",
   "Windows" => "windows box",
   "Unknown" => "?",
 }
 
 val arch_label: String = match arch {
-  "x86_64"  => "amd64",
+  "x86_64" => "amd64",
   "aarch64" => "arm64",
-  "arm"     => "armv7",
-  "x86"     => "i686",
+  "arm" => "armv7",
+  "x86" => "i686",
   "Unknown" => "?",
 }
 
 # Literal equality drives an `if`, no `match` required.
 val is_mac: Boolean = host == "Macos"
+
 val tier: String = if arch == "aarch64" {
   "fast"
-} else if arch == "x86_64" {
-  "normal"
 } else {
-  "exotic"
+  if arch == "x86_64" {
+    "normal"
+  } else {
+    "exotic"
+  }
 }
 
 # A union variant is assignable to a `String` slot via concat /

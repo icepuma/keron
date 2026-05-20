@@ -4,5 +4,5 @@ source: crates/keron-lang/tests/harness/mod.rs
 error: `if` branches have mismatched types: `then` is `Int`, `else` is `Void`
   --> 1:17
   |
-1 | val r = if true { 1 }
-  |                 ^^^^^^
+1 | val r = if true {
+  |                 ^^^^^^^^

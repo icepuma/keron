@@ -1,6 +1,5 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 Program {
     items: [
@@ -24,20 +23,20 @@ Program {
                         span: 31..37,
                     },
                 ],
-                span: 0..38,
+                span: 0..39,
             },
         ),
         Fn(
             FnDecl {
                 name: Spanned {
                     node: "label",
-                    span: 41..46,
+                    span: 42..47,
                 },
                 params: [
                     Param {
                         name: Spanned {
                             node: "c",
-                            span: 47..48,
+                            span: 48..49,
                         },
                         ty: Spanned {
                             node: StringUnion {
@@ -48,15 +47,15 @@ Program {
                                     "blue",
                                 ],
                             },
-                            span: 50..55,
+                            span: 51..56,
                         },
                         default: None,
-                        span: 47..55,
+                        span: 48..56,
                     },
                 ],
                 return_type: Spanned {
                     node: String,
-                    span: 58..64,
+                    span: 59..65,
                 },
                 body: Block {
                     stmts: [],
@@ -67,7 +66,7 @@ Program {
                                     node: Var(
                                         "c",
                                     ),
-                                    span: 75..76,
+                                    span: 76..77,
                                 },
                                 arms: [
                                     MatchArm {
@@ -77,7 +76,7 @@ Program {
                                                     "red",
                                                 ),
                                             ),
-                                            span: 83..88,
+                                            span: 84..89,
                                         },
                                         guard: None,
                                         body: Spanned {
@@ -86,9 +85,9 @@ Program {
                                                     "warm",
                                                 ),
                                             ),
-                                            span: 92..98,
+                                            span: 93..99,
                                         },
-                                        span: 83..98,
+                                        span: 84..99,
                                     },
                                     MatchArm {
                                         pattern: Spanned {
@@ -97,7 +96,7 @@ Program {
                                                     "green",
                                                 ),
                                             ),
-                                            span: 104..111,
+                                            span: 105..112,
                                         },
                                         guard: None,
                                         body: Spanned {
@@ -106,9 +105,9 @@ Program {
                                                     "natural",
                                                 ),
                                             ),
-                                            span: 115..124,
+                                            span: 116..125,
                                         },
-                                        span: 104..124,
+                                        span: 105..125,
                                     },
                                     MatchArm {
                                         pattern: Spanned {
@@ -117,7 +116,7 @@ Program {
                                                     "blue",
                                                 ),
                                             ),
-                                            span: 130..136,
+                                            span: 131..137,
                                         },
                                         guard: None,
                                         body: Spanned {
@@ -126,18 +125,18 @@ Program {
                                                     "cool",
                                                 ),
                                             ),
-                                            span: 140..146,
+                                            span: 141..147,
                                         },
-                                        span: 130..146,
+                                        span: 131..147,
                                     },
                                 ],
                             },
-                            span: 69..152,
+                            span: 70..153,
                         },
                     ),
-                    span: 65..154,
+                    span: 66..155,
                 },
-                span: 38..154,
+                span: 39..155,
                 intrinsic: None,
             },
         ),

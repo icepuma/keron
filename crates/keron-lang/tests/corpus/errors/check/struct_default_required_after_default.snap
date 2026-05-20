@@ -1,9 +1,8 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 error: required fields must come before defaulted fields
-  --> 6:3
+  --> 4:26
   |
-6 |   b: Int,
-  |   ^^^^^^
+4 | struct Bad { a: Int = 1, b: Int }
+  |                          ^^^^^^^

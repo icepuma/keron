@@ -1,11 +1,12 @@
-
 val use_zsh: Boolean = true
+
 val zshrc: Symlink = symlink(source = "~/.zshrc", target = "df/zshrc")
+
 val bashrc: Symlink = symlink(source = "~/.bashrc", target = "df/bashrc")
 
 if use_zsh {
   reconcile {
     zshrc;
-    bashrc -> zshrc
+    bashrc -> zshrc;
   }
 }

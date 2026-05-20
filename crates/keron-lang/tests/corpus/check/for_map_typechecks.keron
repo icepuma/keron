@@ -1,7 +1,5 @@
-
 # `for (k, v) in m` over a `Map<K, V>` binds `k: K` and `v: V` in
 # body scope.
-
 fn write_kv(key: String, count: Int): Template {
   template(source = "tmpl.tpl", target = "~/state/${key}", vars = {"body": "${count}"})
 }
@@ -15,6 +13,7 @@ for (name, n) in counts {
 # Pair-form keys can be of any allowed key type (`String`, `Int`,
 # `Boolean`).
 val codes: Map<Int, String> = {200: "ok", 404: "missing"}
+
 for (code, label) in codes {
   reconcile template(source = "tmpl.tpl", target = "/tmp/${code}", vars = {"body": label})
 }
@@ -22,6 +21,7 @@ for (code, label) in codes {
 # Body with inner `val` shadow-checks: `tag` doesn't collide with `k`
 # or `v`.
 val by_user: Map<String, Boolean> = {"alice": true, "bob": false}
+
 for (user, enabled) in by_user {
   val tag: String = "${user}=${enabled}"
   reconcile template(source = "tmpl.tpl", target = "/tmp/${user}", vars = {"body": tag})

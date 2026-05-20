@@ -1,5 +1,7 @@
 struct Inner { v: Int }
+
 struct Outer { inner: Inner }
 
 val o: Outer = Outer(Inner(7))
+
 val n: Int = o.inner.v

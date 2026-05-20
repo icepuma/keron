@@ -1,9 +1,11 @@
-
 val a: Symlink = symlink(source = "to-a", target = "from-a")
+
 val b: Symlink = symlink(source = "to-b", target = "from-b")
+
 val c: Symlink = symlink(source = "to-c", target = "from-c")
+
 reconcile {
   a;
   b;
-  c
+  c;
 }

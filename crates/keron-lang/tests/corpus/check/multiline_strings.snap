@@ -21,21 +21,21 @@ Program {
                             "[user]\n  email = me@example.com\n  name = Me",
                         ),
                     ),
-                    span: 21..80,
+                    span: 21..68,
                 },
-                span: 0..82,
+                span: 0..70,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "raw",
-                    span: 86..89,
+                    span: 74..77,
                 },
                 ty: Some(
                     Spanned {
                         node: String,
-                        span: 91..97,
+                        span: 79..85,
                     },
                 ),
                 value: Spanned {
@@ -44,21 +44,21 @@ Program {
                             "export PATH=\"${HOME}/bin:$PATH\"\necho \\n",
                         ),
                     ),
-                    span: 100..156,
+                    span: 88..134,
                 },
-                span: 82..158,
+                span: 70..136,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "body",
-                    span: 162..166,
+                    span: 140..144,
                 },
                 ty: Some(
                     Spanned {
                         node: String,
-                        span: 168..174,
+                        span: 146..152,
                     },
                 ),
                 value: Spanned {
@@ -67,21 +67,21 @@ Program {
                             "first\nsecond",
                         ),
                     ),
-                    span: 177..203,
+                    span: 155..170,
                 },
-                span: 158..205,
+                span: 136..172,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "nested",
-                    span: 209..215,
+                    span: 176..182,
                 },
                 ty: Some(
                     Spanned {
                         node: String,
-                        span: 217..223,
+                        span: 184..190,
                     },
                 ),
                 value: Spanned {
@@ -95,17 +95,15 @@ Program {
                                     node: Var(
                                         "body",
                                     ),
-                                    span: 245..249,
+                                    span: 206..210,
                                 },
-                                indent: Some(
-                                    "  ",
-                                ),
+                                indent: None,
                             },
                         ],
                     ),
-                    span: 226..256,
+                    span: 193..212,
                 },
-                span: 205..257,
+                span: 172..213,
             },
         ),
     ],

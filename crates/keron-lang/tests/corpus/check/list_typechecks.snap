@@ -46,16 +46,16 @@ Program {
                             },
                         ],
                     ),
-                    span: 22..32,
+                    span: 22..33,
                 },
-                span: 0..32,
+                span: 0..33,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "inferred",
-                    span: 36..44,
+                    span: 37..45,
                 },
                 ty: None,
                 value: Spanned {
@@ -67,7 +67,7 @@ Program {
                                         true,
                                     ),
                                 ),
-                                span: 48..52,
+                                span: 49..53,
                             },
                             Spanned {
                                 node: Literal(
@@ -75,7 +75,7 @@ Program {
                                         false,
                                     ),
                                 ),
-                                span: 54..59,
+                                span: 55..60,
                             },
                             Spanned {
                                 node: Literal(
@@ -83,20 +83,20 @@ Program {
                                         true,
                                     ),
                                 ),
-                                span: 61..65,
+                                span: 62..66,
                             },
                         ],
                     ),
-                    span: 47..67,
+                    span: 48..69,
                 },
-                span: 32..67,
+                span: 33..69,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "nested",
-                    span: 71..77,
+                    span: 73..79,
                 },
                 ty: Some(
                     Spanned {
@@ -105,7 +105,7 @@ Program {
                                 Double,
                             ),
                         ),
-                        span: 79..98,
+                        span: 81..100,
                     },
                 ),
                 value: Spanned {
@@ -120,11 +120,11 @@ Program {
                                                     1.0,
                                                 ),
                                             ),
-                                            span: 102..105,
+                                            span: 104..107,
                                         },
                                     ],
                                 ),
-                                span: 101..106,
+                                span: 103..108,
                             },
                             Spanned {
                                 node: List(
@@ -135,7 +135,7 @@ Program {
                                                     2.0,
                                                 ),
                                             ),
-                                            span: 109..112,
+                                            span: 111..114,
                                         },
                                         Spanned {
                                             node: Literal(
@@ -143,31 +143,31 @@ Program {
                                                     3.0,
                                                 ),
                                             ),
-                                            span: 114..117,
+                                            span: 116..119,
                                         },
                                     ],
                                 ),
-                                span: 108..118,
+                                span: 110..120,
                             },
                         ],
                     ),
-                    span: 100..120,
+                    span: 102..123,
                 },
-                span: 67..120,
+                span: 69..123,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "with_exprs",
-                    span: 124..134,
+                    span: 127..137,
                 },
                 ty: Some(
                     Spanned {
                         node: List(
                             Int,
                         ),
-                        span: 136..146,
+                        span: 139..149,
                     },
                 ),
                 value: Spanned {
@@ -182,7 +182,7 @@ Program {
                                                 1,
                                             ),
                                         ),
-                                        span: 149..150,
+                                        span: 152..153,
                                     },
                                     rhs: Spanned {
                                         node: Literal(
@@ -190,10 +190,10 @@ Program {
                                                 2,
                                             ),
                                         ),
-                                        span: 153..154,
+                                        span: 156..157,
                                     },
                                 },
-                                span: 149..154,
+                                span: 152..157,
                             },
                             Spanned {
                                 node: Binary {
@@ -204,7 +204,7 @@ Program {
                                                 3,
                                             ),
                                         ),
-                                        span: 156..157,
+                                        span: 159..160,
                                     },
                                     rhs: Spanned {
                                         node: Literal(
@@ -212,10 +212,10 @@ Program {
                                                 4,
                                             ),
                                         ),
-                                        span: 160..161,
+                                        span: 163..164,
                                     },
                                 },
-                                span: 156..161,
+                                span: 159..164,
                             },
                             Spanned {
                                 node: Unary {
@@ -226,39 +226,39 @@ Program {
                                                 5,
                                             ),
                                         ),
-                                        span: 164..165,
+                                        span: 167..168,
                                     },
                                 },
-                                span: 163..165,
+                                span: 166..168,
                             },
                         ],
                     ),
-                    span: 148..167,
+                    span: 151..171,
                 },
-                span: 120..167,
+                span: 123..171,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "empty",
-                    span: 171..176,
+                    span: 175..180,
                 },
                 ty: Some(
                     Spanned {
                         node: List(
                             String,
                         ),
-                        span: 178..191,
+                        span: 182..195,
                     },
                 ),
                 value: Spanned {
                     node: List(
                         [],
                     ),
-                    span: 193..196,
+                    span: 197..200,
                 },
-                span: 167..196,
+                span: 171..200,
             },
         ),
     ],

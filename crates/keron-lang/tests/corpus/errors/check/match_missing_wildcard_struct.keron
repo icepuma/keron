@@ -1,4 +1,5 @@
 struct Point { x: Int, y: Int }
+
 fn axis(p: Point): String {
   match p {
     Point { x: 0, y: 0 } => "origin",

@@ -2,7 +2,7 @@
 source: crates/keron-lang/tests/harness/mod.rs
 ---
 error: missing required argument `b` for `add`
-  --> 2:14
+  --> 5:14
   |
-2 | val x: Int = add(1)
+5 | val x: Int = add(1)
   |              ^^^^^^^

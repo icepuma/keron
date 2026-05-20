@@ -1,6 +1,5 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 Program {
     items: [
@@ -8,29 +7,29 @@ Program {
             StructDecl {
                 name: Spanned {
                     node: "Server",
-                    span: 310..316,
+                    span: 309..315,
                 },
                 fields: [
                     StructField {
                         name: Spanned {
                             node: "host",
-                            span: 321..325,
+                            span: 318..322,
                         },
                         ty: Spanned {
                             node: String,
-                            span: 327..333,
+                            span: 324..330,
                         },
                         default: None,
-                        span: 321..333,
+                        span: 318..330,
                     },
                     StructField {
                         name: Spanned {
                             node: "port",
-                            span: 337..341,
+                            span: 332..336,
                         },
                         ty: Spanned {
                             node: Int,
-                            span: 343..346,
+                            span: 338..341,
                         },
                         default: Some(
                             Spanned {
@@ -39,19 +38,19 @@ Program {
                                         8080,
                                     ),
                                 ),
-                                span: 349..353,
+                                span: 344..348,
                             },
                         ),
-                        span: 337..353,
+                        span: 332..348,
                     },
                     StructField {
                         name: Spanned {
                             node: "tls",
-                            span: 357..360,
+                            span: 350..353,
                         },
                         ty: Spanned {
                             node: Boolean,
-                            span: 362..369,
+                            span: 355..362,
                         },
                         default: Some(
                             Spanned {
@@ -60,13 +59,13 @@ Program {
                                         false,
                                     ),
                                 ),
-                                span: 372..377,
+                                span: 365..370,
                             },
                         ),
-                        span: 357..377,
+                        span: 350..371,
                     },
                 ],
-                span: 303..381,
+                span: 302..373,
             },
         ),
     ],

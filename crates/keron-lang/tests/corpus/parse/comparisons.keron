@@ -1,6 +1,11 @@
 val a: Boolean = 1 == 2
+
 val b: Boolean = 1 != 2
+
 val c: Boolean = 1 < 2
+
 val d: Boolean = 1 <= 2
+
 val e: Boolean = 1 > 2
+
 val f: Boolean = 1 >= 2

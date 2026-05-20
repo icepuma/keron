@@ -1,12 +1,13 @@
 # `env(name)` returns `String?`. The nullable forces consumers to
 # either compare with `null` or extract the inhabitant via `match`.
-
 val raw_home: String? = env("HOME")
+
 val raw_via_named: String? = env(name = "EDITOR")
 
 # `T? == null` / `null != T?` are the canonical "is it set" idioms;
 # both directions are accepted by the equality rule.
 val home_set: Boolean = raw_home == null
+
 val editor_unset: Boolean = null != raw_via_named
 
 # `match` is the only way to land on a plain `String` — the wildcard

@@ -1,6 +1,4 @@
-
 # `for x in xs` over a `List<T>` binds `x: T` in body scope.
-
 fn link(name: String): Symlink {
   symlink(source = "~/.${name}", target = "~/dotfiles/${name}")
 }
@@ -14,12 +12,16 @@ for name in dotfiles {
 
 # Body may contain inner `if` whose branches are also `Void`.
 val flags: List<Boolean> = [true, false, true]
+
 for f in flags {
-  if f { reconcile link("bashrc") }
+  if f {
+    reconcile link("bashrc")
+  }
 }
 
 # Inner `val` referencing the loop binding.
 val seeds: List<Int> = [1, 2]
+
 for s in seeds {
   val tag: String = "seed-${s}"
   reconcile link(tag)

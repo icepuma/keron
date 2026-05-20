@@ -1,3 +1,5 @@
 val a: Int = "x"
+
 val b: String = 2
+
 val c: Boolean = 0.5

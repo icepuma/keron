@@ -1,4 +1,7 @@
 val a: List<Int> = [] ++ [1, 2]
+
 val b: List<String> = ["hi"] ++ []
+
 val c: List<List<Int>> = [[1], [], [2, 3]]
+
 val d: List<Double> = [] ++ [] ++ [1.0]

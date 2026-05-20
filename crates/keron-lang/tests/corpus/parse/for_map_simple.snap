@@ -61,9 +61,9 @@ Program {
                             },
                         ],
                     ),
-                    span: 26..43,
+                    span: 26..44,
                 },
-                span: 0..43,
+                span: 0..44,
             },
         ),
         ExprStmt(
@@ -72,18 +72,18 @@ Program {
                     pattern: Entry {
                         key: Spanned {
                             node: "k",
-                            span: 48..49,
+                            span: 49..50,
                         },
                         value: Spanned {
                             node: "v",
-                            span: 51..52,
+                            span: 52..53,
                         },
                     },
                     iter_expr: Spanned {
                         node: Var(
                             "m",
                         ),
-                        span: 57..58,
+                        span: 58..59,
                     },
                     body: Block {
                         stmts: [
@@ -95,19 +95,19 @@ Program {
                                                 node: Var(
                                                     "v",
                                                 ),
-                                                span: 71..72,
+                                                span: 74..75,
                                             },
                                         ],
                                     ],
-                                    span: 61..73,
+                                    span: 64..76,
                                 },
                             ),
                         ],
                         trailing: None,
-                        span: 59..75,
+                        span: 60..78,
                     },
                 },
-                span: 43..75,
+                span: 44..78,
             },
         ),
     ],

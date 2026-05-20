@@ -304,28 +304,28 @@ Program {
                             },
                         ],
                     },
-                    span: 192..203,
+                    span: 192..204,
                 },
-                span: 179..203,
+                span: 179..204,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "b",
-                    span: 207..208,
+                    span: 208..209,
                 },
                 ty: Some(
                     Spanned {
                         node: Int,
-                        span: 210..213,
+                        span: 211..214,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "add",
-                            span: 216..219,
+                            span: 217..220,
                         },
                         args: [
                             CallArg {
@@ -336,9 +336,9 @@ Program {
                                             1,
                                         ),
                                     ),
-                                    span: 220..221,
+                                    span: 221..222,
                                 },
-                                span: 220..221,
+                                span: 221..222,
                             },
                             CallArg {
                                 name: None,
@@ -348,34 +348,34 @@ Program {
                                             2,
                                         ),
                                     ),
-                                    span: 223..224,
+                                    span: 224..225,
                                 },
-                                span: 223..224,
+                                span: 224..225,
                             },
                         ],
                     },
-                    span: 216..226,
+                    span: 217..228,
                 },
-                span: 203..226,
+                span: 204..228,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "c",
-                    span: 230..231,
+                    span: 232..233,
                 },
                 ty: Some(
                     Spanned {
                         node: Int,
-                        span: 233..236,
+                        span: 235..238,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "sum_squares",
-                            span: 239..250,
+                            span: 241..252,
                         },
                         args: [
                             CallArg {
@@ -386,34 +386,34 @@ Program {
                                             5,
                                         ),
                                     ),
-                                    span: 251..252,
+                                    span: 253..254,
                                 },
-                                span: 251..252,
+                                span: 253..254,
                             },
                         ],
                     },
-                    span: 239..254,
+                    span: 241..257,
                 },
-                span: 226..254,
+                span: 228..257,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "d",
-                    span: 258..259,
+                    span: 261..262,
                 },
                 ty: Some(
                     Spanned {
                         node: Int,
-                        span: 261..264,
+                        span: 264..267,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "double",
-                            span: 267..273,
+                            span: 270..276,
                         },
                         args: [
                             CallArg {
@@ -422,7 +422,7 @@ Program {
                                     node: Call {
                                         callee: Spanned {
                                             node: "double",
-                                            span: 274..280,
+                                            span: 277..283,
                                         },
                                         args: [
                                             CallArg {
@@ -431,7 +431,7 @@ Program {
                                                     node: Call {
                                                         callee: Spanned {
                                                             node: "double",
-                                                            span: 281..287,
+                                                            span: 284..290,
                                                         },
                                                         args: [
                                                             CallArg {
@@ -442,27 +442,27 @@ Program {
                                                                             1,
                                                                         ),
                                                                     ),
-                                                                    span: 288..289,
+                                                                    span: 291..292,
                                                                 },
-                                                                span: 288..289,
+                                                                span: 291..292,
                                                             },
                                                         ],
                                                     },
-                                                    span: 281..290,
+                                                    span: 284..293,
                                                 },
-                                                span: 281..290,
+                                                span: 284..293,
                                             },
                                         ],
                                     },
-                                    span: 274..291,
+                                    span: 277..294,
                                 },
-                                span: 274..291,
+                                span: 277..294,
                             },
                         ],
                     },
-                    span: 267..293,
+                    span: 270..296,
                 },
-                span: 254..293,
+                span: 257..296,
             },
         ),
     ],

@@ -1,22 +1,13 @@
-
 # Realistic dotfile workflow: declare configs and packages-style file
 # placements. All values are built purely first; the trailing
 # `reconcile` directives are the only acts of intent.
-
 fn link(name: String): Symlink {
   symlink(source = "~/.${name}", target = "~/dotfiles/${name}")
 }
 
-val shell_links: List<Symlink> = [
-  link("zshrc"),
-  link("zsh_history"),
-  link("p10k.zsh"),
-]
+val shell_links: List<Symlink> = [link("zshrc"), link("zsh_history"), link("p10k.zsh")]
 
-val editor_links: List<Symlink> = [
-  link("vimrc"),
-  link("ideavimrc"),
-]
+val editor_links: List<Symlink> = [link("vimrc"), link("ideavimrc")]
 
 val gitconfig: Template = template(
   source = "tmpl.tpl",
@@ -25,5 +16,7 @@ val gitconfig: Template = template(
 )
 
 reconcile shell_links
+
 reconcile editor_links
+
 reconcile gitconfig

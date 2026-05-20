@@ -1,6 +1,5 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 Program {
     items: [
@@ -8,12 +7,12 @@ Program {
             ValDecl {
                 name: Spanned {
                     node: "on_arm_mac",
-                    span: 133..143,
+                    span: 132..142,
                 },
                 ty: Some(
                     Spanned {
                         node: Boolean,
-                        span: 145..152,
+                        span: 144..151,
                     },
                 ),
                 value: Spanned {
@@ -26,11 +25,11 @@ Program {
                                     node: Call {
                                         callee: Spanned {
                                             node: "os_type",
-                                            span: 155..162,
+                                            span: 154..161,
                                         },
                                         args: [],
                                     },
-                                    span: 155..165,
+                                    span: 154..164,
                                 },
                                 rhs: Spanned {
                                     node: Literal(
@@ -38,10 +37,10 @@ Program {
                                             "Macos",
                                         ),
                                     ),
-                                    span: 168..175,
+                                    span: 167..174,
                                 },
                             },
-                            span: 155..175,
+                            span: 154..174,
                         },
                         rhs: Spanned {
                             node: Binary {
@@ -50,11 +49,11 @@ Program {
                                     node: Call {
                                         callee: Spanned {
                                             node: "os_arch",
-                                            span: 179..186,
+                                            span: 178..185,
                                         },
                                         args: [],
                                     },
-                                    span: 179..189,
+                                    span: 178..188,
                                 },
                                 rhs: Spanned {
                                     node: Literal(
@@ -62,15 +61,15 @@ Program {
                                             "aarch64",
                                         ),
                                     ),
-                                    span: 192..201,
+                                    span: 191..200,
                                 },
                             },
-                            span: 179..201,
+                            span: 178..200,
                         },
                     },
-                    span: 155..201,
+                    span: 154..200,
                 },
-                span: 129..202,
+                span: 128..202,
             },
         ),
         Val(

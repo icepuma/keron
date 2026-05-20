@@ -1,2 +1,5 @@
-fn double(n: Int): Int { n * 2 }
+fn double(n: Int): Int {
+  n * 2
+}
+
 val x: Int = double("hello")

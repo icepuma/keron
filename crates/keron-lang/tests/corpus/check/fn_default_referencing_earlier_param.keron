@@ -3,4 +3,5 @@ fn pad(width: Int, slack: Int = width * 2): Int {
 }
 
 val x: Int = pad(10)
+
 val y: Int = pad(10, slack = 5)

@@ -1,4 +1,5 @@
 val t: Symlink = symlink(source = "y", target = "x")
+
 val s: Symlink = symlink(source = "b", target = "a")
 
 reconcile if true {

@@ -1,6 +1,5 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 Program {
     items: [
@@ -20,36 +19,36 @@ Program {
                         span: 19..24,
                     },
                 ],
-                span: 0..25,
+                span: 0..26,
             },
         ),
         Fn(
             FnDecl {
                 name: Spanned {
                     node: "flip",
-                    span: 28..32,
+                    span: 29..33,
                 },
                 params: [
                     Param {
                         name: Spanned {
                             node: "m",
-                            span: 33..34,
+                            span: 34..35,
                         },
                         ty: Spanned {
                             node: Named(
                                 "Mode",
                             ),
-                            span: 36..40,
+                            span: 37..41,
                         },
                         default: None,
-                        span: 33..40,
+                        span: 34..41,
                     },
                 ],
                 return_type: Spanned {
                     node: Named(
                         "Mode",
                     ),
-                    span: 43..47,
+                    span: 44..48,
                 },
                 body: Block {
                     stmts: [],
@@ -60,7 +59,7 @@ Program {
                                     node: Var(
                                         "m",
                                     ),
-                                    span: 58..59,
+                                    span: 59..60,
                                 },
                                 arms: [
                                     MatchArm {
@@ -70,7 +69,7 @@ Program {
                                                     "on",
                                                 ),
                                             ),
-                                            span: 66..70,
+                                            span: 67..71,
                                         },
                                         guard: None,
                                         body: Spanned {
@@ -79,9 +78,9 @@ Program {
                                                     "off",
                                                 ),
                                             ),
-                                            span: 74..79,
+                                            span: 75..80,
                                         },
-                                        span: 66..79,
+                                        span: 67..80,
                                     },
                                     MatchArm {
                                         pattern: Spanned {
@@ -90,7 +89,7 @@ Program {
                                                     "off",
                                                 ),
                                             ),
-                                            span: 85..90,
+                                            span: 86..91,
                                         },
                                         guard: None,
                                         body: Spanned {
@@ -99,18 +98,18 @@ Program {
                                                     "on",
                                                 ),
                                             ),
-                                            span: 94..98,
+                                            span: 95..99,
                                         },
-                                        span: 85..98,
+                                        span: 86..99,
                                     },
                                 ],
                             },
-                            span: 52..104,
+                            span: 53..105,
                         },
                     ),
-                    span: 48..106,
+                    span: 49..107,
                 },
-                span: 25..106,
+                span: 26..107,
                 intrinsic: None,
             },
         ),

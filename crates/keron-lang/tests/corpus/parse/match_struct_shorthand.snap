@@ -1,6 +1,5 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 Program {
     items: [
@@ -36,34 +35,34 @@ Program {
                         span: 23..30,
                     },
                 ],
-                span: 0..32,
+                span: 0..33,
             },
         ),
         Fn(
             FnDecl {
                 name: Spanned {
                     node: "sum",
-                    span: 35..38,
+                    span: 36..39,
                 },
                 params: [
                     Param {
                         name: Spanned {
                             node: "p",
-                            span: 39..40,
+                            span: 40..41,
                         },
                         ty: Spanned {
                             node: Named(
                                 "Point",
                             ),
-                            span: 42..47,
+                            span: 43..48,
                         },
                         default: None,
-                        span: 39..47,
+                        span: 40..48,
                     },
                 ],
                 return_type: Spanned {
                     node: Int,
-                    span: 50..53,
+                    span: 51..54,
                 },
                 body: Block {
                     stmts: [],
@@ -74,7 +73,7 @@ Program {
                                     node: Var(
                                         "p",
                                     ),
-                                    span: 64..65,
+                                    span: 65..66,
                                 },
                                 arms: [
                                     MatchArm {
@@ -82,28 +81,28 @@ Program {
                                             node: Struct {
                                                 name: Spanned {
                                                     node: "Point",
-                                                    span: 72..77,
+                                                    span: 73..78,
                                                 },
                                                 fields: [
                                                     StructPatternField {
                                                         name: Spanned {
                                                             node: "x",
-                                                            span: 80..81,
+                                                            span: 81..82,
                                                         },
                                                         pattern: None,
-                                                        span: 80..81,
+                                                        span: 81..82,
                                                     },
                                                     StructPatternField {
                                                         name: Spanned {
                                                             node: "y",
-                                                            span: 83..84,
+                                                            span: 84..85,
                                                         },
                                                         pattern: None,
-                                                        span: 83..85,
+                                                        span: 84..86,
                                                     },
                                                 ],
                                             },
-                                            span: 72..87,
+                                            span: 73..88,
                                         },
                                         guard: None,
                                         body: Spanned {
@@ -113,27 +112,27 @@ Program {
                                                     node: Var(
                                                         "x",
                                                     ),
-                                                    span: 90..91,
+                                                    span: 91..92,
                                                 },
                                                 rhs: Spanned {
                                                     node: Var(
                                                         "y",
                                                     ),
-                                                    span: 94..95,
+                                                    span: 95..96,
                                                 },
                                             },
-                                            span: 90..95,
+                                            span: 91..96,
                                         },
-                                        span: 72..95,
+                                        span: 73..96,
                                     },
                                 ],
                             },
-                            span: 58..101,
+                            span: 59..102,
                         },
                     ),
-                    span: 54..103,
+                    span: 55..104,
                 },
-                span: 32..103,
+                span: 33..104,
                 intrinsic: None,
             },
         ),

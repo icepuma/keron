@@ -1,6 +1,5 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 Program {
     items: [
@@ -36,28 +35,28 @@ Program {
                         span: 23..30,
                     },
                 ],
-                span: 0..32,
+                span: 0..33,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "p",
-                    span: 36..37,
+                    span: 37..38,
                 },
                 ty: Some(
                     Spanned {
                         node: Named(
                             "Point",
                         ),
-                        span: 39..44,
+                        span: 40..45,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "Point",
-                            span: 47..52,
+                            span: 48..53,
                         },
                         args: [
                             CallArg {
@@ -68,15 +67,15 @@ Program {
                                             0,
                                         ),
                                     ),
-                                    span: 53..54,
+                                    span: 54..55,
                                 },
-                                span: 53..54,
+                                span: 54..55,
                             },
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "y",
-                                        span: 56..57,
+                                        span: 57..58,
                                     },
                                 ),
                                 value: Spanned {
@@ -85,15 +84,15 @@ Program {
                                             9,
                                         ),
                                     ),
-                                    span: 60..61,
+                                    span: 61..62,
                                 },
-                                span: 56..61,
+                                span: 57..62,
                             },
                         ],
                     },
-                    span: 47..63,
+                    span: 48..64,
                 },
-                span: 32..63,
+                span: 33..64,
             },
         ),
     ],

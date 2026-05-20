@@ -1,4 +1,3 @@
-
 val use_zsh: Boolean = true
 
 val r: Resource = if use_zsh {

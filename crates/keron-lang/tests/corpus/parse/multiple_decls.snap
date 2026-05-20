@@ -23,19 +23,19 @@ Program {
                     ),
                     span: 26..27,
                 },
-                span: 13..28,
+                span: 13..29,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "b",
-                    span: 32..33,
+                    span: 33..34,
                 },
                 ty: Some(
                     Spanned {
                         node: String,
-                        span: 35..41,
+                        span: 36..42,
                     },
                 ),
                 value: Spanned {
@@ -44,21 +44,21 @@ Program {
                             "x",
                         ),
                     ),
-                    span: 44..47,
+                    span: 45..48,
                 },
-                span: 28..67,
+                span: 29..70,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "c",
-                    span: 71..72,
+                    span: 74..75,
                 },
                 ty: Some(
                     Spanned {
                         node: Boolean,
-                        span: 74..81,
+                        span: 77..84,
                     },
                 ),
                 value: Spanned {
@@ -67,21 +67,21 @@ Program {
                             false,
                         ),
                     ),
-                    span: 84..89,
+                    span: 87..92,
                 },
-                span: 67..90,
+                span: 70..94,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "d",
-                    span: 94..95,
+                    span: 98..99,
                 },
                 ty: Some(
                     Spanned {
                         node: Double,
-                        span: 97..103,
+                        span: 101..107,
                     },
                 ),
                 value: Spanned {
@@ -93,12 +93,12 @@ Program {
                                     0.5,
                                 ),
                             ),
-                            span: 107..110,
+                            span: 111..114,
                         },
                     },
-                    span: 106..111,
+                    span: 110..115,
                 },
-                span: 90..111,
+                span: 94..115,
             },
         ),
     ],

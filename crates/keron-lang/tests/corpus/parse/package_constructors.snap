@@ -38,30 +38,30 @@ Program {
                             },
                         ],
                     },
-                    span: 23..39,
+                    span: 23..40,
                 },
-                span: 0..39,
+                span: 0..40,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "just_tool",
-                    span: 43..52,
+                    span: 44..53,
                 },
                 ty: Some(
                     Spanned {
                         node: Named(
                             "Package",
                         ),
-                        span: 54..61,
+                        span: 55..62,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "cargo",
-                            span: 64..69,
+                            span: 65..70,
                         },
                         args: [
                             CallArg {
@@ -72,36 +72,36 @@ Program {
                                             "just",
                                         ),
                                     ),
-                                    span: 70..76,
+                                    span: 71..77,
                                 },
-                                span: 70..76,
+                                span: 71..77,
                             },
                         ],
                     },
-                    span: 64..78,
+                    span: 65..80,
                 },
-                span: 39..78,
+                span: 40..80,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "pwsh",
-                    span: 82..86,
+                    span: 84..88,
                 },
                 ty: Some(
                     Spanned {
                         node: Named(
                             "Package",
                         ),
-                        span: 88..95,
+                        span: 90..97,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "winget",
-                            span: 98..104,
+                            span: 100..106,
                         },
                         args: [
                             CallArg {
@@ -112,15 +112,15 @@ Program {
                                             "Microsoft.PowerShell",
                                         ),
                                     ),
-                                    span: 105..127,
+                                    span: 107..129,
                                 },
-                                span: 105..127,
+                                span: 107..129,
                             },
                         ],
                     },
-                    span: 98..129,
+                    span: 100..131,
                 },
-                span: 78..129,
+                span: 80..131,
             },
         ),
     ],

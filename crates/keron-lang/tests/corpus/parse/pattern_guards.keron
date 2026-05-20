@@ -2,7 +2,6 @@
 # fires the arm when it returns `true`. Bindings introduced by the
 # pattern are visible to the guard (`name` from the `Color` arm
 # below).
-
 struct Color { name: String, hex: String }
 
 val c: Color = Color(name = "red", hex = "#f00")

@@ -1,5 +1,8 @@
 # first decl
 val a: Int = 1
-val b: String = "x" # trailing comment
+
+val b: String = "x"  # trailing comment
+
 val c: Boolean = false
+
 val d: Double = -0.5

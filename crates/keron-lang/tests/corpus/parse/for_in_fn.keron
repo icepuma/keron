@@ -1,4 +1,5 @@
-
 fn ensure(xs: List<Symlink>): Void {
-  for s in xs { reconcile s }
+  for s in xs {
+    reconcile s
+  }
 }

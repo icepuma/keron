@@ -1,1 +1,5 @@
-val r: Int = if 1 { 2 } else { 3 }
+val r: Int = if 1 {
+  2
+} else {
+  3
+}

@@ -1,4 +1,3 @@
-
 val xs = [
   symlink(source = "~/.zshrc", target = "df/zsh"),
   template(source = "tmpl.tpl", target = "/etc/motd", vars = {"body": "welcome"}),

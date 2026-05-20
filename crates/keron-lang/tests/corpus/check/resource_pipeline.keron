@@ -1,16 +1,10 @@
-
 # A function builds Symlinks; multiple are gathered into a List, then
 # the entire list is reconciled in one shot. Demonstrates that resource
 # construction is pure — no I/O until `reconcile`.
-
 fn link(name: String): Symlink {
   symlink(source = "~/.${name}", target = "~/dotfiles/${name}")
 }
 
-val configs: List<Symlink> = [
-  link("zshrc"),
-  link("vimrc"),
-  link("tmux.conf"),
-]
+val configs: List<Symlink> = [link("zshrc"), link("vimrc"), link("tmux.conf")]
 
 reconcile configs

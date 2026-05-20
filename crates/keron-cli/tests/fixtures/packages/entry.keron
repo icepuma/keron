@@ -2,12 +2,11 @@
 # picks one manager per OS via the KERON_E2E_MANAGER env var the
 # driver passes through to user code; on a real run, the user picks
 # the manager themselves.
-
 val manager: String = env("KERON_E2E_MANAGER") ?? "brew"
 
 reconcile match manager {
-  "brew"   => brew("ripgrep"),
-  "cargo"  => cargo("ripgrep"),
+  "brew" => brew("ripgrep"),
+  "cargo" => cargo("ripgrep"),
   "winget" => winget("BurntSushi.ripgrep"),
-  _        => brew("ripgrep"),
+  _ => brew("ripgrep"),
 }

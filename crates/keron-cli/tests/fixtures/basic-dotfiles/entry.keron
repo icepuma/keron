@@ -2,7 +2,6 @@
 # Targets resolve to `$HOME/...` (the test sets HOME to a fresh
 # tempdir per run); sources resolve relative to this `.keron` file
 # (which keron canonicalizes inside the keron root).
-
 val home: String = env("HOME") ?? keron_root()
 
 reconcile {

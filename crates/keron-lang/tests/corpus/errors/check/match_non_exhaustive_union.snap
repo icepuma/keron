@@ -2,7 +2,7 @@
 source: crates/keron-lang/tests/harness/mod.rs
 ---
 error: non-exhaustive `match` on `Color`: missing `"blue"`
-  --> 3:9
+  --> 4:9
   |
-3 |   match c {
+4 |   match c {
   |         ^

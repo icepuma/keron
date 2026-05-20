@@ -23,14 +23,14 @@ Program {
                         span: 31..37,
                     },
                 ],
-                span: 0..38,
+                span: 0..39,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "c",
-                    span: 42..43,
+                    span: 43..44,
                 },
                 ty: Some(
                     Spanned {
@@ -42,7 +42,7 @@ Program {
                                 "blue",
                             ],
                         },
-                        span: 45..50,
+                        span: 46..51,
                     },
                 ),
                 value: Spanned {
@@ -51,21 +51,21 @@ Program {
                             "red",
                         ),
                     ),
-                    span: 53..58,
+                    span: 54..59,
                 },
-                span: 38..59,
+                span: 39..61,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "warm",
-                    span: 63..67,
+                    span: 65..69,
                 },
                 ty: Some(
                     Spanned {
                         node: Boolean,
-                        span: 69..76,
+                        span: 71..78,
                     },
                 ),
                 value: Spanned {
@@ -75,7 +75,7 @@ Program {
                             node: Var(
                                 "c",
                             ),
-                            span: 79..80,
+                            span: 81..82,
                         },
                         rhs: Spanned {
                             node: Literal(
@@ -83,24 +83,24 @@ Program {
                                     "red",
                                 ),
                             ),
-                            span: 84..89,
+                            span: 86..91,
                         },
                     },
-                    span: 79..89,
+                    span: 81..91,
                 },
-                span: 59..90,
+                span: 61..93,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "tag",
-                    span: 94..97,
+                    span: 97..100,
                 },
                 ty: Some(
                     Spanned {
                         node: String,
-                        span: 99..105,
+                        span: 102..108,
                     },
                 ),
                 value: Spanned {
@@ -112,7 +112,7 @@ Program {
                                     node: Var(
                                         "c",
                                     ),
-                                    span: 111..112,
+                                    span: 114..115,
                                 },
                                 rhs: Spanned {
                                     node: Literal(
@@ -120,10 +120,10 @@ Program {
                                             "red",
                                         ),
                                     ),
-                                    span: 116..121,
+                                    span: 119..124,
                                 },
                             },
-                            span: 111..121,
+                            span: 114..124,
                         },
                         then_branch: Block {
                             stmts: [],
@@ -134,10 +134,10 @@ Program {
                                             "warm",
                                         ),
                                     ),
-                                    span: 124..130,
+                                    span: 129..135,
                                 },
                             ),
-                            span: 122..133,
+                            span: 125..138,
                         },
                         else_branch: Block {
                             stmts: [],
@@ -148,15 +148,15 @@ Program {
                                             "cool",
                                         ),
                                     ),
-                                    span: 140..146,
+                                    span: 147..153,
                                 },
                             ),
-                            span: 138..149,
+                            span: 143..156,
                         },
                     },
-                    span: 108..149,
+                    span: 111..156,
                 },
-                span: 90..149,
+                span: 93..156,
             },
         ),
     ],

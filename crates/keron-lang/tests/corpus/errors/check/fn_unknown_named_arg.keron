@@ -1,2 +1,5 @@
-fn f(a: Int): Int { a }
+fn f(a: Int): Int {
+  a
+}
+
 val x: Int = f(b = 1)

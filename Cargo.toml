@@ -8,7 +8,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.4"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.95.0"
 license = "MIT OR Apache-2.0"
@@ -16,9 +16,9 @@ repository = "https://github.com/icepuma/keron"
 authors = ["Stefan Ruzitschka <stefan@icepuma.dev>"]
 
 [workspace.dependencies]
-keron-lang = { path = "crates/keron-lang", version = "=0.1.4" }
-keron-modules = { path = "crates/keron-modules", version = "=0.1.4" }
-keron-apply = { path = "crates/keron-apply", version = "=0.1.4" }
+keron-lang = { path = "crates/keron-lang", version = "=0.2.0" }
+keron-modules = { path = "crates/keron-modules", version = "=0.2.0" }
+keron-apply = { path = "crates/keron-apply", version = "=0.2.0" }
 
 chumsky = "=0.13.0"
 thiserror = "=2.0.18"

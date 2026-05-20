@@ -7,19 +7,19 @@ Program {
             FnDecl {
                 name: Spanned {
                     node: "noop",
-                    span: 4..8,
+                    span: 3..7,
                 },
                 params: [],
                 return_type: Spanned {
                     node: Void,
-                    span: 12..16,
+                    span: 11..15,
                 },
                 body: Block {
                     stmts: [],
                     trailing: None,
-                    span: 17..21,
+                    span: 16..20,
                 },
-                span: 1..21,
+                span: 0..20,
                 intrinsic: None,
             },
         ),
@@ -27,25 +27,25 @@ Program {
             FnDecl {
                 name: Spanned {
                     node: "noop_if",
-                    span: 24..31,
+                    span: 23..30,
                 },
                 params: [
                     Param {
                         name: Spanned {
                             node: "flag",
-                            span: 32..36,
+                            span: 31..35,
                         },
                         ty: Spanned {
                             node: Boolean,
-                            span: 38..45,
+                            span: 37..44,
                         },
                         default: None,
-                        span: 32..45,
+                        span: 31..44,
                     },
                 ],
                 return_type: Spanned {
                     node: Void,
-                    span: 48..52,
+                    span: 47..51,
                 },
                 body: Block {
                     stmts: [],
@@ -56,25 +56,25 @@ Program {
                                     node: Var(
                                         "flag",
                                     ),
-                                    span: 60..64,
+                                    span: 59..63,
                                 },
                                 then_branch: Block {
                                     stmts: [],
                                     trailing: None,
-                                    span: 65..68,
+                                    span: 64..67,
                                 },
                                 else_branch: Block {
                                     stmts: [],
                                     trailing: None,
-                                    span: 68..68,
+                                    span: 67..67,
                                 },
                             },
-                            span: 57..68,
+                            span: 56..67,
                         },
                     ),
-                    span: 53..70,
+                    span: 52..69,
                 },
-                span: 21..70,
+                span: 20..69,
                 intrinsic: None,
             },
         ),

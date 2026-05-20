@@ -7,25 +7,25 @@ Program {
             ValDecl {
                 name: Spanned {
                     node: "root",
-                    span: 129..133,
+                    span: 128..132,
                 },
                 ty: Some(
                     Spanned {
                         node: String,
-                        span: 135..141,
+                        span: 134..140,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "keron_root",
-                            span: 144..154,
+                            span: 143..153,
                         },
                         args: [],
                     },
-                    span: 144..157,
+                    span: 143..157,
                 },
-                span: 125..157,
+                span: 124..157,
             },
         ),
         Val(
@@ -60,19 +60,19 @@ Program {
                     },
                     span: 180..198,
                 },
-                span: 157..199,
+                span: 157..200,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "rendered",
-                    span: 203..211,
+                    span: 204..212,
                 },
                 ty: Some(
                     Spanned {
                         node: String,
-                        span: 213..219,
+                        span: 214..220,
                     },
                 ),
                 value: Spanned {
@@ -86,44 +86,44 @@ Program {
                                     node: Call {
                                         callee: Spanned {
                                             node: "keron_root",
-                                            span: 235..245,
+                                            span: 236..246,
                                         },
                                         args: [],
                                     },
-                                    span: 235..247,
+                                    span: 236..248,
                                 },
                                 indent: None,
                             },
                         ],
                     ),
-                    span: 222..249,
+                    span: 223..250,
                 },
-                span: 199..282,
+                span: 200..283,
             },
         ),
         Fn(
             FnDecl {
                 name: Spanned {
                     node: "under_root",
-                    span: 285..295,
+                    span: 286..296,
                 },
                 params: [
                     Param {
                         name: Spanned {
                             node: "rel",
-                            span: 296..299,
+                            span: 297..300,
                         },
                         ty: Spanned {
                             node: String,
-                            span: 301..307,
+                            span: 302..308,
                         },
                         default: None,
-                        span: 296..307,
+                        span: 297..308,
                     },
                 ],
                 return_type: Spanned {
                     node: String,
-                    span: 310..316,
+                    span: 311..317,
                 },
                 body: Block {
                     stmts: [],
@@ -136,11 +136,11 @@ Program {
                                             node: Call {
                                                 callee: Spanned {
                                                     node: "keron_root",
-                                                    span: 324..334,
+                                                    span: 325..335,
                                                 },
                                                 args: [],
                                             },
-                                            span: 324..336,
+                                            span: 325..337,
                                         },
                                         indent: None,
                                     },
@@ -152,18 +152,18 @@ Program {
                                             node: Var(
                                                 "rel",
                                             ),
-                                            span: 340..343,
+                                            span: 341..344,
                                         },
                                         indent: None,
                                     },
                                 ],
                             ),
-                            span: 321..345,
+                            span: 322..346,
                         },
                     ),
-                    span: 317..349,
+                    span: 318..350,
                 },
-                span: 282..349,
+                span: 283..350,
                 intrinsic: None,
             },
         ),
@@ -171,19 +171,19 @@ Program {
             ValDecl {
                 name: Spanned {
                     node: "zsh_path",
-                    span: 353..361,
+                    span: 354..362,
                 },
                 ty: Some(
                     Spanned {
                         node: String,
-                        span: 363..369,
+                        span: 364..370,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "under_root",
-                            span: 372..382,
+                            span: 373..383,
                         },
                         args: [
                             CallArg {
@@ -194,15 +194,15 @@ Program {
                                             "zsh/.zshrc",
                                         ),
                                     ),
-                                    span: 383..395,
+                                    span: 384..396,
                                 },
-                                span: 383..395,
+                                span: 384..396,
                             },
                         ],
                     },
-                    span: 372..397,
+                    span: 373..398,
                 },
-                span: 349..397,
+                span: 350..398,
             },
         ),
     ],

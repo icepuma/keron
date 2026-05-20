@@ -77,9 +77,9 @@ Program {
                             },
                         ],
                     ),
-                    span: 37..58,
+                    span: 37..59,
                 },
-                span: 0..58,
+                span: 0..59,
             },
         ),
         ExprStmt(
@@ -88,14 +88,14 @@ Program {
                     pattern: Elem(
                         Spanned {
                             node: "g",
-                            span: 62..63,
+                            span: 63..64,
                         },
                     ),
                     iter_expr: Spanned {
                         node: Var(
                             "groups",
                         ),
-                        span: 67..73,
+                        span: 68..74,
                     },
                     body: Block {
                         stmts: [],
@@ -105,18 +105,18 @@ Program {
                                     pattern: Entry {
                                         key: Spanned {
                                             node: "k",
-                                            span: 83..84,
+                                            span: 84..85,
                                         },
                                         value: Spanned {
                                             node: "v",
-                                            span: 86..87,
+                                            span: 87..88,
                                         },
                                     },
                                     iter_expr: Spanned {
                                         node: Var(
                                             "g",
                                         ),
-                                        span: 92..93,
+                                        span: 93..94,
                                     },
                                     body: Block {
                                         stmts: [
@@ -128,25 +128,25 @@ Program {
                                                                 node: Var(
                                                                     "v",
                                                                 ),
-                                                                span: 110..111,
+                                                                span: 111..112,
                                                             },
                                                         ],
                                                     ],
-                                                    span: 100..114,
+                                                    span: 101..115,
                                                 },
                                             ),
                                         ],
                                         trailing: None,
-                                        span: 94..116,
+                                        span: 95..117,
                                     },
                                 },
-                                span: 78..116,
+                                span: 79..117,
                             },
                         ),
-                        span: 74..118,
+                        span: 75..119,
                     },
                 },
-                span: 58..118,
+                span: 59..119,
             },
         ),
     ],

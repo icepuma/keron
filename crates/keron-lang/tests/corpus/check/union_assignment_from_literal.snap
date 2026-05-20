@@ -23,14 +23,14 @@ Program {
                         span: 27..33,
                     },
                 ],
-                span: 0..34,
+                span: 0..35,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "m1",
-                    span: 38..40,
+                    span: 39..41,
                 },
                 ty: Some(
                     Spanned {
@@ -42,7 +42,7 @@ Program {
                                 "auto",
                             ],
                         },
-                        span: 42..46,
+                        span: 43..47,
                     },
                 ),
                 value: Spanned {
@@ -51,16 +51,16 @@ Program {
                             "on",
                         ),
                     ),
-                    span: 49..53,
+                    span: 50..54,
                 },
-                span: 34..54,
+                span: 35..56,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "m2",
-                    span: 58..60,
+                    span: 60..62,
                 },
                 ty: Some(
                     Spanned {
@@ -72,7 +72,7 @@ Program {
                                 "auto",
                             ],
                         },
-                        span: 62..66,
+                        span: 64..68,
                     },
                 ),
                 value: Spanned {
@@ -81,9 +81,9 @@ Program {
                             "auto",
                         ),
                     ),
-                    span: 69..75,
+                    span: 71..77,
                 },
-                span: 54..76,
+                span: 56..78,
             },
         ),
     ],

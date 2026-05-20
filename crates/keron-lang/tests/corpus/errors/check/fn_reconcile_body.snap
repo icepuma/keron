@@ -8,7 +8,7 @@ error: `reconcile` is not allowed inside a value expression; resources emitted h
   |   ^^^^^^^^^^^^^^^^^
 
 error: `reconcile` is not allowed inside a value expression; resources emitted here would be silently dropped — move it to a top-level `reconcile` or to a top-level `for` / `if` statement
-  --> 8:13
+  --> 9:5
   |
-8 |   if flag { reconcile target }
-  |             ^^^^^^^^^^^^^^^^^
+9 |     reconcile target
+  |     ^^^^^^^^^^^^^^^^^^^

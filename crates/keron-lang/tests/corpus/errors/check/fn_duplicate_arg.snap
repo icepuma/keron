@@ -2,7 +2,7 @@
 source: crates/keron-lang/tests/harness/mod.rs
 ---
 error: parameter `a` is already supplied
-  --> 2:22
+  --> 5:22
   |
-2 | val x: Int = f(1, 2, a = 3)
+5 | val x: Int = f(1, 2, a = 3)
   |                      ^^^^^

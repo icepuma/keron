@@ -18,14 +18,14 @@ Program {
                     ),
                     span: 11..18,
                 },
-                span: 0..19,
+                span: 0..20,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "count",
-                    span: 23..28,
+                    span: 24..29,
                 },
                 ty: None,
                 value: Spanned {
@@ -34,16 +34,16 @@ Program {
                             3,
                         ),
                     ),
-                    span: 31..32,
+                    span: 32..33,
                 },
-                span: 19..33,
+                span: 20..35,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "ratio",
-                    span: 37..42,
+                    span: 39..44,
                 },
                 ty: None,
                 value: Spanned {
@@ -52,16 +52,16 @@ Program {
                             0.75,
                         ),
                     ),
-                    span: 45..49,
+                    span: 47..51,
                 },
-                span: 33..50,
+                span: 35..53,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "enabled",
-                    span: 54..61,
+                    span: 57..64,
                 },
                 ty: None,
                 value: Spanned {
@@ -70,9 +70,9 @@ Program {
                             true,
                         ),
                     ),
-                    span: 64..68,
+                    span: 67..71,
                 },
-                span: 50..69,
+                span: 53..72,
             },
         ),
     ],

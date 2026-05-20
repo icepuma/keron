@@ -7,12 +7,12 @@ Program {
             ValDecl {
                 name: Spanned {
                     node: "use_zsh",
-                    span: 5..12,
+                    span: 4..11,
                 },
                 ty: Some(
                     Spanned {
                         node: Boolean,
-                        span: 14..21,
+                        span: 13..20,
                     },
                 ),
                 value: Spanned {
@@ -21,9 +21,9 @@ Program {
                             true,
                         ),
                     ),
-                    span: 24..28,
+                    span: 23..27,
                 },
-                span: 1..29,
+                span: 0..29,
             },
         ),
         Val(
@@ -81,35 +81,35 @@ Program {
                             },
                         ],
                     },
-                    span: 50..100,
+                    span: 50..101,
                 },
-                span: 29..100,
+                span: 29..101,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "bashrc",
-                    span: 104..110,
+                    span: 105..111,
                 },
                 ty: Some(
                     Spanned {
                         node: Symlink,
-                        span: 112..119,
+                        span: 113..120,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "symlink",
-                            span: 122..129,
+                            span: 123..130,
                         },
                         args: [
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "source",
-                                        span: 130..136,
+                                        span: 131..137,
                                     },
                                 ),
                                 value: Spanned {
@@ -118,15 +118,15 @@ Program {
                                             "~/.bashrc",
                                         ),
                                     ),
-                                    span: 139..150,
+                                    span: 140..151,
                                 },
-                                span: 130..150,
+                                span: 131..151,
                             },
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "target",
-                                        span: 152..158,
+                                        span: 153..159,
                                     },
                                 ),
                                 value: Spanned {
@@ -135,15 +135,15 @@ Program {
                                             "df/bashrc",
                                         ),
                                     ),
-                                    span: 161..172,
+                                    span: 162..173,
                                 },
-                                span: 152..172,
+                                span: 153..173,
                             },
                         ],
                     },
-                    span: 122..175,
+                    span: 123..176,
                 },
-                span: 100..175,
+                span: 101..176,
             },
         ),
         ExprStmt(
@@ -153,7 +153,7 @@ Program {
                         node: Var(
                             "use_zsh",
                         ),
-                        span: 178..185,
+                        span: 179..186,
                     },
                     then_branch: Block {
                         stmts: [
@@ -165,7 +165,7 @@ Program {
                                                 node: Var(
                                                     "zshrc",
                                                 ),
-                                                span: 206..211,
+                                                span: 207..212,
                                             },
                                         ],
                                         [
@@ -173,30 +173,30 @@ Program {
                                                 node: Var(
                                                     "bashrc",
                                                 ),
-                                                span: 217..223,
+                                                span: 218..224,
                                             },
                                             Spanned {
                                                 node: Var(
                                                     "zshrc",
                                                 ),
-                                                span: 227..232,
+                                                span: 228..233,
                                             },
                                         ],
                                     ],
-                                    span: 190..237,
+                                    span: 191..239,
                                 },
                             ),
                         ],
                         trailing: None,
-                        span: 186..239,
+                        span: 187..241,
                     },
                     else_branch: Block {
                         stmts: [],
                         trailing: None,
-                        span: 239..239,
+                        span: 241..241,
                     },
                 },
-                span: 175..239,
+                span: 176..241,
             },
         ),
     ],

@@ -18,19 +18,19 @@ Program {
                     ),
                     span: 8..9,
                 },
-                span: 0..10,
+                span: 0..11,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "b",
-                    span: 14..15,
+                    span: 15..16,
                 },
                 ty: Some(
                     Spanned {
                         node: String,
-                        span: 17..23,
+                        span: 18..24,
                     },
                 ),
                 value: Spanned {
@@ -39,16 +39,16 @@ Program {
                             "x",
                         ),
                     ),
-                    span: 26..29,
+                    span: 27..30,
                 },
-                span: 10..30,
+                span: 11..32,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "c",
-                    span: 34..35,
+                    span: 36..37,
                 },
                 ty: None,
                 value: Spanned {
@@ -57,21 +57,21 @@ Program {
                             true,
                         ),
                     ),
-                    span: 38..42,
+                    span: 40..44,
                 },
-                span: 30..43,
+                span: 32..46,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "d",
-                    span: 47..48,
+                    span: 50..51,
                 },
                 ty: Some(
                     Spanned {
                         node: Double,
-                        span: 50..56,
+                        span: 53..59,
                     },
                 ),
                 value: Spanned {
@@ -80,9 +80,9 @@ Program {
                             0.5,
                         ),
                     ),
-                    span: 59..62,
+                    span: 62..65,
                 },
-                span: 43..63,
+                span: 46..66,
             },
         ),
     ],

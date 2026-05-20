@@ -1,6 +1,5 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 Program {
     items: [
@@ -36,14 +35,14 @@ Program {
                         span: 23..30,
                     },
                 ],
-                span: 0..32,
+                span: 0..33,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "origin",
-                    span: 36..42,
+                    span: 37..43,
                 },
                 ty: Some(
                     Spanned {
@@ -60,14 +59,14 @@ Program {
                                 ),
                             ],
                         },
-                        span: 44..49,
+                        span: 45..50,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "Point",
-                            span: 52..57,
+                            span: 53..58,
                         },
                         args: [
                             CallArg {
@@ -78,9 +77,9 @@ Program {
                                             0,
                                         ),
                                     ),
-                                    span: 58..59,
+                                    span: 59..60,
                                 },
-                                span: 58..59,
+                                span: 59..60,
                             },
                             CallArg {
                                 name: None,
@@ -90,22 +89,22 @@ Program {
                                             0,
                                         ),
                                     ),
-                                    span: 61..62,
+                                    span: 62..63,
                                 },
-                                span: 61..62,
+                                span: 62..63,
                             },
                         ],
                     },
-                    span: 52..64,
+                    span: 53..66,
                 },
-                span: 32..64,
+                span: 33..66,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "labeled",
-                    span: 68..75,
+                    span: 70..77,
                 },
                 ty: Some(
                     Spanned {
@@ -122,21 +121,21 @@ Program {
                                 ),
                             ],
                         },
-                        span: 77..82,
+                        span: 79..84,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "Point",
-                            span: 85..90,
+                            span: 87..92,
                         },
                         args: [
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "x",
-                                        span: 91..92,
+                                        span: 93..94,
                                     },
                                 ),
                                 value: Spanned {
@@ -145,15 +144,15 @@ Program {
                                             3,
                                         ),
                                     ),
-                                    span: 95..96,
+                                    span: 97..98,
                                 },
-                                span: 91..96,
+                                span: 93..98,
                             },
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "y",
-                                        span: 98..99,
+                                        span: 100..101,
                                     },
                                 ),
                                 value: Spanned {
@@ -162,22 +161,22 @@ Program {
                                             4,
                                         ),
                                     ),
-                                    span: 102..103,
+                                    span: 104..105,
                                 },
-                                span: 98..103,
+                                span: 100..105,
                             },
                         ],
                     },
-                    span: 85..105,
+                    span: 87..108,
                 },
-                span: 64..105,
+                span: 66..108,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "mixed",
-                    span: 109..114,
+                    span: 112..117,
                 },
                 ty: Some(
                     Spanned {
@@ -194,14 +193,14 @@ Program {
                                 ),
                             ],
                         },
-                        span: 116..121,
+                        span: 119..124,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "Point",
-                            span: 124..129,
+                            span: 127..132,
                         },
                         args: [
                             CallArg {
@@ -212,15 +211,15 @@ Program {
                                             7,
                                         ),
                                     ),
-                                    span: 130..131,
+                                    span: 133..134,
                                 },
-                                span: 130..131,
+                                span: 133..134,
                             },
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "y",
-                                        span: 133..134,
+                                        span: 136..137,
                                     },
                                 ),
                                 value: Spanned {
@@ -229,15 +228,15 @@ Program {
                                             8,
                                         ),
                                     ),
-                                    span: 137..138,
+                                    span: 140..141,
                                 },
-                                span: 133..138,
+                                span: 136..141,
                             },
                         ],
                     },
-                    span: 124..140,
+                    span: 127..143,
                 },
-                span: 105..140,
+                span: 108..143,
             },
         ),
     ],

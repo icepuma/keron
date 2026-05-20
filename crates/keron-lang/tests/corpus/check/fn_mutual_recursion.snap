@@ -174,28 +174,28 @@ Program {
                             },
                         ],
                     },
-                    span: 103..111,
+                    span: 103..112,
                 },
-                span: 86..111,
+                span: 86..112,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "b",
-                    span: 115..116,
+                    span: 116..117,
                 },
                 ty: Some(
                     Spanned {
                         node: Boolean,
-                        span: 118..125,
+                        span: 119..126,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "odd",
-                            span: 128..131,
+                            span: 129..132,
                         },
                         args: [
                             CallArg {
@@ -206,15 +206,15 @@ Program {
                                             5,
                                         ),
                                     ),
-                                    span: 132..133,
+                                    span: 133..134,
                                 },
-                                span: 132..133,
+                                span: 133..134,
                             },
                         ],
                     },
-                    span: 128..135,
+                    span: 129..136,
                 },
-                span: 111..135,
+                span: 112..136,
             },
         ),
     ],

@@ -1,6 +1,5 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 Program {
     items: [
@@ -24,44 +23,44 @@ Program {
                         span: 15..22,
                     },
                 ],
-                span: 0..24,
+                span: 0..25,
             },
         ),
         Struct(
             StructDecl {
                 name: Spanned {
                     node: "Outer",
-                    span: 31..36,
+                    span: 32..37,
                 },
                 fields: [
                     StructField {
                         name: Spanned {
                             node: "inner",
-                            span: 39..44,
+                            span: 40..45,
                         },
                         ty: Spanned {
                             node: Named(
                                 "Inner",
                             ),
-                            span: 46..51,
+                            span: 47..52,
                         },
                         default: None,
-                        span: 39..52,
+                        span: 40..53,
                     },
                 ],
-                span: 24..54,
+                span: 25..56,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "sum",
-                    span: 58..61,
+                    span: 60..63,
                 },
                 ty: Some(
                     Spanned {
                         node: Int,
-                        span: 63..66,
+                        span: 65..68,
                     },
                 ),
                 value: Spanned {
@@ -72,7 +71,7 @@ Program {
                                     node: Call {
                                         callee: Spanned {
                                             node: "Outer",
-                                            span: 69..74,
+                                            span: 71..76,
                                         },
                                         args: [
                                             CallArg {
@@ -81,7 +80,7 @@ Program {
                                                     node: Call {
                                                         callee: Spanned {
                                                             node: "Inner",
-                                                            span: 75..80,
+                                                            span: 77..82,
                                                         },
                                                         args: [
                                                             CallArg {
@@ -92,35 +91,35 @@ Program {
                                                                             7,
                                                                         ),
                                                                     ),
-                                                                    span: 81..82,
+                                                                    span: 83..84,
                                                                 },
-                                                                span: 81..82,
+                                                                span: 83..84,
                                                             },
                                                         ],
                                                     },
-                                                    span: 75..83,
+                                                    span: 77..85,
                                                 },
-                                                span: 75..83,
+                                                span: 77..85,
                                             },
                                         ],
                                     },
-                                    span: 69..84,
+                                    span: 71..86,
                                 },
                                 field: Spanned {
                                     node: "inner",
-                                    span: 85..90,
+                                    span: 87..92,
                                 },
                             },
-                            span: 69..90,
+                            span: 71..92,
                         },
                         field: Spanned {
                             node: "v",
-                            span: 91..92,
+                            span: 93..94,
                         },
                     },
-                    span: 69..92,
+                    span: 71..94,
                 },
-                span: 54..92,
+                span: 56..94,
             },
         ),
     ],

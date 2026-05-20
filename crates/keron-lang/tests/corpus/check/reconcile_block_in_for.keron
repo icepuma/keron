@@ -1,11 +1,8 @@
-
 val xs: List<Symlink> = [
   symlink(source = "to-a", target = "from-a"),
   symlink(source = "to-b", target = "from-b"),
 ]
 
 for s in xs {
-  reconcile {
-    s
-  }
+  reconcile s
 }

@@ -1,13 +1,20 @@
 # `std:path` covers the common manipulation primitives on `String`
 # paths plus three FS probes. Probes are evaluated eagerly at plan
 # time — same model as `template(source = …)`.
-
 val home: String = home_dir()
+
 val cfg: String = path_join(home, ".config/nvim/init.lua")
+
 val parent: String = path_parent(cfg) ?? home
+
 val name: String = path_basename(cfg)
+
 val ext: String = path_extension(cfg)
+
 val abs: Boolean = path_is_absolute(cfg)
+
 val live: Boolean = path_exists(keron_root())
+
 val dir: Boolean = path_is_dir(keron_root())
+
 val file: Boolean = path_is_file(home)

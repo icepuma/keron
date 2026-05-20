@@ -1,3 +1,5 @@
 struct Point { x: Int, y: Int }
+
 val p: Point = Point(0, 0)
+
 val z: Int = p.z

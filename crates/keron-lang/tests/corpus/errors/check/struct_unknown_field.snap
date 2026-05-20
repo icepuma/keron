@@ -2,7 +2,7 @@
 source: crates/keron-lang/tests/harness/mod.rs
 ---
 error: unknown field `z` on struct `Point`
-  --> 3:16
+  --> 5:16
   |
-3 | val z: Int = p.z
+5 | val z: Int = p.z
   |                ^

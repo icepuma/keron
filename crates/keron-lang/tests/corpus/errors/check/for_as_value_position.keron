@@ -1,1 +1,3 @@
-val label: String = match for k in [1, 2] {} { _ => "ignored" }
+val label: String = match for k in [1, 2] {} {
+  _ => "ignored",
+}

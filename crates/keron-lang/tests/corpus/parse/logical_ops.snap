@@ -1,6 +1,5 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 Program {
     items: [
@@ -8,12 +7,12 @@ Program {
             ValDecl {
                 name: Spanned {
                     node: "a",
-                    span: 161..162,
+                    span: 160..161,
                 },
                 ty: Some(
                     Spanned {
                         node: Boolean,
-                        span: 164..171,
+                        span: 163..170,
                     },
                 ),
                 value: Spanned {
@@ -25,7 +24,7 @@ Program {
                                     true,
                                 ),
                             ),
-                            span: 174..178,
+                            span: 173..177,
                         },
                         rhs: Spanned {
                             node: Literal(
@@ -33,12 +32,12 @@ Program {
                                     false,
                                 ),
                             ),
-                            span: 182..187,
+                            span: 181..186,
                         },
                     },
-                    span: 174..187,
+                    span: 173..186,
                 },
-                span: 157..188,
+                span: 156..188,
             },
         ),
         Val(
@@ -75,19 +74,19 @@ Program {
                     },
                     span: 205..218,
                 },
-                span: 188..219,
+                span: 188..220,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "c",
-                    span: 223..224,
+                    span: 224..225,
                 },
                 ty: Some(
                     Spanned {
                         node: Boolean,
-                        span: 226..233,
+                        span: 227..234,
                     },
                 ),
                 value: Spanned {
@@ -102,7 +101,7 @@ Program {
                                             true,
                                         ),
                                     ),
-                                    span: 236..240,
+                                    span: 237..241,
                                 },
                                 rhs: Spanned {
                                     node: Literal(
@@ -110,10 +109,10 @@ Program {
                                             false,
                                         ),
                                     ),
-                                    span: 244..249,
+                                    span: 245..250,
                                 },
                             },
-                            span: 236..249,
+                            span: 237..250,
                         },
                         rhs: Spanned {
                             node: Literal(
@@ -121,24 +120,24 @@ Program {
                                     true,
                                 ),
                             ),
-                            span: 253..257,
+                            span: 254..258,
                         },
                     },
-                    span: 236..257,
+                    span: 237..258,
                 },
-                span: 219..258,
+                span: 220..260,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "d",
-                    span: 262..263,
+                    span: 264..265,
                 },
                 ty: Some(
                     Spanned {
                         node: Boolean,
-                        span: 265..272,
+                        span: 267..274,
                     },
                 ),
                 value: Spanned {
@@ -153,7 +152,7 @@ Program {
                                             1,
                                         ),
                                     ),
-                                    span: 275..276,
+                                    span: 277..278,
                                 },
                                 rhs: Spanned {
                                     node: Literal(
@@ -161,10 +160,10 @@ Program {
                                             1,
                                         ),
                                     ),
-                                    span: 280..281,
+                                    span: 282..283,
                                 },
                             },
-                            span: 275..281,
+                            span: 277..283,
                         },
                         rhs: Spanned {
                             node: Binary {
@@ -175,7 +174,7 @@ Program {
                                             2,
                                         ),
                                     ),
-                                    span: 285..286,
+                                    span: 287..288,
                                 },
                                 rhs: Spanned {
                                     node: Literal(
@@ -183,27 +182,27 @@ Program {
                                             2,
                                         ),
                                     ),
-                                    span: 290..291,
+                                    span: 292..293,
                                 },
                             },
-                            span: 285..291,
+                            span: 287..293,
                         },
                     },
-                    span: 275..291,
+                    span: 277..293,
                 },
-                span: 258..292,
+                span: 260..295,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "e",
-                    span: 296..297,
+                    span: 299..300,
                 },
                 ty: Some(
                     Spanned {
                         node: Boolean,
-                        span: 299..306,
+                        span: 302..309,
                     },
                 ),
                 value: Spanned {
@@ -218,7 +217,7 @@ Program {
                                             true,
                                         ),
                                     ),
-                                    span: 310..314,
+                                    span: 313..317,
                                 },
                                 rhs: Spanned {
                                     node: Literal(
@@ -226,10 +225,10 @@ Program {
                                             false,
                                         ),
                                     ),
-                                    span: 318..323,
+                                    span: 321..326,
                                 },
                             },
-                            span: 310..323,
+                            span: 313..326,
                         },
                         rhs: Spanned {
                             node: Literal(
@@ -237,12 +236,12 @@ Program {
                                     true,
                                 ),
                             ),
-                            span: 328..332,
+                            span: 331..335,
                         },
                     },
-                    span: 310..332,
+                    span: 313..335,
                 },
-                span: 292..333,
+                span: 295..336,
             },
         ),
     ],

@@ -1,4 +1,3 @@
-
 val use_zsh: Boolean = true
 
 # Each branch produces a Symlink; the resulting if-expr is also Symlink.
@@ -11,20 +10,24 @@ val shellrc: Symlink = if use_zsh {
 # Else-if chain with a fallback branch.
 val grade: String = if true {
   "A"
-} else if false {
-  "B"
 } else {
-  "F"
+  if false {
+    "B"
+  } else {
+    "F"
+  }
 }
 
 # If-expression as a function body.
 fn classify(n: Int): String {
   if true {
     "positive"
-  } else if false {
-    "negative"
   } else {
-    "zero"
+    if false {
+      "negative"
+    } else {
+      "zero"
+    }
   }
 }
 

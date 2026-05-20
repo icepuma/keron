@@ -7,28 +7,28 @@ Program {
             ValDecl {
                 name: Spanned {
                     node: "zshrc",
-                    span: 5..10,
+                    span: 4..9,
                 },
                 ty: Some(
                     Spanned {
                         node: Named(
                             "Symlink",
                         ),
-                        span: 12..19,
+                        span: 11..18,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "symlink",
-                            span: 22..29,
+                            span: 21..28,
                         },
                         args: [
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "source",
-                                        span: 30..36,
+                                        span: 29..35,
                                     },
                                 ),
                                 value: Spanned {
@@ -37,15 +37,15 @@ Program {
                                             "~/.zshrc",
                                         ),
                                     ),
-                                    span: 39..49,
+                                    span: 38..48,
                                 },
-                                span: 30..49,
+                                span: 29..48,
                             },
                             CallArg {
                                 name: Some(
                                     Spanned {
                                         node: "target",
-                                        span: 51..57,
+                                        span: 50..56,
                                     },
                                 ),
                                 value: Spanned {
@@ -54,15 +54,15 @@ Program {
                                             "~/df/zshrc",
                                         ),
                                     ),
-                                    span: 60..72,
+                                    span: 59..71,
                                 },
-                                span: 51..72,
+                                span: 50..71,
                             },
                         ],
                     },
-                    span: 22..74,
+                    span: 21..74,
                 },
-                span: 1..74,
+                span: 0..74,
             },
         ),
         Reconcile(

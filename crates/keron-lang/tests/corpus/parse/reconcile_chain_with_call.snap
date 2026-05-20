@@ -11,14 +11,14 @@ Program {
                             node: Call {
                                 callee: Spanned {
                                     node: "symlink",
-                                    span: 11..18,
+                                    span: 10..17,
                                 },
                                 args: [
                                     CallArg {
                                         name: Some(
                                             Spanned {
                                                 node: "source",
-                                                span: 19..25,
+                                                span: 18..24,
                                             },
                                         ),
                                         value: Spanned {
@@ -27,15 +27,15 @@ Program {
                                                     "to-a",
                                                 ),
                                             ),
-                                            span: 28..34,
+                                            span: 27..33,
                                         },
-                                        span: 19..34,
+                                        span: 18..33,
                                     },
                                     CallArg {
                                         name: Some(
                                             Spanned {
                                                 node: "target",
-                                                span: 36..42,
+                                                span: 35..41,
                                             },
                                         ),
                                         value: Spanned {
@@ -44,26 +44,26 @@ Program {
                                                     "from-a",
                                                 ),
                                             ),
-                                            span: 45..53,
+                                            span: 44..52,
                                         },
-                                        span: 36..53,
+                                        span: 35..52,
                                     },
                                 ],
                             },
-                            span: 11..55,
+                            span: 10..54,
                         },
                         Spanned {
                             node: Call {
                                 callee: Spanned {
                                     node: "symlink",
-                                    span: 58..65,
+                                    span: 57..64,
                                 },
                                 args: [
                                     CallArg {
                                         name: Some(
                                             Spanned {
                                                 node: "source",
-                                                span: 66..72,
+                                                span: 65..71,
                                             },
                                         ),
                                         value: Spanned {
@@ -72,15 +72,15 @@ Program {
                                                     "to-b",
                                                 ),
                                             ),
-                                            span: 75..81,
+                                            span: 74..80,
                                         },
-                                        span: 66..81,
+                                        span: 65..80,
                                     },
                                     CallArg {
                                         name: Some(
                                             Spanned {
                                                 node: "target",
-                                                span: 83..89,
+                                                span: 82..88,
                                             },
                                         ),
                                         value: Spanned {
@@ -89,17 +89,17 @@ Program {
                                                     "from-b",
                                                 ),
                                             ),
-                                            span: 92..100,
+                                            span: 91..99,
                                         },
-                                        span: 83..100,
+                                        span: 82..99,
                                     },
                                 ],
                             },
-                            span: 58..102,
+                            span: 57..101,
                         },
                     ],
                 ],
-                span: 1..102,
+                span: 0..101,
             },
         ),
     ],

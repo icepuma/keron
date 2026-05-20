@@ -1,7 +1,8 @@
 # `read_file(path)` returns `String?`: missing files, paths that
 # escape the keron root, and invalid UTF-8 all collapse to `null`.
 # Pair with `??` to thread the absence through.
-
 val prefix: String = read_file("./partials/header.txt") ?? ""
+
 val suffix: String = read_file("./partials/footer.${os_type()}") ?? ""
+
 val merged: String = prefix + suffix

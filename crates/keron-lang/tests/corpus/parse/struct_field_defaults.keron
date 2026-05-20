@@ -3,9 +3,4 @@
 # parameters obey applies here. The default itself sees the outer
 # module env only — sibling fields are not in scope, matching the
 # record-as-independent-fields model.
-
-struct Server {
-  host: String,
-  port: Int = 8080,
-  tls: Boolean = false,
-}
+struct Server { host: String, port: Int = 8080, tls: Boolean = false }

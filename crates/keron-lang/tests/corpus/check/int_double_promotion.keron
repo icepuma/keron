@@ -1,3 +1,5 @@
 val mixed: Double = 1 + 2.5
+
 val pure_int: Int = 2 ** 10 - 1
+
 val pure_double: Double = 1.0 * 2.0 + 3.0

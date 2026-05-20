@@ -1,4 +1,5 @@
 val groups: List<Map<String, Int>> = [{"a": 1}, {"b": 2}]
+
 for g in groups {
   for (k, v) in g {
     reconcile v

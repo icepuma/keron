@@ -1,7 +1,6 @@
 # Guards are `Boolean` expressions evaluated after the pattern binds.
 # A guarded arm does NOT close exhaustiveness — a trailing unguarded
 # arm (catch-all here) is still required.
-
 val verdict: String = match os_type() {
   "Macos" if os_arch() == "aarch64" => "macos-arm",
   "Macos" => "macos-intel",

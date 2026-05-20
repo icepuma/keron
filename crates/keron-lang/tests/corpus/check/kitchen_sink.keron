@@ -1,25 +1,34 @@
-
 # Kitchen-sink example: every language feature shipped so far in one
 # file. The corpus harness verifies that this parses *and* typechecks.
-
 # --- primitive types: explicit annotations ---
 val app_name: String = "keron"
+
 val version_major: Int = 0
+
 val version_minor: Int = 1
+
 val released: Boolean = false
+
 val ratio: Double = 1.618
 
 # --- inferred annotations ---
 val tag = "wip"
+
 val seed = 42
+
 val warm = true
 
 # --- arithmetic with PEMDAS, including `/` (integer division) ---
 val area: Int = 4 * 5 + 2
+
 val cube: Int = 2 ** 10
+
 val signed: Int = -7 * 3 + 1
+
 val rms: Double = (3 ** 2 + 4 ** 2) * 0.5
+
 val per_node: Int = 1024 / 32
+
 val gradient: Double = (4 + 6) / 2.0 - 1
 
 # --- mixed Int/Double promotion inside expressions ---
@@ -30,26 +39,27 @@ val greeting: String = "Hello, " + "world" + "!"
 
 # --- string interpolation with arbitrary inner expressions ---
 val math: String = "5 squared is ${5 * 5}, and 1 + 2 is ${1 + 2}"
+
 val flag: String = "active = ${true}"
+
 val nested: String = "${"inner ${42}"}"
 
 # --- escapes: \", \\, \n, \r, \t, \$ ---
-val price: String = "Costs \$9.99"
+val price: String = "Costs $9.99"
+
 val tabbed: String = "col1\tcol2\tcol3"
+
 val raw_dollar: String = "Bare $5 stays literal (only \"\${\" opens an interp)"
 
 # --- list literals ---
 val numbers: List<Int> = [1, 2, 3, 4, 5]
+
 val flags: List<Boolean> = [true, false, true]
+
 val rates: List<Double> = [1.0, 2.5, 3.14]
 
 # --- expressions inside lists + trailing comma ---
-val computed: List<Int> = [
-  1 + 2,
-  3 * 4,
-  -5,
-  2 ** 8,
-]
+val computed: List<Int> = [1 + 2, 3 * 4, -5, 2 ** 8]
 
 # --- nested lists ---
 val matrix: List<List<Int>> = [[1, 2, 3], [4, 5, 6], []]
@@ -60,16 +70,21 @@ val all_numbers: List<Int> = [1, 2] ++ [3, 4] ++ [5]
 # --- bidirectional checking: annotation flows through `++` and into
 #     empty list literals, including nested ones ---
 val padded: List<String> = [] ++ ["a", "b"] ++ []
+
 val sparse: List<List<Int>> = [[], [1], [], [2, 3]]
+
 val empty_strs: List<String> = []
 
 # --- inferred list element types ---
 val colors = ["red", "green", "blue"]
+
 val powers = [2 ** 2, 2 ** 4, 2 ** 8]
 
 # --- variable references: pull together previously-bound `val`s ---
 val full_version: String = "${version_major}.${version_minor}"
+
 val build_id: Int = version_major * 1000 + version_minor * 10 + 7
+
 val summary: String = app_name + " v" + full_version + " (build ${build_id})"
 
 # --- user-defined functions ---
@@ -91,13 +106,18 @@ fn odd(n: Int): Boolean {
 }
 
 val cube_8: Int = double(double(2))
+
 val color: Int = rgb(255, b = 128)
+
 val parity: Boolean = even(4)
 
 # --- maps ---
 val empty_map: Map<String, Int> = {}
+
 val by_name: Map<String, Int> = {"alice": 1, "bob": 2, "carol": 3}
+
 val codes: Map<Int, String> = {200: "ok", 404: "missing"}
+
 val nested_map: Map<String, List<Int>> = {"primes": [2, 3, 5, 7], "evens": [2, 4]}
 
 # --- nullable types & the `null` literal ---
@@ -107,16 +127,20 @@ val nested_map: Map<String, List<Int>> = {"primes": [2, 3, 5, 7], "evens": [2, 4
 # collapses `T??` to `T?` so the wrapper never nests. Operations on
 # the inhabitant are blocked behind a `match` — `T?` cannot directly
 # concat, interpolate, or arithmetic.
-
 val maybe_alias: String? = "shorthand"
+
 val maybe_missing: String? = null
+
 val maybe_int: Int? = 42
+
 val maybe_list: List<Int>? = null
+
 val nullable_elems: List<Boolean?> = [true, null, false]
 
 # `==` / `!=` are admitted for `T? <-> null` only; comparing against a
 # concrete payload requires a `match`.
 val alias_set: Boolean = maybe_alias != null
+
 val missing_unset: Boolean = maybe_missing == null
 
 # `match` is the canonical extractor: the `null` arm and a wildcard
@@ -132,13 +156,20 @@ fn link(name: String): Symlink {
 }
 
 val zshrc: Symlink = link("zshrc")
-val gitcfg: Template = template(source = "tmpl.tpl", target = "~/.gitconfig", vars = {"body": "[user]\n  email = me"})
-val xdgcfg: Template = template(source = "tmpl.tpl", target = "~/.config/keron.toml", vars = {"body": "key = \"value\""})
 
-val all_links: List<Symlink> = [
-  link("vimrc"),
-  link("tmux.conf"),
-]
+val gitcfg: Template = template(
+  source = "tmpl.tpl",
+  target = "~/.gitconfig",
+  vars = {"body": "[user]\n  email = me"},
+)
+
+val xdgcfg: Template = template(
+  source = "tmpl.tpl",
+  target = "~/.config/keron.toml",
+  vars = {"body": "key = \"value\""},
+)
+
+val all_links: List<Symlink> = [link("vimrc"), link("tmux.conf")]
 
 # --- conditionals ---
 val use_zsh: Boolean = true
@@ -154,42 +185,53 @@ val shellrc: Symlink = if use_zsh {
 # Chained else-if folds right; the final `else` is mandatory.
 val ratio_label: String = if released {
   "stable"
-} else if warm {
-  "rc"
 } else {
-  "wip"
+  if warm {
+    "rc"
+  } else {
+    "wip"
+  }
 }
 
 # --- comparisons + if ---
 val verdict: String = if seed > 100 {
   "many"
-} else if seed == 0 {
-  "none"
 } else {
-  "few"
+  if seed == 0 {
+    "none"
+  } else {
+    "few"
+  }
 }
 
 val tier: String = if version_major >= 1 {
   "v1+"
-} else if version_minor < 5 {
-  "early"
 } else {
-  "rc"
+  if version_minor < 5 {
+    "early"
+  } else {
+    "rc"
+  }
 }
 
 val rounded: String = if ratio < 1.5 {
   "small"
-} else if ratio == 1.618 {
-  "phi"
 } else {
-  "large"
+  if ratio == 1.618 {
+    "phi"
+  } else {
+    "large"
+  }
 }
 
 # `!=` and `<=` round out the comparison surface. Equality works on
 # `String`, numeric (with promotion), `Boolean`, and `StringUnion`.
 val not_released: Boolean = released != true
+
 val small_seed: Boolean = seed <= 42
+
 val name_mismatch: Boolean = app_name != "other"
+
 val gate: String = if version_minor <= 0 {
   "preview"
 } else {
@@ -197,7 +239,6 @@ val gate: String = if version_minor <= 0 {
 }
 
 # --- `Void` and `if` as control flow (no `else`) ---
-
 # A `Void`-returning function: the body is a block whose trailing
 # expression is absent, so the block has type `Void`. Functions stay
 # pure; resource scheduling happens through top-level `reconcile`,
@@ -214,13 +255,18 @@ fn maybe_noop(flag: Boolean): Void {
 # `reconcile` is the only side-effect-bearing form; constructing the
 # values above does nothing on its own.
 reconcile zshrc
+
 reconcile gitcfg
+
 reconcile xdgcfg
+
 reconcile shellrc
 
 # Top-level expression statement: an `if` whose branches are `Void`
 # can stand alone at the top level, gating reconciles on a flag.
-if use_zsh { reconcile all_links }
+if use_zsh {
+  reconcile all_links
+}
 
 # --- `for` loops over lists and maps ---
 #
@@ -228,7 +274,6 @@ if use_zsh { reconcile all_links }
 # the loop expression itself has type `Void` too — so it is allowed at
 # the top level alongside `if`. The single-bind form is list-only;
 # the pair form is map-only.
-
 # Iterate the list of pre-built links and reconcile each one.
 for one_link in all_links {
   reconcile one_link
@@ -236,12 +281,18 @@ for one_link in all_links {
 
 # Iterate a map of name → priority and reconcile a derived file.
 for (name, priority) in by_name {
-  reconcile template(source = "tmpl.tpl", target = "~/.priority/${name}", vars = {"body": "${priority}"})
+  reconcile template(
+    source = "tmpl.tpl",
+    target = "~/.priority/${name}",
+    vars = {"body": "${priority}"},
+  )
 }
 
 # `for` composes with `if` for conditional declarations inside a loop.
 for f in flags {
-  if f { reconcile link("alacritty.yml") }
+  if f {
+    reconcile link("alacritty.yml")
+  }
 }
 
 # --- ordered reconciliations: `->` chains and `reconcile { ... }` blocks ---
@@ -251,13 +302,12 @@ for f in flags {
 # is a parse error. A block groups multiple chains, separated by `;`
 # (a trailing `;` is permitted). Both forms collapse to the same flat
 # ordered sequence at apply time.
-
 reconcile zshrc -> gitcfg -> xdgcfg
 
 reconcile {
   zshrc;
   gitcfg -> xdgcfg;
-  all_links
+  all_links;
 }
 
 # --- `Resource` supertype ---
@@ -267,7 +317,6 @@ reconcile {
 # `Resource` slot, but `Resource` does not auto-narrow back. Use it
 # when the kind doesn't matter — e.g. to bundle mixed resources or
 # to express dependencies between heterogeneous values.
-
 val any_resource: Resource = link("vimrc")
 
 val mixed_resources: List<Resource> = [
@@ -277,7 +326,10 @@ val mixed_resources: List<Resource> = [
 ]
 
 # Heterogeneous list literals infer to `List<Resource>` automatically.
-val auto_mix = [link("alacritty.yml"), template(source = "tmpl.tpl", target = "/etc/issue", vars = {"body": ""})]
+val auto_mix = [
+  link("alacritty.yml"),
+  template(source = "tmpl.tpl", target = "/etc/issue", vars = {"body": ""}),
+]
 
 # `++` mirrors list synthesis: concatenating lists whose element kinds
 # differ lifts the result to `List<Resource>`.
@@ -306,7 +358,7 @@ reconcile {
   chosen;
   combined_resources;
   auto_mix;
-  any_resource -> zshrc
+  any_resource -> zshrc;
 }
 
 # Iterate any `List<Resource>` and reconcile each element.
@@ -319,29 +371,25 @@ for r in mixed_resources {
 # `struct Name { ... }` declares a nominal record. The implicit
 # constructor accepts positional args (declared order), named args, or
 # a mix (positional first, then named).
-
-struct Host {
-  name: String,
-  port: Int,
-  tls: Boolean,
-}
+struct Host { name: String, port: Int, tls: Boolean }
 
 val origin_host: Host = Host(name = "alpha.local", port = 22, tls = true)
+
 val mirror_host: Host = Host("beta.local", 22, tls = false)
+
 val tagged_host: Host = Host("gamma.local", port = 443, tls = true)
 
 # Field access via postfix `.field`. Tighter than unary, so `-p.x`
 # is `-(p.x)`. Chains fold left (`a.b.c` is `(a.b).c`).
 val origin_port: Int = origin_host.port
+
 val origin_label: String = "${origin_host.name}:${origin_host.port}"
 
 # Structs nest like any other type and flow through interpolations.
-struct Endpoint {
-  host: Host,
-  path: String,
-}
+struct Endpoint { host: Host, path: String }
 
 val ep: Endpoint = Endpoint(origin_host, "/healthz")
+
 val ep_url: String = "https://${ep.host.name}:${ep.host.port}${ep.path}"
 
 # --- string-union aliases ---
@@ -351,15 +399,17 @@ val ep_url: String = "https://${ep.host.name}:${ep.host.port}${ep.path}"
 # `if` conditions. A literal RHS is admitted only when it's in the
 # variant set; assigning a free-form `String` is rejected (no
 # auto-narrowing).
-
 type Mode = "on" | "off" | "auto"
+
 type LogLevel = "debug" | "info" | "warn" | "error"
 
 val current_mode: Mode = "auto"
+
 val current_level: LogLevel = "info"
 
 # Compare a union value against a string literal in an `if` condition.
 val active: Boolean = current_mode == "on"
+
 val verbose: String = if current_level == "debug" {
   "traces enabled"
 } else {
@@ -371,13 +421,12 @@ val verbose: String = if current_level == "debug" {
 # `match` is exhaustive on string-union scrutinees (every variant must
 # appear, no `_` needed). On every other type — `String`, `Int`,
 # struct, etc. — a wildcard arm `_` is required.
-
 # Exhaustive over a closed union: no wildcard.
 fn level_label(level: LogLevel): String {
   match level {
     "debug" => "verbose",
-    "info"  => "normal",
-    "warn"  => "elevated",
+    "info" => "normal",
+    "warn" => "elevated",
     "error" => "critical",
   }
 }
@@ -388,42 +437,44 @@ val level_summary: String = level_label(current_level)
 fn nicknamed(s: String): String {
   match s {
     "alpha" => "Alpha host",
-    "beta"  => "Beta host",
-    other   => "unknown: ${other}",
+    "beta" => "Beta host",
+    other => "unknown: ${other}",
   }
 }
 
 fn classify_port(p: Int): String {
   match p {
-    22  => "ssh",
-    80  => "http",
+    22 => "ssh",
+    80 => "http",
     443 => "https",
-    _   => "other",
+    _ => "other",
   }
 }
 
 val origin_role: String = classify_port(origin_host.port)
+
 val origin_nick: String = nicknamed(origin_host.name)
 
 # Struct destructure patterns: literal sub-patterns, shorthand binds,
 # nested patterns, and the mandatory wildcard arm.
 fn host_kind(h: Host): String {
   match h {
-    Host { name: "alpha.local", port: 22, tls: true }   => "primary-ssh",
+    Host { name: "alpha.local", port: 22, tls: true } => "primary-ssh",
     Host { name, port: 22, tls } => "ssh-${name}-tls=${tls}",
-    Host { name, port, tls }     => "${name}:${port}/tls=${tls}",
+    Host { name, port, tls } => "${name}:${port}/tls=${tls}",
     _ => "unknown",
   }
 }
 
 val origin_kind: String = host_kind(origin_host)
+
 val mirror_kind: String = host_kind(mirror_host)
 
 # `match` is a value-producing expression, so it composes with `if`,
 # string interpolation, and reconcile inputs alike.
 val mode_marker: String = "mode-${match current_mode {
-  "on"   => "active",
-  "off"  => "idle",
+  "on" => "active",
+  "off" => "idle",
   "auto" => "watching",
 }}"
 
@@ -433,33 +484,36 @@ val mode_marker: String = "mode-${match current_mode {
 # required. `keron_root()` returns the absolute path the user pointed
 # at; `env(name)` reads a process variable and returns `String?` so
 # the consumer must `match` to decide on a fallback.
-
 val keron_home: String = keron_root()
+
 val editor: String = match env("EDITOR") {
   null => "vi",
   name => name,
 }
+
 val shell_var: String? = env(name = "SHELL")
+
 val shell_set: Boolean = shell_var != null
 
 # `os_type()` and `os_arch()` return closed string-union types
 # (`OsType` and `OsArch`), so a `match` over them is exhaustive
 # without a wildcard.
 val host_os: OsType = os_type()
+
 val host_arch: OsArch = os_arch()
 
 val os_label: String = match host_os {
-  "Linux"   => "linux",
-  "Macos"   => "macos",
+  "Linux" => "linux",
+  "Macos" => "macos",
   "Windows" => "windows",
   "Unknown" => "?",
 }
 
 val arch_label: String = match host_arch {
-  "x86_64"  => "amd64",
+  "x86_64" => "amd64",
   "aarch64" => "arm64",
-  "arm"     => "armv7",
-  "x86"     => "i686",
+  "arm" => "armv7",
+  "x86" => "i686",
   "Unknown" => "?",
 }
 
@@ -476,16 +530,22 @@ val on_mac: Boolean = host_os == "Macos"
 # explicit `unwrap_secret(...)` call (one audit breadcrumb per leak
 # point). Interpolation, concat, and cross-type equality with `String`
 # are rejected by the checker.
-
 val gh_token: Secret = secret("op://vault/github/token")
+
 val npm_token: Secret = secret(uri = "op://vault/npm/token")
+
 val tokens_match: Boolean = gh_token == npm_token
 
 fn route_token(prefer_npm: Boolean): Secret {
-  if prefer_npm { npm_token } else { gh_token }
+  if prefer_npm {
+    npm_token
+  } else {
+    gh_token
+  }
 }
 
 val chosen_token: Secret = route_token(false)
+
 val auth_header: String = "Authorization: Bearer ${unwrap_secret(chosen_token)}"
 
 # --- stdlib intrinsics: packages ---
@@ -495,22 +555,28 @@ val auth_header: String = "Authorization: Bearer ${unwrap_secret(chosen_token)}"
 # executor picks the right CLI at apply time; the type system sees
 # one shape. `Package <: Resource`, so packages compose with symlinks
 # and templates in mixed lists, `++` chains, and `reconcile` blocks.
-
 val ripgrep: Package = brew("ripgrep")
+
 val starship: Package = brew(name = "starship")
+
 val just_bin: Package = cargo("just")
+
 val pwsh: Package = winget("Microsoft.PowerShell")
 
 val brew_tools: List<Package> = [ripgrep, starship]
+
 val all_managers: List<Resource> = [ripgrep, just_bin, pwsh]
+
 val tooling: List<Resource> = brew_tools ++ [just_bin]
 
 reconcile ripgrep
+
 reconcile just_bin -> pwsh
+
 reconcile {
   starship;
   brew_tools;
-  all_managers
+  all_managers;
 }
 
 for p in brew_tools {
@@ -520,5 +586,7 @@ for p in brew_tools {
 reconcile template(
   source = "tmpl.tpl",
   target = "~/.config/keron/state",
-  vars = {"body": "${mode_marker}\nrole=${origin_role}\nlevel=${level_summary}\nplatform=${platform}\nhome=${keron_home}\neditor=${editor}\n"},
+  vars = {
+    "body": "${mode_marker}\nrole=${origin_role}\nlevel=${level_summary}\nplatform=${platform}\nhome=${keron_home}\neditor=${editor}\n",
+  },
 )

@@ -1,5 +1,1 @@
-struct Host {
-  name: String,
-  port: Int,
-  tls: Boolean,
-}
+struct Host { name: String, port: Int, tls: Boolean }
