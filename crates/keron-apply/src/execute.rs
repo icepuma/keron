@@ -1008,7 +1008,7 @@ mod tests {
                     name: "refresh".into(),
                     cwd: d.path.clone(),
                     script: "echo one\necho two\n".into(),
-                sensitive: false,
+                    sensitive: false,
                 }),
             )],
         };
@@ -1046,7 +1046,7 @@ mod tests {
                     name: "fail".into(),
                     cwd: d.path.clone(),
                     script: "exit 7\n".into(),
-                sensitive: false,
+                    sensitive: false,
                 }),
             )],
         };
@@ -1076,7 +1076,7 @@ mod tests {
                     name: "missing".into(),
                     cwd: d.path.clone(),
                     script: "echo ok\n".into(),
-                sensitive: false,
+                    sensitive: false,
                 }),
             )],
         };
@@ -1097,7 +1097,7 @@ mod tests {
                     name: "refresh".into(),
                     cwd: d.path.clone(),
                     script: "echo ok\n".into(),
-                sensitive: false,
+                    sensitive: false,
                 }),
             )],
         };

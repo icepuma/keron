@@ -677,7 +677,7 @@ mod tests {
                 name: "refresh".into(),
                 cwd: PathBuf::from("/tmp"),
                 script: "echo ok".into(),
-            sensitive: false,
+                sensitive: false,
             }),
             requires_elevation: false,
             requires_force: false,

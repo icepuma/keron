@@ -31,8 +31,7 @@ const DIM: &str = "\x1b[2m";
 /// purpose: the flag name itself is the consent that subsequent
 /// verbose-mode output may print secrets to the terminal,
 /// screen-shares, CI logs, etc.
-const VERBOSE_FOOTER_HINT: &str =
-    "Template content and shell scripts are hidden by default. Re-run with --verbose-will-reveal-sensitive-content to see full diffs.";
+const VERBOSE_FOOTER_HINT: &str = "Template content and shell scripts are hidden by default. Re-run with --verbose-will-reveal-sensitive-content to see full diffs.";
 
 /// One-line warning emitted at the top of verbose output. Verbose
 /// mode prints body content verbatim — including the values of
@@ -944,7 +943,8 @@ mod tests {
         // The opt-in flag appears exactly once, as a footer hint —
         // not repeated on every body summary line.
         assert_eq!(
-            out.matches("--verbose-will-reveal-sensitive-content").count(),
+            out.matches("--verbose-will-reveal-sensitive-content")
+                .count(),
             1,
             "expected footer hint to appear once: {out}",
         );
@@ -1675,14 +1675,14 @@ mod tests {
                     name: "refresh".into(),
                     cwd: PathBuf::from("/repo"),
                     script: "echo old\n".into(),
-                sensitive: false,
+                    sensitive: false,
                 }),
                 after: Some(ResourceState::Shell {
                     kind: ShellKind::Bash,
                     name: "reload".into(),
                     cwd: PathBuf::from("/repo/subdir"),
                     script: "echo new\n".into(),
-                sensitive: false,
+                    sensitive: false,
                 }),
                 requires_elevation: false,
                 requires_force: false,
@@ -1721,14 +1721,14 @@ mod tests {
                     name: "refresh".into(),
                     cwd: PathBuf::from("/repo"),
                     script: "echo old\n".into(),
-                sensitive: false,
+                    sensitive: false,
                 }),
                 after: Some(ResourceState::Shell {
                     kind: ShellKind::Sh,
                     name: "refresh".into(),
                     cwd: PathBuf::from("/repo"),
                     script: "echo new\n".into(),
-                sensitive: false,
+                    sensitive: false,
                 }),
                 requires_elevation: false,
                 requires_force: false,
@@ -1753,7 +1753,7 @@ mod tests {
                     name: "refresh".into(),
                     cwd: PathBuf::from("/repo"),
                     script: "echo ok\n".into(),
-                sensitive: false,
+                    sensitive: false,
                 }),
                 requires_elevation: false,
                 requires_force: false,
@@ -1798,7 +1798,7 @@ mod tests {
                     name: "refresh".into(),
                     cwd: PathBuf::from("/repo"),
                     script: "echo ok\n".into(),
-                sensitive: false,
+                    sensitive: false,
                 }),
                 requires_elevation: false,
                 requires_force: false,
@@ -1950,10 +1950,7 @@ mod tests {
         };
         let out = render_verbose(&plan);
         assert!(!out.contains('\x1b'), "ESC leaked: {out:?}");
-        assert!(
-            out.contains("\\u{001b}"),
-            "expected ESC escape: {out:?}",
-        );
+        assert!(out.contains("\\u{001b}"), "expected ESC escape: {out:?}");
     }
 
     #[test]

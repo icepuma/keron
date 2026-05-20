@@ -134,11 +134,7 @@ pub(crate) struct RunFlags {
 /// Returns a [`RunError`] tagged with the failure phase so the CLI
 /// can map each phase to a distinct exit code (see
 /// [`RunError::exit_code`]).
-pub fn run(
-    path: &Path,
-    execute: bool,
-    verbose: bool,
-) -> std::result::Result<Outcome, RunError> {
+pub fn run(path: &Path, execute: bool, verbose: bool) -> std::result::Result<Outcome, RunError> {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let color = stdout.is_terminal();
@@ -215,12 +211,7 @@ where
     // intentionally long `--verbose-will-reveal-sensitive-content`
     // flag) prints the full unified diff. The flag's name carries the
     // consent — the renderer does not redact in verbose mode.
-    diff::render_plan(
-        stdout,
-        &plan,
-        RenderOptions { color, verbose },
-    )
-    .map_err(RunError::Io)?;
+    diff::render_plan(stdout, &plan, RenderOptions { color, verbose }).map_err(RunError::Io)?;
     render_precheck(stdout, &precheck).map_err(RunError::Io)?;
 
     if !execute {
