@@ -104,12 +104,9 @@ pub enum Outcome {
 }
 
 /// Per-run flags bundled into a single argument so callers don't
-/// have to thread four bools through the public and test-only entry
+/// have to thread three bools through the public and test-only entry
 /// points. Grouped semantically — every field is set once at process
-/// boundary and never mutated. The clippy `struct_excessive_bools`
-/// allow is the explicit "this struct exists specifically to group
-/// config bools" scope.
-#[allow(clippy::struct_excessive_bools)]
+/// boundary and never mutated.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct RunFlags {
     /// User passed `--execute`: prompt and apply after planning.
@@ -117,11 +114,11 @@ pub(crate) struct RunFlags {
     /// Stdout is a terminal — paint ANSI escapes into the diff.
     pub color: bool,
     /// User passed `--verbose-will-reveal-sensitive-content`: render
-    /// body fields as full unified diffs from the start.
+    /// body fields as full unified diffs from the start. When false,
+    /// the renderer emits the one-line `N lines added / M lines
+    /// removed` summary and prints a single footer pointing at the
+    /// flag — there is no interactive prompt.
     pub verbose: bool,
-    /// Both stdin and stdout are TTYs — safe to offer the
-    /// verbose-reveal prompt after the safe default has printed.
-    pub interactive: bool,
 }
 
 /// Plan a keron program at `path`. With `execute`, prompt and apply.
@@ -130,9 +127,8 @@ pub(crate) struct RunFlags {
 /// `--verbose-will-reveal-sensitive-content` flag — when true, body
 /// fields (template `content`, shell `script`) render as full
 /// unified diffs from the start. When false, the renderer emits the
-/// one-line `N lines added / M lines removed` summary by default,
-/// and (only on an interactive TTY) prompts the user once whether to
-/// reveal the full content.
+/// one-line `N lines added / M lines removed` summary and adds a
+/// single footer hint pointing at the flag.
 ///
 /// # Errors
 /// Returns a [`RunError`] tagged with the failure phase so the CLI
@@ -146,22 +142,20 @@ pub fn run(
     let stdin = io::stdin();
     let stdout = io::stdout();
     let color = stdout.is_terminal();
-    let interactive = stdin.is_terminal() && stdout.is_terminal();
     let mut sin = stdin.lock();
     let mut sout = stdout.lock();
     let flags = RunFlags {
         execute,
         color,
         verbose,
-        interactive,
     };
     run_with_io(path, &mut sin, &mut sout, flags)
 }
 
 /// Test-friendly entry: same logic as [`run`] but with explicit IO so
-/// tests can drive the prompt path without touching real stdio. The
-/// public `run` wrapper feeds in real `stdin`/`stdout` and detects
-/// terminal-ness for color and the interactive-prompt gate.
+/// tests can drive the apply confirmation prompts without touching
+/// real stdio. The public `run` wrapper feeds in real
+/// `stdin`/`stdout` and detects terminal-ness for color.
 ///
 /// `#[allow(too_many_lines)]` is intentional — this is the apply-pipeline
 /// orchestrator, and the natural read order (load → resolve → plan →
@@ -182,7 +176,6 @@ where
         execute,
         color,
         verbose,
-        interactive,
     } = flags;
     refuse_direct_elevation().map_err(RunError::DirectElevation)?;
 
@@ -229,8 +222,6 @@ where
     )
     .map_err(RunError::Io)?;
     render_precheck(stdout, &precheck).map_err(RunError::Io)?;
-
-    maybe_offer_verbose_reveal(stdin, stdout, &plan, color, verbose, interactive)?;
 
     if !execute {
         return Ok(Outcome::Applied);
@@ -298,44 +289,6 @@ where
         .map_err(RunError::Io)?;
     }
     Ok(Outcome::Applied)
-}
-
-/// After the safe default-mode plan has printed, optionally offer to
-/// re-render the same plan with full body content visible. Only fires
-/// when:
-///   - the operator did NOT pass `--verbose-will-reveal-sensitive-content`,
-///   - the session is fully interactive (both stdin and stdout are TTYs),
-///     and
-///   - the plan actually has body blocks (template `content` / shell
-///     `script`) that would be hidden by the summary form.
-///
-/// The "safe view first" ordering is deliberate: a screen-share viewer
-/// or recorded terminal session never sees full content unless the
-/// operator explicitly opts in here.
-fn maybe_offer_verbose_reveal<R: BufRead, W: Write>(
-    stdin: &mut R,
-    stdout: &mut W,
-    plan: &plan::Plan,
-    color: bool,
-    verbose: bool,
-    interactive: bool,
-) -> std::result::Result<(), RunError> {
-    if verbose || !interactive || !diff::plan_has_body_blocks(plan) {
-        return Ok(());
-    }
-    let reveal = confirm::prompt_verbose_reveal(stdin, stdout).map_err(RunError::Io)?;
-    if reveal {
-        diff::render_plan(
-            stdout,
-            plan,
-            RenderOptions {
-                color,
-                verbose: true,
-            },
-        )
-        .map_err(RunError::Io)?;
-    }
-    Ok(())
 }
 
 fn render_precheck<W: Write>(stdout: &mut W, precheck: &plan::Precheck) -> io::Result<()> {
@@ -477,9 +430,6 @@ mod tests {
     }
 
     /// Drives `run_with_io` and returns (result, captured stdout).
-    /// Tests drive with `interactive=false` so the verbose-reveal
-    /// prompt never fires — existing tests pre-date that prompt and
-    /// would otherwise consume their stdin script.
     fn drive(
         path: &Path,
         execute: bool,
@@ -495,7 +445,6 @@ mod tests {
                 execute,
                 color: false,
                 verbose: false,
-                interactive: false,
             },
         );
         (res, String::from_utf8(sout).unwrap())

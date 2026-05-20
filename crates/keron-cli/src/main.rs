@@ -40,9 +40,9 @@ enum Command {
         /// print sensitive values (private keys, tokens, secrets)
         /// verbatim to stdout. The flag name is deliberately long so
         /// it cannot be confused with a generic `--verbose` — typing
-        /// it is the consent. When omitted on an interactive TTY,
-        /// keron will offer to reveal full content once after
-        /// printing the default-mode summary.
+        /// it is the consent. When omitted, body fields render as a
+        /// `lines added / lines removed` summary and a footer points
+        /// at this flag.
         #[arg(long)]
         verbose_will_reveal_sensitive_content: bool,
     },

@@ -33,33 +33,6 @@ pub fn prompt_force<R: BufRead, W: Write>(
     Ok(line.trim() == "force")
 }
 
-/// Offer to re-render the plan with full content diffs visible.
-///
-/// Only fired on TTY interactive sessions where the user did not pass
-/// `--verbose-will-reveal-sensitive-content` up-front AND the plan
-/// has at least one body field (template `content` / shell `script`)
-/// that would be hidden by the default summary. Accepts `y` / `yes`
-/// case-insensitively; anything else (including EOF and blank Enter)
-/// keeps the safe default. EOF tolerance is deliberate — unlike the
-/// approval prompts where blocking the user matters, this prompt is
-/// purely a *reveal more* opt-in, so the safe default is "no" even
-/// when the stream surprises us.
-pub fn prompt_verbose_reveal<R: BufRead, W: Write>(
-    stdin: &mut R,
-    stdout: &mut W,
-) -> io::Result<bool> {
-    writeln!(stdout)?;
-    write!(
-        stdout,
-        "Show full content diffs? May reveal sensitive values. [y/N]: ",
-    )?;
-    stdout.flush()?;
-    let mut line = String::new();
-    let _ = stdin.read_line(&mut line)?;
-    let trimmed = line.trim().to_ascii_lowercase();
-    Ok(matches!(trimmed.as_str(), "y" | "yes"))
-}
-
 pub fn prompt_precheck_continue<R: BufRead, W: Write>(
     stdin: &mut R,
     stdout: &mut W,

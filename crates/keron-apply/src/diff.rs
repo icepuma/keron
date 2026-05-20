@@ -26,11 +26,13 @@ const RED: &str = "\x1b[31m";
 const CYAN: &str = "\x1b[36m";
 const DIM: &str = "\x1b[2m";
 
-/// Hint shown in the default-mode body summary so the user can find
-/// the opt-in. Kept verbose on purpose: the flag name itself is the
-/// consent that subsequent verbose-mode output may print secrets to
-/// the terminal, screen-shares, CI logs, etc.
-const VERBOSE_HINT: &str = "use --verbose-will-reveal-sensitive-content to see";
+/// Single footer hint printed once at the bottom of a default-mode
+/// plan that has at least one hidden body block. Kept verbose on
+/// purpose: the flag name itself is the consent that subsequent
+/// verbose-mode output may print secrets to the terminal,
+/// screen-shares, CI logs, etc.
+const VERBOSE_FOOTER_HINT: &str =
+    "Template content and shell scripts are hidden by default. Re-run with --verbose-will-reveal-sensitive-content to see full diffs.";
 
 /// One-line warning emitted at the top of verbose output. Verbose
 /// mode prints body content verbatim — including the values of
@@ -123,6 +125,14 @@ pub fn render_plan<W: Write>(out: &mut W, plan: &Plan, opts: RenderOptions) -> i
         write!(out, " ({} force)", s.force)?;
     }
     writeln!(out, ".")?;
+
+    // One footer hint instead of repeating the flag on every hidden
+    // body line. Verbose mode skips this (the user already opted in)
+    // and plans with no body blocks skip it too (nothing to reveal).
+    if !opts.verbose && plan_has_body_blocks(plan) {
+        writeln!(out)?;
+        writeln!(out, "{}", paint(opts.color, DIM, VERBOSE_FOOTER_HINT))?;
+    }
     Ok(())
 }
 
@@ -208,8 +218,9 @@ fn render_body<W: Write>(
 /// (template `content` or shell `script`) in default mode. Used by:
 ///   - the verbose banner emission (no banner if nothing's going to
 ///     reveal anything anyway), and
-///   - the CLI's interactive prompt — there's no point asking "show
-///     full content?" when there's no content to show.
+///   - the footer hint at the bottom of a default-mode plan — no
+///     point pointing at `--verbose-will-reveal-sensitive-content`
+///     when there's no content it would reveal.
 pub fn plan_has_body_blocks(plan: &Plan) -> bool {
     plan.changes.iter().any(|c| {
         if matches!(c.action, Action::NoOp) {
@@ -299,7 +310,7 @@ fn render_body_summary<W: Write>(
         }
         writeln!(
             out,
-            "      {sign} {field}{marker}: {removed} {line_removed} removed, {added} {line_added} added ({VERBOSE_HINT} diff)",
+            "      {sign} {field}{marker}: {removed} {line_removed} removed, {added} {line_added} added",
             line_removed = if removed == 1 { "line" } else { "lines" },
             line_added = if added == 1 { "line" } else { "lines" },
         )?;
@@ -307,7 +318,7 @@ fn render_body_summary<W: Write>(
         let n = count_lines(after);
         writeln!(
             out,
-            "      {sign} {field}{marker}: {n} {word} ({VERBOSE_HINT})",
+            "      {sign} {field}{marker}: {n} {word}",
             word = if n == 1 { "line" } else { "lines" },
         )?;
     }
@@ -930,12 +941,105 @@ mod tests {
             out.contains("+ content: 1 line"),
             "missing content summary: {out}",
         );
+        // The opt-in flag appears exactly once, as a footer hint —
+        // not repeated on every body summary line.
+        assert_eq!(
+            out.matches("--verbose-will-reveal-sensitive-content").count(),
+            1,
+            "expected footer hint to appear once: {out}",
+        );
         assert!(
-            out.contains("--verbose-will-reveal-sensitive-content"),
-            "missing opt-in hint: {out}",
+            out.contains("hidden by default"),
+            "missing footer text: {out}",
         );
         // The literal content must not leak.
         assert!(!out.contains("\"hi\""), "raw content leaked: {out}");
+    }
+
+    #[test]
+    fn verbose_mode_omits_footer_hint() {
+        // No point pointing at the flag the user already typed.
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/etc/x".into(),
+                kind: ResourceKind::Template,
+                action: Action::Create,
+                before: None,
+                after: Some(ResourceState::Template {
+                    path: PathBuf::from("/etc/x"),
+                    content: "hi".into(),
+                    sensitive: false,
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        let out = render_verbose(&plan);
+        assert!(
+            !out.contains("--verbose-will-reveal-sensitive-content"),
+            "footer hint should be suppressed in verbose mode: {out}",
+        );
+        assert!(
+            !out.contains("hidden by default"),
+            "footer text should be suppressed in verbose mode: {out}",
+        );
+    }
+
+    #[test]
+    fn footer_hint_suppressed_when_no_body_blocks() {
+        // A plan that only changes package / symlink resources has no
+        // bodies to reveal, so the footer hint serves no purpose.
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "brew:ripgrep".into(),
+                kind: ResourceKind::Package,
+                action: Action::Create,
+                before: None,
+                after: Some(ResourceState::Package {
+                    manager: PackageManager::Brew,
+                    name: "ripgrep".into(),
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        let out = render(&plan);
+        assert!(
+            !out.contains("--verbose-will-reveal-sensitive-content"),
+            "footer hint should be omitted for body-less plans: {out}",
+        );
+    }
+
+    #[test]
+    fn body_summary_lines_do_not_carry_inline_hint() {
+        // The hint moved to a single footer; per-line repetition was
+        // noisy when several bodies appeared in one plan. Pin it: a
+        // summary line ends right after the line counts.
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/x".into(),
+                kind: ResourceKind::Template,
+                action: Action::Update,
+                before: Some(ResourceState::Template {
+                    path: PathBuf::from("/x"),
+                    content: "old\n".into(),
+                    sensitive: false,
+                }),
+                after: Some(ResourceState::Template {
+                    path: PathBuf::from("/x"),
+                    content: "new\n".into(),
+                    sensitive: false,
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        let out = render(&plan);
+        // The body line ends with the counts — no `(use ...)` suffix.
+        assert!(
+            out.contains("~ content: 1 line removed, 1 line added\n"),
+            "summary should end at the line counts: {out:?}",
+        );
     }
 
     #[test]
@@ -1854,10 +1958,11 @@ mod tests {
 
     #[test]
     fn plan_has_body_blocks_predicate_matches_renderer_output() {
-        // The CLI uses this predicate to gate the interactive
-        // verbose-reveal prompt; it must agree with whether the
-        // renderer actually emits a body summary. Pinning this match
-        // means a future change to one path must also update the
+        // The renderer uses this predicate to gate the footer hint
+        // pointing at `--verbose-will-reveal-sensitive-content`; it
+        // must agree with whether the renderer actually emits a body
+        // summary. Pinning this match means a future change to one
+        // path must also update the
         // other.
         let template_create = Plan {
             changes: vec![ResourceChange {
