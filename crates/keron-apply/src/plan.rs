@@ -404,9 +404,21 @@ pub fn build_prechecked_plan(
     let os = crate::platform::detect_os_family();
     let precheck = precheck_resources(&resources, os);
     let mut cache = PackageCache::new();
-    let changes = resources
+    // Eagerly fan out every probe the upcoming classify pass will
+    // need (brew list / outdated / tap, cargo install --list, …) on
+    // worker threads so the wall time collapses to roughly the slowest
+    // probe. The lazy `ensure_*_loaded` paths still cover any cache
+    // miss that prewarm didn't anticipate (e.g. a `classify_tap` on a
+    // tap that doesn't appear in the filtered resource set), so this
+    // is a pure speedup with no behavior change.
+    let probe_inputs: Vec<_> = resources
         .iter()
         .filter(|state| include_in_plan(state, os))
+        .cloned()
+        .collect();
+    cache.prewarm(&probe_inputs)?;
+    let changes = probe_inputs
+        .iter()
         .map(|state| classify(state, &mut cache))
         .collect::<Result<Vec<_>>>()?;
     Ok(PrecheckedPlan {
