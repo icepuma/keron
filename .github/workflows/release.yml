@@ -12,6 +12,10 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: 1.95.0
+
 jobs:
   create-release:
     runs-on: ubuntu-latest
@@ -24,6 +28,7 @@ jobs:
 
   build:
     needs: create-release
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -31,52 +36,57 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
             slug: linux_amd64
-            use_cross: true
+            build_tool: zigbuild
+            smoke_test: true
           - os: ubuntu-latest
             target: aarch64-unknown-linux-musl
             slug: linux_arm64
-            use_cross: true
+            build_tool: zigbuild
+            smoke_test: false
           - os: macos-14
             target: aarch64-apple-darwin
             slug: darwin_arm64
-            use_cross: false
+            build_tool: cargo
+            smoke_test: true
           - os: macos-14
             target: x86_64-apple-darwin
             slug: darwin_amd64
-            use_cross: false
-    runs-on: ${{ matrix.os }}
+            build_tool: cargo
+            smoke_test: false
     steps:
       - name: Checkout
         uses: actions/checkout@v6.0.2
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Zig
+        if: matrix.build_tool == 'zigbuild'
+        uses: mlugg/setup-zig@v2
         with:
-          targets: ${{ matrix.target }}
+          version: 0.15.2
 
-      - name: Ensure Rust target installed
-        run: rustup target add ${{ matrix.target }}
+      - name: Install cargo-zigbuild
+        if: matrix.build_tool == 'zigbuild'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+
+      - name: Install Rust ${{ env.RUST_TOOLCHAIN }}
+        run: |
+          rustup toolchain install "${RUST_TOOLCHAIN}" --profile minimal
+          rustup override set "${RUST_TOOLCHAIN}"
+          rustup target add "${{ matrix.target }}"
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2.9.1
-
-      - name: Install cross
-        if: matrix.use_cross
-        uses: taiki-e/install-action@v2.79.2
         with:
-          tool: cross
+          shared-key: release-${{ matrix.target }}
 
-      - name: Build release binary
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          archive="keron_${version}_${{ matrix.slug }}.tar.gz"
-          echo "VERSION=${version}" >> "$GITHUB_ENV"
-          echo "ARCHIVE=${archive}" >> "$GITHUB_ENV"
-          if [[ "${{ matrix.use_cross }}" == "true" ]]; then
-            cross build --locked --release -p keron-cli --target ${{ matrix.target }}
-          else
-            cargo build --locked --release -p keron-cli --target ${{ matrix.target }}
-          fi
+      - name: Build release binary with cargo-zigbuild
+        if: matrix.build_tool == 'zigbuild'
+        run: cargo zigbuild --locked --release -p keron-cli --target ${{ matrix.target }}
+
+      - name: Build release binary with cargo
+        if: matrix.build_tool == 'cargo'
+        run: cargo build --locked --release -p keron-cli --target ${{ matrix.target }}
 
       # Ad-hoc sign the macOS Mach-O so syspolicyd/AMFI gets a stable
       # code-directory hash on first run. Without this, an unsigned
@@ -88,14 +98,22 @@ jobs:
         if: runner.os == 'macOS'
         run: codesign --force --sign - "target/${{ matrix.target }}/release/keron"
 
+      - name: Smoke test binary
+        if: matrix.smoke_test
+        run: ./target/${{ matrix.target }}/release/keron --version
+
       - name: Package binary and checksum
         run: |
+          version="${GITHUB_REF_NAME#v}"
+          archive="keron_${version}_${{ matrix.slug }}.tar.gz"
+          echo "VERSION=${version}" >> "$GITHUB_ENV"
+          echo "ARCHIVE=${archive}" >> "$GITHUB_ENV"
           mkdir -p dist
           cp "target/${{ matrix.target }}/release/keron" "dist/keron"
           (
             cd dist
-            tar -czf "${ARCHIVE}" keron
-            shasum -a 256 "${ARCHIVE}" > "${ARCHIVE}.sha256"
+            tar -czf "${archive}" keron
+            shasum -a 256 "${archive}" > "${archive}.sha256"
           )
           rm dist/keron
 
