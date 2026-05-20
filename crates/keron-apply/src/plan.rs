@@ -222,6 +222,10 @@ pub struct PlanSummary {
     pub add: usize,
     pub change: usize,
     pub run: usize,
+    /// Declared resources that already match the live state. Surfaced
+    /// in the diff footer as `N unchanged` so the user can see what the
+    /// manifest manages even when nothing needs to be applied.
+    pub unchanged: usize,
     /// How many of the above are flagged as requiring elevated rights.
     /// Sub-total of `add + change`, surfaced in the diff
     /// summary as `(N elevated)`.
@@ -237,7 +241,10 @@ impl Plan {
                 Action::Create => s.add += 1,
                 Action::Update => s.change += 1,
                 Action::Run => s.run += 1,
-                Action::NoOp => continue,
+                Action::NoOp => {
+                    s.unchanged += 1;
+                    continue;
+                }
             }
             if c.requires_elevation {
                 s.elevated += 1;

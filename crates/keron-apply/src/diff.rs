@@ -23,28 +23,27 @@ pub struct RenderOptions {
 }
 
 pub fn render_plan<W: Write>(out: &mut W, plan: &Plan, opts: RenderOptions) -> io::Result<()> {
-    if plan.is_empty() {
-        writeln!(
-            out,
-            "No changes. Your infrastructure matches the configuration."
-        )?;
-        return Ok(());
-    }
-
-    let has_unprivileged = plan
-        .changes
-        .iter()
-        .any(|c| !matches!(c.action, Action::NoOp) && !c.requires_elevation);
-    let has_elevated = plan
-        .changes
-        .iter()
-        .any(|c| !matches!(c.action, Action::NoOp) && c.requires_elevation);
+    // NoOps always render in the unprivileged group regardless of
+    // their `requires_elevation` flag, matching the convention in
+    // `Plan::partition_by_elevation` (no-op changes never reach the
+    // elevated child process).
+    let is_elevated =
+        |c: &ResourceChange| c.requires_elevation && !matches!(c.action, Action::NoOp);
+    let is_noop = |c: &ResourceChange| matches!(c.action, Action::NoOp);
+    let has_unprivileged = plan.changes.iter().any(|c| !is_elevated(c));
+    let has_unprivileged_actions = plan.changes.iter().any(|c| !is_elevated(c) && !is_noop(c));
+    let has_elevated = plan.changes.iter().any(is_elevated);
 
     if has_unprivileged {
-        writeln!(out, "keron will perform the following actions:")?;
-        writeln!(out)?;
+        // Suppress the "will perform" header when the unprivileged
+        // group is all NoOps — nothing is actually being performed,
+        // just listed.
+        if has_unprivileged_actions {
+            writeln!(out, "keron will perform the following actions:")?;
+            writeln!(out)?;
+        }
         for change in &plan.changes {
-            if matches!(change.action, Action::NoOp) || change.requires_elevation {
+            if is_elevated(change) {
                 continue;
             }
             render_change(out, change, opts)?;
@@ -55,7 +54,7 @@ pub fn render_plan<W: Write>(out: &mut W, plan: &Plan, opts: RenderOptions) -> i
         writeln!(out, "The following changes require elevated rights:")?;
         writeln!(out)?;
         for change in &plan.changes {
-            if matches!(change.action, Action::NoOp) || !change.requires_elevation {
+            if !is_elevated(change) {
                 continue;
             }
             render_change(out, change, opts)?;
@@ -63,11 +62,27 @@ pub fn render_plan<W: Write>(out: &mut W, plan: &Plan, opts: RenderOptions) -> i
     }
 
     let s = plan.summary();
+    if plan.is_empty() {
+        if s.unchanged > 0 {
+            let (noun, verb) = if s.unchanged == 1 {
+                ("resource", "is")
+            } else {
+                ("resources", "are")
+            };
+            writeln!(out, "No changes. {} {noun} {verb} up to date.", s.unchanged)?;
+        } else {
+            writeln!(out, "No changes.")?;
+        }
+        return Ok(());
+    }
     write!(
         out,
         "Plan: {} to add, {} to change, {} to run",
         s.add, s.change, s.run
     )?;
+    if s.unchanged > 0 {
+        write!(out, ", {} unchanged", s.unchanged)?;
+    }
     if s.elevated > 0 {
         write!(out, " ({} elevated)", s.elevated)?;
     }
@@ -87,7 +102,7 @@ fn render_change<W: Write>(
         Action::Create => "will be created",
         Action::Update => "will be updated in-place",
         Action::Run => "will run",
-        Action::NoOp => return Ok(()),
+        Action::NoOp => "is up to date",
     };
     let symbol = action_symbol(change.action);
     let color = action_color(change.action);
@@ -105,6 +120,16 @@ fn render_change<W: Write>(
         kind = change.kind.label(),
         addr = show_str(&change.address),
     )?;
+
+    // NoOps render as a single header line: the action verb already
+    // conveys "no change" and a full empty `{}` block per resource
+    // makes a long unchanged roster (e.g. 50 already-installed brews)
+    // unreadable.
+    if matches!(change.action, Action::NoOp) {
+        writeln!(out)?;
+        return Ok(());
+    }
+
     writeln!(
         out,
         "  {sym} resource \"{kind}\" \"{addr}\" {{",
@@ -511,9 +536,120 @@ mod tests {
     }
 
     #[test]
-    fn empty_plan_message() {
+    fn truly_empty_plan_prints_bare_no_changes() {
         let out = render(&Plan::default());
-        assert!(out.contains("No changes"), "got: {out}");
+        assert!(out.contains("No changes."), "got: {out}");
+        assert!(
+            !out.contains("up to date"),
+            "no resources means no roster line: {out}"
+        );
+    }
+
+    #[test]
+    fn all_noop_plan_lists_each_resource_and_counts_them() {
+        let plan = Plan {
+            changes: vec![
+                ResourceChange {
+                    address: "brew:git".into(),
+                    kind: ResourceKind::Package,
+                    action: Action::NoOp,
+                    before: Some(ResourceState::Package {
+                        manager: PackageManager::Brew,
+                        name: "git".into(),
+                    }),
+                    after: Some(ResourceState::Package {
+                        manager: PackageManager::Brew,
+                        name: "git".into(),
+                    }),
+                    requires_elevation: false,
+                    requires_force: false,
+                },
+                ResourceChange {
+                    address: "brew:fd".into(),
+                    kind: ResourceKind::Package,
+                    action: Action::NoOp,
+                    before: Some(ResourceState::Package {
+                        manager: PackageManager::Brew,
+                        name: "fd".into(),
+                    }),
+                    after: Some(ResourceState::Package {
+                        manager: PackageManager::Brew,
+                        name: "fd".into(),
+                    }),
+                    requires_elevation: false,
+                    requires_force: false,
+                },
+            ],
+        };
+        let out = render(&plan);
+        assert!(
+            out.contains("package.\"brew:git\" is up to date"),
+            "missing git header: {out}"
+        );
+        assert!(
+            out.contains("package.\"brew:fd\" is up to date"),
+            "missing fd header: {out}"
+        );
+        assert!(
+            out.contains("No changes. 2 resources are up to date."),
+            "missing footer: {out}"
+        );
+        assert!(
+            !out.contains("resource \"package\""),
+            "NoOps should not render a body block: {out}"
+        );
+    }
+
+    #[test]
+    fn single_noop_uses_singular_resource_noun() {
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "brew:git".into(),
+                kind: ResourceKind::Package,
+                action: Action::NoOp,
+                before: None,
+                after: Some(ResourceState::Package {
+                    manager: PackageManager::Brew,
+                    name: "git".into(),
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        let out = render(&plan);
+        assert!(
+            out.contains("No changes. 1 resource is up to date."),
+            "got: {out}"
+        );
+    }
+
+    #[test]
+    fn mixed_plan_renders_noops_inline_and_appends_unchanged_count() {
+        let mut plan = Plan::sample();
+        plan.changes.push(ResourceChange {
+            address: "brew:git".into(),
+            kind: ResourceKind::Package,
+            action: Action::NoOp,
+            before: Some(ResourceState::Package {
+                manager: PackageManager::Brew,
+                name: "git".into(),
+            }),
+            after: Some(ResourceState::Package {
+                manager: PackageManager::Brew,
+                name: "git".into(),
+            }),
+            requires_elevation: false,
+            requires_force: false,
+        });
+        let out = render(&plan);
+        assert!(
+            out.contains("package.\"brew:git\" is up to date"),
+            "missing noop header: {out}"
+        );
+        assert!(
+            out.contains("Plan: 1 to add, 1 to change, 0 to run, 1 unchanged."),
+            "missing footer with unchanged count: {out}"
+        );
     }
 
     #[test]
