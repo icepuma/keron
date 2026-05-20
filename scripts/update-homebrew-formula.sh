@@ -98,7 +98,7 @@ class Keron < Formula
   desc "User-level dotfile and package manager"
   homepage "https://github.com/icepuma/keron"
   version "${version}"
-  license "MIT OR Apache-2.0"
+  license "MIT"
 
   on_macos do
     on_arm do
