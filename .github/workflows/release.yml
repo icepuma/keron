@@ -67,6 +67,15 @@ jobs:
           rustup override set "${RUST_TOOLCHAIN}"
           rustup target add "${{ matrix.target }}"
 
+      # Per-target cache so the linux musl / macOS arm / macOS intel
+      # builds don't churn the same key. `shared-key` (not `key`) lets
+      # the action layer the lockfile / rustc-version hashes on top so
+      # a lockfile change still invalidates correctly.
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2.9.1
+        with:
+          shared-key: release-${{ matrix.target }}
+
       - name: Build release binary with cargo-zigbuild
         if: matrix.build_tool == 'zigbuild'
         run: cargo zigbuild --locked --release -p keron-cli --target "${{ matrix.target }}"
