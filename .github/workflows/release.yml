@@ -144,7 +144,7 @@ jobs:
           sha256sum *.tar.gz > SHA256SUMS
 
       - name: Create or update GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           fail_on_unmatched_files: true
           files: |
