@@ -33,13 +33,17 @@ use super::string_lit::render_cooked_inner;
 const INDENT_UNIT: &str = "  ";
 const LINE_BUDGET: usize = 100;
 
-pub fn format_program(program: &Program, comments: &CommentMap) -> String {
-    let mut e = Emitter::new(comments);
+pub fn format_program(src: &str, program: &Program, comments: &CommentMap) -> String {
+    let mut e = Emitter::new(src, comments);
     e.emit_program(program);
     e.finish()
 }
 
 struct Emitter<'src> {
+    /// Original source. Consulted by the newline-preservation helpers
+    /// so emit decisions honor the user's blank lines and multi-line
+    /// collection layouts.
+    src: &'src str,
     comments: &'src CommentMap,
     out: String,
     indent: usize,
@@ -48,12 +52,80 @@ struct Emitter<'src> {
 }
 
 impl<'src> Emitter<'src> {
-    const fn new(comments: &'src CommentMap) -> Self {
+    const fn new(src: &'src str, comments: &'src CommentMap) -> Self {
         Self {
+            src,
             comments,
             out: String::new(),
             indent: 0,
             next_comment: 0,
+        }
+    }
+
+    /// True when the user wrote ≥ 1 blank line immediately before
+    /// `next_start`. Walks backwards through whitespace only, so the
+    /// parser's habit of stretching item spans to cover trailing pad
+    /// can't confuse the check (we measure from the *content* side).
+    fn source_has_blank_line_before(&self, next_start: usize) -> bool {
+        let bytes = self.src.as_bytes();
+        let cap = next_start.min(bytes.len());
+        let mut newlines = 0usize;
+        for i in (0..cap).rev() {
+            let b = bytes[i];
+            if b == b'\n' {
+                newlines += 1;
+                if newlines >= 2 {
+                    return true;
+                }
+            } else if !b.is_ascii_whitespace() {
+                return false;
+            }
+        }
+        false
+    }
+
+    /// True when the user wrote the collection across multiple source
+    /// lines. Uses element-start positions only: the wrapping `Spanned<Expr>`
+    /// span often runs past the closing delimiter into the next item's
+    /// trailing pad (even into following comments), so it can't bound a
+    /// reliable "interior" slice. Element starts are tight.
+    ///
+    /// Detects a line break in the whitespace before the first element,
+    /// or between any two consecutive element starts. A `\n` only *after*
+    /// the last element (`[a, b\n]`) is not considered multi-line —
+    /// preserving that exact form is not a goal.
+    fn elements_are_multiline(&self, starts: &[usize]) -> bool {
+        let Some(&first) = starts.first() else {
+            return false;
+        };
+        let bytes = self.src.as_bytes();
+        for i in (0..first.min(bytes.len())).rev() {
+            let b = bytes[i];
+            if b == b'\n' {
+                return true;
+            }
+            if !b.is_ascii_whitespace() {
+                break;
+            }
+        }
+        for pair in starts.windows(2) {
+            let (a, b) = (pair[0], pair[1]);
+            if a < b && b <= self.src.len() && self.src[a..b].contains('\n') {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Position of the first leading comment attached to `target`, so
+    /// the blank-line check in `emit_program` measures from the comment
+    /// start (keeping a doc comment visually attached to its item).
+    fn first_leading_comment_start(&self, target: &Span) -> Option<usize> {
+        let (c, attach) = self.comments.comments.get(self.next_comment)?;
+        if matches!(attach, CommentAttachment::Leading(span) if span == target) {
+            Some(c.span.start)
+        } else {
+            None
         }
     }
 
@@ -147,10 +219,12 @@ impl<'src> Emitter<'src> {
         for item in &program.items {
             let span = item.span();
             if !first {
-                // Blank line separator between top-level items, placed
-                // *before* any leading comments so the comment block
-                // sits visually attached to the item it documents.
-                self.newline();
+                let next_start = self
+                    .first_leading_comment_start(&span)
+                    .unwrap_or(span.start);
+                if self.source_has_blank_line_before(next_start) {
+                    self.newline();
+                }
             }
             first = false;
             self.emit_leading_comments_for(&span);
@@ -438,7 +512,9 @@ impl<'src> Emitter<'src> {
             return;
         }
         let inline = render_call_args_inline(args);
-        if self.column() + inline.len() < LINE_BUDGET {
+        let starts: Vec<usize> = args.iter().map(|a| a.span.start).collect();
+        let force_block = self.elements_are_multiline(&starts);
+        if !force_block && self.column() + inline.len() < LINE_BUDGET {
             self.write(&inline);
             self.write(")");
             return;
@@ -472,7 +548,9 @@ impl<'src> Emitter<'src> {
             return;
         }
         let inline = render_list_inline(items);
-        if self.column() + inline.len() <= LINE_BUDGET {
+        let starts: Vec<usize> = items.iter().map(|i| i.span.start).collect();
+        let force_block = self.elements_are_multiline(&starts);
+        if !force_block && self.column() + inline.len() <= LINE_BUDGET {
             self.write(&inline);
             return;
         }
@@ -496,7 +574,9 @@ impl<'src> Emitter<'src> {
             return;
         }
         let inline = render_map_inline(entries);
-        if self.column() + inline.len() <= LINE_BUDGET {
+        let starts: Vec<usize> = entries.iter().map(|e| e.key.span.start).collect();
+        let force_block = self.elements_are_multiline(&starts);
+        if !force_block && self.column() + inline.len() <= LINE_BUDGET {
             self.write(&inline);
             return;
         }
@@ -553,7 +633,7 @@ impl<'src> Emitter<'src> {
         for arm in arms {
             self.newline();
             self.write_indent();
-            self.emit_pattern(&arm.pattern.node);
+            self.emit_pattern(&arm.pattern);
             if let Some(g) = &arm.guard {
                 self.write(" if ");
                 self.emit_expr(g);
@@ -568,8 +648,8 @@ impl<'src> Emitter<'src> {
         self.write("}");
     }
 
-    fn emit_pattern(&mut self, pattern: &Pattern) {
-        match pattern {
+    fn emit_pattern(&mut self, pattern: &Spanned<Pattern>) {
+        match &pattern.node {
             Pattern::Lit(lit) => self.write(&render_literal(lit)),
             Pattern::Wildcard => self.write("_"),
             Pattern::Bind(name) => self.write(name),
@@ -581,7 +661,9 @@ impl<'src> Emitter<'src> {
                     return;
                 }
                 let inline = render_struct_pattern_fields_inline(fields);
-                if self.column() + 1 + inline.len() + 2 <= LINE_BUDGET {
+                let starts: Vec<usize> = fields.iter().map(|f| f.name.span.start).collect();
+                let force_block = self.elements_are_multiline(&starts);
+                if !force_block && self.column() + 1 + inline.len() + 2 <= LINE_BUDGET {
                     self.write(" ");
                     self.write(&inline);
                     self.write(" }");
@@ -608,7 +690,7 @@ impl<'src> Emitter<'src> {
         self.write(&f.name.node);
         if let Some(inner) = &f.pattern {
             self.write(": ");
-            self.emit_pattern(&inner.node);
+            self.emit_pattern(inner);
         }
     }
 
@@ -638,12 +720,21 @@ impl<'src> Emitter<'src> {
         }
         self.write("{");
         self.indent += 1;
+        let mut first_inner = true;
         for stmt in &block.stmts {
+            let span = stmt_span(stmt);
+            if !first_inner && self.source_has_blank_line_before(span.start) {
+                self.newline();
+            }
+            first_inner = false;
             self.newline();
             self.write_indent();
             self.emit_stmt(stmt);
         }
         if let Some(trailing) = &block.trailing {
+            if !first_inner && self.source_has_blank_line_before(trailing.span.start) {
+                self.newline();
+            }
             self.newline();
             self.write_indent();
             self.emit_expr(trailing);
@@ -659,6 +750,13 @@ impl<'src> Emitter<'src> {
             Stmt::Val(v) => self.emit_val(v),
             Stmt::Reconcile(r) => self.emit_reconcile(r),
         }
+    }
+}
+
+fn stmt_span(stmt: &Stmt) -> Span {
+    match stmt {
+        Stmt::Val(v) => v.span.clone(),
+        Stmt::Reconcile(r) => r.span.clone(),
     }
 }
 
