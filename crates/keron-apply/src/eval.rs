@@ -161,6 +161,20 @@ struct GraphTop<'p> {
     /// recursion at [`MAX_CALL_DEPTH`] so `fn loop(): Int { loop() }`
     /// surfaces as a bailed error instead of blowing the Rust stack.
     call_depth: RefCell<usize>,
+    /// Tier-1 probe used by `ensure_session_active` to gate `secret()`
+    /// resolution. Borrowed for the lifetime of the eval run so the
+    /// plan-time prereq pass and eval-time session checks share one
+    /// probe — a test that mocks the plan-time gate also mocks the
+    /// secret-resolution gate.
+    prereq_probe: &'p dyn crate::capability::PrereqProbe,
+    /// Per-eval cache of session-state probes. Scoped to one
+    /// `eval_graph_with_prereq_probe` call so a second run (LSP,
+    /// daemon, integration test) can't reuse a stale "Active" verdict
+    /// from a prior run where the user signed out between invocations.
+    /// `RefCell` because eval is single-threaded but threads through
+    /// many `&Env` borrows.
+    session_cache:
+        RefCell<HashMap<crate::capability::SessionKind, crate::capability::SessionState>>,
 }
 
 /// Hard cap on synchronous user-fn call depth. Generous enough to
@@ -275,11 +289,34 @@ impl<'a, 'p> Env<'a, 'p> {
     }
 }
 
-pub fn eval_graph(graph: &ModuleGraph, keron_root: &Path) -> Result<Vec<ResourceState>> {
+/// Convenience entry that wires the production [`LiveEnvProbe`] into
+/// [`eval_graph_with_prereq_probe`]. Test-only because the crate's
+/// production path (`plan::build_prechecked_plan_with_prereq_probe`)
+/// goes straight to the `_with_prereq_probe` variant so the same
+/// probe gates plan-time validation *and* secret resolution. Kept
+/// non-public so the trimmed test surface doesn't grow a parallel
+/// public entry point.
+#[cfg(test)]
+fn eval_graph(graph: &ModuleGraph, keron_root: &Path) -> Result<Vec<ResourceState>> {
+    eval_graph_with_prereq_probe(graph, keron_root, &crate::capability::LiveEnvProbe)
+}
+
+/// Variant of [`eval_graph`] that takes a caller-supplied
+/// [`crate::capability::PrereqProbe`]. Production calls this directly
+/// from `plan::build_prechecked_plan_with_prereq_probe`; tests pass a
+/// mock so secret-resolution session checks fire against the same
+/// fake probe the plan-time prereq pass uses.
+pub fn eval_graph_with_prereq_probe(
+    graph: &ModuleGraph,
+    keron_root: &Path,
+    prereq_probe: &dyn crate::capability::PrereqProbe,
+) -> Result<Vec<ResourceState>> {
     let mut graph_top = GraphTop {
         modules: HashMap::new(),
         keron_root: keron_root.to_path_buf(),
         call_depth: RefCell::new(0),
+        prereq_probe,
+        session_cache: RefCell::new(HashMap::new()),
     };
     for (id, module) in &graph.modules {
         let mut top = ModuleTop {
@@ -1066,7 +1103,7 @@ fn dispatch_intrinsic(id: IntrinsicId, args: &[CallArg], env: &Env<'_, '_>) -> R
         IntrinsicId::Secret => {
             let uri = call_string(args, env, "uri", 0)?;
             let value =
-                resolve_secret(&uri).with_context(|| format!("resolving secret `{uri}`"))?;
+                resolve_secret(&uri, env).with_context(|| format!("resolving secret `{uri}`"))?;
             Ok(Value::Secret(value))
         }
         IntrinsicId::UnwrapSecret => {
@@ -1770,7 +1807,7 @@ fn build_tap_spec(
 ///
 /// The supported-schemes list is the canonical reference; adding a
 /// new provider means one new arm and one CLI wrapper below.
-fn resolve_secret(uri: &str) -> Result<String> {
+fn resolve_secret(uri: &str, env: &Env<'_, '_>) -> Result<String> {
     // Test seam: a per-URI override short-circuits all real CLI
     // shell-outs. Keyed on the full URI so a single registry covers
     // every scheme uniformly. Production builds skip this entirely.
@@ -1780,6 +1817,13 @@ fn resolve_secret(uri: &str) -> Result<String> {
     }
 
     if uri.starts_with("op://") {
+        // Tier-1 prereq: a logged-in 1Password CLI session must exist
+        // before any `op read` shell-out fires. Without this gate the
+        // user would see a raw `op` error mid-eval; with it they get
+        // the structured "1Password CLI session not active → sign in:
+        // op signin" diagnostic — or, if the CLI itself is missing,
+        // the install-URL diagnostic.
+        ensure_session_active(env, crate::capability::SessionKind::OnePassword)?;
         return real_resolve_op(uri);
     }
     if let Some(rest) = uri.strip_prefix("infisical://") {
@@ -1791,9 +1835,48 @@ fn resolve_secret(uri: &str) -> Result<String> {
     bail!("unsupported secret URI scheme in `{uri}`; supported schemes: op://, infisical://, bw://")
 }
 
+/// Probe a password-manager session lazily on first `secret()` that
+/// needs it, cache the result on `GraphTop` for the rest of this eval,
+/// and surface the right tier-1 prereq diagnostic on failure
+/// (`SecretCli` if the binary is missing, `SecretSession` if it's
+/// present but signed out). Cache scope is the eval run, not the
+/// thread — so a second invocation in the same process (LSP, daemon,
+/// integration test) re-probes from scratch.
+fn ensure_session_active(env: &Env<'_, '_>, kind: crate::capability::SessionKind) -> Result<()> {
+    // Split the read and the fallback into separate statements so the
+    // immutable `Ref` is dropped before the closure's `borrow_mut()`
+    // — otherwise both borrows are alive at once and the RefCell
+    // panics. (The naive `.unwrap_or_else(...)` chain holds the read
+    // borrow across the closure body.)
+    let cached = env.graph.session_cache.borrow().get(&kind).copied();
+    let state = cached.unwrap_or_else(|| {
+        let probed = env.graph.prereq_probe.session_state(kind);
+        env.graph.session_cache.borrow_mut().insert(kind, probed);
+        probed
+    });
+    match state {
+        crate::capability::SessionState::Active => Ok(()),
+        crate::capability::SessionState::NoSession => Err(anyhow::Error::msg(
+            crate::capability::prereq_report(crate::capability::Prerequisite::SecretSession(kind))
+                .to_string(),
+        )),
+        crate::capability::SessionState::NotInstalled => Err(anyhow::Error::msg(
+            crate::capability::prereq_report(crate::capability::Prerequisite::SecretCli(kind))
+                .to_string(),
+        )),
+    }
+}
+
 /// Shell out to the 1Password CLI for `op://Vault/Item/field` URIs.
 /// `op read` accepts the URI verbatim; stdout is the secret value
 /// with one trailing newline stripped (matching how the CLI prints).
+/// `stdin` is pinned to `/dev/null` so any interactive prompt
+/// (biometric, expired session) fails on EOF rather than stealing the
+/// parent terminal — defence-in-depth against the case where the
+/// session-state probe in `capability::probe_session_state` somehow
+/// reported `Active` when it isn't (e.g. a session that expired
+/// between probe and read).
+///
 /// The function itself is `#[mutants::skip]` because the
 /// `Command::new("op")` invocation can't be exercised in tests
 /// without the CLI on `$PATH`; the testable logic — status / stdout
@@ -1803,6 +1886,7 @@ fn real_resolve_op(uri: &str) -> Result<String> {
     let output = std::process::Command::new("op")
         .arg("read")
         .arg(uri)
+        .stdin(std::process::Stdio::null())
         .output()
         .with_context(|| format!("invoking `op` for `{uri}` (is the 1Password CLI installed?)"))?;
     decode_op_output(uri, output)
@@ -3887,6 +3971,159 @@ reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
             msg.contains("auth required"),
             "error should include the simulated failure: {msg}",
         );
+    }
+
+    /// Minimal `PrereqProbe` for eval-side tests: pretends every
+    /// package manager is available (eval tests don't reach the
+    /// plan-time prereq pass) and returns whatever `SessionState`
+    /// the test configured for each kind.
+    struct StubPrereqProbe {
+        sessions: HashMap<crate::capability::SessionKind, crate::capability::SessionState>,
+    }
+
+    impl StubPrereqProbe {
+        fn new() -> Self {
+            Self {
+                sessions: HashMap::new(),
+            }
+        }
+        fn with(
+            mut self,
+            kind: crate::capability::SessionKind,
+            state: crate::capability::SessionState,
+        ) -> Self {
+            self.sessions.insert(kind, state);
+            self
+        }
+    }
+
+    impl crate::capability::PrereqProbe for StubPrereqProbe {
+        fn package_manager_available(&self, _pm: PackageManager) -> bool {
+            true
+        }
+        fn session_state(
+            &self,
+            kind: crate::capability::SessionKind,
+        ) -> crate::capability::SessionState {
+            self.sessions
+                .get(&kind)
+                .copied()
+                .unwrap_or(crate::capability::SessionState::NotInstalled)
+        }
+    }
+
+    /// Eval the manifest at `src` with a caller-supplied prereq probe.
+    /// Mirror of `run_with_templates`'s graph-build dance but using
+    /// `eval_graph_with_prereq_probe` so the test can mock session
+    /// state without touching the host `op` binary.
+    fn eval_with_probe(
+        src: &str,
+        templates: &[(&str, &str)],
+        probe: &dyn crate::capability::PrereqProbe,
+    ) -> Result<Vec<ResourceState>> {
+        let proj = TempProject::new("secret-session-probe");
+        for (name, body) in templates {
+            proj.seed_template(name, body);
+        }
+        let entry = proj.entry(src);
+        let canonical = fs::canonicalize(&entry).unwrap();
+        let base_dir = canonical.parent().unwrap().to_path_buf();
+        let keron_root = base_dir.clone();
+        let graph = resolve(vec![EntrySource {
+            text: src.to_string(),
+            base_dir,
+            id: keron_modules::ModuleId(canonical),
+        }])
+        .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
+        eval_graph_with_prereq_probe(&graph, &keron_root, probe)
+    }
+
+    #[test]
+    fn secret_op_session_inactive_surfaces_signin_diagnostic() {
+        // No SecretOverride is installed — that's deliberate. The
+        // dispatcher must fall past the test seam, hit
+        // `ensure_session_active`, and fail with the tier-1 prereq
+        // diagnostic *before* `real_resolve_op` shells out.
+        let uri = unique_op_uri("session-inactive");
+        let src = format!(
+            "val token: Secret = secret(\"{uri}\")\n\
+             reconcile template(source = \"tmpl.tpl\", target = unwrap_secret(token), vars = {{\"body\": \"\"}})\n",
+        );
+        let probe = StubPrereqProbe::new().with(
+            crate::capability::SessionKind::OnePassword,
+            crate::capability::SessionState::NoSession,
+        );
+        let err = eval_with_probe(&src, &[], &probe)
+            .expect_err("inactive 1Password session must surface as a prereq error");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("1Password CLI session not active"),
+            "diagnostic should name the session prereq: {msg}"
+        );
+        assert!(
+            msg.contains("op signin"),
+            "diagnostic should surface the signin command: {msg}"
+        );
+        assert!(
+            !msg.contains("→ install:"),
+            "NoSession diagnostic should NOT include install URL — the CLI is present: {msg}"
+        );
+    }
+
+    #[test]
+    fn secret_op_cli_missing_surfaces_install_diagnostic() {
+        // Distinct from the session-inactive path: the CLI binary
+        // itself is missing, so the diagnostic must surface the
+        // install URL and omit the signin command (there's nothing
+        // to sign into yet).
+        let uri = unique_op_uri("cli-missing");
+        let src = format!(
+            "val token: Secret = secret(\"{uri}\")\n\
+             reconcile template(source = \"tmpl.tpl\", target = unwrap_secret(token), vars = {{\"body\": \"\"}})\n",
+        );
+        let probe = StubPrereqProbe::new().with(
+            crate::capability::SessionKind::OnePassword,
+            crate::capability::SessionState::NotInstalled,
+        );
+        let err = eval_with_probe(&src, &[], &probe)
+            .expect_err("missing 1Password CLI must surface as a prereq error");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("1Password CLI is not installed"),
+            "diagnostic should name the missing CLI: {msg}"
+        );
+        assert!(
+            msg.contains("https://developer.1password.com/docs/cli/get-started/"),
+            "NotInstalled diagnostic must include the install URL: {msg}"
+        );
+        assert!(
+            !msg.contains("op signin"),
+            "NotInstalled diagnostic must NOT prompt for signin — there's no CLI to sign into: {msg}"
+        );
+    }
+
+    #[test]
+    fn secret_op_session_active_falls_through_to_resolver() {
+        // With the session marked active, dispatch reaches the real
+        // resolver — but the SecretOverride short-circuits before
+        // `op read` would actually run, so we can prove the gate
+        // *opens* without depending on a host `op` binary.
+        let uri = unique_op_uri("session-active");
+        let _override = secret_test::SecretOverride::ok(&uri, "resolved-value");
+        let probe = StubPrereqProbe::new().with(
+            crate::capability::SessionKind::OnePassword,
+            crate::capability::SessionState::Active,
+        );
+        let src = format!(
+            "val token: Secret = secret(\"{uri}\")\n\
+             reconcile template(source = \"secret.tpl\", target = \"/secret\", vars = {{\"body\": unwrap_secret(token)}})\n",
+        );
+        let states = eval_with_probe(&src, &[("secret.tpl", "{{ body }}")], &probe)
+            .expect("active session should let resolution proceed");
+        let ResourceState::Template { content, .. } = &states[0] else {
+            panic!("expected template, got {:?}", states[0]);
+        };
+        assert_eq!(content, "resolved-value");
     }
 
     #[test]

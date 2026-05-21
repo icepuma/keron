@@ -22,11 +22,26 @@
 //!      missing providers. Tap synthesis at `plan.rs:457` remains the
 //!      one mechanism that does that, and predates this module.
 
+use std::collections::HashSet;
+use std::fmt::{self, Display, Formatter};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
 
 use crate::plan::{PackageManager, Plan, ResourceChange, ResourceState};
+
+/// Wall-clock budget for a single password-manager session probe.
+/// Tight enough that a stuck CLI doesn't keep `keron apply` hanging
+/// indefinitely; loose enough to absorb a cold-start of the upstream
+/// helper daemon. See [`probe_op_session`].
+const SESSION_PROBE_BUDGET: Duration = Duration::from_secs(5);
+
+/// Granularity of the `try_wait` poll loop inside the session probe.
+/// At 50 ms a 5 s budget visits the kernel ~100 times — invisible cost
+/// relative to a CLI process spawn, and tight enough that an
+/// already-finished `op` doesn't sit waiting another full tick.
+const SESSION_PROBE_POLL: Duration = Duration::from_millis(50);
 
 /// A typed contract a resource can either `need` from some earlier
 /// provider (or the live environment) or `provide` to later requirers.
@@ -95,6 +110,406 @@ impl Capability {
                 p.display(),
             ),
         }
+    }
+}
+
+/// A system-wide gate that must hold before `apply` can do useful
+/// work. Distinct from [`Capability`]: a prerequisite failure means
+/// the manifest can't be applied *at all* (no brew → no brew-managed
+/// reconcile can run); a `Capability` failure is a per-reconcile gap.
+/// Diagnostics render the two tiers in separate sections so the
+/// operator can tell "fix this first" from "this resource needs X."
+///
+/// `SecretCli` and `SecretSession` are deliberately distinct variants:
+/// "the CLI isn't installed" wants an install link; "the CLI is here
+/// but you're signed out" wants the signin command. Collapsing both
+/// into a single variant — as the v1 of this code did — printed an
+/// install URL to users who already had the CLI and a signin command
+/// to users who didn't have anything to sign into.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Prerequisite {
+    /// The package manager's CLI binary must be on `$PATH`. Brew gates
+    /// every brew package and tap; Cargo gates every cargo install;
+    /// Winget gates every winget install. Implied by any
+    /// `ResourceState::Package` (and by `ResourceState::Tap`, which is
+    /// always brew). `BrewCask` is normalized to `Brew` by
+    /// [`prerequisites_for`] so a manifest mixing formula + cask only
+    /// surfaces one "brew is not installed" diagnostic.
+    PackageManager(PackageManager),
+    /// A password-manager CLI binary is not on `$PATH`. Renders the
+    /// install URL only — there's nothing to sign into yet.
+    SecretCli(SessionKind),
+    /// A password-manager CLI is installed but has no active session.
+    /// Renders the signin command only — the user already has the
+    /// binary, so the install URL would be noise.
+    SecretSession(SessionKind),
+}
+
+/// Identifies which password-manager CLI a secret resolution call
+/// reaches for. The `secret()` intrinsic dispatches on URI scheme;
+/// this enum is the post-dispatch tag that flows into the prereq
+/// check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SessionKind {
+    OnePassword,
+    // future: Bitwarden (bw://), Infisical (infisical://)
+}
+
+impl SessionKind {
+    /// Display name for the CLI itself (e.g. `"1Password CLI"`). Used
+    /// as the noun in both "X is not installed" and "X session not
+    /// active" diagnostic forms.
+    const fn cli_name(self) -> &'static str {
+        match self {
+            Self::OnePassword => "1Password CLI",
+        }
+    }
+
+    /// The CLI command the user runs to enter a session — printed
+    /// verbatim in the diagnostic so it can be copy-pasted.
+    const fn signin_command(self) -> &'static str {
+        match self {
+            Self::OnePassword => "op signin",
+        }
+    }
+
+    /// Bare binary name on `$PATH`. Used by the probe to decide
+    /// whether the CLI is installed before the session check fires.
+    const fn binary(self) -> &'static str {
+        match self {
+            Self::OnePassword => "op",
+        }
+    }
+
+    /// Canonical upstream install/get-started URL. Surfaced only by
+    /// the `SecretCli` variant, where the user needs to install the
+    /// CLI before they can sign in.
+    const fn install_url(self) -> &'static str {
+        match self {
+            Self::OnePassword => "https://developer.1password.com/docs/cli/get-started/",
+        }
+    }
+}
+
+/// Three-valued result of probing a password-manager session: richer
+/// than a bool so the diagnostic can distinguish "install the CLI"
+/// from "sign in to the CLI." The `LiveEnvProbe` implementation runs
+/// a bounded `whoami`-style probe; mocks return the value directly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionState {
+    /// CLI present on `$PATH` and a session is active.
+    Active,
+    /// CLI present on `$PATH` but no active session — the user needs
+    /// to sign in.
+    NoSession,
+    /// CLI binary is not on `$PATH`.
+    NotInstalled,
+}
+
+impl Prerequisite {
+    /// Fixed priority used to sort failures in the combined diagnostic.
+    /// Brew (gates every package/tap reconcile) leads, then other
+    /// package managers, then secret-CLI install (the user needs the
+    /// CLI before they can sign in), then session-active.
+    ///
+    /// Lower number renders first.
+    const fn priority(&self) -> u8 {
+        match self {
+            Self::PackageManager(PackageManager::Brew | PackageManager::BrewCask) => 0,
+            Self::PackageManager(PackageManager::Cargo) => 1,
+            Self::PackageManager(PackageManager::Winget) => 2,
+            Self::SecretCli(_) => 3,
+            Self::SecretSession(_) => 4,
+        }
+    }
+
+    /// First diagnostic line: what failed.
+    fn label(&self) -> String {
+        match self {
+            Self::PackageManager(pm) => format!("`{}` is not installed", pm.label()),
+            Self::SecretCli(kind) => format!("{} is not installed", kind.cli_name()),
+            Self::SecretSession(kind) => format!("{} session not active", kind.cli_name()),
+        }
+    }
+
+    /// Canonical upstream install URL — *only* for foundational
+    /// prereqs (brew, password-manager CLIs). Narrower entries (Cargo,
+    /// Winget) and the session-inactive case return `None` and render
+    /// without an install line. Per the "install links: foundational
+    /// only" rule: brew gates the whole package surface; password-
+    /// manager *CLIs* gate the whole secret surface; signed-out is a
+    /// state, not a missing binary, so an install URL would be noise.
+    const fn install_url(&self) -> Option<&'static str> {
+        match self {
+            Self::PackageManager(PackageManager::Brew | PackageManager::BrewCask) => {
+                Some("https://brew.sh")
+            }
+            Self::SecretCli(kind) => Some(kind.install_url()),
+            // Cargo/Winget gate apply just like brew but live with
+            // rustup / Windows respectively — no single canonical
+            // install URL to link to. SecretSession means the CLI is
+            // present, so an install URL would be misleading.
+            Self::PackageManager(PackageManager::Cargo | PackageManager::Winget)
+            | Self::SecretSession(_) => None,
+        }
+    }
+
+    /// Optional action line printed between the label and the install
+    /// URL. Only the session-inactive case surfaces a signin command —
+    /// the install-missing case has no session to sign into yet.
+    fn action_line(&self) -> Option<String> {
+        match self {
+            Self::SecretSession(kind) => Some(format!("→ sign in: {}", kind.signin_command())),
+            Self::SecretCli(_) | Self::PackageManager(_) => None,
+        }
+    }
+}
+
+/// Collected prerequisite failures, rendered as a single self-contained
+/// diagnostic. The renderer leads with "prerequisites not met — apply
+/// cannot proceed" so the operator sees the tier-1 framing distinct
+/// from any later capability warnings.
+///
+/// `failures` is sorted by [`Prerequisite::priority`] when produced by
+/// [`validate_prerequisites`] / [`prereq_report`] so the operator sees
+/// brew-first ordering regardless of where the resources sit in the
+/// manifest.
+#[derive(Debug)]
+pub struct PrereqReport {
+    pub failures: Vec<Prerequisite>,
+}
+
+impl Display for PrereqReport {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        writeln!(f, "prerequisites not met — apply cannot proceed")?;
+        writeln!(f)?;
+        for prereq in &self.failures {
+            writeln!(f, "  - {}", prereq.label())?;
+            if let Some(action) = prereq.action_line() {
+                writeln!(f, "      {action}")?;
+            }
+            if let Some(url) = prereq.install_url() {
+                writeln!(f, "      → install: {url}")?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for PrereqReport {}
+
+/// Probe the live environment for tier-1 prerequisites. Separate from
+/// [`EnvProbe`] so the two tiers stay decoupled — a future change to
+/// session detection (timeouts, caching) won't perturb the existing
+/// capability probe surface, and vice versa.
+pub trait PrereqProbe {
+    /// True when the package manager's CLI binary is on `$PATH`.
+    /// Brew/BrewCask share the `brew` binary, so this is `which("brew")`
+    /// for both; Cargo and Winget have their own.
+    fn package_manager_available(&self, pm: PackageManager) -> bool;
+    /// Tri-state probe of the password-manager CLI: `Active`,
+    /// `NoSession`, or `NotInstalled`. Implementations must never
+    /// capture stdout into plan state (exit code only) and must
+    /// always return within a bounded time — a stuck CLI should
+    /// surface as `NoSession` rather than blocking the caller.
+    fn session_state(&self, kind: SessionKind) -> SessionState;
+}
+
+impl PrereqProbe for LiveEnvProbe {
+    fn package_manager_available(&self, pm: PackageManager) -> bool {
+        let bin = pm.label();
+        if which::which(bin).is_ok() {
+            return true;
+        }
+        // Linuxbrew commonly installs at /home/linuxbrew/.linuxbrew/bin/brew
+        // or ~/.linuxbrew/bin/brew, but the user often hasn't sourced
+        // `brew shellenv` so `which` misses it. Probe the canonical
+        // paths directly for Brew/BrewCask — without this, a Linux
+        // user who has brew gets told to install it.
+        if matches!(pm, PackageManager::Brew | PackageManager::BrewCask) {
+            for candidate in linuxbrew_candidates() {
+                if candidate.is_file() {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+    fn session_state(&self, kind: SessionKind) -> SessionState {
+        if which::which(kind.binary()).is_err() {
+            return SessionState::NotInstalled;
+        }
+        probe_session_state(kind)
+    }
+}
+
+/// Probe the password-manager CLI's session state by running its
+/// `whoami`-style subcommand with a hard wall-clock budget. Stdin is
+/// pinned to `/dev/null` so any interactive prompt (biometric, expired
+/// session) fails immediately on EOF instead of stealing the parent
+/// terminal. Stdout/stderr are also nulled because the threat model
+/// forbids capturing subprocess output into plan state — exit code is
+/// the only signal that reaches the caller.
+///
+/// On timeout the child is killed and the result is `NoSession`: a
+/// hung CLI is functionally equivalent to "you can't use it right
+/// now" from the operator's perspective, and `NoSession` is the safer
+/// failure mode (asks the user to re-sign-in; doesn't claim the CLI
+/// is missing when it isn't).
+#[cfg_attr(test, mutants::skip)]
+fn probe_session_state(kind: SessionKind) -> SessionState {
+    let mut cmd = std::process::Command::new(kind.binary());
+    cmd.arg("whoami")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    let Ok(mut child) = cmd.spawn() else {
+        return SessionState::NoSession;
+    };
+    let deadline = Instant::now() + SESSION_PROBE_BUDGET;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                return if status.success() {
+                    SessionState::Active
+                } else {
+                    SessionState::NoSession
+                };
+            }
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    // Reap the killed child so it doesn't linger as a
+                    // zombie; ignore the resulting status.
+                    let _ = child.wait();
+                    return SessionState::NoSession;
+                }
+                std::thread::sleep(SESSION_PROBE_POLL);
+            }
+            Err(_) => return SessionState::NoSession,
+        }
+    }
+}
+
+/// Candidate paths a Linux user is likely to have brew installed at,
+/// in priority order. Both are documented in the linuxbrew docs as
+/// the canonical install locations; neither lands on a default `$PATH`
+/// without the user running `eval "$(brew shellenv)"` first.
+fn linuxbrew_candidates() -> Vec<PathBuf> {
+    let mut out = vec![PathBuf::from("/home/linuxbrew/.linuxbrew/bin/brew")];
+    if let Some(home) = dirs::home_dir() {
+        out.push(home.join(".linuxbrew/bin/brew"));
+    }
+    out
+}
+
+/// Static prerequisites declared by a `ResourceState`. Companion to
+/// [`signals_for`] for tier 2; this function answers tier 1. Returns
+/// at most one prereq per state, so the return type is `Option` rather
+/// than `Vec` — it never sprouts multi-element results in practice.
+///
+/// `BrewCask` is normalized to `Brew` because both managers share the
+/// `brew` binary; a manifest mixing formula + cask should surface one
+/// "brew is not installed" failure, not two.
+pub const fn prerequisites_for(state: &ResourceState) -> Option<Prerequisite> {
+    match state {
+        ResourceState::Package { manager, .. } => {
+            Some(Prerequisite::PackageManager(normalize_for_prereq(*manager)))
+        }
+        // Synthesized `Tap` resources are always brew; the executor
+        // calls `brew tap`, so brew must be installed regardless of
+        // whether any classify probe ran.
+        ResourceState::Tap(_) => Some(Prerequisite::PackageManager(PackageManager::Brew)),
+        ResourceState::Template { .. }
+        | ResourceState::Symlink { .. }
+        | ResourceState::Shell { .. }
+        | ResourceState::SshKey { .. }
+        | ResourceState::GpgKey { .. } => None,
+    }
+}
+
+/// Dedup `BrewCask` onto `Brew` for prereq purposes: they probe the
+/// same binary, and showing two diagnostics for one missing CLI is
+/// noise. Kept as a tiny helper rather than inlined so the
+/// normalization rule lives in one place.
+const fn normalize_for_prereq(pm: PackageManager) -> PackageManager {
+    match pm {
+        PackageManager::BrewCask => PackageManager::Brew,
+        other => other,
+    }
+}
+
+/// Walk the eval'd resource states, collect every distinct
+/// package-manager prereq, and probe each against the live
+/// environment. Returns one combined report when anything fails —
+/// operators see the full picture, sorted by priority (brew first),
+/// not a per-call trickle.
+///
+/// Runs *before* the classify-time package probes so a missing brew
+/// surfaces as "brew is not installed → <https://brew.sh>", not
+/// `exited with status 127`.
+///
+/// **Session prereqs are checked elsewhere.** `SecretCli` /
+/// `SecretSession` failures fire from inside `eval::resolve_secret`
+/// the moment a `secret("op://…")` URI is evaluated; this function
+/// doesn't double-check them. The split keeps secret-resolution
+/// failures attributable to the manifest line that triggered them
+/// (URI in scope) while still routing through the same `PrereqReport`
+/// shape.
+///
+/// **Once-per-kind guarantee.** Each distinct `Prerequisite` is
+/// probed at most once per call: 50 brew packages still produce one
+/// `package_manager_available(Brew)` probe, not 50.
+pub fn validate_prerequisites(
+    states: &[ResourceState],
+    probe: &dyn PrereqProbe,
+) -> std::result::Result<(), PrereqReport> {
+    let mut failures: Vec<Prerequisite> = Vec::new();
+    let mut seen: HashSet<Prerequisite> = HashSet::new();
+
+    for state in states {
+        if let Some(prereq) = prerequisites_for(state) {
+            // `seen.insert` returns true iff the prereq is new; short-
+            // circuiting `&&` keeps the probe call inside that branch,
+            // so each distinct prereq is probed exactly once.
+            if seen.insert(prereq.clone()) && !prereq_satisfied(&prereq, probe) {
+                failures.push(prereq);
+            }
+        }
+    }
+
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        failures.sort_by_key(Prerequisite::priority);
+        Err(PrereqReport { failures })
+    }
+}
+
+fn prereq_satisfied(prereq: &Prerequisite, probe: &dyn PrereqProbe) -> bool {
+    match prereq {
+        Prerequisite::PackageManager(pm) => probe.package_manager_available(*pm),
+        // `validate_prerequisites` only ever has package-manager
+        // prereqs in its `failures` set today (session prereqs land
+        // here only via `prereq_report`), but the match must be total.
+        // Trusting the probe's tri-state result keeps the trait honest.
+        Prerequisite::SecretCli(kind) => {
+            !matches!(probe.session_state(*kind), SessionState::NotInstalled)
+        }
+        Prerequisite::SecretSession(kind) => {
+            matches!(probe.session_state(*kind), SessionState::Active)
+        }
+    }
+}
+
+/// Build a single-failure [`PrereqReport`] for a callsite that already
+/// knows which prereq is missing (e.g. `eval::resolve_secret` after a
+/// `SessionState::NotInstalled` probe). Callers wrap the report in
+/// `anyhow::Error` as needed.
+#[must_use]
+pub fn prereq_report(prereq: Prerequisite) -> PrereqReport {
+    PrereqReport {
+        failures: vec![prereq],
     }
 }
 
@@ -268,11 +683,16 @@ mod tests {
         binaries: Vec<String>,
         paths: Vec<PathBuf>,
         taps: Vec<String>,
+        package_managers: Vec<PackageManager>,
     }
 
     impl MockEnvProbe {
         fn with_binary(mut self, name: &str) -> Self {
             self.binaries.push(name.into());
+            self
+        }
+        fn with_package_manager(mut self, pm: PackageManager) -> Self {
+            self.package_managers.push(pm);
             self
         }
     }
@@ -286,6 +706,19 @@ mod tests {
         }
         fn tap_installed(&self, t: &str) -> bool {
             self.taps.iter().any(|x| x == t)
+        }
+    }
+
+    impl PrereqProbe for MockEnvProbe {
+        fn package_manager_available(&self, pm: PackageManager) -> bool {
+            self.package_managers.contains(&pm)
+        }
+        fn session_state(&self, _kind: SessionKind) -> SessionState {
+            // capability-tier tests don't exercise session prereqs
+            // (eval-tier tests in eval.rs do). Conservative default:
+            // pretend nothing is installed so an unexpected call
+            // surfaces.
+            SessionState::NotInstalled
         }
     }
 
@@ -552,5 +985,246 @@ mod tests {
         let env = MockEnvProbe::default();
         check_need(&need, &changes[1], &changes, 1, &env)
             .expect("predecessor template should satisfy a Path need");
+    }
+
+    // ---------------------------------------------------------------
+    // Tier-1 prerequisites
+    // ---------------------------------------------------------------
+
+    fn brew_pkg_state(name: &str) -> ResourceState {
+        ResourceState::Package {
+            manager: PackageManager::Brew,
+            name: name.into(),
+            tap: None,
+        }
+    }
+
+    fn cask_pkg_state(name: &str) -> ResourceState {
+        ResourceState::Package {
+            manager: PackageManager::BrewCask,
+            name: name.into(),
+            tap: None,
+        }
+    }
+
+    fn cargo_pkg_state(name: &str) -> ResourceState {
+        ResourceState::Package {
+            manager: PackageManager::Cargo,
+            name: name.into(),
+            tap: None,
+        }
+    }
+
+    fn tap_state(user_tap: &str) -> ResourceState {
+        ResourceState::Tap(TapSpec {
+            user_tap: user_tap.into(),
+            url: None,
+        })
+    }
+
+    #[test]
+    fn prerequisites_for_brew_package() {
+        assert_eq!(
+            prerequisites_for(&brew_pkg_state("ripgrep")),
+            Some(Prerequisite::PackageManager(PackageManager::Brew)),
+        );
+    }
+
+    #[test]
+    fn prerequisites_for_cask_package_normalizes_to_brew() {
+        // BrewCask shares the `brew` binary; dedup'ing the prereq to
+        // `Brew` keeps a mixed formula+cask manifest from printing two
+        // "brew not installed" diagnostics.
+        assert_eq!(
+            prerequisites_for(&cask_pkg_state("ghostty")),
+            Some(Prerequisite::PackageManager(PackageManager::Brew)),
+        );
+    }
+
+    #[test]
+    fn prerequisites_for_cargo_package() {
+        assert_eq!(
+            prerequisites_for(&cargo_pkg_state("cargo-nextest")),
+            Some(Prerequisite::PackageManager(PackageManager::Cargo)),
+        );
+    }
+
+    #[test]
+    fn prerequisites_for_tap_implies_brew() {
+        assert_eq!(
+            prerequisites_for(&tap_state("icepuma/nanite")),
+            Some(Prerequisite::PackageManager(PackageManager::Brew)),
+        );
+    }
+
+    #[test]
+    fn prerequisites_for_other_states_are_none() {
+        let template = ResourceState::Template {
+            path: PathBuf::from("/tmp/keron-prereq-template"),
+            content: "x".into(),
+            sensitive: false,
+        };
+        assert!(prerequisites_for(&template).is_none());
+    }
+
+    #[test]
+    fn validate_prereqs_passes_when_brew_present() {
+        let states = vec![brew_pkg_state("ripgrep")];
+        let probe = MockEnvProbe::default().with_package_manager(PackageManager::Brew);
+        validate_prerequisites(&states, &probe).expect("brew present should satisfy the prereq");
+    }
+
+    #[test]
+    fn validate_prereqs_fails_when_brew_missing() {
+        let states = vec![brew_pkg_state("ripgrep")];
+        let probe = MockEnvProbe::default();
+        let report = validate_prerequisites(&states, &probe)
+            .expect_err("missing brew must surface as a prereq error");
+        // Typed access: no string-grepping needed.
+        assert_eq!(
+            report.failures,
+            vec![Prerequisite::PackageManager(PackageManager::Brew)],
+        );
+        let msg = format!("{report}");
+        assert!(
+            msg.contains("prerequisites not met"),
+            "diagnostic should lead with tier-1 framing: {msg}"
+        );
+        assert!(
+            msg.contains("`brew` is not installed"),
+            "diagnostic should name the missing prereq: {msg}"
+        );
+        assert!(
+            msg.contains("https://brew.sh"),
+            "brew failure must include install URL: {msg}"
+        );
+    }
+
+    #[test]
+    fn validate_prereqs_dedups_brew_and_cask_into_one_failure() {
+        let states = vec![brew_pkg_state("ripgrep"), cask_pkg_state("ghostty")];
+        let probe = MockEnvProbe::default();
+        let report = validate_prerequisites(&states, &probe).expect_err("missing brew");
+        assert_eq!(
+            report.failures,
+            vec![Prerequisite::PackageManager(PackageManager::Brew)],
+            "brew and cask share the binary; only one failure should surface"
+        );
+    }
+
+    #[test]
+    fn validate_prereqs_renders_no_url_for_cargo() {
+        let states = vec![cargo_pkg_state("cargo-nextest")];
+        let probe = MockEnvProbe::default();
+        let report = validate_prerequisites(&states, &probe)
+            .expect_err("missing cargo must still surface as a prereq error");
+        let msg = format!("{report}");
+        assert!(msg.contains("`cargo` is not installed"), "got: {msg}");
+        assert!(
+            !msg.contains("→ install:"),
+            "narrow prereqs render without an install line: {msg}"
+        );
+    }
+
+    #[test]
+    fn validate_prereqs_sorts_failures_by_priority() {
+        // Source order: Cargo first, then Brew. Priority order:
+        // Brew first (foundational), then Cargo. The renderer must
+        // surface Brew above Cargo regardless of manifest layout.
+        let states = vec![cargo_pkg_state("cargo-nextest"), brew_pkg_state("ripgrep")];
+        let probe = MockEnvProbe::default();
+        let report = validate_prerequisites(&states, &probe).expect_err("both missing");
+        assert_eq!(
+            report.failures,
+            vec![
+                Prerequisite::PackageManager(PackageManager::Brew),
+                Prerequisite::PackageManager(PackageManager::Cargo),
+            ],
+            "failures must sort by priority, not source order"
+        );
+    }
+
+    #[test]
+    fn secret_cli_prereq_renders_install_url_only() {
+        let report = prereq_report(Prerequisite::SecretCli(SessionKind::OnePassword));
+        let msg = format!("{report}");
+        assert!(msg.contains("1Password CLI is not installed"), "got: {msg}");
+        assert!(
+            msg.contains("https://developer.1password.com/docs/cli/get-started/"),
+            "SecretCli must include install URL: {msg}"
+        );
+        assert!(
+            !msg.contains("op signin"),
+            "SecretCli must NOT prompt for signin — there's no CLI to sign into yet: {msg}"
+        );
+    }
+
+    #[test]
+    fn secret_session_prereq_renders_signin_only() {
+        let report = prereq_report(Prerequisite::SecretSession(SessionKind::OnePassword));
+        let msg = format!("{report}");
+        assert!(
+            msg.contains("1Password CLI session not active"),
+            "got: {msg}"
+        );
+        assert!(
+            msg.contains("op signin"),
+            "SecretSession must surface the signin command: {msg}"
+        );
+        assert!(
+            !msg.contains("→ install:"),
+            "SecretSession must NOT show install URL — the CLI is already present: {msg}"
+        );
+    }
+
+    /// Probe that counts how many times each prereq is asked about,
+    /// so we can pin the "once per kind regardless of resource count"
+    /// guarantee called out in `validate_prerequisites`' docs.
+    #[derive(Default)]
+    struct CountingProbe {
+        pm_calls: std::cell::Cell<usize>,
+        session_calls: std::cell::Cell<usize>,
+    }
+
+    impl PrereqProbe for CountingProbe {
+        fn package_manager_available(&self, _pm: PackageManager) -> bool {
+            self.pm_calls.set(self.pm_calls.get() + 1);
+            true
+        }
+        fn session_state(&self, _kind: SessionKind) -> SessionState {
+            self.session_calls.set(self.session_calls.get() + 1);
+            SessionState::Active
+        }
+    }
+
+    #[test]
+    fn validate_prereqs_probes_each_kind_at_most_once() {
+        // Fifty brew packages must collapse to one package-manager
+        // probe — anything else means we'd shell out N times in
+        // production for an N-package manifest.
+        let states: Vec<ResourceState> = (0..50)
+            .map(|i| brew_pkg_state(&format!("pkg-{i}")))
+            .collect();
+        let probe = CountingProbe::default();
+        validate_prerequisites(&states, &probe).expect("all prereqs satisfied by counting probe");
+        assert_eq!(
+            probe.pm_calls.get(),
+            1,
+            "brew probed once across 50 packages"
+        );
+        assert_eq!(
+            probe.session_calls.get(),
+            0,
+            "no session prereqs in this manifest"
+        );
+    }
+
+    #[test]
+    fn prereq_report_renders_single_failure() {
+        let report = prereq_report(Prerequisite::PackageManager(PackageManager::Brew));
+        let msg = format!("{report}");
+        assert!(msg.contains("prerequisites not met"));
+        assert!(msg.contains("`brew` is not installed"));
+        assert!(msg.contains("https://brew.sh"));
     }
 }

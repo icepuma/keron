@@ -425,7 +425,24 @@ pub fn build_prechecked_plan(
     graph: &keron_modules::ModuleGraph,
     keron_root: &Path,
 ) -> Result<PrecheckedPlan> {
-    let resources = eval::eval_graph(graph, keron_root)?;
+    build_prechecked_plan_with_prereq_probe(graph, keron_root, &crate::capability::LiveEnvProbe)
+}
+
+/// Test seam: build a prechecked plan with a caller-supplied
+/// [`PrereqProbe`]. Production wires [`crate::capability::LiveEnvProbe`]
+/// through the public entry point above; tests pass a mock so the
+/// ordering guarantee ("`validate_prerequisites` fires before any
+/// classify-time shell-out") can be exercised deterministically without
+/// touching `$PATH`.
+pub fn build_prechecked_plan_with_prereq_probe(
+    graph: &keron_modules::ModuleGraph,
+    keron_root: &Path,
+    prereq_probe: &dyn crate::capability::PrereqProbe,
+) -> Result<PrecheckedPlan> {
+    // The same probe flows into eval — so a mock that gates the
+    // plan-time prereq pass *also* gates secret-resolution session
+    // checks. Two-tier separation in types, one probe in practice.
+    let resources = eval::eval_graph_with_prereq_probe(graph, keron_root, prereq_probe)?;
     let resources = dedup_resources(&resources)?;
     let resources = synthesize_taps(&resources)?;
     let os = crate::platform::detect_os_family();
@@ -443,6 +460,16 @@ pub fn build_prechecked_plan(
         .filter(|state| include_in_plan(state, os))
         .cloned()
         .collect();
+    // Tier-1 pre-check: every package-manager prerequisite must be
+    // satisfied before any classify-time shell-out fires. Without
+    // this, missing brew would surface as `brew list … exited with
+    // status 127` from inside `cache.prewarm`, with no chance for a
+    // hint-bearing diagnostic. Session prereqs (1Password CLI, etc.)
+    // fire from inside `eval::resolve_secret` the moment a `secret()`
+    // URI is evaluated — earlier than this point — so they're not
+    // re-checked here.
+    crate::capability::validate_prerequisites(&probe_inputs, prereq_probe)
+        .map_err(|report| anyhow::Error::msg(report.to_string()))?;
     cache.prewarm(&probe_inputs)?;
     let changes = probe_inputs
         .iter()
@@ -1408,6 +1435,78 @@ mod tests {
         assert_eq!(prechecked.precheck.unsupported_packages.len(), 1);
         assert_eq!(prechecked.plan.changes.len(), 1);
         assert_eq!(prechecked.plan.changes[0].address, "/a");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Tier-1 prereq probe that counts invocations and reports brew
+    /// as missing. Used to assert that `build_prechecked_plan` fails
+    /// at the prereq gate *before* reaching the brew classify probes
+    /// — `pm_calls` proves the gate was consulted, and the surfaced
+    /// diagnostic proves it short-circuited rather than falling
+    /// through to `cache.prewarm`.
+    struct OrderingProbe {
+        pm_calls: std::cell::Cell<usize>,
+    }
+
+    impl crate::capability::PrereqProbe for OrderingProbe {
+        fn package_manager_available(&self, _pm: PackageManager) -> bool {
+            self.pm_calls.set(self.pm_calls.get() + 1);
+            false
+        }
+        fn session_state(
+            &self,
+            _kind: crate::capability::SessionKind,
+        ) -> crate::capability::SessionState {
+            crate::capability::SessionState::Active
+        }
+    }
+
+    #[test]
+    fn build_prechecked_plan_runs_prereq_check_before_classify_probes() {
+        use keron_modules::{EntrySource, ModuleId, resolve};
+        use std::fs;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static SEQ: AtomicUsize = AtomicUsize::new(0);
+        // Force a platform where brew is supported so the package
+        // doesn't get filtered out by `include_in_plan` before the
+        // prereq pass would see it.
+        let _os = crate::platform::OsOverride::set(OsFamily::Macos);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let dir =
+            std::env::temp_dir().join(format!("keron-prereq-ordering-{}-{n}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let entry = dir.join("entry.keron");
+        let src = "reconcile { brew(\"ripgrep\"); }\n";
+        fs::write(&entry, src).unwrap();
+        let canonical = fs::canonicalize(&entry).unwrap();
+        let keron_root = canonical.parent().unwrap().to_path_buf();
+        let graph = resolve(vec![EntrySource {
+            text: src.into(),
+            base_dir: canonical.parent().unwrap().to_path_buf(),
+            id: ModuleId(canonical),
+        }])
+        .unwrap();
+        let probe = OrderingProbe {
+            pm_calls: std::cell::Cell::new(0),
+        };
+        let err = build_prechecked_plan_with_prereq_probe(&graph, &keron_root, &probe)
+            .expect_err("missing brew should fail at the prereq gate");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("`brew` is not installed"),
+            "diagnostic should name the missing prereq: {msg}"
+        );
+        assert!(
+            msg.contains("https://brew.sh"),
+            "diagnostic should include the brew install URL: {msg}"
+        );
+        // Once-per-kind guarantee at the plan-builder boundary: even
+        // though one package was declared, the probe fires exactly
+        // once. Failing here would mean the gate ran per-resource
+        // (wasteful) or — worse — that classify probes ran before
+        // the gate fired (then `pm_calls` would still be 1 but a
+        // brew shell-out would have happened).
+        assert_eq!(probe.pm_calls.get(), 1);
         let _ = fs::remove_dir_all(&dir);
     }
 
