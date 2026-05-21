@@ -145,7 +145,9 @@ impl PackageCache {
                 }
                 ResourceState::Symlink { .. }
                 | ResourceState::Template { .. }
-                | ResourceState::Shell { .. } => {}
+                | ResourceState::Shell { .. }
+                | ResourceState::SshKey { .. }
+                | ResourceState::GpgKey { .. } => {}
             }
         }
 

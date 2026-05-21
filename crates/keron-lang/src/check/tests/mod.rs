@@ -4,6 +4,7 @@ mod arithmetic;
 mod comparisons;
 mod conditional;
 mod fns;
+mod keys;
 mod lists;
 mod literals;
 mod maps;
@@ -41,6 +42,7 @@ fn fs_imports() -> ImportedSymbols {
     seed_secrets(&mut imp);
     seed_packages(&mut imp);
     seed_shell(&mut imp);
+    seed_keys(&mut imp);
     for name in [
         "symlink",
         "template",
@@ -57,6 +59,10 @@ fn fs_imports() -> ImportedSymbols {
         "winget",
         "Package",
         "shell",
+        "ssh_key",
+        "gpg_key",
+        "SshKey",
+        "GpgKey",
     ] {
         imp.builtins.insert(name.into());
     }
@@ -152,4 +158,31 @@ fn seed_shell(imp: &mut ImportedSymbols) {
     );
     imp.types.insert("Shell".into(), Type::Shell);
     imp.types.insert("ShellKind".into(), shell_kind);
+}
+
+fn seed_keys(imp: &mut ImportedSymbols) {
+    imp.fns.insert(
+        "ssh_key".into(),
+        fn_sig(
+            vec![
+                param("private_path", Type::String),
+                param("public_path", Type::String),
+                param("private", Type::Secret),
+                param("public", Type::String),
+            ],
+            Type::SshKey,
+        ),
+    );
+    imp.fns.insert(
+        "gpg_key".into(),
+        fn_sig(
+            vec![
+                param("fingerprint", Type::String),
+                param("key", Type::Secret),
+            ],
+            Type::GpgKey,
+        ),
+    );
+    imp.types.insert("SshKey".into(), Type::SshKey);
+    imp.types.insert("GpgKey".into(), Type::GpgKey);
 }

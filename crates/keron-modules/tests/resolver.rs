@@ -91,6 +91,29 @@ fn builtins_are_implicitly_in_scope() {
 }
 
 #[test]
+fn ssh_key_and_gpg_key_resolve_as_implicit_builtins() {
+    // Mirrors `builtins_are_implicitly_in_scope` for the keys module:
+    // a manifest using `ssh_key(...)` / `gpg_key(...)` and the
+    // `SshKey` / `GpgKey` named types resolves without any explicit
+    // `from "std:..."` line.
+    let proj = TempProject::new("keys-implicit");
+    let src = "val k: SshKey = ssh_key(\n\
+               \tprivate_path = \"/p\",\n\
+               \tpublic_path = \"/p.pub\",\n\
+               \tprivate = secret(\"op://k/test\"),\n\
+               \tpublic = \"ssh-ed25519 AAAA u@h\",\n\
+               )\n\
+               val g: GpgKey = gpg_key(fingerprint = \"ABCD\", key = secret(\"op://k/gpg\"))\n\
+               reconcile k\n\
+               reconcile g\n";
+    let entry = proj.write("entry.keron", src);
+    let graph = resolve(TempProject::entry_source(&entry, src)).expect("resolve ok");
+    let entry_id = ModuleId(fs::canonicalize(&entry).unwrap());
+    assert_eq!(graph.entries, vec![entry_id]);
+    assert_eq!(graph.modules.len(), 1, "stdlib does not enter the graph");
+}
+
+#[test]
 fn invalid_path_prefix_errors() {
     let proj = TempProject::new("bad-prefix");
     let src = "from \"helpers.keron\" use foo\n";

@@ -948,7 +948,17 @@ fn eval_call(name: &str, args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
 
     let _depth = CallDepthGuard::enter(env.graph)?;
     let mut sink = Vec::new();
-    let v = eval_block_value(&fn_decl.body, &call_env, &mut sink)?;
+    // `stacker::maybe_grow` keeps the recursion-limit diagnostic
+    // independent of the host thread's stack size. Without it, a
+    // 2 MiB cargo-test thread stack runs out of pages well before
+    // `MAX_CALL_DEPTH = 256` frames, surfacing as SIGABRT instead of
+    // the clean `bail!("call depth exceeded …")` the user expects.
+    // 64 KiB red zone / 1 MiB grow slab match the standard rustc /
+    // syn idiom; if the red zone is still available we stay on the
+    // current stack at zero cost.
+    let v = stacker::maybe_grow(64 * 1024, 1024 * 1024, || {
+        eval_block_value(&fn_decl.body, &call_env, &mut sink)
+    })?;
     Ok(v)
 }
 
@@ -1116,7 +1126,55 @@ fn dispatch_intrinsic(id: IntrinsicId, args: &[CallArg], env: &Env<'_, '_>) -> R
         IntrinsicId::PathIsDir => dispatch_path_probe(args, env, PathProbe::IsDir),
         IntrinsicId::PathIsFile => dispatch_path_probe(args, env, PathProbe::IsFile),
         IntrinsicId::ReadFile => dispatch_read_file(args, env),
+        IntrinsicId::SshKey => dispatch_ssh_key(args, env),
+        IntrinsicId::GpgKey => dispatch_gpg_key(args, env),
     }
+}
+
+/// Construct an `SshKey` resource from user-supplied material.
+///
+/// The `private` arg is `Type::Secret` in the stdlib signature, so the
+/// type checker guarantees this dispatch sees a `Value::Secret`; we
+/// bail loudly on any other shape rather than panic. The secret's
+/// payload is moved into [`ResourceState::SshKey::private_key`] as a
+/// plain `String` for the executor to write — the marker is enforced
+/// at the type-system layer, not by carrying the wrapper through the
+/// IR. The resource is treated as always-sensitive by the diff
+/// renderer (no opt-out flag).
+fn dispatch_ssh_key(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let private_path = call_string(args, env, "private_path", 0)?;
+    let public_path = call_string(args, env, "public_path", 1)?;
+    let private_key = match eval_call_arg(args, env, "private", 2)? {
+        Value::Secret(s) => s,
+        other => bail!(
+            "ssh_key expected `Secret` for `private`, found `{}`",
+            other.type_name()
+        ),
+    };
+    let public_key = call_string(args, env, "public", 3)?;
+    Ok(Value::Resource(ResourceState::SshKey {
+        private_path: PathBuf::from(private_path),
+        public_path: PathBuf::from(public_path),
+        private_key,
+        public_key,
+    }))
+}
+
+/// Construct a `GpgKey` resource. The `key` arg is `Type::Secret`; we
+/// pattern-match on `Value::Secret` for the same reasons documented on
+/// [`dispatch_ssh_key`]. The fingerprint is plain `String` — it's
+/// already on disk in the user's keyring or surfacing in any `gpg
+/// --list-secret-keys` output, so its non-sensitivity is fine.
+fn dispatch_gpg_key(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let fingerprint = call_string(args, env, "fingerprint", 0)?;
+    let key = match eval_call_arg(args, env, "key", 1)? {
+        Value::Secret(s) => s,
+        other => bail!(
+            "gpg_key expected `Secret` for `key`, found `{}`",
+            other.type_name()
+        ),
+    };
+    Ok(Value::Resource(ResourceState::GpgKey { fingerprint, key }))
 }
 
 /// `read_file(path)` — keron-root-confined UTF-8 read.
@@ -2381,6 +2439,7 @@ mod tests {
         match &states[0] {
             ResourceState::Template { path, .. } => path,
             ResourceState::Symlink { from, .. } => from,
+            ResourceState::SshKey { private_path, .. } => private_path,
             // The helper is for filesystem-shaped resources; package
             // resources don't have a path, so callers shouldn't reach
             // for it here. Loud failure beats silently picking the
@@ -2398,6 +2457,9 @@ mod tests {
                     "first_file_path: expected filesystem resource, got Tap({user_tap:?})",
                     user_tap = spec.user_tap
                 )
+            }
+            ResourceState::GpgKey { fingerprint, .. } => {
+                panic!("first_file_path: expected filesystem resource, got GpgKey({fingerprint})")
             }
         }
     }
@@ -3903,6 +3965,52 @@ reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
         };
         assert_eq!(content, "TOKEN=deploy-key-abc\n");
         assert!(*sensitive);
+    }
+
+    #[test]
+    fn ssh_key_intrinsic_threads_secret_into_resource_state() {
+        // End-to-end: a stubbed `secret(op://…)` flows directly into
+        // `ssh_key(private = …)`. The resulting ResourceState should
+        // carry the unwrapped key bytes verbatim with no String
+        // round-trip (the planner / executor treat the variant as
+        // inherently sensitive).
+        let uri = unique_op_uri("sshkey");
+        let _g = secret_test::SecretOverride::ok(&uri, "PRIVATE-KEY-BLOB");
+        let states = run(&format!(
+            "reconcile ssh_key(\n\
+             \tprivate_path = \"/home/u/.ssh/id_ed25519\",\n\
+             \tpublic_path = \"/home/u/.ssh/id_ed25519.pub\",\n\
+             \tprivate = secret(\"{uri}\"),\n\
+             \tpublic = \"ssh-ed25519 AAAA u@host\",\n\
+             )\n",
+        ));
+        let ResourceState::SshKey {
+            private_path,
+            public_path,
+            private_key,
+            public_key,
+        } = &states[0]
+        else {
+            panic!("expected SshKey, got {:?}", states[0]);
+        };
+        assert_eq!(private_path, &PathBuf::from("/home/u/.ssh/id_ed25519"));
+        assert_eq!(public_path, &PathBuf::from("/home/u/.ssh/id_ed25519.pub"));
+        assert_eq!(private_key, "PRIVATE-KEY-BLOB");
+        assert_eq!(public_key, "ssh-ed25519 AAAA u@host");
+    }
+
+    #[test]
+    fn gpg_key_intrinsic_threads_secret_into_resource_state() {
+        let uri = unique_op_uri("gpgkey");
+        let _g = secret_test::SecretOverride::ok(&uri, "ARMORED-BLOB");
+        let states = run(&format!(
+            "reconcile gpg_key(fingerprint = \"ABCD1234\", key = secret(\"{uri}\"))\n",
+        ));
+        let ResourceState::GpgKey { fingerprint, key } = &states[0] else {
+            panic!("expected GpgKey, got {:?}", states[0]);
+        };
+        assert_eq!(fingerprint, "ABCD1234");
+        assert_eq!(key, "ARMORED-BLOB");
     }
 
     #[test]

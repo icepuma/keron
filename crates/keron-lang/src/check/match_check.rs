@@ -248,7 +248,13 @@ fn wrap_nullable(inner: Type) -> Type {
 const fn is_resource_singleton(ty: &Type) -> bool {
     matches!(
         ty,
-        Type::Symlink | Type::Template | Type::Package | Type::Shell | Type::Resource
+        Type::Symlink
+            | Type::Template
+            | Type::Package
+            | Type::Shell
+            | Type::SshKey
+            | Type::GpgKey
+            | Type::Resource
     )
 }
 

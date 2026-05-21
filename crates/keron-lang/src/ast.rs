@@ -411,6 +411,25 @@ pub enum IntrinsicId {
     /// `"inf"`/`"NaN"`, so we screen those explicitly to keep `Double`
     /// values finite (the rest of the language assumes that).
     ParseDouble,
+    /// `ssh_key(private_path, public_path, private, public)` — writes
+    /// a user-supplied SSH keypair to disk as a single atomic
+    /// resource. The `private` half flows in as [`Type::Secret`] (so a
+    /// raw `String` is a typecheck error) and is written at mode
+    /// `0600`; the `public` half is a `String` written at `0644`.
+    /// `apply` only ensures *presence* — Create when the files are
+    /// missing, `NoOp` when present and byte-identical, hard error
+    /// when present with different content (refuses to silently
+    /// rotate a key).
+    SshKey,
+    /// `gpg_key(fingerprint, key)` — imports an ASCII-armored secret
+    /// keyring blob into the user's gnupg keyring. `fingerprint` is
+    /// the required idempotency probe (`gpg --batch --list-secret-keys
+    /// <fingerprint>`, exit status only — never stdout capture). `key`
+    /// flows in as [`Type::Secret`] and is piped to `gpg --batch
+    /// --import` over child stdin (never argv, never a tempfile).
+    /// `apply` only ensures *presence*: Create when the fingerprint
+    /// is absent, `NoOp` when present.
+    GpgKey,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -707,10 +726,22 @@ pub enum Type {
     /// `shell(kind, name, script)`, stays pure during evaluation, and
     /// runs only during `apply --execute`.
     Shell,
+    /// A user-supplied SSH keypair. Constructed via the builtin
+    /// `ssh_key(private_path, public_path, private, public)` fn. The
+    /// resulting resource carries the encrypted private-key blob in
+    /// memory; plan diff renders it as `[sensitive]` unless
+    /// `--verbose-will-reveal-sensitive-content` opts in.
+    SshKey,
+    /// A user-supplied GPG secret-key import. Constructed via the
+    /// builtin `gpg_key(fingerprint, key)` fn. The key material is
+    /// only ever piped to `gpg --batch --import` over child stdin —
+    /// never argv, never a tempfile.
+    GpgKey,
     /// Common supertype of [`Self::Symlink`], [`Self::Template`],
-    /// [`Self::Package`], and [`Self::Shell`]. There is no
-    /// constructor — the type only shows up via annotation (`val r:
-    /// Resource = symlink(...)`), list inference for mixed elements
+    /// [`Self::Package`], [`Self::Shell`], [`Self::SshKey`], and
+    /// [`Self::GpgKey`]. There is no constructor — the type only
+    /// shows up via annotation (`val r: Resource = symlink(...)`),
+    /// list inference for mixed elements
     /// (`[symlink(...), template(...)]` has type `List<Resource>`),
     /// and `Resource`-typed fn signatures. Subtyping is one-way: a
     /// specific resource fits a `Resource` slot, but `Resource` does
@@ -789,6 +820,8 @@ impl fmt::Display for Type {
             Self::Secret => f.write_str("Secret"),
             Self::Package => f.write_str("Package"),
             Self::Shell => f.write_str("Shell"),
+            Self::SshKey => f.write_str("SshKey"),
+            Self::GpgKey => f.write_str("GpgKey"),
             Self::Void => f.write_str("Void"),
             // Structs and string unions are nominal: print just the
             // declared name. The full field/variant list is only

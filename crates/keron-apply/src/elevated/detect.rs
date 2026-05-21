@@ -35,9 +35,14 @@ pub fn path_requires_elevation(state: &ResourceState, action: Action) -> bool {
         // Packages defer to `PackageManager::requires_elevation`;
         // returning false here lets that policy stay authoritative.
         // Taps shell out to `brew`, which refuses sudo by design.
-        ResourceState::Package { .. } | ResourceState::Tap(_) | ResourceState::Shell { .. } => {
-            false
-        }
+        // SSH / GPG keys are user-scope by definition: ssh writes to
+        // `~/.ssh`, gpg writes to `~/.gnupg` — both owned by the
+        // invoking user, so no elevation is involved.
+        ResourceState::Package { .. }
+        | ResourceState::Tap(_)
+        | ResourceState::Shell { .. }
+        | ResourceState::SshKey { .. }
+        | ResourceState::GpgKey { .. } => false,
     }
 }
 

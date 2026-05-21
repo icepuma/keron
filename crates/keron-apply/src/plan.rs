@@ -40,6 +40,8 @@ pub enum ResourceKind {
     /// [`ResourceState::Package`] whose `tap` field is `Some`; never
     /// constructed directly by user code.
     Tap,
+    SshKey,
+    GpgKey,
 }
 
 impl ResourceKind {
@@ -50,6 +52,8 @@ impl ResourceKind {
             Self::Package => "package",
             Self::Shell => "shell",
             Self::Tap => "tap",
+            Self::SshKey => "ssh_key",
+            Self::GpgKey => "gpg_key",
         }
     }
 }
@@ -231,6 +235,29 @@ pub enum ResourceState {
         /// regardless).
         #[serde(default)]
         sensitive: bool,
+    },
+    /// User-supplied SSH keypair to write to disk as a single atomic
+    /// resource. Both `private_key` and `public_key` are the literal
+    /// material that lands on disk (the encrypted PEM blob for the
+    /// private half, the OpenSSH `ssh-…` one-liner for the public
+    /// half). Diff rendering treats this variant as always-sensitive;
+    /// there is no opt-out flag, since SSH keys have no non-sensitive
+    /// use case.
+    SshKey {
+        private_path: PathBuf,
+        public_path: PathBuf,
+        private_key: String,
+        public_key: String,
+    },
+    /// User-supplied GPG secret-key import. `key` is the ASCII-armored
+    /// blob produced by `gpg --export-secret-keys --armor <fpr>`. The
+    /// executor pipes it to `gpg --batch --import` over child stdin —
+    /// never argv, never a tempfile. `fingerprint` is the idempotency
+    /// probe: a hex fingerprint string the classifier matches against
+    /// `gpg --batch --list-secret-keys` (exit status only).
+    GpgKey {
+        fingerprint: String,
+        key: String,
     },
 }
 
@@ -527,7 +554,9 @@ const fn include_in_plan(state: &ResourceState, os: OsFamily) -> bool {
         ResourceState::Tap(_) => PackageManager::Brew.is_supported_on(os),
         ResourceState::Symlink { .. }
         | ResourceState::Template { .. }
-        | ResourceState::Shell { .. } => true,
+        | ResourceState::Shell { .. }
+        | ResourceState::SshKey { .. }
+        | ResourceState::GpgKey { .. } => true,
     }
 }
 
@@ -563,6 +592,13 @@ fn classify(state: &ResourceState, cache: &mut PackageCache) -> Result<ResourceC
         }
         ResourceState::Tap(spec) => classify_tap(spec, state, cache)?,
         ResourceState::Shell { kind, .. } => classify_shell(*kind, state)?,
+        ResourceState::SshKey {
+            private_path,
+            public_path,
+            private_key,
+            public_key,
+        } => classify_ssh_key(private_path, public_path, private_key, public_key, state)?,
+        ResourceState::GpgKey { fingerprint, .. } => classify_gpg_key(fingerprint, state)?,
     };
     change.requires_elevation = change.compute_requires_elevation();
     change.requires_force = change.compute_requires_force();
@@ -777,6 +813,143 @@ fn classify_template(path: &Path, content: &str, after: &ResourceState) -> Resul
     }
 }
 
+/// Diff a desired SSH keypair against the live filesystem.
+///
+/// SSH keys ensure *presence* only — `apply` never silently rotates an
+/// existing key (a rotation could lock the user out of every machine
+/// that trusts the old public key). The diff is therefore three-state,
+/// not four: Create when both files are missing, `NoOp` when both
+/// files match byte-for-byte, hard error in every other case. In
+/// particular:
+///
+///   - one file matches, the other is missing → "out of sync" error
+///   - either file exists with different content → "refusing to
+///     rotate" error
+///   - either path is a symlink / directory / other non-regular-file
+///     occupant → "refusing to overwrite" error (mirrors
+///     [`classify_symlink`] / [`classify_template`])
+///
+/// The user resolves drift by removing the existing file manually,
+/// after which `apply` writes the declared key.
+fn classify_ssh_key(
+    private_path: &Path,
+    public_path: &Path,
+    private_key: &str,
+    public_key: &str,
+    after: &ResourceState,
+) -> Result<ResourceChange> {
+    let address = address_for(after);
+    let kind = ResourceKind::SshKey;
+    let private = probe_ssh_key_file(private_path, private_key.as_bytes())?;
+    let public = probe_ssh_key_file(public_path, public_key.as_bytes())?;
+    let action = match (private, public) {
+        (KeyFileState::Missing, KeyFileState::Missing) => Action::Create,
+        (KeyFileState::Match, KeyFileState::Match) => Action::NoOp,
+        _ => bail!(
+            "ssh key files at `{}` / `{}` are out of sync; \
+             remove the existing key files manually if a new key is intended",
+            private_path.display(),
+            public_path.display(),
+        ),
+    };
+    let before = if matches!(action, Action::NoOp) {
+        Some(after.clone())
+    } else {
+        None
+    };
+    Ok(ResourceChange {
+        address,
+        kind,
+        action,
+        before,
+        after: Some(after.clone()),
+        requires_elevation: false,
+        requires_force: false,
+    })
+}
+
+enum KeyFileState {
+    Missing,
+    Match,
+}
+
+/// Probe one half of an SSH keypair. The path must either be absent or
+/// be a regular file whose content is byte-identical to `expected`;
+/// anything else (different content, non-regular file) is a hard error
+/// rather than an `Update` opportunity, matching the "ensure presence,
+/// never silently rotate" rule documented on [`classify_ssh_key`].
+fn probe_ssh_key_file(path: &Path, expected: &[u8]) -> Result<KeyFileState> {
+    match fs::symlink_metadata(path) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(KeyFileState::Missing),
+        Err(e) => Err(anyhow!("reading existing path `{}`: {e}", path.display())),
+        Ok(meta) if meta.file_type().is_file() => {
+            let existing = fs::read(path)
+                .with_context(|| format!("reading existing ssh key `{}`", path.display()))?;
+            if existing == expected {
+                Ok(KeyFileState::Match)
+            } else {
+                bail!(
+                    "refusing to rotate ssh key at `{}`; \
+                     remove it manually if a new key is intended",
+                    path.display(),
+                );
+            }
+        }
+        Ok(_) => bail!(
+            "`{}` exists and is not a regular file; refusing to overwrite",
+            path.display()
+        ),
+    }
+}
+
+/// Diff a desired GPG secret-key import against the user's keyring.
+///
+/// Only `gpg`'s exit status is consulted — `Stdio::null()` covers both
+/// stdout and stderr so the keyring's contents never enter keron's
+/// memory (no shell-output exfiltration channel). Two outcomes:
+///
+///   - `gpg --batch --list-secret-keys <fpr>` exits 0 → fingerprint is
+///     in the keyring → `NoOp`.
+///   - any non-zero exit → fingerprint absent → `Create`.
+///
+/// The probe lives in the classifier (not the executor) so the user
+/// sees the planned `+ gpg_key` in the diff before any subprocess
+/// touches the keyring.
+fn classify_gpg_key(fingerprint: &str, after: &ResourceState) -> Result<ResourceChange> {
+    which::which("gpg").context("`gpg` is not available on PATH")?;
+    let status = std::process::Command::new("gpg")
+        .args([
+            "--batch",
+            "--list-secret-keys",
+            "--with-colons",
+            fingerprint,
+        ])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .with_context(|| format!("probing gpg keyring for fingerprint `{fingerprint}`"))?;
+    let action = if status.success() {
+        Action::NoOp
+    } else {
+        Action::Create
+    };
+    let before = if matches!(action, Action::NoOp) {
+        Some(after.clone())
+    } else {
+        None
+    };
+    Ok(ResourceChange {
+        address: address_for(after),
+        kind: ResourceKind::GpgKey,
+        action,
+        before,
+        after: Some(after.clone()),
+        requires_elevation: false,
+        requires_force: false,
+    })
+}
+
 fn address_for(state: &ResourceState) -> String {
     match state {
         ResourceState::Template { path, .. } => path.display().to_string(),
@@ -786,6 +959,8 @@ fn address_for(state: &ResourceState) -> String {
         }
         ResourceState::Tap(spec) => format!("tap:{}", spec.user_tap),
         ResourceState::Shell { name, .. } => name.clone(),
+        ResourceState::SshKey { private_path, .. } => private_path.display().to_string(),
+        ResourceState::GpgKey { fingerprint, .. } => format!("gpg:{fingerprint}"),
     }
 }
 
@@ -1536,5 +1711,121 @@ mod tests {
         let msg = format!("{err:#}");
         assert!(msg.contains("not a regular file"), "got: {msg}");
         assert!(msg.contains("refusing to overwrite"), "got: {msg}");
+    }
+
+    fn ssh_key(
+        private_path: &Path,
+        public_path: &Path,
+        private_key: &str,
+        public_key: &str,
+    ) -> ResourceState {
+        ResourceState::SshKey {
+            private_path: private_path.to_path_buf(),
+            public_path: public_path.to_path_buf(),
+            private_key: private_key.into(),
+            public_key: public_key.into(),
+        }
+    }
+
+    #[test]
+    fn classify_ssh_key_marks_both_missing_as_create() {
+        let d = TempDir::new("ssh-missing");
+        let priv_path = d.path.join("id_ed25519");
+        let pub_path = d.path.join("id_ed25519.pub");
+        let state = ssh_key(&priv_path, &pub_path, "PRIV", "ssh-ed25519 AAAA host");
+        let change = classify(&state, &mut PackageCache::for_tests()).unwrap();
+        assert_eq!(change.kind, ResourceKind::SshKey);
+        assert_eq!(change.action, Action::Create);
+        assert!(change.before.is_none());
+        assert!(!change.requires_elevation);
+        assert!(!change.requires_force);
+    }
+
+    #[test]
+    fn classify_ssh_key_marks_matching_pair_as_noop() {
+        let d = TempDir::new("ssh-noop");
+        let priv_path = d.path.join("id_ed25519");
+        let pub_path = d.path.join("id_ed25519.pub");
+        fs::write(&priv_path, "PRIV").unwrap();
+        fs::write(&pub_path, "ssh-ed25519 AAAA host").unwrap();
+        let state = ssh_key(&priv_path, &pub_path, "PRIV", "ssh-ed25519 AAAA host");
+        let change = classify(&state, &mut PackageCache::for_tests()).unwrap();
+        assert_eq!(change.action, Action::NoOp);
+        assert!(change.before.is_some());
+    }
+
+    #[test]
+    fn classify_ssh_key_refuses_to_rotate_drifted_private() {
+        // Private already exists with different bytes — we never
+        // silently overwrite an existing key; user must remove it.
+        let d = TempDir::new("ssh-drift");
+        let priv_path = d.path.join("id_ed25519");
+        let pub_path = d.path.join("id_ed25519.pub");
+        fs::write(&priv_path, "OTHER").unwrap();
+        fs::write(&pub_path, "ssh-ed25519 AAAA host").unwrap();
+        let err = classify(
+            &ssh_key(&priv_path, &pub_path, "PRIV", "ssh-ed25519 AAAA host"),
+            &mut PackageCache::for_tests(),
+        )
+        .expect_err("drifted private must refuse rotation");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("refusing to rotate ssh key"), "got: {msg}");
+    }
+
+    #[test]
+    fn classify_ssh_key_refuses_asymmetric_state() {
+        // Private exists and matches, but public is missing — most
+        // likely an interrupted prior apply. We bail rather than
+        // silently writing the missing half.
+        let d = TempDir::new("ssh-asymmetric");
+        let priv_path = d.path.join("id_ed25519");
+        let pub_path = d.path.join("id_ed25519.pub");
+        fs::write(&priv_path, "PRIV").unwrap();
+        let err = classify(
+            &ssh_key(&priv_path, &pub_path, "PRIV", "ssh-ed25519 AAAA host"),
+            &mut PackageCache::for_tests(),
+        )
+        .expect_err("missing pub half must refuse partial Create");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("out of sync"), "got: {msg}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn classify_ssh_key_rejects_symlink_occupant() {
+        // Same data-safety rule as classify_template: any non-regular
+        // occupant (here: a symlink) is a hard error.
+        let d = TempDir::new("ssh-vs-symlink");
+        let real = d.path.join("real");
+        fs::write(&real, "real").unwrap();
+        let priv_path = d.path.join("id_ed25519");
+        make_symlink(&real, &priv_path).unwrap();
+        let pub_path = d.path.join("id_ed25519.pub");
+        let err = classify(
+            &ssh_key(&priv_path, &pub_path, "PRIV", "ssh-ed25519 AAAA host"),
+            &mut PackageCache::for_tests(),
+        )
+        .expect_err("symlink at private path must be refused");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("not a regular file"), "got: {msg}");
+        assert!(msg.contains("refusing to overwrite"), "got: {msg}");
+    }
+
+    #[test]
+    fn classify_ssh_key_address_uses_private_path() {
+        let d = TempDir::new("ssh-address");
+        let priv_path = d.path.join("id_ed25519");
+        let pub_path = d.path.join("id_ed25519.pub");
+        let state = ssh_key(&priv_path, &pub_path, "PRIV", "ssh-ed25519 AAAA host");
+        assert_eq!(address_for(&state), priv_path.display().to_string());
+    }
+
+    #[test]
+    fn classify_gpg_key_address_uses_fingerprint_prefix() {
+        let state = ResourceState::GpgKey {
+            fingerprint: "ABCD1234".into(),
+            key: "-----BEGIN PGP PRIVATE KEY BLOCK-----...".into(),
+        };
+        assert_eq!(address_for(&state), "gpg:ABCD1234");
     }
 }

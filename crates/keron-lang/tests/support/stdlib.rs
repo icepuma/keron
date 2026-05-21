@@ -27,12 +27,16 @@ pub const RESERVED_OR_BUILTIN_NAMES: &[&str] = &[
     "Secret",
     "Package",
     "Shell",
+    "SshKey",
+    "GpgKey",
     "ShellKind",
     "OsType",
     "OsArch",
     "symlink",
     "template",
     "shell",
+    "ssh_key",
+    "gpg_key",
     "keron_root",
     "env",
     "secret",
@@ -83,6 +87,7 @@ pub fn imports() -> ImportedSymbols {
     insert_secrets(&mut imp);
     insert_packages(&mut imp);
     let shell_kind = insert_shell(&mut imp);
+    insert_keys(&mut imp);
     let (os_type, os_arch) = insert_os(&mut imp);
     insert_host(&mut imp);
     insert_string(&mut imp);
@@ -154,6 +159,26 @@ fn insert_shell(imp: &mut ImportedSymbols) -> Type {
         Type::Shell,
     );
     shell_kind
+}
+
+fn insert_keys(imp: &mut ImportedSymbols) {
+    insert_fn(
+        imp,
+        "ssh_key",
+        &[
+            ("private_path", Type::String),
+            ("public_path", Type::String),
+            ("private", Type::Secret),
+            ("public", Type::String),
+        ],
+        Type::SshKey,
+    );
+    insert_fn(
+        imp,
+        "gpg_key",
+        &[("fingerprint", Type::String), ("key", Type::Secret)],
+        Type::GpgKey,
+    );
 }
 
 fn insert_os(imp: &mut ImportedSymbols) -> (Type, Type) {
@@ -380,6 +405,8 @@ fn insert_named_types(imp: &mut ImportedSymbols, shell_kind: Type, os_type: Type
         ("Secret", Type::Secret),
         ("Package", Type::Package),
         ("Shell", Type::Shell),
+        ("SshKey", Type::SshKey),
+        ("GpgKey", Type::GpgKey),
         ("ShellKind", shell_kind),
         ("OsType", os_type),
         ("OsArch", os_arch),

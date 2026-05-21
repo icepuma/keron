@@ -163,7 +163,11 @@ fn leaf_path(change: &ResourceChange) -> Option<PathBuf> {
     match state {
         ResourceState::Symlink { from, .. } => Some(from.clone()),
         ResourceState::Template { path, .. } => Some(path.clone()),
-        ResourceState::Package { .. } | ResourceState::Tap(_) | ResourceState::Shell { .. } => None,
+        ResourceState::SshKey { private_path, .. } => Some(private_path.clone()),
+        ResourceState::Package { .. }
+        | ResourceState::Tap(_)
+        | ResourceState::Shell { .. }
+        | ResourceState::GpgKey { .. } => None,
     }
 }
 

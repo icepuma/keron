@@ -26,7 +26,7 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{self, Context, Result, bail};
 
 use crate::packages::{self, BatchOutput};
 use crate::plan::{
@@ -510,6 +510,13 @@ fn apply_create(state: &ResourceState, ctx: ApplyContext, os: OsFamily) -> Resul
             packages::install_many(*manager, &[name.as_str()], os)
         }
         ResourceState::Tap(spec) => packages::tap(spec, Action::Create),
+        ResourceState::SshKey {
+            private_path,
+            public_path,
+            private_key,
+            public_key,
+        } => create_ssh_key(private_path, public_path, private_key, public_key),
+        ResourceState::GpgKey { fingerprint, key } => create_gpg_key(fingerprint, key),
         ResourceState::Shell { .. } => bail!(unsupported_kind(state)),
     }
 }
@@ -694,6 +701,140 @@ fn replace_template(path: &Path, content: &str, sensitive: bool) -> Result<()> {
     Ok(())
 }
 
+/// Write an SSH keypair to disk as a single atomic create.
+///
+/// Modes are hard-coded — `0o600` for the private half, `0o644` for
+/// the public half — and the parent directory is materialised at
+/// `0o700` on Unix (the conventional `~/.ssh` permission). Writes go
+/// through [`open_new_leaf_no_follow`] so a hostile symlink at either
+/// path is rejected rather than followed.
+///
+/// The classifier guarantees both files are missing before this runs
+/// (it errors out on any prior occupant), so no atomic-replace dance
+/// is needed; if the second write fails after the first has landed,
+/// the next plan classifies as "out of sync" and tells the user to
+/// clean up. That asymmetric state is unusual enough — only reached
+/// by an interrupted apply — that surfacing it on the next run is the
+/// right ergonomics.
+fn create_ssh_key(
+    private_path: &Path,
+    public_path: &Path,
+    private_key: &str,
+    public_key: &str,
+) -> Result<()> {
+    ensure_ssh_parent(private_path)?;
+    ensure_ssh_parent(public_path)?;
+    write_ssh_file(private_path, private_key.as_bytes(), 0o600)?;
+    write_ssh_file(public_path, public_key.as_bytes(), 0o644)?;
+    Ok(())
+}
+
+/// Create the parent directory of an SSH key file at `0o700` on Unix.
+/// The mode is only enforced when we create the directory ourselves —
+/// an existing `~/.ssh` is left as the user configured it (chmod'ing
+/// down without warning would be a surprise; chmod'ing up would
+/// degrade their setup).
+fn ensure_ssh_parent(path: &Path) -> Result<()> {
+    let Some(parent) = path.parent() else {
+        return Ok(());
+    };
+    if parent.as_os_str().is_empty() {
+        return Ok(());
+    }
+    match fs::symlink_metadata(parent) {
+        Ok(meta) if meta.file_type().is_dir() => Ok(()),
+        Ok(_) => bail!(
+            "ssh key parent `{}` exists and is not a directory; refusing to overwrite",
+            parent.display()
+        ),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("creating parent directory `{}`", parent.display()))?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(parent, fs::Permissions::from_mode(0o700))
+                    .with_context(|| format!("setting `{}` to mode 0700", parent.display()))?;
+            }
+            Ok(())
+        }
+        Err(e) => Err(anyhow::anyhow!(
+            "inspecting ssh key parent `{}`: {e}",
+            parent.display()
+        )),
+    }
+}
+
+fn write_ssh_file(path: &Path, content: &[u8], mode: u32) -> Result<()> {
+    let mut file = open_new_leaf_no_follow(path, mode)
+        .with_context(|| format!("creating ssh key file `{}`", path.display()))?;
+    file.write_all(content)
+        .with_context(|| format!("writing ssh key file `{}`", path.display()))?;
+    file.sync_all()
+        .with_context(|| format!("syncing ssh key file `{}`", path.display()))
+}
+
+/// Import a GPG secret-key blob into the user's keyring.
+///
+/// `gpg --batch --import` reads the blob from child stdin. We never
+/// pass it via argv (visible in `/proc/<pid>/cmdline`) and never stage
+/// it through a tempfile. Stdout is piped to `/dev/null` so gpg's
+/// keyring listing never enters keron's memory — the only signal we
+/// consume is the exit status. Stderr is inherited so any gpg error
+/// (bad pinentry, malformed blob) reaches the user's terminal
+/// directly.
+///
+/// After a successful import, we re-probe `gpg --list-secret-keys
+/// <fingerprint>` to confirm the blob actually carried the declared
+/// fingerprint. Without this check, a user pointing at the wrong
+/// op:// secret would import some other key, the classifier would
+/// continue to see the declared fingerprint as absent, and `apply`
+/// would loop importing on every run.
+fn create_gpg_key(fingerprint: &str, key: &str) -> Result<()> {
+    which::which("gpg").context("`gpg` is not available on PATH")?;
+    let mut child = Command::new("gpg")
+        .args(["--batch", "--import"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .context("spawning `gpg --batch --import`")?;
+    {
+        let mut stdin = child
+            .stdin
+            .take()
+            .context("opening stdin for `gpg --batch --import`")?;
+        stdin
+            .write_all(key.as_bytes())
+            .context("writing key material to `gpg --batch --import`")?;
+    }
+    let status = child
+        .wait()
+        .context("waiting for `gpg --batch --import` to finish")?;
+    if !status.success() {
+        bail!("`gpg --batch --import` exited with status {status} for fingerprint `{fingerprint}`");
+    }
+    let probe = Command::new("gpg")
+        .args([
+            "--batch",
+            "--list-secret-keys",
+            "--with-colons",
+            fingerprint,
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .context("re-probing gpg keyring after import")?;
+    if !probe.success() {
+        bail!(
+            "`gpg --import` succeeded but fingerprint `{fingerprint}` was not added to the keyring; \
+             the supplied key likely has a different fingerprint than declared",
+        );
+    }
+    Ok(())
+}
+
 /// Removes `path` on drop unless [`Self::disarm`] is called first.
 /// Used by [`replace_template`] so every failure path between the
 /// `open(.tmp)` and the final `rename` cleans up the sibling temp
@@ -804,6 +945,8 @@ fn unsupported_kind(state: &ResourceState) -> String {
         ResourceState::Package { .. } => ResourceKind::Package,
         ResourceState::Tap(_) => ResourceKind::Tap,
         ResourceState::Shell { .. } => ResourceKind::Shell,
+        ResourceState::SshKey { .. } => ResourceKind::SshKey,
+        ResourceState::GpgKey { .. } => ResourceKind::GpgKey,
     };
     format!(
         "executor not yet implemented for {} resources",
@@ -939,6 +1082,8 @@ mod tests {
                 }
                 ResourceState::Tap(spec) => format!("tap:{}", spec.user_tap),
                 ResourceState::Shell { name, .. } => name.clone(),
+                ResourceState::SshKey { private_path, .. } => private_path.display().to_string(),
+                ResourceState::GpgKey { fingerprint, .. } => format!("gpg:{fingerprint}"),
             },
             kind: match probe {
                 ResourceState::Symlink { .. } => ResourceKind::Symlink,
@@ -946,6 +1091,8 @@ mod tests {
                 ResourceState::Package { .. } => ResourceKind::Package,
                 ResourceState::Tap(_) => ResourceKind::Tap,
                 ResourceState::Shell { .. } => ResourceKind::Shell,
+                ResourceState::SshKey { .. } => ResourceKind::SshKey,
+                ResourceState::GpgKey { .. } => ResourceKind::GpgKey,
             },
             action,
             before,
@@ -1299,6 +1446,49 @@ mod tests {
             mode, 0o600,
             "sensitive replace must drop group/other bits: {mode:o}"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_ssh_key_writes_private_at_0600_and_public_at_0644() {
+        use std::os::unix::fs::MetadataExt;
+        let d = TempDir::new("ssh-create");
+        let priv_path = d.path.join("id_ed25519");
+        let pub_path = d.path.join("id_ed25519.pub");
+        create_ssh_key(
+            &priv_path,
+            &pub_path,
+            "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----\n",
+            "ssh-ed25519 AAAA host\n",
+        )
+        .unwrap();
+        let priv_mode = fs::metadata(&priv_path).unwrap().mode() & 0o777;
+        let pub_mode = fs::metadata(&pub_path).unwrap().mode() & 0o777;
+        assert_eq!(
+            priv_mode, 0o600,
+            "private key must be owner-only: {priv_mode:o}"
+        );
+        assert_eq!(pub_mode, 0o644, "public key mode: {pub_mode:o}");
+        // Content survives byte-for-byte.
+        assert!(fs::read_to_string(&priv_path).unwrap().contains("OPENSSH"));
+        assert_eq!(
+            fs::read_to_string(&pub_path).unwrap(),
+            "ssh-ed25519 AAAA host\n"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_ssh_key_creates_parent_dir_at_0700() {
+        use std::os::unix::fs::MetadataExt;
+        let d = TempDir::new("ssh-parent");
+        let ssh_dir = d.path.join(".ssh");
+        let priv_path = ssh_dir.join("id_ed25519");
+        let pub_path = ssh_dir.join("id_ed25519.pub");
+        assert!(!ssh_dir.exists(), "fixture invariant: parent absent");
+        create_ssh_key(&priv_path, &pub_path, "PRIV", "ssh-ed25519 AAAA").unwrap();
+        let mode = fs::metadata(&ssh_dir).unwrap().mode() & 0o777;
+        assert_eq!(mode, 0o700, "parent dir must be 0700: {mode:o}");
     }
 
     #[test]

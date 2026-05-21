@@ -229,6 +229,12 @@ pub fn plan_has_body_blocks(plan: &Plan) -> bool {
             s.as_ref().and_then(|state| match state {
                 ResourceState::Template { content, .. } => Some(content.clone()),
                 ResourceState::Shell { script, .. } => Some(script.clone()),
+                ResourceState::SshKey {
+                    private_key,
+                    public_key,
+                    ..
+                } => Some(format!("{private_key}\n{public_key}")),
+                ResourceState::GpgKey { key, .. } => Some(key.clone()),
                 _ => None,
             })
         };
@@ -445,6 +451,38 @@ fn render_state_lines<W: Write>(
             writeln!(out, "      {s} name   = \"{}\"", escape_inline(name))?;
             writeln!(out, "      {s} cwd    = \"{}\"", show_path(cwd))?;
             render_body_field(out, "script", None, script, &s, *sensitive, opts)?;
+        }
+        ResourceState::SshKey {
+            private_path,
+            public_path,
+            private_key,
+            public_key,
+        } => {
+            writeln!(
+                out,
+                "      {s} private_path = \"{}\"",
+                show_path(private_path)
+            )?;
+            writeln!(
+                out,
+                "      {s} public_path  = \"{}\"",
+                show_path(public_path)
+            )?;
+            // SSH keys are inherently sensitive — both halves go
+            // through `render_body_field` with `sensitive = true` so
+            // default mode prints `[sensitive]` and verbose mode
+            // (`--verbose-will-reveal-sensitive-content`) prints the
+            // PEM blob in full.
+            render_body_field(out, "private", None, private_key, &s, true, opts)?;
+            render_body_field(out, "public", None, public_key, &s, true, opts)?;
+        }
+        ResourceState::GpgKey { fingerprint, key } => {
+            writeln!(
+                out,
+                "      {s} fingerprint = \"{}\"",
+                escape_inline(fingerprint)
+            )?;
+            render_body_field(out, "key", None, key, &s, true, opts)?;
         }
     }
     Ok(())

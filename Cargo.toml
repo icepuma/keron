@@ -55,6 +55,16 @@ which = "=8.0.2"
 # diffs (template `content` and shell `script`) under the
 # `--verbose-will-reveal-sensitive-content` flag.
 similar = "=2.7.0"
+# Stack-overflow defense for the user-fn call dispatch. Each
+# `eval_expr` → user-fn → `eval_block_value` recursion eats a Rust
+# stack frame; the depth guard at `MAX_CALL_DEPTH` is fine on the
+# main thread's 8 MiB stack but the cargo-test default 2 MiB thread
+# stack is too small to even reach the guard, which would surface as
+# a SIGABRT instead of the clean "call depth exceeded" diagnostic.
+# `stacker::maybe_grow` allocates a fresh stack segment when the
+# remaining red-zone gets thin, decoupling the runtime guard from
+# the host thread stack size.
+stacker = "=0.1.24"
 # Pinned platform binding for the elevated-rights flow on Windows:
 # parent-side SID capture (`OpenProcessToken` + `GetTokenInformation` +
 # `ConvertSidToStringSidW`), child-side ownership transfer

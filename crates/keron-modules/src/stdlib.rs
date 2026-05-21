@@ -57,6 +57,7 @@ fn build_registry() -> BTreeMap<&'static str, StdModule> {
     reg.insert("secrets", build_secrets());
     reg.insert("packages", build_packages());
     reg.insert("shell", build_shell());
+    reg.insert("keys", build_keys());
     reg.insert("string", build_string());
     reg.insert("list", build_list());
     reg.insert("map", build_map());
@@ -299,6 +300,55 @@ fn build_shell() -> StdModule {
     let mut types = BTreeMap::new();
     types.insert("Shell".into(), Type::Shell);
     types.insert("ShellKind".into(), shell_kind);
+    StdModule { fns, types }
+}
+
+/// `std:keys` builtins — import-only SSH and GPG key resources.
+///
+/// Both intrinsics ensure *presence* of the supplied key material
+/// without ever generating new keys. The encrypted blob flows in as a
+/// [`Type::Secret`] (the typechecker rejects bare `String`), and the
+/// produced resource is treated as always-sensitive by the plan
+/// diff — `--verbose-will-reveal-sensitive-content` is the opt-in for
+/// printing the material.
+///
+/// `apply` only ever issues `Create` or `NoOp` for these resources:
+///
+///   - SSH: writing to either path when a regular file with different
+///     content already exists is a hard error rather than a silent
+///     rotation. The user's memory of the prior key is the only path
+///     out — they remove the file manually if a new key is intended.
+///   - GPG: idempotency is checked via `gpg --batch --list-secret-keys
+///     <fingerprint>` (exit status only, never stdout capture). If the
+///     fingerprint is already in the keyring the resource is `NoOp`.
+fn build_keys() -> StdModule {
+    let mut fns = BTreeMap::new();
+    fns.insert(
+        "ssh_key".into(),
+        intrinsic_fn(
+            "ssh_key",
+            &[
+                ("private_path", Type::String),
+                ("public_path", Type::String),
+                ("private", Type::Secret),
+                ("public", Type::String),
+            ],
+            Type::SshKey,
+            IntrinsicId::SshKey,
+        ),
+    );
+    fns.insert(
+        "gpg_key".into(),
+        intrinsic_fn(
+            "gpg_key",
+            &[("fingerprint", Type::String), ("key", Type::Secret)],
+            Type::GpgKey,
+            IntrinsicId::GpgKey,
+        ),
+    );
+    let mut types = BTreeMap::new();
+    types.insert("SshKey".into(), Type::SshKey);
+    types.insert("GpgKey".into(), Type::GpgKey);
     StdModule { fns, types }
 }
 

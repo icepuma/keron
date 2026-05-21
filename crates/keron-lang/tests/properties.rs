@@ -77,6 +77,8 @@ fn literal_source_for(ty: &Type) -> BoxedStrategy<(String, Type)> {
         | Type::Secret
         | Type::Package
         | Type::Shell
+        | Type::SshKey
+        | Type::GpgKey
         | Type::Void
         | Type::Struct { .. }
         | Type::StringUnion { .. }
