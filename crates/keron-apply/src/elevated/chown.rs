@@ -3,10 +3,12 @@
 //! resulting symlink / file / directory is owned by the user that
 //! invoked the unprivileged parent, *not* by root / Administrator.
 //!
-//! On Unix this is `lchown` for symlinks (so we set the link's
-//! owner, not the target's) and `chown` for regular files and
-//! directories — both from `std::os::unix::fs` so we don't need to
-//! add the `nix` or `libc` crate.
+//! On Unix this is `lchown` from `std::os::unix::fs` — a single
+//! safe syscall that sets the path's own owner without following
+//! symlinks. For regular files and directories it behaves
+//! identically to `chown`; for symlinks it sets the link's owner
+//! rather than the target's. The previous two-step
+//! `symlink_metadata` + `chown` / `lchown` branch was redundant.
 //!
 //! On Windows we open a handle with `FILE_FLAG_OPEN_REPARSE_POINT`
 //! and call `SetSecurityInfo` on the handle. The flag is critical:
@@ -45,16 +47,12 @@ pub fn set_owner(path: &Path, owner: &OwnerId) -> Result<()> {
 #[cfg(unix)]
 fn set_owner_posix(path: &Path, uid: u32, gid: u32) -> Result<()> {
     use anyhow::Context;
-    let meta = std::fs::symlink_metadata(path)
-        .with_context(|| format!("inspecting `{}` for ownership transfer", path.display()))?;
-    if meta.file_type().is_symlink() {
-        std::os::unix::fs::lchown(path, Some(uid), Some(gid))
-            .with_context(|| format!("lchown `{}` -> {uid}:{gid}", path.display()))?;
-    } else {
-        std::os::unix::fs::chown(path, Some(uid), Some(gid))
-            .with_context(|| format!("chown `{}` -> {uid}:{gid}", path.display()))?;
-    }
-    Ok(())
+    // `lchown` is correct for both leaves: on a symlink it sets the
+    // link's owner (not the target's), and on a regular file or
+    // directory it behaves exactly like `chown`. One safe syscall;
+    // no `symlink_metadata` probe needed.
+    std::os::unix::fs::lchown(path, Some(uid), Some(gid))
+        .with_context(|| format!("lchown `{}` -> {uid}:{gid}", path.display()))
 }
 
 #[cfg(not(unix))]
@@ -66,38 +64,46 @@ fn set_owner_posix(_path: &Path, _uid: u32, _gid: u32) -> Result<()> {
 pub mod windows {
     //! Windows-side ownership transfer + UAC re-exec primitives.
     //!
-    //! All `unsafe` blocks below are scoped per-call-site with a
-    //! one-line *why* comment, per the workspace `unsafe_code =
-    //! "deny"` policy.
+    //! Each function carries one `#[allow(unsafe_code)]` opt-out
+    //! plus a top-of-function SAFETY block describing the
+    //! invariants for *every* FFI call inside. That gives auditors
+    //! one unit of review per logical operation instead of one per
+    //! syscall — the same approach the rest of the codebase takes
+    //! for sites that genuinely need FFI.
+    //!
+    //! Strings are marshalled via the `windows` crate's `PCWSTR`
+    //! wrapper around our own `Vec<u16>` buffer (NUL-terminated),
+    //! which keeps lifetimes obvious and avoids an HSTRING heap
+    //! allocation for paths we already own.
 
     use std::ffi::c_void;
-    use std::io;
     use std::os::windows::ffi::OsStrExt;
     use std::path::{Path, PathBuf};
-    use std::ptr;
 
     use anyhow::{Result, bail};
-    use windows_sys::Win32::Foundation::{
+    use windows::Win32::Foundation::{
         CloseHandle, GetLastError, HANDLE, HLOCAL, INVALID_HANDLE_VALUE, LocalFree,
     };
-    use windows_sys::Win32::Security::Authorization::{
+    use windows::Win32::Security::Authorization::{
         ConvertSidToStringSidW, ConvertStringSidToSidW, SE_FILE_OBJECT, SetSecurityInfo,
     };
-    use windows_sys::Win32::Security::{
+    use windows::Win32::Security::{
         GetTokenInformation, OWNER_SECURITY_INFORMATION, PSID, TOKEN_QUERY, TOKEN_USER, TokenUser,
     };
-    use windows_sys::Win32::Storage::FileSystem::{
+    use windows::Win32::Storage::FileSystem::{
         CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_DELETE,
         FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
     };
-    use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
-    use windows_sys::Win32::UI::Shell::{
-        SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, ShellExecuteExW,
-    };
+    use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+    use windows::Win32::UI::Shell::{SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, ShellExecuteExW};
+    use windows::core::{PCWSTR, PWSTR};
 
     const WRITE_OWNER: u32 = 0x0008_0000;
     const SW_HIDE: i32 = 0;
 
+    /// Encode `s` as a NUL-terminated UTF-16 buffer suitable for
+    /// `PCWSTR(buf.as_ptr())`. The caller owns the `Vec<u16>` and
+    /// must keep it alive for as long as the pointer is in use.
     fn to_wide(s: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
         s.as_ref().encode_wide().chain(std::iter::once(0)).collect()
     }
@@ -108,95 +114,64 @@ pub mod windows {
     /// to set as the owner of newly created files.
     ///
     /// # Errors
-    /// Wraps any failing Win32 call with `io::Error::last_os_error`.
+    /// Returns any failing Win32 call as `windows::core::Error`
+    /// wrapped in `anyhow`.
+    //
+    // SAFETY (all unsafe blocks below):
+    //   - `GetCurrentProcess()` returns a pseudo-handle that needs
+    //     no closing; `OpenProcessToken` writes the real token into
+    //     `token` which we `CloseHandle` before returning.
+    //   - The first `GetTokenInformation` call is the documented
+    //     size-probe pattern (NULL buffer / 0 length).
+    //   - The second `GetTokenInformation` call reads into `buf`,
+    //     which is sized by the probe.
+    //   - `&*(buf.as_ptr() as *const TOKEN_USER)` is valid because
+    //     `TokenUser` returns `TOKEN_USER` at offset 0 of the buffer.
+    //   - `ConvertSidToStringSidW` writes a LocalAlloc'd UTF-16
+    //     string we walk to the NUL terminator and `LocalFree`.
+    #[allow(unsafe_code)]
     pub fn current_user_sid_string() -> Result<String> {
-        let mut token: HANDLE = ptr::null_mut();
-        // SAFETY: `GetCurrentProcess` returns a pseudo-handle; FFI
-        // call writes the actual token handle into `token`. We close
-        // it before returning.
-        #[allow(unsafe_code)]
-        let ok = unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) };
-        if ok == 0 {
-            bail!("OpenProcessToken failed: {}", io::Error::last_os_error());
-        }
+        let mut token = HANDLE::default();
+        unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) }
+            .map_err(|e| anyhow::anyhow!("OpenProcessToken failed: {e}"))?;
 
         // Two-step `GetTokenInformation`: query size, then read.
         let mut needed: u32 = 0;
-        // SAFETY: FFI; passing NULL and 0 length is the documented
-        // probe pattern. We don't read the unset memory.
-        #[allow(unsafe_code)]
-        unsafe {
-            GetTokenInformation(token, TokenUser, ptr::null_mut(), 0, &mut needed);
-        }
+        let _ = unsafe { GetTokenInformation(token, TokenUser, None, 0, &mut needed) };
         if needed == 0 {
-            // SAFETY: closing the token we successfully opened.
-            #[allow(unsafe_code)]
-            unsafe {
-                CloseHandle(token);
-            }
+            let _ = unsafe { CloseHandle(token) };
             bail!(
                 "GetTokenInformation probe returned 0 bytes: {}",
-                io::Error::last_os_error()
+                std::io::Error::last_os_error()
             );
         }
         let mut buf = vec![0u8; needed as usize];
-        // SAFETY: FFI fills `buf` with `TOKEN_USER` data; `needed`
-        // came from the probe above, so the buffer is sized.
-        #[allow(unsafe_code)]
-        let ok = unsafe {
+        let read_res = unsafe {
             GetTokenInformation(
                 token,
                 TokenUser,
-                buf.as_mut_ptr().cast::<c_void>(),
+                Some(buf.as_mut_ptr().cast::<c_void>()),
                 needed,
                 &mut needed,
             )
         };
-        // SAFETY: token is still live; close it now that we have the data.
-        #[allow(unsafe_code)]
-        unsafe {
-            CloseHandle(token);
-        }
-        if ok == 0 {
-            bail!(
-                "GetTokenInformation read failed: {}",
-                io::Error::last_os_error()
-            );
-        }
+        let _ = unsafe { CloseHandle(token) };
+        read_res.map_err(|e| anyhow::anyhow!("GetTokenInformation read failed: {e}"))?;
 
-        // SAFETY: `TOKEN_USER` starts at offset 0 of the buffer
-        // because we read it via `GetTokenInformation(TokenUser, ...)`.
-        #[allow(unsafe_code)]
         let token_user: &TOKEN_USER = unsafe { &*(buf.as_ptr() as *const TOKEN_USER) };
         let sid_ptr: PSID = token_user.User.Sid;
 
-        let mut sid_str: *mut u16 = ptr::null_mut();
-        // SAFETY: FFI; `sid_ptr` came from the kernel a moment ago
-        // so it's valid. The string `sid_str` writes to is owned by
-        // LocalAlloc and we LocalFree it below.
-        #[allow(unsafe_code)]
-        let ok = unsafe { ConvertSidToStringSidW(sid_ptr, &mut sid_str) };
-        if ok == 0 {
-            bail!(
-                "ConvertSidToStringSidW failed: {}",
-                io::Error::last_os_error()
-            );
-        }
-        // SAFETY: we walk the UTF-16 buffer until the NUL terminator
-        // that `ConvertSidToStringSidW` is documented to produce.
-        #[allow(unsafe_code)]
+        let mut sid_str = PWSTR::null();
+        unsafe { ConvertSidToStringSidW(sid_ptr, &mut sid_str) }
+            .map_err(|e| anyhow::anyhow!("ConvertSidToStringSidW failed: {e}"))?;
         let s = unsafe {
             let mut len = 0;
-            while *sid_str.add(len) != 0 {
+            while *sid_str.0.add(len) != 0 {
                 len += 1;
             }
-            String::from_utf16_lossy(std::slice::from_raw_parts(sid_str, len))
+            String::from_utf16_lossy(std::slice::from_raw_parts(sid_str.0, len))
         };
-        // SAFETY: free the buffer LocalAlloc'd by ConvertSidToStringSidW.
-        #[allow(unsafe_code)]
-        unsafe {
-            LocalFree(sid_str as HLOCAL);
-        }
+        let _ = unsafe { LocalFree(Some(HLOCAL(sid_str.0.cast::<c_void>()))) };
         Ok(s)
     }
 
@@ -208,74 +183,66 @@ pub mod windows {
     /// directory handle.
     ///
     /// # Errors
-    /// Wraps Win32 errors with `io::Error::last_os_error`.
+    /// Returns Win32 errors via `windows::core::Error`.
+    //
+    // SAFETY (all unsafe blocks below):
+    //   - `ConvertStringSidToSidW` writes a LocalAlloc'd SID we
+    //     `LocalFree` before returning.
+    //   - `CreateFileW` is called with our own NUL-terminated
+    //     wide buffer; the returned handle is `CloseHandle`d.
+    //   - `SetSecurityInfo` is called with the open handle and the
+    //     freshly-allocated SID; DACL/SACL/group pointers are NULL.
+    //   - `CloseHandle`/`LocalFree` run on the resource handles we
+    //     created above, regardless of `SetSecurityInfo` outcome.
+    #[allow(unsafe_code)]
     pub fn set_file_owner(path: &Path, sid_str: &str) -> Result<()> {
         let wide_sid = to_wide(sid_str);
-        let mut sid: PSID = ptr::null_mut();
-        // SAFETY: FFI; `wide_sid` is a NUL-terminated UTF-16 slice
-        // owned by us. On success `sid` points at LocalAlloc memory
-        // we LocalFree below.
-        #[allow(unsafe_code)]
-        let ok = unsafe { ConvertStringSidToSidW(wide_sid.as_ptr(), &mut sid) };
-        if ok == 0 {
-            bail!(
-                "ConvertStringSidToSidW failed for `{sid_str}`: {}",
-                io::Error::last_os_error()
-            );
-        }
+        let mut sid = PSID::default();
+        unsafe { ConvertStringSidToSidW(PCWSTR(wide_sid.as_ptr()), &mut sid) }
+            .map_err(|e| anyhow::anyhow!("ConvertStringSidToSidW failed for `{sid_str}`: {e}"))?;
 
         let wide_path = to_wide(path);
-        // SAFETY: FFI; `wide_path` is NUL-terminated. The handle we
-        // get back is closed below.
-        #[allow(unsafe_code)]
-        let handle: HANDLE = unsafe {
+        let handle = unsafe {
             CreateFileW(
-                wide_path.as_ptr(),
+                PCWSTR(wide_path.as_ptr()),
                 WRITE_OWNER,
                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                ptr::null_mut(),
+                None,
                 OPEN_EXISTING,
                 FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS,
-                ptr::null_mut(),
+                None,
             )
         };
-        if handle == INVALID_HANDLE_VALUE {
-            // SAFETY: clean up the SID before bailing.
-            #[allow(unsafe_code)]
-            unsafe {
-                LocalFree(sid as HLOCAL);
+        let handle = match handle {
+            Ok(h) if h != INVALID_HANDLE_VALUE => h,
+            _ => {
+                let _ = unsafe { LocalFree(Some(HLOCAL(sid.0))) };
+                bail!(
+                    "CreateFileW(`{}`, WRITE_OWNER) failed: {}",
+                    path.display(),
+                    std::io::Error::last_os_error()
+                );
             }
-            bail!(
-                "CreateFileW(`{}`, WRITE_OWNER) failed: {}",
-                path.display(),
-                io::Error::last_os_error()
-            );
-        }
+        };
 
-        // SAFETY: handle is open, sid is valid; the DACL/SACL/group
-        // pointers are NULL because we only want to set the owner.
-        #[allow(unsafe_code)]
         let err = unsafe {
             SetSecurityInfo(
                 handle,
                 SE_FILE_OBJECT,
                 OWNER_SECURITY_INFORMATION,
-                sid,
-                ptr::null_mut(),
-                ptr::null(),
-                ptr::null(),
+                Some(sid),
+                None,
+                None,
+                None,
             )
         };
-        // SAFETY: close the handle and free the SID regardless of result.
-        #[allow(unsafe_code)]
-        unsafe {
-            CloseHandle(handle);
-            LocalFree(sid as HLOCAL);
-        }
-        if err != 0 {
+        let _ = unsafe { CloseHandle(handle) };
+        let _ = unsafe { LocalFree(Some(HLOCAL(sid.0))) };
+        if err.is_err() {
             bail!(
-                "SetSecurityInfo on `{}` failed with code {err}",
-                path.display()
+                "SetSecurityInfo on `{}` failed with code {:?}",
+                path.display(),
+                err
             );
         }
         Ok(())
@@ -293,16 +260,25 @@ pub mod windows {
     /// # Errors
     /// Errors if `ShellExecuteExW` fails, if waiting fails, or if
     /// `GetExitCodeProcess` fails.
+    //
+    // SAFETY (all unsafe blocks below):
+    //   - `SHELLEXECUTEINFOW` contains an anonymous union;
+    //     `mem::zeroed` is the documented init pattern. Every field
+    //     we use is set explicitly before the call.
+    //   - `ShellExecuteExW`, `WaitForSingleObject`,
+    //     `GetExitCodeProcess`, and `CloseHandle` are invoked with
+    //     `info.hProcess`, which is non-null on the success path
+    //     (checked) and which we close before returning.
+    //
     // `#[mutants::skip]` because the function calls Win32
     // `ShellExecuteExW`/`WaitForSingleObject`/`GetExitCodeProcess` —
     // there is no in-process test harness for that on macOS / Linux
-    // (where mutants runs). The argv-smuggling refusal paths above
-    // are guarded by unit tests on the shared input-validation
-    // helpers, not by re-executing the Win32 binding.
+    // (where mutants runs).
     #[cfg_attr(test, mutants::skip)]
+    #[allow(unsafe_code)]
     pub fn shell_execute_runas(exe: &Path, payload: &Path) -> Result<std::process::ExitStatus> {
         use std::os::windows::process::ExitStatusExt;
-        use windows_sys::Win32::System::Threading::{
+        use windows::Win32::System::Threading::{
             GetExitCodeProcess, INFINITE, WaitForSingleObject,
         };
 
@@ -335,51 +311,25 @@ pub mod windows {
         let params: PathBuf = format!("__apply-elevated \"{display}\"").into();
         let params_w = to_wide(&params);
 
-        // SAFETY: `SHELLEXECUTEINFOW` contains an anonymous union;
-        // zero-initialising the whole struct is the documented
-        // pattern in Microsoft's Win32 reference. We immediately
-        // overwrite every field we care about; the union member
-        // ends up holding all-zero bits, which is the documented
-        // "not used" sentinel for the verbs we invoke.
-        #[allow(unsafe_code)]
         let mut info: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
         info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
         info.fMask = SEE_MASK_NOCLOSEPROCESS;
-        info.lpVerb = verb.as_ptr();
-        info.lpFile = exe_w.as_ptr();
-        info.lpParameters = params_w.as_ptr();
+        info.lpVerb = PCWSTR(verb.as_ptr());
+        info.lpFile = PCWSTR(exe_w.as_ptr());
+        info.lpParameters = PCWSTR(params_w.as_ptr());
         info.nShow = SW_HIDE;
-        // SAFETY: FFI; `info` is correctly initialized per its
-        // documented contract (cbSize set, all string ptrs are
-        // NUL-terminated UTF-16 we own, NULL where allowed).
-        #[allow(unsafe_code)]
-        let ok = unsafe { ShellExecuteExW(&mut info) };
-        if ok == 0 {
-            // SAFETY: GetLastError reads thread-local error state.
-            #[allow(unsafe_code)]
+        if unsafe { ShellExecuteExW(&mut info) }.is_err() {
             let code = unsafe { GetLastError() };
-            bail!("ShellExecuteExW(runas) failed: GetLastError = {code}");
+            bail!("ShellExecuteExW(runas) failed: GetLastError = {code:?}");
         }
-        if info.hProcess.is_null() {
+        if info.hProcess.is_invalid() {
             bail!("ShellExecuteExW returned no process handle");
         }
-        // SAFETY: hProcess is live; INFINITE blocks until the child exits.
-        #[allow(unsafe_code)]
-        unsafe {
-            WaitForSingleObject(info.hProcess, INFINITE);
-        }
+        let _ = unsafe { WaitForSingleObject(info.hProcess, INFINITE) };
         let mut code: u32 = 0;
-        // SAFETY: hProcess still live; we read its exit code.
-        #[allow(unsafe_code)]
-        let ok = unsafe { GetExitCodeProcess(info.hProcess, &mut code) };
-        // SAFETY: close the process handle regardless.
-        #[allow(unsafe_code)]
-        unsafe {
-            CloseHandle(info.hProcess);
-        }
-        if ok == 0 {
-            bail!("GetExitCodeProcess failed: {}", io::Error::last_os_error());
-        }
+        let exit_res = unsafe { GetExitCodeProcess(info.hProcess, &mut code) };
+        let _ = unsafe { CloseHandle(info.hProcess) };
+        exit_res.map_err(|e| anyhow::anyhow!("GetExitCodeProcess failed: {e}"))?;
         Ok(std::process::ExitStatus::from_raw(code))
     }
 }

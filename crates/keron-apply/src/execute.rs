@@ -991,21 +991,13 @@ fn run_shell(kind: ShellKind, name: &str, cwd: &Path, script: &str) -> Result<()
     }
 }
 
-#[cfg(unix)]
 fn symlink_impl(target: &Path, link: &Path) -> io::Result<()> {
-    std::os::unix::fs::symlink(target, link)
-}
-
-#[cfg(windows)]
-fn symlink_impl(target: &Path, link: &Path) -> io::Result<()> {
-    // Windows splits file vs directory symlinks at the API level; pick
-    // the right call so dotfile flows that link whole config dirs
-    // (`~/.config/nvim` -> `<repo>/nvim`) work without ceremony.
-    if target.is_dir() {
-        std::os::windows::fs::symlink_dir(target, link)
-    } else {
-        std::os::windows::fs::symlink_file(target, link)
-    }
+    // The `symlink` crate's `symlink_auto` forwards to
+    // `std::os::unix::fs::symlink` on Unix and probes the target's
+    // file-or-directory kind on Windows so dotfile flows that link
+    // whole config dirs (`~/.config/nvim` -> `<repo>/nvim`) work
+    // without ceremony.
+    symlink::symlink_auto(target, link)
 }
 
 #[cfg(test)]

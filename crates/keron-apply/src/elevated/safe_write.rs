@@ -14,19 +14,25 @@
 //! ancestor to a symlink results in `ELOOP` from the next
 //! `openat`, not a redirected write.
 //!
+//! The syscalls go through `rustix`'s typed wrappers, which return
+//! `OwnedFd` directly and accept `&Path` arguments. No `unsafe` is
+//! needed in this file — the FFI surface is fully encapsulated by
+//! the wrapper crate.
+//!
 //! Cross-platform note: only Unix is supported here. `cfg(windows)`
 //! callers use the existing `fs::*` path; the Windows elevation
 //! flow has its own ACL-based safety story.
 
 #![cfg(unix)]
 
-use std::ffi::{CString, OsStr};
+use std::ffi::OsStr;
 use std::io;
-use std::os::unix::ffi::OsStrExt;
-use std::os::unix::io::{FromRawFd, OwnedFd, RawFd};
+use std::os::unix::io::OwnedFd;
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
+use rustix::fs::{AtFlags, FileType, Mode, OFlags};
+use rustix::io::Errno;
 
 /// Owned parent-directory file descriptor; closes on drop.
 #[derive(Debug)]
@@ -76,10 +82,6 @@ impl ParentDir {
         }
         Ok(Self { fd: current })
     }
-
-    fn raw(&self) -> RawFd {
-        std::os::unix::io::AsRawFd::as_raw_fd(&self.fd)
-    }
 }
 
 /// Create a symlink at `leaf` inside `parent`, pointing at `target`.
@@ -88,22 +90,13 @@ impl ParentDir {
 /// payload; the kernel only resolves it when something dereferences
 /// the link).
 pub fn symlink_at(parent: &ParentDir, leaf: &OsStr, target: &Path) -> Result<()> {
-    let target_c = cstring(target.as_os_str())?;
-    let leaf_c = cstring(leaf)?;
-    // SAFETY: FFI; both CStrings outlive the call, `parent.raw()`
-    // is an open directory fd this struct owns until drop.
-    #[allow(unsafe_code)]
-    let rc = unsafe { libc::symlinkat(target_c.as_ptr(), parent.raw(), leaf_c.as_ptr()) };
-    if rc != 0 {
-        return Err(io::Error::last_os_error()).with_context(|| {
-            format!(
-                "symlinkat `{}` -> `{}` in elevated parent",
-                os_str_lossy(leaf),
-                target.display()
-            )
-        });
-    }
-    Ok(())
+    rustix::fs::symlinkat(target, &parent.fd, leaf).with_context(|| {
+        format!(
+            "symlinkat `{}` -> `{}` in elevated parent",
+            os_str_lossy(leaf),
+            target.display()
+        )
+    })
 }
 
 /// Create a new regular file at `leaf` inside `parent` with the
@@ -114,131 +107,79 @@ pub fn symlink_at(parent: &ParentDir, leaf: &OsStr, target: &Path) -> Result<()>
 /// - `O_NOFOLLOW` refuses if the leaf itself is a symlink.
 /// - The directory fd argument keeps the ancestor walk in scope.
 pub fn create_file_at(parent: &ParentDir, leaf: &OsStr, mode: u32) -> Result<std::fs::File> {
-    let leaf_c = cstring(leaf)?;
-    let flags = libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC;
-    // SAFETY: FFI; `leaf_c` outlives the call. The returned fd is
-    // wrapped in `File` on success or freed via close-on-error if
-    // we drop before `File::from_raw_fd`.
-    #[allow(unsafe_code)]
-    let fd = unsafe { libc::openat(parent.raw(), leaf_c.as_ptr(), flags, mode) };
-    if fd < 0 {
-        return Err(io::Error::last_os_error()).with_context(|| {
-            format!(
-                "openat `{}` in elevated parent (create new, no follow)",
-                os_str_lossy(leaf),
-            )
-        });
-    }
-    // SAFETY: we own the fd; `File::from_raw_fd` takes ownership.
-    #[allow(unsafe_code)]
-    let file = unsafe { std::fs::File::from_raw_fd(fd) };
-    Ok(file)
+    let flags = OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let fd = rustix::fs::openat(&parent.fd, leaf, flags, raw_mode(mode)).with_context(|| {
+        format!(
+            "openat `{}` in elevated parent (create new, no follow)",
+            os_str_lossy(leaf),
+        )
+    })?;
+    Ok(std::fs::File::from(fd))
+}
+
+/// Build a `Mode` from a `u32` of mode bits. `rustix::fs::RawMode`
+/// is the platform's `mode_t` — `u32` on Linux, `u16` on macOS —
+/// so we mask to the standard permission + setuid/setgid/sticky
+/// bits (12 bits, fits in `u16`) before narrowing. The mask
+/// documents that only the low file-mode bits are meaningful here
+/// and silences the truncation lint without an `#[allow]`.
+#[allow(clippy::cast_possible_truncation)]
+const fn raw_mode(mode: u32) -> Mode {
+    Mode::from_bits_truncate((mode & 0o7777) as rustix::fs::RawMode)
 }
 
 fn open_root() -> io::Result<OwnedFd> {
-    let root = CString::new("/").expect("root path is valid");
-    // SAFETY: FFI; root path is a static NUL-terminated string.
-    #[allow(unsafe_code)]
-    let fd = unsafe {
-        libc::open(
-            root.as_ptr(),
-            libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-        )
-    };
-    if fd < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: we own the fd.
-    #[allow(unsafe_code)]
-    Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+    rustix::fs::open(
+        "/",
+        OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(io::Error::from)
 }
 
 fn open_or_create_subdir(parent: &OwnedFd, name: &OsStr) -> io::Result<OwnedFd> {
-    let cname = cstring_io(name)?;
-    let parent_fd = std::os::unix::io::AsRawFd::as_raw_fd(parent);
-
     // Probe the entry without following any symlink so we can
     // distinguish "regular dir" (open with NOFOLLOW) from "symlink"
     // (only allowed if root-owned; co-resident attackers can't
     // tamper with what root owns). Anything else — a regular file,
     // a non-root symlink, an unreadable entry — is refused.
-    let mut statbuf: libc::stat = unsafe_zeroed_stat();
-    // SAFETY: FFI; cname outlives the call.
-    #[allow(unsafe_code)]
-    let rc = unsafe {
-        libc::fstatat(
-            parent_fd,
-            cname.as_ptr(),
-            &raw mut statbuf,
-            libc::AT_SYMLINK_NOFOLLOW,
-        )
+    let stat = match rustix::fs::statat(parent, name, AtFlags::SYMLINK_NOFOLLOW) {
+        Ok(stat) => stat,
+        Err(Errno::NOENT) => return mkdir_and_open(parent, name),
+        Err(e) => return Err(e.into()),
     };
-    if rc != 0 {
-        let err = io::Error::last_os_error();
-        if err.kind() != io::ErrorKind::NotFound {
-            return Err(err);
-        }
-        return mkdir_and_open(parent_fd, &cname);
-    }
 
-    // `mode_t` is `u32` on Linux and `u16` on macOS; comparing
-    // `st_mode` against `S_IF*` masks in the native type works on
-    // both platforms without a `u32::from(...)` round-trip that
-    // would be a self-cast on Linux.
-    let mode = statbuf.st_mode;
-    if mode & libc::S_IFMT == libc::S_IFLNK {
+    let file_type = FileType::from_raw_mode(stat.st_mode);
+    if file_type == FileType::Symlink {
         // Symlink: follow only if the link itself is root-owned.
         // macOS ships `/var -> /private/var`, `/tmp -> /private/tmp`,
         // `/etc -> /private/etc`; these are owned by uid 0 and a
         // co-resident user cannot replace them. A user-owned
         // symlink in the path IS the attack we're defending against.
-        if statbuf.st_uid != 0 {
+        if stat.st_uid != 0 {
             return Err(io::Error::other(format!(
                 "elevated apply refuses to walk through non-root symlink `{}` (uid {})",
                 name.to_string_lossy(),
-                statbuf.st_uid,
+                stat.st_uid,
             )));
         }
         // Open following the symlink. After the open, verify the
         // resolved target is itself root-owned so a one-step
         // root→user redirect can't slip through.
-        let follow_flags = libc::O_DIRECTORY | libc::O_CLOEXEC;
-        // SAFETY: FFI; cname outlives the call.
-        #[allow(unsafe_code)]
-        let fd = unsafe { libc::openat(parent_fd, cname.as_ptr(), follow_flags) };
-        if fd < 0 {
-            return Err(io::Error::last_os_error());
-        }
-        let mut target_stat: libc::stat = unsafe_zeroed_stat();
-        // SAFETY: FFI; fd is open.
-        #[allow(unsafe_code)]
-        let rc = unsafe { libc::fstat(fd, &raw mut target_stat) };
-        if rc != 0 {
-            let err = io::Error::last_os_error();
-            // SAFETY: close the fd we just opened.
-            #[allow(unsafe_code)]
-            unsafe {
-                libc::close(fd);
-            }
-            return Err(err);
-        }
+        let follow_flags = OFlags::DIRECTORY | OFlags::CLOEXEC;
+        let fd = rustix::fs::openat(parent, name, follow_flags, Mode::empty())
+            .map_err(io::Error::from)?;
+        let target_stat = rustix::fs::fstat(&fd).map_err(io::Error::from)?;
         if target_stat.st_uid != 0 {
-            // SAFETY: close the fd we just opened.
-            #[allow(unsafe_code)]
-            unsafe {
-                libc::close(fd);
-            }
             return Err(io::Error::other(format!(
                 "elevated apply refuses: root symlink `{}` resolves to non-root target (uid {})",
                 name.to_string_lossy(),
                 target_stat.st_uid,
             )));
         }
-        // SAFETY: we own the fd.
-        #[allow(unsafe_code)]
-        return Ok(unsafe { OwnedFd::from_raw_fd(fd) });
+        return Ok(fd);
     }
-    if mode & libc::S_IFMT != libc::S_IFDIR {
+    if file_type != FileType::Directory {
         return Err(io::Error::other(format!(
             "elevated apply refuses: ancestor `{}` is neither a directory nor a symlink",
             name.to_string_lossy()
@@ -246,67 +187,25 @@ fn open_or_create_subdir(parent: &OwnedFd, name: &OsStr) -> io::Result<OwnedFd> 
     }
 
     // Regular directory.
-    let flags = libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC;
-    // SAFETY: FFI; cname outlives the call.
-    #[allow(unsafe_code)]
-    let fd = unsafe { libc::openat(parent_fd, cname.as_ptr(), flags) };
-    if fd < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: we own the fd.
-    #[allow(unsafe_code)]
-    Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+    let flags = OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    rustix::fs::openat(parent, name, flags, Mode::empty()).map_err(io::Error::from)
 }
 
-fn mkdir_and_open(parent_fd: RawFd, cname: &CString) -> io::Result<OwnedFd> {
+fn mkdir_and_open(parent: &OwnedFd, name: &OsStr) -> io::Result<OwnedFd> {
     // Component doesn't exist yet — create it and re-open. The
     // mode is the conventional 0755 for directories; the
     // elevated child will chown each created leaf back to the
     // calling user afterwards, but intermediate dirs keep their
     // existing ownership and mode (`mkdirat` honors umask).
-    // SAFETY: FFI; cname outlives the call.
-    #[allow(unsafe_code)]
-    let rc = unsafe { libc::mkdirat(parent_fd, cname.as_ptr(), 0o755) };
-    if rc != 0 {
-        let mk_err = io::Error::last_os_error();
-        // Tolerate races: another process may have created the
-        // dir between our stat and mkdir. Re-open below will see it.
-        if mk_err.kind() != io::ErrorKind::AlreadyExists {
-            return Err(mk_err);
-        }
+    //
+    // Tolerate `EEXIST`: another process may have created the dir
+    // between our stat and mkdir. The re-open below will see it.
+    match rustix::fs::mkdirat(parent, name, raw_mode(0o755)) {
+        Ok(()) | Err(Errno::EXIST) => {}
+        Err(e) => return Err(e.into()),
     }
-    let flags = libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC;
-    // SAFETY: FFI; cname outlives the call.
-    #[allow(unsafe_code)]
-    let fd = unsafe { libc::openat(parent_fd, cname.as_ptr(), flags) };
-    if fd < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: we own the fd.
-    #[allow(unsafe_code)]
-    Ok(unsafe { OwnedFd::from_raw_fd(fd) })
-}
-
-const fn unsafe_zeroed_stat() -> libc::stat {
-    // SAFETY: `libc::stat` is plain-old-data; zero bytes is a valid
-    // (if meaningless) value, immediately overwritten by `fstatat`.
-    #[allow(unsafe_code)]
-    unsafe {
-        std::mem::zeroed()
-    }
-}
-
-fn cstring(name: &OsStr) -> Result<CString> {
-    cstring_io(name).map_err(|e| anyhow::anyhow!(e))
-}
-
-fn cstring_io(name: &OsStr) -> io::Result<CString> {
-    CString::new(name.as_bytes()).map_err(|_| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "path component contains an interior NUL byte",
-        )
-    })
+    let flags = OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    rustix::fs::openat(parent, name, flags, Mode::empty()).map_err(io::Error::from)
 }
 
 fn os_str_lossy(s: &OsStr) -> String {

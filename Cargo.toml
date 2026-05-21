@@ -41,6 +41,21 @@ dirs = "=6.0.0"
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.149"
 libc = "=0.2.186"
+# Typed wrappers around POSIX/Linux syscalls (`openat`, `symlinkat`,
+# `mkdirat`, `statat`, `fchownat`, …). The elevated apply path
+# (`crates/keron-apply/src/elevated/safe_write.rs` and
+# `chown.rs::set_owner_posix`) used to invoke these through raw
+# `libc` FFI, which forced ~30 per-call-site `#[allow(unsafe_code)]`
+# exemptions under the workspace `unsafe_code = "deny"` policy.
+# `rustix` returns `OwnedFd` directly and accepts `&Path` arguments,
+# letting us write the same syscall sequences without any `unsafe`
+# in caller code.
+rustix = { version = "=1.1.4", features = ["fs", "process"] }
+# Cross-platform symlink creation. On Unix this forwards to
+# `std::os::unix::fs::symlink`; on Windows it probes the target type
+# and dispatches to `symlink_file` or `symlink_dir`. Replaces the
+# hand-rolled `cfg(unix)/cfg(windows)` shim in `execute.rs`.
+symlink = "=0.1.0"
 # Jinja2-style template engine for `template(...)` resources.
 # `default-features = false` drops the optional builtin filter
 # bundle (chrono / chrono-tz / humansize / rand / slug / urlencode);
@@ -54,7 +69,7 @@ which = "=8.0.2"
 # diff drift output and by `keron apply` for the verbose-mode body
 # diffs (template `content` and shell `script`) under the
 # `--verbose-will-reveal-sensitive-content` flag.
-similar = "=2.7.0"
+similar = "=3.1.0"
 # Stack-overflow defense for the user-fn call dispatch. Each
 # `eval_expr` → user-fn → `eval_block_value` recursion eats a Rust
 # stack frame; the depth guard at `MAX_CALL_DEPTH` is fine on the
@@ -71,14 +86,20 @@ stacker = "=0.1.24"
 # (`SetSecurityInfo` on a `CreateFileW` handle opened with
 # `FILE_FLAG_OPEN_REPARSE_POINT` so symlinks get the link's owner, not
 # the target's), and the `ShellExecuteExW` re-exec with the `runas`
-# verb that triggers UAC. Used only behind `#[cfg(windows)]`.
-windows-sys = { version = "=0.61.2", default-features = false, features = [
+# verb that triggers UAC. The typed `windows` crate (vs the lower-
+# level `windows-sys`) gives us `HSTRING`/`PCWSTR` for wide-string
+# marshalling — that lets us drop the per-call `to_wide` helper and
+# group `unsafe` per logical operation instead of per syscall. Used
+# only behind `#[cfg(windows)]`.
+windows = { version = "=0.62.2", default-features = false, features = [
+    "std",
     "Win32_Foundation",
     "Win32_Security",
     "Win32_Security_Authorization",
     "Win32_System_Threading",
     "Win32_System_Memory",
     "Win32_Storage_FileSystem",
+    "Win32_System_Registry",
     "Win32_UI_Shell",
 ] }
 
