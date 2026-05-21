@@ -1733,31 +1733,42 @@ mod tests {
     fn execute_runs_distinct_manager_batches_concurrently() {
         // Plan: 2 brew Create + 1 cargo Create + 1 cask Create, all in
         // one Package phase → 3 batches (brew/cask share the brew bin
-        // but spawn separate subprocesses). Each spy sleeps 0.8 s.
-        // Sequential = 2.4 s; ideal parallel ≈ 0.8 s + spawn overhead.
-        // Threshold is 1.7 s — strictly under sequential, with a wide
-        // margin above ideal-parallel so a busy CI machine isn't
-        // flaky.
+        // but spawn separate subprocesses).
+        //
+        // We prove parallelism *structurally*, not by stopwatch. Each
+        // spy writes a `start <pid>` line to the shared log, sleeps,
+        // then writes an `end <pid> <argv>` line. POSIX `O_APPEND` on
+        // a regular file makes each short write atomic and ordered, so
+        // the file's line order is the wall-clock interleaving of the
+        // children. If all three batches truly ran concurrently, every
+        // `start` line lands before any `end` line — there is no
+        // numerical threshold to tune and the test is impervious to
+        // host load or busy CI.
         use std::os::unix::fs::PermissionsExt;
         let _g = crate::packages::lock_env();
         let _os = crate::platform::OsOverride::set(crate::platform::OsFamily::Macos);
         let d = TempDir::new("batch-parallel");
         let log = d.path.join("argv.log");
-        let spy_path = d.path.join("sleepy-spy.sh");
+        let spy_path = d.path.join("overlap-spy.sh");
+        // POSIX `O_APPEND` only guarantees atomicity for a single
+        // `write()` syscall, so the spy assembles each log line in a
+        // shell variable first and emits it with one `printf`. Each
+        // line is well under PIPE_BUF (512 B on macOS), so concurrent
+        // appends from the three children stay non-interleaved.
         let script = "#!/bin/sh\n\
                       log=\"$KERON_TEST_ARGV_LOG\"\n\
-                      sleep 0.8\n\
-                      printf '%s\\t' \"$0\" >> \"$log\"\n\
+                      printf 'start %s\\n' \"$$\" >> \"$log\"\n\
+                      sleep 0.2\n\
+                      args=\"\"\n\
                       first=1\n\
                       for a in \"$@\"; do\n\
                       \tif [ \"$first\" -eq 1 ]; then\n\
-                      \t\tprintf '%s' \"$a\" >> \"$log\"\n\
-                      \t\tfirst=0\n\
+                      \t\targs=\"$a\"; first=0\n\
                       \telse\n\
-                      \t\tprintf ',%s' \"$a\" >> \"$log\"\n\
+                      \t\targs=\"$args,$a\"\n\
                       \tfi\n\
                       done\n\
-                      printf '\\n' >> \"$log\"\n\
+                      printf 'end %s\\t%s\\t%s\\n' \"$$\" \"$0\" \"$args\" >> \"$log\"\n\
                       exit 0\n";
         fs::write(&spy_path, script).unwrap();
         let mut perm = fs::metadata(&spy_path).unwrap().permissions();
@@ -1778,9 +1789,7 @@ mod tests {
                 pkg_change(PackageManager::BrewCask, "alacritty", Action::Create),
             ],
         };
-        let start = std::time::Instant::now();
         let result = execute(&plan);
-        let elapsed = start.elapsed();
         #[allow(unsafe_code)]
         unsafe {
             std::env::remove_var("KERON_TEST_PACKAGE_BIN_BREW");
@@ -1790,17 +1799,31 @@ mod tests {
         }
         let summary = result.expect("all spies should succeed");
         assert_eq!(summary.added, 4);
-        assert!(
-            elapsed < std::time::Duration::from_millis(1700),
-            "batches must run in parallel; took {elapsed:?} (sequential lower bound ≈ 2.4 s)",
-        );
-        // Sanity: three subprocess invocations recorded — brew (2 names),
-        // cask (1 name), cargo (1 name).
+
         let recorded = fs::read_to_string(&log).expect("log written");
+        let lines: Vec<&str> = recorded.lines().collect();
+        let starts = lines.iter().filter(|l| l.starts_with("start ")).count();
+        let ends = lines.iter().filter(|l| l.starts_with("end ")).count();
         assert_eq!(
-            recorded.lines().count(),
-            3,
-            "expected three subprocess invocations, got: {recorded:?}",
+            (starts, ends),
+            (3, 3),
+            "expected three start/end pairs (one per manager batch); got: {recorded:?}",
+        );
+        // All `start` lines must precede every `end` line — that is
+        // the structural proof of overlap. If any batch had run
+        // sequentially after another, an `end` would appear before a
+        // later `start`.
+        let first_end = lines
+            .iter()
+            .position(|l| l.starts_with("end "))
+            .expect("at least one end line");
+        let starts_before_any_end = lines[..first_end]
+            .iter()
+            .filter(|l| l.starts_with("start "))
+            .count();
+        assert_eq!(
+            starts_before_any_end, 3,
+            "all three batches must start before any of them finishes; got:\n{recorded}",
         );
     }
 
