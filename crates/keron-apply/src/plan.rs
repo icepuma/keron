@@ -448,10 +448,14 @@ pub fn build_prechecked_plan(
         .iter()
         .map(|state| classify(state, &mut cache))
         .collect::<Result<Vec<_>>>()?;
-    Ok(PrecheckedPlan {
-        plan: Plan { changes },
-        precheck,
-    })
+    let plan = Plan { changes };
+    // DAG-level capability validation: every resource's declared
+    // `needs` (e.g. GpgKey → `gpg` binary) must be satisfied by the
+    // live environment or by an earlier provider in the plan. Failing
+    // here surfaces a hint-bearing diagnostic at plan time instead of
+    // a generic crash mid-apply.
+    crate::capability::validate_capabilities(&plan, &crate::capability::LiveEnvProbe)?;
+    Ok(PrecheckedPlan { plan, precheck })
 }
 
 /// Expand every `Package { tap: Some(_) }` into a `[Tap, Package]`
@@ -598,7 +602,10 @@ fn classify(state: &ResourceState, cache: &mut PackageCache) -> Result<ResourceC
             private_key,
             public_key,
         } => classify_ssh_key(private_path, public_path, private_key, public_key, state)?,
-        ResourceState::GpgKey { fingerprint, .. } => classify_gpg_key(fingerprint, state)?,
+        ResourceState::GpgKey { fingerprint, .. } => {
+            let status = probe_gpg_keyring(fingerprint)?;
+            classify_gpg_key(state, status)
+        }
     };
     change.requires_elevation = change.compute_requires_elevation();
     change.requires_force = change.compute_requires_force();
@@ -902,21 +909,43 @@ fn probe_ssh_key_file(path: &Path, expected: &[u8]) -> Result<KeyFileState> {
     }
 }
 
-/// Diff a desired GPG secret-key import against the user's keyring.
+/// Outcome of probing the user's keyring for a desired fingerprint.
 ///
-/// Only `gpg`'s exit status is consulted — `Stdio::null()` covers both
-/// stdout and stderr so the keyring's contents never enter keron's
-/// memory (no shell-output exfiltration channel). Two outcomes:
+/// Three states because we deliberately do *not* fail at plan time
+/// when `gpg` itself is missing — the capability validator
+/// (`crate::capability::validate_capabilities`) has already confirmed
+/// that a Package in this plan will install `gpg` before the `GpgKey`
+/// resource runs, so `GpgUnavailable` is the planning-time view of
+/// "the keyring will be empty when we get there." See
+/// [`classify_gpg_key`] for how each state maps to an `Action`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GpgKeyringStatus {
+    /// `gpg` is not on PATH at plan time. Capability validation owns
+    /// the "is this fatal?" decision; the classifier just treats it as
+    /// Create.
+    GpgUnavailable,
+    /// `gpg --batch --list-secret-keys <fpr>` exited 0 — the
+    /// fingerprint is in the user's secret keyring.
+    Present,
+    /// `gpg` is available but the fingerprint is absent.
+    Absent,
+}
+
+/// Probe the user's GPG secret keyring for `fingerprint`. Pure I/O —
+/// no classification logic. Only `gpg`'s exit status is consulted
+/// (`Stdio::null()` covers stdout and stderr) so the keyring's
+/// contents never enter keron's memory (no shell-output exfiltration
+/// channel).
 ///
-///   - `gpg --batch --list-secret-keys <fpr>` exits 0 → fingerprint is
-///     in the keyring → `NoOp`.
-///   - any non-zero exit → fingerprint absent → `Create`.
-///
-/// The probe lives in the classifier (not the executor) so the user
-/// sees the planned `+ gpg_key` in the diff before any subprocess
-/// touches the keyring.
-fn classify_gpg_key(fingerprint: &str, after: &ResourceState) -> Result<ResourceChange> {
-    which::which("gpg").context("`gpg` is not available on PATH")?;
+/// Returns `GpgUnavailable` rather than an error when `gpg` is missing
+/// from PATH. That lets the capability validator surface a
+/// hint-bearing plan-time diagnostic instead of the bare
+/// "`gpg` is not available on PATH" error this function used to
+/// raise.
+fn probe_gpg_keyring(fingerprint: &str) -> Result<GpgKeyringStatus> {
+    if which::which("gpg").is_err() {
+        return Ok(GpgKeyringStatus::GpgUnavailable);
+    }
     let status = std::process::Command::new("gpg")
         .args([
             "--batch",
@@ -929,17 +958,36 @@ fn classify_gpg_key(fingerprint: &str, after: &ResourceState) -> Result<Resource
         .stderr(std::process::Stdio::null())
         .status()
         .with_context(|| format!("probing gpg keyring for fingerprint `{fingerprint}`"))?;
-    let action = if status.success() {
-        Action::NoOp
+    Ok(if status.success() {
+        GpgKeyringStatus::Present
     } else {
-        Action::Create
+        GpgKeyringStatus::Absent
+    })
+}
+
+/// Diff a desired GPG secret-key import against a probed keyring
+/// status. Pure — no `which`, no subprocess — so it unit-tests
+/// trivially.
+///
+/// State mapping:
+///   - `Present` → `NoOp` (fingerprint already in the keyring).
+///   - `Absent` → `Create`.
+///   - `GpgUnavailable` → `Create`. The capability validator has
+///     already confirmed a Package in this plan installs `gpg`, so the
+///     keyring will be empty when the executor runs. The executor's
+///     `gpg --import` is idempotent if the key turns out to be present
+///     already (it prints "secret key unchanged" and exits 0).
+fn classify_gpg_key(after: &ResourceState, status: GpgKeyringStatus) -> ResourceChange {
+    let action = match status {
+        GpgKeyringStatus::Present => Action::NoOp,
+        GpgKeyringStatus::Absent | GpgKeyringStatus::GpgUnavailable => Action::Create,
     };
     let before = if matches!(action, Action::NoOp) {
         Some(after.clone())
     } else {
         None
     };
-    Ok(ResourceChange {
+    ResourceChange {
         address: address_for(after),
         kind: ResourceKind::GpgKey,
         action,
@@ -947,7 +995,7 @@ fn classify_gpg_key(fingerprint: &str, after: &ResourceState) -> Result<Resource
         after: Some(after.clone()),
         requires_elevation: false,
         requires_force: false,
-    })
+    }
 }
 
 fn address_for(state: &ResourceState) -> String {
@@ -1827,5 +1875,44 @@ mod tests {
             key: "-----BEGIN PGP PRIVATE KEY BLOCK-----...".into(),
         };
         assert_eq!(address_for(&state), "gpg:ABCD1234");
+    }
+
+    fn gpg_state(fingerprint: &str) -> ResourceState {
+        ResourceState::GpgKey {
+            fingerprint: fingerprint.into(),
+            key: "-----BEGIN PGP PRIVATE KEY BLOCK-----...".into(),
+        }
+    }
+
+    #[test]
+    fn classify_gpg_key_marks_present_as_noop() {
+        let state = gpg_state("ABCD1234");
+        let change = classify_gpg_key(&state, GpgKeyringStatus::Present);
+        assert_eq!(change.kind, ResourceKind::GpgKey);
+        assert_eq!(change.action, Action::NoOp);
+        assert!(
+            change.before.is_some(),
+            "NoOp must carry a before snapshot so the diff renders as unchanged"
+        );
+    }
+
+    #[test]
+    fn classify_gpg_key_marks_absent_as_create() {
+        let state = gpg_state("ABCD1234");
+        let change = classify_gpg_key(&state, GpgKeyringStatus::Absent);
+        assert_eq!(change.action, Action::Create);
+        assert!(change.before.is_none());
+    }
+
+    #[test]
+    fn classify_gpg_key_marks_unavailable_as_create() {
+        // gpg missing from PATH at plan time is no longer fatal. The
+        // capability validator catches the truly-missing case earlier
+        // (or confirms a Package will install gpg); here we just
+        // assume the keyring will be empty when the executor runs.
+        let state = gpg_state("ABCD1234");
+        let change = classify_gpg_key(&state, GpgKeyringStatus::GpgUnavailable);
+        assert_eq!(change.action, Action::Create);
+        assert!(change.before.is_none());
     }
 }

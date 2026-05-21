@@ -11,6 +11,7 @@
 //! state, but it does not infer removals from absence because keron
 //! has no persisted ownership state.
 
+mod capability;
 mod confirm;
 mod diff;
 mod elevated;
