@@ -341,10 +341,10 @@ pub enum IntrinsicId {
     /// `path_is_absolute(p: String) -> Boolean` — true when `p` is a
     /// platform-absolute path (`/...` on Unix, `C:\...` on Windows).
     PathIsAbsolute,
-    /// `path_exists(p: String) -> Boolean` — filesystem probe. Like
-    /// `template(source = ...)` it makes plan output depend on the
-    /// disk state at evaluation time; use sparingly and only for
-    /// branching decisions the user expects to be live.
+    /// `path_exists(p: String) -> Boolean` — live host filesystem
+    /// probe. It makes plan output depend on disk state at evaluation
+    /// time; use sparingly and only for branching decisions the user
+    /// expects to be live.
     PathExists,
     /// `path_is_dir(p: String) -> Boolean` — `true` only when the
     /// path exists *and* is a directory (symlinks are followed).

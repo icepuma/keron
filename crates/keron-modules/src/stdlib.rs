@@ -143,11 +143,11 @@ fn build_keron() -> StdModule {
 
 /// `std:env` builtins — read process environment variables.
 /// `env(name)` returns `String?`: `Some(value)` when the var is set
-/// (including the empty string), `null` when it is unset. The
-/// nullable return type is the whole point — a config that needs a
-/// fallback can `match` on it, and a config that strictly requires
-/// the var can fail loudly through the type system instead of
-/// silently using an empty string.
+/// (including the empty string), `null` when it is unset. The nullable
+/// return type is the whole point — a config that needs a fallback can
+/// `match` on it, and a config that strictly requires the var can fail
+/// loudly through the type system instead of silently using an empty
+/// string.
 fn build_env() -> StdModule {
     let mut fns = BTreeMap::new();
     fns.insert(
@@ -713,12 +713,10 @@ fn build_numeric() -> StdModule {
 /// come from `home_dir()`, `keron_root()`, `env(...)`, and string
 /// interpolation — there's no boundary a `Path` type would protect.
 ///
-/// `path_exists` / `path_is_dir` / `path_is_file` read the filesystem
-/// at evaluation time, so they make plan output depend on disk state
-/// (the same way `template(source = …)` already does). Use them for
-/// "is this already here?" branching, not as the sole gate around an
-/// idempotent reconcile — the executor will do its own existence
-/// checks before writing.
+/// `path_exists` / `path_is_dir` / `path_is_file` read live host
+/// filesystem metadata at evaluation time, so they make plan output
+/// depend on disk state. Use them for explicit host-observation
+/// branches the user expects to be live.
 fn build_path() -> StdModule {
     let mut fns = BTreeMap::new();
     fns.insert(

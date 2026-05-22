@@ -944,10 +944,11 @@ fn eval_call(name: &str, args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
         && let Some(origin_mod) = env.graph.modules.get(origin)
         && let Some(decl) = origin_mod.structs.get(original)
     {
-        return construct_struct(decl, args, env);
+        let default_env = Env::new(env.graph, origin.clone());
+        return construct_struct(decl, args, env, &default_env);
     }
     if let Some(decl) = module.structs.get(name) {
-        return construct_struct(decl, args, env);
+        return construct_struct(decl, args, env, env);
     }
     let (origin_id, fn_decl): (ModuleId, &FnDecl) =
         if let Some((origin, original)) = module.imports.get(name) {
@@ -1033,13 +1034,16 @@ impl Drop for CallDepthGuard<'_, '_> {
 /// the type checker has already validated counts and types so a hit
 /// here is well-typed by construction.
 ///
-/// Field defaults are evaluated in the caller's outer env (no
-/// sibling-field shadows in scope, by design — see
-/// `check_struct_decl`), so a default like `port: Int = 8080` is just
-/// a constant evaluated once per missing-arg call and a default like
-/// `home: String = home_dir()` re-evaluates the builtin every time
-/// the field is omitted.
-fn construct_struct(decl: &StructDecl, args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+/// Explicit arguments are evaluated in the caller's env. Defaults are
+/// evaluated in the declaring module's env, matching the checker's
+/// `check_struct_decl` scope and keeping imported constructors from
+/// accidentally depending on importer-local names.
+fn construct_struct(
+    decl: &StructDecl,
+    args: &[CallArg],
+    arg_env: &Env<'_, '_>,
+    default_env: &Env<'_, '_>,
+) -> Result<Value> {
     let mut fields: Vec<(String, Value)> = Vec::with_capacity(decl.fields.len());
     let mut positional = args.iter().filter(|a| a.name.is_none());
     for field in &decl.fields {
@@ -1047,11 +1051,11 @@ fn construct_struct(decl: &StructDecl, args: &[CallArg], env: &Env<'_, '_>) -> R
             .iter()
             .find(|a| a.name.as_ref().is_some_and(|n| n.node == field.name.node));
         let value = if let Some(arg) = named {
-            eval_expr(&arg.value, env)?
+            eval_expr(&arg.value, arg_env)?
         } else if let Some(arg) = positional.next() {
-            eval_expr(&arg.value, env)?
+            eval_expr(&arg.value, arg_env)?
         } else if let Some(default) = &field.default {
-            eval_expr(default, env)?
+            eval_expr(default, default_env)?
         } else {
             bail!(
                 "missing argument for field `{}` of struct `{}`",
@@ -1093,11 +1097,6 @@ fn dispatch_intrinsic(id: IntrinsicId, args: &[CallArg], env: &Env<'_, '_>) -> R
         IntrinsicId::OsArch => Ok(Value::plain_string(detect_os_arch())),
         IntrinsicId::Env => {
             let name = call_string(args, env, "name", 0)?;
-            // `env::var` errs both for "not present" and for "not
-            // valid Unicode". We collapse both onto `null` rather
-            // than surfacing the latter as a hard error: a user
-            // who'd want to distinguish them can read the var via a
-            // host-side wrapper. Matches what most config DSLs do.
             Ok(std::env::var(&name).map_or(Value::Null, Value::plain_string))
         }
         IntrinsicId::Secret => {
@@ -1286,17 +1285,13 @@ fn dispatch_path_is_absolute(args: &[CallArg], env: &Env<'_, '_>) -> Result<Valu
     Ok(Value::Bool(std::path::Path::new(&p).is_absolute()))
 }
 
-/// `path_exists` / `path_is_dir` / `path_is_file` all share the same
-/// shape: read filesystem metadata once and ask one question of it.
-/// Failure (permission denied, IO error) collapses to `false` because
-/// "I can't tell" is closer to "no" than to "yes" for the branching
-/// decisions these are used for.
+/// `path_exists` / `path_is_dir` / `path_is_file` intentionally probe
+/// the live host filesystem. Relative paths are resolved against the
+/// current module's directory. Missing paths, permission errors, and
+/// other metadata failures collapse to `false`.
 fn dispatch_path_probe(args: &[CallArg], env: &Env<'_, '_>, kind: PathProbe) -> Result<Value> {
     let p = call_string(args, env, "p", 0)?;
-    // `metadata` follows symlinks; that matches what every other
-    // `std:path` operation does and aligns with what the user sees
-    // when they `ls` the path.
-    let meta = std::fs::metadata(&p);
+    let meta = std::fs::metadata(observation_path(&p, env));
     let answer = match (kind, meta) {
         (PathProbe::Exists, Ok(_)) => true,
         (PathProbe::IsDir, Ok(m)) => m.is_dir(),
@@ -1304,6 +1299,15 @@ fn dispatch_path_probe(args: &[CallArg], env: &Env<'_, '_>, kind: PathProbe) -> 
         (_, Err(_)) => false,
     };
     Ok(Value::Bool(answer))
+}
+
+fn observation_path(raw: &str, env: &Env<'_, '_>) -> PathBuf {
+    let candidate = PathBuf::from(raw);
+    if candidate.is_absolute() {
+        return candidate;
+    }
+    let ModuleId(module_path) = &env.current;
+    module_path.parent().map_or(candidate, |p| p.join(raw))
 }
 
 #[derive(Clone, Copy)]
@@ -2173,12 +2177,11 @@ fn dispatch_template(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
 /// - The canonical target replaces the raw user value; the executor
 ///   and the diff renderer both see the absolute, dereferenced path
 ///   so a moved symlink does not silently target a different file.
-/// - **The leaf must be a real file**, not a symlink. Templating from a
-///   symlink or symlinking to another symlink would chain indirection
-///   that the user almost certainly didn't intend; we refuse rather
-///   than silently follow. Intermediate components may still be
-///   symlinks (e.g. a symlinked keron root); only the final component
-///   is rejected.
+/// - **The leaf must not be a symlink**. Templating from a symlink or
+///   symlinking to another symlink would chain indirection that the user
+///   almost certainly didn't intend; we refuse rather than silently
+///   follow. Intermediate components may still be symlinks (e.g. a
+///   symlinked keron root); only the final component is rejected.
 fn resolve_managed_path(raw: &str, env: &Env<'_, '_>, kind: &str, arg: &str) -> Result<PathBuf> {
     let candidate = PathBuf::from(raw);
     let absolute = if candidate.is_absolute() {
@@ -5248,6 +5251,39 @@ reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
     }
 
     #[test]
+    fn path_probes_can_observe_existing_files_outside_keron_root() {
+        let proj = TempProject::new("path-probe-outside-root");
+        let outside = env::temp_dir().join(format!(
+            "keron-path-probe-outside-{}-{}",
+            std::process::id(),
+            SEQ.fetch_add(1, AtomicOrdering::Relaxed),
+        ));
+        fs::write(&outside, "outside").expect("seed outside file");
+        let escaped = outside.to_string_lossy().replace('\\', "\\\\");
+        let src = format!(
+            r#"val inside: Boolean = path_exists("tmpl.tpl")
+               val outside: Boolean = path_exists("{escaped}")
+               reconcile template(source = "tmpl.tpl", target = "${{inside}}|${{outside}}", vars = {{"body": ""}})
+            "#
+        );
+        let entry = proj.entry(&src);
+        let canonical = fs::canonicalize(&entry).unwrap();
+        let base_dir = canonical.parent().unwrap().to_path_buf();
+        let graph = resolve(vec![EntrySource {
+            text: src,
+            base_dir: base_dir.clone(),
+            id: keron_modules::ModuleId(canonical),
+        }])
+        .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
+        let states = eval_graph(&graph, &base_dir).unwrap_or_else(|e| panic!("eval failed: {e}"));
+        let _ = fs::remove_file(&outside);
+        let ResourceState::Template { path, .. } = &states[0] else {
+            panic!("expected template, got {:?}", states[0]);
+        };
+        assert!(path.to_string_lossy().ends_with("true|true"));
+    }
+
+    #[test]
     fn path_is_dir_and_is_file_route_metadata_to_the_right_predicate() {
         // The keron root is itself a directory (every test harness
         // sets it that way); the templated file we just wrote in
@@ -5510,5 +5546,36 @@ reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
             "#,
         );
         assert!(value.ends_with("api:443"), "got `{value}`");
+    }
+
+    #[test]
+    fn imported_struct_field_default_uses_defining_module_scope() {
+        let proj = TempProject::new("imported-struct-default");
+        fs::write(
+            proj.root.join("defs.keron"),
+            r"val default_port: Int = 8080
+               struct Server { host: String, port: Int = default_port }
+            ",
+        )
+        .expect("write defs module");
+        let src = r#"from "./defs.keron" use Server
+                    val default_port: Int = 443
+                    val s: Server = Server("api")
+                    reconcile template(source = "tmpl.tpl", target = "${s.host}:${s.port}", vars = {"body": ""})
+        "#;
+        let entry = proj.entry(src);
+        let canonical = fs::canonicalize(&entry).unwrap();
+        let base_dir = canonical.parent().unwrap().to_path_buf();
+        let graph = resolve(vec![EntrySource {
+            text: src.to_string(),
+            base_dir: base_dir.clone(),
+            id: keron_modules::ModuleId(canonical),
+        }])
+        .unwrap_or_else(|errs| panic!("resolve failed: {errs:?}"));
+        let states = eval_graph(&graph, &base_dir).unwrap_or_else(|e| panic!("eval failed: {e}"));
+        let ResourceState::Template { path, .. } = &states[0] else {
+            panic!("expected template, got {:?}", states[0]);
+        };
+        assert!(path.to_string_lossy().ends_with("api:8080"));
     }
 }

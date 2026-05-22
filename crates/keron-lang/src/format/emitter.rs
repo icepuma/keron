@@ -17,9 +17,8 @@
 //! - **Trailing**: after emitting an item whose end coincides.
 //! - **`ModuleTrailing`**: after the last item.
 //!
-//! `BlockInterior` comments fall through to the trailing/leading
-//! pass via their `block_span` heuristic — full nested-block placement
-//! lands in a follow-up.
+//! `BlockInterior` comments are the fallback for comments that
+//! cannot be attached to a concrete item or block statement.
 
 use crate::ast::{
     BinOp, Block, CallArg, CommentAttachment, CommentMap, Expr, FnDecl, ForPattern, Item, Literal,
@@ -207,6 +206,16 @@ impl<'src> Emitter<'src> {
             self.write_indent();
             self.write(&c.text);
             self.next_comment += 1;
+        }
+    }
+
+    fn source_multiline_string(&self, span: &Span) -> Option<String> {
+        let raw = self.src.get(span.clone())?;
+        let trimmed = raw.trim();
+        if trimmed.starts_with("\"\"\"") || is_raw_multiline_literal(trimmed) {
+            Some(trimmed.to_string())
+        } else {
+            None
         }
     }
 
@@ -435,6 +444,13 @@ impl<'src> Emitter<'src> {
 
     fn emit_expr(&mut self, expr: &Spanned<Expr>) {
         match &expr.node {
+            Expr::Literal(Literal::String(_)) => {
+                if let Some(raw) = self.source_multiline_string(&expr.span) {
+                    self.write(&raw);
+                } else if let Expr::Literal(lit) = &expr.node {
+                    self.write(&render_literal(lit));
+                }
+            }
             Expr::Literal(lit) => self.write(&render_literal(lit)),
             Expr::Var(name) => self.write(name),
             Expr::Binary { op, lhs, rhs } => self.emit_binary(*op, lhs, rhs),
@@ -458,7 +474,13 @@ impl<'src> Emitter<'src> {
                 self.emit_for(pattern, iter_expr, body);
             }
             Expr::Match { scrutinee, arms } => self.emit_match(scrutinee, arms),
-            Expr::Interpolation(parts) => self.emit_interpolation(parts),
+            Expr::Interpolation(parts) => {
+                if let Some(raw) = self.source_multiline_string(&expr.span) {
+                    self.write(&raw);
+                } else {
+                    self.emit_interpolation(parts);
+                }
+            }
         }
     }
 
@@ -499,7 +521,14 @@ impl<'src> Emitter<'src> {
     }
 
     fn emit_field(&mut self, receiver: &Spanned<Expr>, field: &str) {
+        let parens = field_receiver_needs_parens(&receiver.node);
+        if parens {
+            self.write("(");
+        }
         self.emit_expr(receiver);
+        if parens {
+            self.write(")");
+        }
         self.write(".");
         self.write(field);
     }
@@ -513,7 +542,10 @@ impl<'src> Emitter<'src> {
         }
         let inline = render_call_args_inline(args);
         let starts: Vec<usize> = args.iter().map(|a| a.span.start).collect();
-        let force_block = self.elements_are_multiline(&starts);
+        let force_block = self.elements_are_multiline(&starts)
+            || args
+                .iter()
+                .any(|a| expr_requires_block_context(&a.value, self.src));
         if !force_block && self.column() + inline.len() < LINE_BUDGET {
             self.write(&inline);
             self.write(")");
@@ -549,7 +581,10 @@ impl<'src> Emitter<'src> {
         }
         let inline = render_list_inline(items);
         let starts: Vec<usize> = items.iter().map(|i| i.span.start).collect();
-        let force_block = self.elements_are_multiline(&starts);
+        let force_block = self.elements_are_multiline(&starts)
+            || items
+                .iter()
+                .any(|i| expr_requires_block_context(i, self.src));
         if !force_block && self.column() + inline.len() <= LINE_BUDGET {
             self.write(&inline);
             return;
@@ -575,7 +610,11 @@ impl<'src> Emitter<'src> {
         }
         let inline = render_map_inline(entries);
         let starts: Vec<usize> = entries.iter().map(|e| e.key.span.start).collect();
-        let force_block = self.elements_are_multiline(&starts);
+        let force_block = self.elements_are_multiline(&starts)
+            || entries.iter().any(|e| {
+                expr_requires_block_context(&e.key, self.src)
+                    || expr_requires_block_context(&e.value, self.src)
+            });
         if !force_block && self.column() + inline.len() <= LINE_BUDGET {
             self.write(&inline);
             return;
@@ -723,21 +762,31 @@ impl<'src> Emitter<'src> {
         let mut first_inner = true;
         for stmt in &block.stmts {
             let span = stmt_span(stmt);
-            if !first_inner && self.source_has_blank_line_before(span.start) {
+            let next_start = self
+                .first_leading_comment_start(&span)
+                .unwrap_or(span.start);
+            if !first_inner && self.source_has_blank_line_before(next_start) {
                 self.newline();
             }
             first_inner = false;
             self.newline();
+            self.emit_leading_comments_for(&span);
             self.write_indent();
             self.emit_stmt(stmt);
+            self.emit_trailing_comment_for(&span);
         }
         if let Some(trailing) = &block.trailing {
-            if !first_inner && self.source_has_blank_line_before(trailing.span.start) {
+            let next_start = self
+                .first_leading_comment_start(&trailing.span)
+                .unwrap_or(trailing.span.start);
+            if !first_inner && self.source_has_blank_line_before(next_start) {
                 self.newline();
             }
             self.newline();
+            self.emit_leading_comments_for(&trailing.span);
             self.write_indent();
             self.emit_expr(trailing);
+            self.emit_trailing_comment_for(&trailing.span);
         }
         self.indent -= 1;
         self.newline();
@@ -762,6 +811,85 @@ fn stmt_span(stmt: &Stmt) -> Span {
 
 const fn block_is_empty(block: &Block) -> bool {
     block.stmts.is_empty() && block.trailing.is_none()
+}
+
+const fn field_receiver_needs_parens(expr: &Expr) -> bool {
+    matches!(expr, Expr::Binary { .. } | Expr::Unary { .. })
+}
+
+fn is_raw_multiline_literal(s: &str) -> bool {
+    let Some(rest) = s.strip_prefix('r') else {
+        return false;
+    };
+    let quote_pos = rest.bytes().position(|b| b != b'#').unwrap_or(rest.len());
+    rest.get(quote_pos..)
+        .is_some_and(|tail| tail.starts_with("\"\"\""))
+}
+
+fn expr_requires_block_context(expr: &Spanned<Expr>, src: &str) -> bool {
+    let raw = src
+        .get(expr.span.clone())
+        .map(str::trim)
+        .unwrap_or_default();
+    raw.starts_with("\"\"\"")
+        || is_raw_multiline_literal(raw)
+        || expr_contains_statement_block(&expr.node)
+}
+
+fn expr_contains_statement_block(expr: &Expr) -> bool {
+    match expr {
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
+            expr_contains_statement_block(&cond.node)
+                || block_contains_statement(then_branch)
+                || block_contains_statement(else_branch)
+        }
+        Expr::For {
+            iter_expr, body, ..
+        } => expr_contains_statement_block(&iter_expr.node) || block_contains_statement(body),
+        Expr::Match { scrutinee, arms } => {
+            expr_contains_statement_block(&scrutinee.node)
+                || arms
+                    .iter()
+                    .any(|a| {
+                        a.guard
+                            .as_ref()
+                            .is_some_and(|g| expr_contains_statement_block(&g.node))
+                            || expr_contains_statement_block(&a.body.node)
+                    })
+        }
+        Expr::Binary { lhs, rhs, .. } => {
+            expr_contains_statement_block(&lhs.node) || expr_contains_statement_block(&rhs.node)
+        }
+        Expr::Unary { operand, .. } | Expr::Field { receiver: operand, .. } => {
+            expr_contains_statement_block(&operand.node)
+        }
+        Expr::Call { args, .. } => args
+            .iter()
+            .any(|a| expr_contains_statement_block(&a.value.node)),
+        Expr::List(items) => items
+            .iter()
+            .any(|item| expr_contains_statement_block(&item.node)),
+        Expr::Map(entries) => entries.iter().any(|entry| {
+            expr_contains_statement_block(&entry.key.node)
+                || expr_contains_statement_block(&entry.value.node)
+        }),
+        Expr::Interpolation(parts) => parts.iter().any(|part| {
+            matches!(part, StringPart::Expr { expr, .. } if expr_contains_statement_block(&expr.node))
+        }),
+        Expr::Literal(_) | Expr::Var(_) => false,
+    }
+}
+
+fn block_contains_statement(block: &Block) -> bool {
+    !block.stmts.is_empty()
+        || block
+            .trailing
+            .as_ref()
+            .is_some_and(|e| expr_contains_statement_block(&e.node))
 }
 
 // =====================================================================
@@ -893,7 +1021,12 @@ fn render_expr_inline(expr: &Expr) -> String {
         Expr::Binary { op, lhs, rhs } => render_binary_inline(*op, lhs, rhs),
         Expr::Unary { op, operand } => render_unary_inline(*op, operand),
         Expr::Field { receiver, field } => {
-            format!("{}.{}", render_expr_inline(&receiver.node), field.node)
+            let inner = render_expr_inline(&receiver.node);
+            if field_receiver_needs_parens(&receiver.node) {
+                format!("({inner}).{}", field.node)
+            } else {
+                format!("{inner}.{}", field.node)
+            }
         }
         Expr::Call { callee, args } => {
             format!("{}({})", callee.node, render_call_args_inline(args))

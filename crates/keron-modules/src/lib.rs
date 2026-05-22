@@ -583,8 +583,8 @@ fn sig_from_fn_decl(f: &FnDecl) -> FnSig {
 }
 
 /// Synthesize a [`FnSig`] for a struct's implicit constructor. Each
-/// declared field becomes a positional parameter (no defaults) in
-/// declared order; the return type is the [`Type::Struct`] itself.
+/// declared field becomes a positional parameter in declared order;
+/// field defaults stay optional across module boundaries.
 fn sig_from_struct_decl(s: &StructDecl) -> FnSig {
     FnSig {
         params: s
@@ -593,7 +593,7 @@ fn sig_from_struct_decl(s: &StructDecl) -> FnSig {
             .map(|f| ParamSig {
                 name: f.name.node.clone(),
                 ty: f.ty.node.clone(),
-                has_default: false,
+                has_default: f.default.is_some(),
             })
             .collect(),
         return_type: Type::Struct {

@@ -1,13 +1,46 @@
 //! List typing, list concat, and bidirectional checking against `List<T>`.
 
-use super::check_src;
+use super::{check_src, fn_sig, param};
 use crate::{
-    check::{ImportedSymbols, check_module},
+    ast::Type,
+    check::{ImportedSymbols, check_module, resolve_type_names},
     parser::parse,
 };
 
 fn check(program: &crate::ast::Program) -> Result<(), Vec<crate::diagnostic::Diagnostic>> {
     check_module(program, &ImportedSymbols::default())
+}
+
+fn check_with_list_intrinsics(src: &str) -> Result<(), Vec<crate::diagnostic::Diagnostic>> {
+    let mut prog = parse(src).expect("parse should succeed");
+    let mut imp = ImportedSymbols::default();
+    let t = Type::Generic("T".into());
+    imp.fns.insert(
+        "list_contains".into(),
+        fn_sig(
+            vec![
+                param("xs", Type::List(Box::new(t.clone()))),
+                param("x", t.clone()),
+            ],
+            Type::Boolean,
+        ),
+    );
+    imp.fns.insert(
+        "unique".into(),
+        fn_sig(
+            vec![param("xs", Type::List(Box::new(t.clone())))],
+            Type::List(Box::new(t.clone())),
+        ),
+    );
+    imp.fns.insert(
+        "index_of".into(),
+        fn_sig(
+            vec![param("xs", Type::List(Box::new(t.clone()))), param("x", t)],
+            Type::Nullable(Box::new(Type::Int)),
+        ),
+    );
+    resolve_type_names(&mut prog, &imp)?;
+    check_module(&prog, &imp)
 }
 
 #[test]
@@ -182,4 +215,40 @@ fn check_mode_concat_against_non_list_falls_back_to_synth() {
     assert!(err[0].message.contains("expected `Int`"));
     assert!(err[0].message.contains("List<Int>"));
     assert_eq!(&src[err[0].span.clone()], "[1] ++ [2]");
+}
+
+#[test]
+fn equality_list_intrinsics_accept_scalar_element_types() {
+    let src = r#"val has: Boolean = list_contains([1, 2], 2)
+                 val dedup: List<String> = unique(["a", "a"])
+                 val idx: Int = index_of([true], true) ?? -1
+    "#;
+    assert!(check_with_list_intrinsics(src).is_ok());
+}
+
+#[test]
+fn equality_list_intrinsics_reject_struct_elements() {
+    let src = r"struct Point { x: Int }
+                 val p: Point = Point(1)
+                 val has: Boolean = list_contains([p], p)
+    ";
+    let err = check_with_list_intrinsics(src).expect_err("struct equality should fail");
+    assert!(
+        err[0].message.contains("supported equality"),
+        "got: {:?}",
+        err[0],
+    );
+}
+
+#[test]
+fn equality_list_intrinsics_reject_nullable_elements() {
+    let src = r"val xs: List<Int?> = []
+                 val idx: Int = index_of(xs, null) ?? -1
+    ";
+    let err = check_with_list_intrinsics(src).expect_err("nullable equality should fail");
+    assert!(
+        err[0].message.contains("supported equality"),
+        "got: {:?}",
+        err[0],
+    );
 }

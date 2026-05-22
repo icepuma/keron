@@ -34,6 +34,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
 
+use crate::elevated::payload::PayloadExpectation;
 use crate::execute::ExecuteSummary;
 use crate::plan::Plan;
 
@@ -62,7 +63,7 @@ pub fn run_elevated(plan: &Plan) -> Result<ExecuteSummary> {
         payload::write_payload(plan, &owner).context("writing elevated apply payload")?;
     let summary = plan.summary();
     let exe = current_exe_canonicalized()?;
-    let status = invoke_elevator(&exe, tempfile.path())?;
+    let status = invoke_elevator(&exe, tempfile.path(), tempfile.expected())?;
     if !status.success() {
         bail!("elevated apply exited with status {status}; see output above for details");
     }
@@ -82,7 +83,7 @@ fn current_exe_canonicalized() -> Result<std::path::PathBuf> {
     let canonical = std::fs::canonicalize(&raw)
         .with_context(|| format!("canonicalizing `{}`", raw.display()))?;
     #[cfg(unix)]
-    check_binary_tamper_resistance(&canonical)?;
+    check_binary_tamper_resistance(&canonical, allow_insecure_elevation_for_tests())?;
     Ok(canonical)
 }
 
@@ -92,7 +93,7 @@ fn current_exe_canonicalized() -> Result<std::path::PathBuf> {
 /// test can drive it against a synthetic path without needing
 /// `std::env::current_exe()` to point at a fixture.
 #[cfg(unix)]
-fn check_binary_tamper_resistance(canonical: &Path) -> Result<()> {
+fn check_binary_tamper_resistance(canonical: &Path, allow_owner_writable: bool) -> Result<()> {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
     // Walk every ancestor up to `/`. A world-writable grandparent
     // lets an attacker rename-swap the parent dir between our
@@ -135,6 +136,15 @@ fn check_binary_tamper_resistance(canonical: &Path) -> Result<()> {
                 mode & 0o777,
             );
         }
+        if !allow_owner_writable && mode & 0o200 != 0 && meta.uid() != 0 {
+            bail!(
+                "refusing to elevate: ancestor `{}` of `{}` is writable by non-root owner {} (mode {:o})",
+                dir.display(),
+                canonical.display(),
+                meta.uid(),
+                mode & 0o777,
+            );
+        }
         cursor = dir.parent();
     }
     let bin_meta = std::fs::metadata(canonical).with_context(|| {
@@ -151,6 +161,14 @@ fn check_binary_tamper_resistance(canonical: &Path) -> Result<()> {
             bin_mode & 0o777,
         );
     }
+    if !allow_owner_writable && bin_mode & 0o200 != 0 && bin_meta.uid() != 0 {
+        bail!(
+            "refusing to elevate: keron binary `{}` is writable by non-root owner {} (mode {:o})",
+            canonical.display(),
+            bin_meta.uid(),
+            bin_mode & 0o777,
+        );
+    }
     if bin_mode & 0o6000 != 0 {
         bail!(
             "refusing to elevate: keron binary `{}` has setuid/setgid bits set (mode {:o})",
@@ -162,10 +180,14 @@ fn check_binary_tamper_resistance(canonical: &Path) -> Result<()> {
 }
 
 /// Locate an elevator on PATH and spawn `<elevator> <exe>
-/// __apply-elevated <payload>`. stdio is inherited so the user sees
-/// the password prompt in their terminal.
+/// __apply-elevated <payload> <digest> <identity>`. stdio is inherited
+/// so the user sees the password prompt in their terminal.
 #[cfg(unix)]
-fn invoke_elevator(exe: &Path, payload: &Path) -> Result<std::process::ExitStatus> {
+fn invoke_elevator(
+    exe: &Path,
+    payload: &Path,
+    expected: &PayloadExpectation,
+) -> Result<std::process::ExitStatus> {
     let elevator = test_elevator_override()
         .or_else(probe_elevator)
         .ok_or_else(|| {
@@ -175,6 +197,8 @@ fn invoke_elevator(exe: &Path, payload: &Path) -> Result<std::process::ExitStatu
     cmd.arg(exe)
         .arg("__apply-elevated")
         .arg(payload)
+        .arg(&expected.digest_hex)
+        .arg(expected.identity.encode())
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
@@ -204,12 +228,27 @@ fn probe_elevator() -> Option<std::path::PathBuf> {
 /// Gated on `KERON_ALLOW_TEST_OVERRIDES=1` so a hostile env in a
 /// privileged caller (cron, Ansible) cannot replace sudo by setting
 /// a single variable. This matches the package-manager test seams.
-#[cfg(unix)]
+#[cfg(all(unix, debug_assertions))]
 fn test_elevator_override() -> Option<std::path::PathBuf> {
     if std::env::var_os("KERON_ALLOW_TEST_OVERRIDES").is_none_or(|v| v != "1") {
         return None;
     }
     std::env::var_os("KERON_TEST_ELEVATOR").map(std::path::PathBuf::from)
+}
+
+#[cfg(all(unix, not(debug_assertions)))]
+fn test_elevator_override() -> Option<std::path::PathBuf> {
+    None
+}
+
+#[cfg(all(unix, debug_assertions))]
+fn allow_insecure_elevation_for_tests() -> bool {
+    std::env::var_os("KERON_ALLOW_TEST_OVERRIDES").is_some_and(|v| v == "1")
+}
+
+#[cfg(all(unix, not(debug_assertions)))]
+const fn allow_insecure_elevation_for_tests() -> bool {
+    false
 }
 
 #[cfg(unix)]
@@ -232,8 +271,12 @@ fn which_on_path(name: &str) -> Option<std::path::PathBuf> {
 }
 
 #[cfg(windows)]
-fn invoke_elevator(exe: &Path, payload: &Path) -> Result<std::process::ExitStatus> {
-    chown::windows::shell_execute_runas(exe, payload)
+fn invoke_elevator(
+    exe: &Path,
+    payload: &Path,
+    expected: &PayloadExpectation,
+) -> Result<std::process::ExitStatus> {
+    chown::windows::shell_execute_runas(exe, payload, expected)
 }
 
 #[cfg(test)]
@@ -372,7 +415,7 @@ mod tests {
         std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
         std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o777)).unwrap();
 
-        let err = check_binary_tamper_resistance(&bin)
+        let err = check_binary_tamper_resistance(&bin, false)
             .expect_err("world-writable parent must refuse elevation");
         let msg = format!("{err:#}");
         assert!(
@@ -404,20 +447,20 @@ mod tests {
         std::fs::create_dir_all(&parent).unwrap();
         let bin = parent.join("fake-keron");
         std::fs::write(&bin, "#!/bin/sh\nexit 0\n").unwrap();
-        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
-        std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o555)).unwrap();
+        std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o555)).unwrap();
 
         // Note: the walk goes all the way to `/`. Some hosts may
         // have unusual mode bits on system dirs (e.g., sticky `/tmp`).
         // We don't require the walk to succeed; we just require
-        // that the bin-itself check doesn't trip on a 0755 mode.
-        let result = check_binary_tamper_resistance(&bin);
+        // that the bin-itself check doesn't trip on a non-writable mode.
+        let result = check_binary_tamper_resistance(&bin, true);
         if let Err(e) = &result {
             let msg = format!("{e:#}");
             assert!(
                 !msg.contains("is group- or world-writable")
-                    || !msg.contains(bin.to_string_lossy().as_ref()),
-                "binary mode 0o755 must not trip the binary-self check: {msg}"
+                    && !msg.contains("writable by non-root owner"),
+                "binary mode 0o555 must not trip the binary-self check: {msg}"
             );
         }
 
@@ -461,7 +504,7 @@ mod tests {
             return;
         }
 
-        let result = check_binary_tamper_resistance(&bin);
+        let result = check_binary_tamper_resistance(&bin, false);
         // Restore perms before any assertion can early-return.
         std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o755)).unwrap();
         let _ = std::fs::remove_dir_all(&parent);
@@ -493,7 +536,7 @@ mod tests {
         // Set setuid bit (mode 04755).
         std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o4755)).unwrap();
 
-        let result = check_binary_tamper_resistance(&bin);
+        let result = check_binary_tamper_resistance(&bin, false);
         if let Err(e) = result {
             let msg = format!("{e:#}");
             assert!(

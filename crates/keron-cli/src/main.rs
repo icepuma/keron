@@ -38,10 +38,12 @@ enum Command {
 
         /// Show full content diffs in the plan. WARNING: this will
         /// print sensitive values (private keys, tokens, secrets)
-        /// verbatim to stdout. The flag name is deliberately long so
-        /// it cannot be confused with a generic `--verbose` — typing
-        /// it is the consent. When omitted, body fields render as a
-        /// `lines added / lines removed` summary and a footer points
+        /// verbatim to stdout. Shell scripts are always shown because
+        /// they are executable code; this flag controls template and
+        /// key material. The flag name is deliberately long so it
+        /// cannot be confused with a generic `--verbose` — typing it
+        /// is the consent. When omitted, hidden body fields render as
+        /// a `lines added / lines removed` summary and a footer points
         /// at this flag.
         #[arg(long)]
         verbose_will_reveal_sensitive_content: bool,
@@ -78,6 +80,12 @@ enum Command {
         /// Path to the JSON payload written by the unprivileged
         /// parent process.
         payload: PathBuf,
+
+        /// Expected SHA-256 digest of the payload bytes.
+        digest: String,
+
+        /// Expected payload file metadata captured by the parent.
+        identity: String,
     },
 }
 
@@ -217,8 +225,16 @@ where
             run_format(target, check, quiet, &mut stdin.lock(), &mut stdout.lock())
                 .map_err(CliError::from)
         }
-        Command::ApplyElevated { payload } => {
-            keron_apply::run_elevated_child(&payload)?;
+        Command::ApplyElevated {
+            payload,
+            digest,
+            identity,
+        } => {
+            let expected = keron_apply::PayloadExpectation {
+                digest_hex: digest,
+                identity: keron_apply::PayloadIdentity::decode(&identity)?,
+            };
+            keron_apply::run_elevated_child(&payload, &expected)?;
             Ok(ExitCode::SUCCESS)
         }
     }

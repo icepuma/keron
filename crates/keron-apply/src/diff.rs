@@ -6,9 +6,11 @@
 //! crate to keep the dep surface small. Color is opt-in per call —
 //! the caller decides based on `IsTerminal`.
 //!
-//! Body fields (template `content`, shell `script`) hide by default
-//! and render only a `lines added / lines removed` summary. The
-//! caller opts in to full unified-diff bodies via
+//! Body fields that can contain secrets hide by default and render
+//! only a `lines added / lines removed` summary. Shell scripts are
+//! always shown because they are executable code the user must review
+//! before approval. The caller opts in to other full unified-diff
+//! bodies via
 //! `RenderOptions::verbose`; the CLI exposes that as the
 //! `--verbose-will-reveal-sensitive-content` flag. The flag name *is*
 //! the warning — verbose mode does not redact, even values produced
@@ -31,7 +33,7 @@ const DIM: &str = "\x1b[2m";
 /// purpose: the flag name itself is the consent that subsequent
 /// verbose-mode output may print secrets to the terminal,
 /// screen-shares, CI logs, etc.
-const VERBOSE_FOOTER_HINT: &str = "Template content and shell scripts are hidden by default. Re-run with --verbose-will-reveal-sensitive-content to see full diffs.";
+const VERBOSE_FOOTER_HINT: &str = "Template content and key material are hidden by default. Re-run with --verbose-will-reveal-sensitive-content to see full diffs.";
 
 /// One-line warning emitted at the top of verbose output. Verbose
 /// mode prints body content verbatim — including the values of
@@ -44,10 +46,9 @@ const VERBOSE_BANNER: &str =
 #[derive(Debug, Clone, Copy)]
 pub struct RenderOptions {
     pub color: bool,
-    /// When true, template `content` and shell `script` render as a
-    /// full unified diff inside their resource block. When false, the
-    /// body is replaced by a one-line `N lines added / M lines
-    /// removed` summary with a hint pointing at the opt-in flag.
+    /// When true, hidden body fields such as template `content` and
+    /// key material render as a full unified diff inside their
+    /// resource block. Shell scripts render in full in both modes.
     pub verbose: bool,
 }
 
@@ -213,8 +214,8 @@ fn render_body<W: Write>(
     Ok(())
 }
 
-/// Whether the plan would emit at least one body-shaped field
-/// (template `content` or shell `script`) in default mode. Used by:
+/// Whether the plan would hide at least one body-shaped field
+/// (template `content` or key material) in default mode. Used by:
 ///   - the verbose banner emission (no banner if nothing's going to
 ///     reveal anything anyway), and
 ///   - the footer hint at the bottom of a default-mode plan — no
@@ -228,7 +229,6 @@ pub fn plan_has_body_blocks(plan: &Plan) -> bool {
         let body_of = |s: &Option<ResourceState>| -> Option<String> {
             s.as_ref().and_then(|state| match state {
                 ResourceState::Template { content, .. } => Some(content.clone()),
-                ResourceState::Shell { script, .. } => Some(script.clone()),
                 ResourceState::SshKey {
                     private_key,
                     public_key,
@@ -246,7 +246,7 @@ pub fn plan_has_body_blocks(plan: &Plan) -> bool {
     })
 }
 
-/// Render a body-shaped field — template `content` or shell `script`.
+/// Render a body-shaped field that is hidden in default mode.
 ///
 /// `before = None` means a one-sided action (Create / Run); the
 /// helper counts the lines in `after` and emits one summary line, or
@@ -279,10 +279,27 @@ fn render_body_field<W: Write>(
         return Ok(());
     }
     if opts.verbose {
-        render_body_verbose(out, field, before, after, sign, opts)
+        render_body_verbose(out, field, before, after, sign, false, opts)
     } else {
         render_body_summary(out, field, before, after, sign, sensitive, opts)
     }
+}
+
+fn render_visible_body_field<W: Write>(
+    out: &mut W,
+    field: &str,
+    before: Option<&str>,
+    after: &str,
+    sign: &str,
+    sensitive: bool,
+    opts: RenderOptions,
+) -> io::Result<()> {
+    if let Some(b) = before
+        && b == after
+    {
+        return Ok(());
+    }
+    render_body_verbose(out, field, before, after, sign, sensitive, opts)
 }
 
 fn render_body_summary<W: Write>(
@@ -345,9 +362,15 @@ fn render_body_verbose<W: Write>(
     before: Option<&str>,
     after: &str,
     sign: &str,
+    sensitive: bool,
     opts: RenderOptions,
 ) -> io::Result<()> {
-    writeln!(out, "      {sign} {field}:")?;
+    let marker = if sensitive {
+        format!(" {}", paint(opts.color, RED, "[sensitive]"))
+    } else {
+        String::new()
+    };
+    writeln!(out, "      {sign} {field}{marker}:")?;
     let before_text = before.unwrap_or("");
     let diff = similar::TextDiff::from_lines(before_text, after);
     let rendered = diff.unified_diff().context_radius(3).to_string();
@@ -450,7 +473,7 @@ fn render_state_lines<W: Write>(
             writeln!(out, "      {s} kind   = \"{}\"", kind.label())?;
             writeln!(out, "      {s} name   = \"{}\"", escape_inline(name))?;
             writeln!(out, "      {s} cwd    = \"{}\"", show_path(cwd))?;
-            render_body_field(out, "script", None, script, &s, *sensitive, opts)?;
+            render_visible_body_field(out, "script", None, script, &s, *sensitive, opts)?;
         }
         ResourceState::SshKey {
             private_path,
@@ -799,7 +822,7 @@ fn render_shell_diff<W: Write>(
             show_path(after.cwd)
         )?;
     }
-    render_body_field(
+    render_visible_body_field(
         out,
         "script",
         Some(before.script),
@@ -1584,7 +1607,7 @@ mod tests {
     }
 
     #[test]
-    fn default_mode_shell_script_sensitive_attaches_marker() {
+    fn default_mode_shell_script_sensitive_attaches_marker_and_shows_body() {
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "with-secret".into(),
@@ -1604,10 +1627,10 @@ mod tests {
         };
         let out = render(&plan);
         assert!(
-            out.contains("> script [sensitive]: 2 lines"),
-            "missing sensitive shell summary: {out}",
+            out.contains("> script [sensitive]:"),
+            "missing sensitive shell header: {out}",
         );
-        assert!(!out.contains("TOKEN=abc"), "script content leaked: {out}");
+        assert!(out.contains("+TOKEN=abc"), "script content missing: {out}");
     }
 
     #[test]
@@ -1772,7 +1795,7 @@ mod tests {
     }
 
     #[test]
-    fn update_shell_renders_non_body_fields_inline_and_script_as_summary() {
+    fn update_shell_renders_non_body_fields_inline_and_script_diff() {
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "refresh".into(),
@@ -1810,11 +1833,11 @@ mod tests {
             "missing cwd diff: {out}"
         );
         assert!(
-            out.contains("~ script: 1 line removed, 1 line added"),
-            "missing script summary: {out}",
+            out.contains("~ script:"),
+            "missing script diff header: {out}",
         );
-        assert!(!out.contains("echo old"), "old script leaked: {out}");
-        assert!(!out.contains("echo new"), "new script leaked: {out}");
+        assert!(out.contains("-echo old"), "old script missing: {out}");
+        assert!(out.contains("+echo new"), "new script missing: {out}");
     }
 
     #[test]
@@ -1849,7 +1872,7 @@ mod tests {
     }
 
     #[test]
-    fn run_shell_renders_non_body_fields_inline_and_script_as_summary() {
+    fn run_shell_renders_non_body_fields_inline_and_script_body() {
         let plan = Plan {
             changes: vec![ResourceChange {
                 address: "refresh".into(),
@@ -1886,10 +1909,10 @@ mod tests {
             "missing cwd line: {out}"
         );
         assert!(
-            out.contains("> script: 1 line"),
-            "missing script summary: {out}",
+            out.contains("> script:"),
+            "missing script diff header: {out}",
         );
-        assert!(!out.contains("echo ok"), "script content leaked: {out}");
+        assert!(out.contains("+echo ok"), "script content missing: {out}");
         assert!(out.contains("Plan: 0 to add, 0 to change, 1 to run."));
     }
 

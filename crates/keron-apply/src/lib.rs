@@ -27,6 +27,7 @@ mod terminal_safe;
 pub use terminal_safe::sanitize_terminal_message;
 
 pub use elevated::child::run as run_elevated_child;
+pub use elevated::payload::{PayloadExpectation, PayloadIdentity};
 
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};

@@ -248,7 +248,8 @@ pub mod windows {
         Ok(())
     }
 
-    /// UAC re-exec. Spawns `<exe> __apply-elevated <payload>` via
+    /// UAC re-exec. Spawns
+    /// `<exe> __apply-elevated <payload> <digest> <identity>` via
     /// `ShellExecuteExW` with the `runas` verb. Waits for the child
     /// to finish and returns its `ExitStatus`.
     ///
@@ -276,7 +277,11 @@ pub mod windows {
     // (where mutants runs).
     #[cfg_attr(test, mutants::skip)]
     #[allow(unsafe_code)]
-    pub fn shell_execute_runas(exe: &Path, payload: &Path) -> Result<std::process::ExitStatus> {
+    pub fn shell_execute_runas(
+        exe: &Path,
+        payload: &Path,
+        expected: &crate::elevated::payload::PayloadExpectation,
+    ) -> Result<std::process::ExitStatus> {
         use std::os::windows::process::ExitStatusExt;
         use windows::Win32::System::Threading::{
             GetExitCodeProcess, INFINITE, WaitForSingleObject,
@@ -305,10 +310,20 @@ pub mod windows {
                 display
             );
         }
+        let identity = expected.identity.encode();
+        for arg in [&expected.digest_hex, &identity] {
+            if arg.chars().any(|c| c == '"' || c.is_control()) {
+                bail!("refusing to elevate: payload verifier argument contains unsafe characters");
+            }
+        }
 
         let verb = to_wide("runas");
         let exe_w = to_wide(exe);
-        let params: PathBuf = format!("__apply-elevated \"{display}\"").into();
+        let params: PathBuf = format!(
+            "__apply-elevated \"{display}\" \"{}\" \"{identity}\"",
+            expected.digest_hex
+        )
+        .into();
         let params_w = to_wide(&params);
 
         let mut info: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };

@@ -15,7 +15,7 @@
 //! Attachment policy lives in [`assign_comment`]. See
 //! [`CommentAttachment`] for the full taxonomy.
 
-use crate::ast::{Comment, CommentAttachment, CommentMap, Program, Span};
+use crate::ast::{Block, Comment, CommentAttachment, CommentMap, Expr, Item, Program, Span, Stmt};
 use crate::lex::{MultilineClose, is_multiline_close, multiline_open};
 
 /// Extract every `#...\n` comment from `src` and attach each one to
@@ -147,11 +147,130 @@ fn find_comment_start(line: &str) -> Option<usize> {
 fn collect_spans(program: &Program) -> Vec<Span> {
     // Spans are stored *raw* (with whatever trailing pad the parser
     // captured) so the emitter can look up an attachment by
-    // `Item::span()` directly. Trailing-detection trims on the fly
-    // via `trim_pad_end` when it needs a semantic end position.
-    let mut spans: Vec<Span> = program.items.iter().map(crate::ast::Item::span).collect();
+    // `Item::span()` or `stmt_span` directly. Trailing-detection
+    // trims on the fly via `trim_pad_end` when it needs a semantic
+    // end position.
+    let mut spans = Vec::new();
+    for item in &program.items {
+        collect_item_spans(item, &mut spans);
+    }
     spans.sort_by_key(|s| s.start);
     spans
+}
+
+fn collect_item_spans(item: &Item, spans: &mut Vec<Span>) {
+    spans.push(item.span());
+    match item {
+        Item::Val(v) => collect_expr_spans(&v.value.node, spans),
+        Item::Fn(f) => collect_block_spans(&f.body, spans),
+        Item::Struct(s) => {
+            for field in &s.fields {
+                if let Some(default) = &field.default {
+                    collect_expr_spans(&default.node, spans);
+                }
+            }
+        }
+        Item::Reconcile(r) => {
+            for chain in &r.chains {
+                for expr in chain {
+                    collect_expr_spans(&expr.node, spans);
+                }
+            }
+        }
+        Item::ExprStmt(e) => collect_expr_spans(&e.node, spans),
+        Item::Use(_) | Item::TypeAlias(_) => {}
+    }
+}
+
+fn collect_block_spans(block: &Block, spans: &mut Vec<Span>) {
+    for stmt in &block.stmts {
+        spans.push(stmt_span(stmt));
+        match stmt {
+            Stmt::Val(v) => collect_expr_spans(&v.value.node, spans),
+            Stmt::Reconcile(r) => {
+                for chain in &r.chains {
+                    for expr in chain {
+                        collect_expr_spans(&expr.node, spans);
+                    }
+                }
+            }
+        }
+    }
+    if let Some(trailing) = &block.trailing {
+        spans.push(trailing.span.clone());
+        collect_expr_spans(&trailing.node, spans);
+    }
+}
+
+fn collect_expr_spans(expr: &Expr, spans: &mut Vec<Span>) {
+    match expr {
+        Expr::Unary { operand, .. }
+        | Expr::Field {
+            receiver: operand, ..
+        } => {
+            collect_expr_spans(&operand.node, spans);
+        }
+        Expr::Binary { lhs, rhs, .. } => {
+            collect_expr_spans(&lhs.node, spans);
+            collect_expr_spans(&rhs.node, spans);
+        }
+        Expr::Interpolation(parts) => {
+            for part in parts {
+                if let crate::ast::StringPart::Expr { expr, .. } = part {
+                    collect_expr_spans(&expr.node, spans);
+                }
+            }
+        }
+        Expr::List(items) => {
+            for item in items {
+                collect_expr_spans(&item.node, spans);
+            }
+        }
+        Expr::Map(entries) => {
+            for entry in entries {
+                collect_expr_spans(&entry.key.node, spans);
+                collect_expr_spans(&entry.value.node, spans);
+            }
+        }
+        Expr::Call { args, .. } => {
+            for arg in args {
+                collect_expr_spans(&arg.value.node, spans);
+            }
+        }
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
+            collect_expr_spans(&cond.node, spans);
+            collect_block_spans(then_branch, spans);
+            collect_block_spans(else_branch, spans);
+        }
+        Expr::For {
+            iter_expr, body, ..
+        } => {
+            collect_expr_spans(&iter_expr.node, spans);
+            collect_block_spans(body, spans);
+        }
+        Expr::Match { scrutinee, arms } => {
+            collect_expr_spans(&scrutinee.node, spans);
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    collect_expr_spans(&guard.node, spans);
+                }
+                spans.push(arm.body.span.clone());
+                collect_expr_spans(&arm.body.node, spans);
+            }
+        }
+        Expr::Literal(_) | Expr::Var(_) => {}
+    }
+}
+
+fn stmt_span(stmt: &Stmt) -> Span {
+    match stmt {
+        Stmt::Val(v) => v.span.clone(),
+        Stmt::Reconcile(r) => r.span.clone(),
+    }
 }
 
 /// Return the byte offset of the position just after the last

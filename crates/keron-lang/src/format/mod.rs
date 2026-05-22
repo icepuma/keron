@@ -119,6 +119,52 @@ mod tests {
     }
 
     #[test]
+    fn nested_block_comment_stays_inside_block() {
+        let src = "fn f(): Int {\n  # documents x\n  val x = 1\n  x\n}\n";
+        assert_eq!(fmt(src), src);
+    }
+
+    #[test]
+    fn field_receiver_parentheses_preserve_coalesce_meaning() {
+        let src = concat!(
+            "struct Point { x: Int }\n",
+            "val maybe: Point? = null\n",
+            "val fallback: Point = Point(1)\n",
+            "val n: Int = (maybe ?? fallback).x\n",
+        );
+        assert_eq!(fmt(src), src);
+    }
+
+    #[test]
+    fn statement_blocks_inside_lists_do_not_inline_with_semicolons() {
+        let src = "val xs: List<Int> = [if true {\n  val x = 1\n  x\n} else {\n  2\n}]\n";
+        let out = fmt(src);
+        assert!(
+            !out.contains(';'),
+            "formatter must not emit parser-invalid semicolon separators: {out}",
+        );
+        crate::parse(&out).expect("formatted output should parse");
+    }
+
+    #[test]
+    fn cooked_multiline_string_style_is_preserved() {
+        let src = "val s: String = \"\"\"\nhello\n\"\"\"\n";
+        assert_eq!(fmt(src), src);
+    }
+
+    #[test]
+    fn raw_multiline_string_style_is_preserved() {
+        let src = "val s: String = r#\"\"\"\n${HOME}\n\"\"\"#\n";
+        assert_eq!(fmt(src), src);
+    }
+
+    #[test]
+    fn cooked_multiline_interpolation_style_is_preserved() {
+        let src = "val name = \"keron\"\nval s: String = \"\"\"\nhello ${name}\n\"\"\"\n";
+        assert_eq!(fmt(src), src);
+    }
+
+    #[test]
     fn newline_preserving_pass_is_idempotent_on_combined_layout() {
         let src = concat!(
             "val a = 1\n",

@@ -12,8 +12,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::plan::{Plan, ResourceChange};
 
@@ -52,11 +53,16 @@ pub const PAYLOAD_VERSION: u32 = 1;
 /// can't leak the payload on disk.
 pub struct TempPayload {
     path: PathBuf,
+    expected: PayloadExpectation,
 }
 
 impl TempPayload {
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    pub const fn expected(&self) -> &PayloadExpectation {
+        &self.expected
     }
 }
 
@@ -64,6 +70,7 @@ impl std::fmt::Debug for TempPayload {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TempPayload")
             .field("path", &self.path)
+            .field("expected", &self.expected)
             .finish()
     }
 }
@@ -98,7 +105,9 @@ pub fn write_payload(plan: &Plan, owner: &OwnerId) -> Result<TempPayload> {
         serde_json::to_vec_pretty(&payload).context("serializing elevated payload to JSON")?;
     write_secure(&path, &json)
         .with_context(|| format!("writing payload to `{}`", path.display()))?;
-    Ok(TempPayload { path })
+    let expected = PayloadExpectation::capture(&path, &json)
+        .with_context(|| format!("capturing identity for `{}`", path.display()))?;
+    Ok(TempPayload { path, expected })
 }
 
 #[cfg(unix)]
@@ -133,6 +142,171 @@ fn rand_suffix() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| u64::try_from(d.as_nanos()).unwrap_or(u64::MAX))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PayloadExpectation {
+    pub digest_hex: String,
+    pub identity: PayloadIdentity,
+}
+
+impl PayloadExpectation {
+    fn capture(path: &Path, bytes: &[u8]) -> Result<Self> {
+        Ok(Self {
+            digest_hex: digest_hex(bytes),
+            identity: PayloadIdentity::capture(path)?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PayloadIdentity {
+    #[cfg(unix)]
+    Unix {
+        dev: u64,
+        ino: u64,
+        uid: u32,
+        gid: u32,
+        mode: u32,
+        len: u64,
+    },
+    #[cfg(windows)]
+    Windows { len: u64, modified_nanos: u128 },
+}
+
+impl PayloadIdentity {
+    #[must_use]
+    pub fn encode(&self) -> String {
+        match self {
+            #[cfg(unix)]
+            Self::Unix {
+                dev,
+                ino,
+                uid,
+                gid,
+                mode,
+                len,
+            } => format!("unix:{dev}:{ino}:{uid}:{gid}:{mode:o}:{len}"),
+            #[cfg(windows)]
+            Self::Windows {
+                len,
+                modified_nanos,
+            } => {
+                format!("windows:{len}:{modified_nanos}")
+            }
+        }
+    }
+
+    /// Decode the identity argument passed to the elevated child.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the encoded value has an unknown platform
+    /// tag, the wrong number of fields, or malformed numeric fields.
+    pub fn decode(s: &str) -> Result<Self> {
+        let parts = s.split(':').collect::<Vec<_>>();
+        match parts.as_slice() {
+            #[cfg(unix)]
+            ["unix", dev, ino, uid, gid, mode, len] => Ok(Self::Unix {
+                dev: dev.parse().context("parsing payload device id")?,
+                ino: ino.parse().context("parsing payload inode")?,
+                uid: uid.parse().context("parsing payload uid")?,
+                gid: gid.parse().context("parsing payload gid")?,
+                mode: u32::from_str_radix(mode, 8).context("parsing payload mode")?,
+                len: len.parse().context("parsing payload length")?,
+            }),
+            #[cfg(windows)]
+            ["windows", len, modified_nanos] => Ok(Self::Windows {
+                len: len.parse().context("parsing payload length")?,
+                modified_nanos: modified_nanos
+                    .parse()
+                    .context("parsing payload modification time")?,
+            }),
+            _ => bail!("invalid elevated payload identity `{s}`"),
+        }
+    }
+
+    fn capture(path: &Path) -> Result<Self> {
+        let meta = fs::metadata(path).context("stat elevated payload")?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::{MetadataExt, PermissionsExt};
+            Ok(Self::Unix {
+                dev: meta.dev(),
+                ino: meta.ino(),
+                uid: meta.uid(),
+                gid: meta.gid(),
+                mode: meta.permissions().mode(),
+                len: meta.len(),
+            })
+        }
+        #[cfg(windows)]
+        {
+            use std::time::UNIX_EPOCH;
+            let modified = meta
+                .modified()
+                .context("reading elevated payload modification time")?
+                .duration_since(UNIX_EPOCH)
+                .context("elevated payload modification time predates Unix epoch")?;
+            Ok(Self::Windows {
+                len: meta.len(),
+                modified_nanos: modified.as_nanos(),
+            })
+        }
+    }
+}
+
+pub fn read_verified(path: &Path, expected: &PayloadExpectation) -> Result<Vec<u8>> {
+    let before = PayloadIdentity::capture(path)?;
+    verify_identity(&before, expected)?;
+    let bytes =
+        fs::read(path).with_context(|| format!("reading elevated payload `{}`", path.display()))?;
+    let after = PayloadIdentity::capture(path)?;
+    verify_identity(&after, expected)?;
+    let actual = digest_hex(&bytes);
+    if actual != expected.digest_hex {
+        bail!(
+            "elevated payload digest mismatch: expected {}, got {actual}",
+            expected.digest_hex
+        );
+    }
+    Ok(bytes)
+}
+
+fn verify_identity(actual: &PayloadIdentity, expected: &PayloadExpectation) -> Result<()> {
+    if actual != &expected.identity {
+        bail!(
+            "elevated payload metadata changed: expected {}, got {}",
+            expected.identity.encode(),
+            actual.encode()
+        );
+    }
+    #[cfg(unix)]
+    {
+        let PayloadIdentity::Unix { mode, .. } = actual;
+        let mode = *mode;
+        let file_type = mode & u32::from(libc::S_IFMT);
+        if file_type != u32::from(libc::S_IFREG) {
+            bail!("elevated payload is not a regular file");
+        }
+        if mode & 0o077 != 0 {
+            bail!(
+                "elevated payload permissions are too broad (mode {:o}); expected private 0600",
+                mode & 0o777
+            );
+        }
+    }
+    Ok(())
+}
+
+fn digest_hex(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    let mut out = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        use std::fmt::Write as _;
+        let _ = write!(out, "{byte:02x}");
+    }
+    out
 }
 
 /// Capture the calling user's identity for embedding in the payload.

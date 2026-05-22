@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 
 use crate::elevated::chown;
-use crate::elevated::payload::{ElevatedPayload, OwnerId, PAYLOAD_VERSION};
+use crate::elevated::payload::{ElevatedPayload, OwnerId, PAYLOAD_VERSION, PayloadExpectation};
 use crate::execute::{ApplyContext, apply_change_one_in};
 use crate::plan::{ResourceChange, ResourceState};
 use crate::terminal_safe::show_path;
@@ -27,9 +27,8 @@ use crate::terminal_safe::show_path;
 /// Errors on payload parse failure, version mismatch, apply failure,
 /// or chown-back failure. The error is intentionally propagated so
 /// the elevator (sudo / `ShellExecuteExW`) sees a non-zero exit.
-pub fn run(payload_path: &Path) -> Result<()> {
-    let bytes = std::fs::read(payload_path)
-        .with_context(|| format!("reading elevated payload `{}`", payload_path.display()))?;
+pub fn run(payload_path: &Path, expected: &PayloadExpectation) -> Result<()> {
+    let bytes = crate::elevated::payload::read_verified(payload_path, expected)?;
     let payload: ElevatedPayload = serde_json::from_slice(&bytes)
         .with_context(|| format!("parsing elevated payload `{}`", payload_path.display()))?;
     if payload.version != PAYLOAD_VERSION {

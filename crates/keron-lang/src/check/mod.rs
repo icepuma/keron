@@ -1586,7 +1586,34 @@ fn check_generic_call(
             &callee.node,
         )?;
     }
+    if matches!(
+        callee.node.as_str(),
+        "list_contains" | "unique" | "index_of"
+    ) && let Some(elem) = bindings.get("T")
+        && !is_list_equality_comparable(elem)
+    {
+        return Err(Diagnostic::new(
+            call_span,
+            format!(
+                "`{}` requires a list element type with supported equality, found `{elem}`",
+                callee.node
+            ),
+        ));
+    }
     Ok(substitute_generics(&sig.return_type, &bindings))
+}
+
+const fn is_list_equality_comparable(ty: &Type) -> bool {
+    matches!(
+        ty,
+        Type::String
+            | Type::Int
+            | Type::Boolean
+            | Type::Double
+            | Type::Null
+            | Type::Secret
+            | Type::StringUnion { .. }
+    )
 }
 
 fn type_contains_generic(t: &Type) -> bool {
