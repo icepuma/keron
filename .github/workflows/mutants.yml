@@ -44,6 +44,13 @@ jobs:
           tool: cargo-mutants
 
       - name: Run full mutation suite
+        env:
+          # Route cargo-mutants' workspace copies under $RUNNER_TEMP
+          # (/home/runner/work/_temp/) instead of /tmp. The elevation
+          # tamper-resistance check refuses to elevate when any ancestor
+          # of the binary is world-writable, and /tmp's mode 1777 trips
+          # that check for the e2e elevation tests.
+          TMPDIR: ${{ runner.temp }}
         run: |
           env -u CARGO_TARGET_DIR cargo mutants \
             --workspace \
