@@ -57,7 +57,7 @@ jobs:
             --all-features \
             --cargo-arg=--locked \
             --test-tool nextest \
-            -j2
+            -j8
 
       - name: Upload mutants output
         if: always()
