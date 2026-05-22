@@ -285,8 +285,13 @@ fn verify_identity(actual: &PayloadIdentity, expected: &PayloadExpectation) -> R
     {
         let PayloadIdentity::Unix { mode, .. } = actual;
         let mode = *mode;
+        // libc::S_IF* is u16 on macOS, u32 on Linux; the From is a no-op
+        // on Linux but required for portability.
+        #[allow(clippy::useless_conversion)]
         let file_type = mode & u32::from(libc::S_IFMT);
-        if file_type != u32::from(libc::S_IFREG) {
+        #[allow(clippy::useless_conversion)]
+        let s_ifreg = u32::from(libc::S_IFREG);
+        if file_type != s_ifreg {
             bail!("elevated payload is not a regular file");
         }
         if mode & 0o077 != 0 {
