@@ -27,16 +27,30 @@ pub fn fetch() -> Result<HashSet<String>> {
         .stderr(Stdio::piped())
         .output()
         .context("spawning `cargo install --list`")?;
-    if !out.status.success() {
+    let status_label = out.status.to_string();
+    decode_list_output(out.status.success(), &out.stdout, &out.stderr, &status_label)
+}
+
+/// Pure helper: branch on the `cargo install --list` exit status and
+/// either parse stdout as UTF-8 (success) or surface a tagged error
+/// with stderr (failure). Factored out so the success/failure branch
+/// can be tested without spawning a real `cargo` process — the `fetch`
+/// wrapper is the only producer of these inputs in production.
+fn decode_list_output(
+    ok: bool,
+    stdout: &[u8],
+    stderr: &[u8],
+    status_label: &str,
+) -> Result<HashSet<String>> {
+    if !ok {
         bail!(
-            "`cargo install --list` exited with status {}; stderr: {}",
-            out.status,
-            String::from_utf8_lossy(&out.stderr).trim(),
+            "`cargo install --list` exited with status {status_label}; stderr: {}",
+            String::from_utf8_lossy(stderr).trim(),
         );
     }
     let text =
-        String::from_utf8(out.stdout).context("decoding `cargo install --list` output as UTF-8")?;
-    Ok(parse(&text))
+        std::str::from_utf8(stdout).context("decoding `cargo install --list` output as UTF-8")?;
+    Ok(parse(text))
 }
 
 /// Parse `cargo install --list` output. Flush-left lines (no
@@ -108,5 +122,25 @@ mod tests {
     #[test]
     fn parse_empty_input_returns_empty_set() {
         assert!(parse("").is_empty());
+    }
+
+    #[test]
+    fn decode_list_output_returns_parsed_set_on_success() {
+        let stdout = b"ripgrep v14.0.0:\n    rg\n";
+        let got = decode_list_output(true, stdout, b"", "exit code: 0").unwrap();
+        assert!(got.contains("ripgrep"));
+    }
+
+    #[test]
+    fn decode_list_output_bails_on_nonzero_exit_with_stderr_context() {
+        // Pins the success-gate `!` — a mutation that deletes the `!`
+        // would treat nonzero exits as success and return whatever the
+        // stdout parser produced (often an empty set), masking the real
+        // failure from the user.
+        let err = decode_list_output(false, b"", b"toolchain not found", "exit code: 101")
+            .expect_err("nonzero exit must bail");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("exit code: 101"), "got: {msg}");
+        assert!(msg.contains("toolchain not found"), "got: {msg}");
     }
 }
