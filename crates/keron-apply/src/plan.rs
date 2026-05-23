@@ -1229,6 +1229,10 @@ mod tests {
         assert!(include_in_plan(&resources[2], OsFamily::Linux));
     }
 
+    // Manifest literals `/a` / `/b` are Unix-style absolute paths.
+    // On Windows they're rooted-but-not-absolute (no drive letter) and
+    // keron's path normalisation refuses them. Gate to unix.
+    #[cfg(unix)]
     #[test]
     fn build_plan_emits_one_change_per_resource() {
         use keron_modules::{EntrySource, ModuleId, resolve};
@@ -1356,11 +1360,14 @@ mod tests {
         let entry = dir.join("entry.keron");
         fs::write(dir.join("tmpl.tpl"), "{{ body }}").unwrap();
         let target = dir.join("dedup-target");
+        // Forward slashes only in the manifest: on Windows `target.display()`
+        // emits backslashes, and keron's string parser would treat them
+        // as escape introducers (`\U`, `\d`...).
+        let target_str = target.display().to_string().replace('\\', "/");
         let src = format!(
-            "val t: Template = template(source = \"tmpl.tpl\", target = \"{}\", vars = {{\"body\": \"x\"}})\n\
+            "val t: Template = template(source = \"tmpl.tpl\", target = \"{target_str}\", vars = {{\"body\": \"x\"}})\n\
              reconcile t\n\
              reconcile t\n",
-            target.display(),
         );
         fs::write(&entry, &src).unwrap();
         let canonical = fs::canonicalize(&entry).unwrap();
@@ -1392,10 +1399,11 @@ mod tests {
         let entry = dir.join("entry.keron");
         fs::write(dir.join("tmpl.tpl"), "{{ body }}").unwrap();
         let target = dir.join("conflict-target");
+        // Forward slashes only — see the dedup test above for the rationale.
+        let path = target.display().to_string().replace('\\', "/");
         let src = format!(
             "reconcile template(source = \"tmpl.tpl\", target = \"{path}\", vars = {{\"body\": \"first\"}})\n\
              reconcile template(source = \"tmpl.tpl\", target = \"{path}\", vars = {{\"body\": \"second\"}})\n",
-            path = target.display(),
         );
         fs::write(&entry, &src).unwrap();
         let canonical = fs::canonicalize(&entry).unwrap();
@@ -1411,6 +1419,8 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    // Manifest literal `/a` is a Unix-style absolute path. Gate.
+    #[cfg(unix)]
     #[test]
     fn build_prechecked_plan_skips_unsupported_packages_before_classification() {
         use keron_modules::{EntrySource, ModuleId, resolve};
