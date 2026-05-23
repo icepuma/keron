@@ -869,6 +869,67 @@ mod tests {
     }
 
     #[test]
+    fn prewarm_loads_taps_when_only_tap_resources_are_present() {
+        // Pins the prewarm early-return guard: when no Package resources
+        // are pending (so `needed_installed.is_empty()` is true) but a
+        // Tap resource still needs probing, the function MUST spawn the
+        // `brew tap` probe rather than short-circuiting. Catches the
+        // `&& -> ||` and `delete !` mutations on line 157 that would let
+        // the empty-installed branch poison the early-return decision
+        // and silently leave `installed_taps` at `None`.
+        let _g = lock_env();
+        set_env("KERON_TEST_BREW_TAPS", "icepuma/keron");
+        let resources = vec![tap_state("icepuma/keron", None)];
+        let mut cache = PackageCache::for_tests();
+        cache.prewarm(&resources).unwrap();
+        clear_env(&["KERON_TEST_BREW_TAPS"]);
+        assert!(
+            cache.installed_taps.is_some(),
+            "prewarm must populate installed_taps when a tap resource is pending",
+        );
+        assert!(
+            cache
+                .installed_taps
+                .as_ref()
+                .unwrap()
+                .contains("icepuma/keron"),
+            "installed_taps must reflect the env-seam contents",
+        );
+    }
+
+    #[test]
+    fn prewarm_loads_tap_remotes_for_url_qualified_taps_even_with_no_packages() {
+        // Companion of the above: with the second `&&` on line 157
+        // flipped to `||`, the `needed_tap_remotes` branch is bypassed
+        // when both packages and taps are already cached. Force a probe
+        // by supplying a URL-qualified tap and an env seam, then assert
+        // the per-tap remote memo got populated.
+        let _g = lock_env();
+        set_env("KERON_TEST_BREW_TAPS", "icepuma/keron");
+        set_env(
+            "KERON_TEST_BREW_TAP_REMOTES",
+            "icepuma/keron=https://github.com/icepuma/keron",
+        );
+        // Pre-load installed_taps so `need_taps` is false; only the
+        // tap-remote slot still needs probing.
+        let resources_pre = vec![tap_state("icepuma/keron", None)];
+        let mut cache = PackageCache::for_tests();
+        cache.prewarm(&resources_pre).unwrap();
+        // Now prewarm with a URL-qualified tap. needed_installed is
+        // empty, need_taps is false, needed_tap_remotes has one entry.
+        let resources = vec![tap_state(
+            "icepuma/keron",
+            Some("https://github.com/icepuma/keron"),
+        )];
+        cache.prewarm(&resources).unwrap();
+        clear_env(&["KERON_TEST_BREW_TAPS", "KERON_TEST_BREW_TAP_REMOTES"]);
+        assert!(
+            cache.tap_remotes.contains_key("icepuma/keron"),
+            "prewarm must probe the tap remote when only that slot is pending",
+        );
+    }
+
+    #[test]
     fn prewarm_skips_probes_already_populated_by_prior_lazy_load() {
         // Pins idempotence: prewarm must not re-probe a slot that a
         // prior classify_* already populated.
@@ -1296,5 +1357,60 @@ mod tests {
         let got = test_tap_remote_override("icepuma/keron").unwrap();
         clear_env(&["KERON_TEST_BREW_TAP_REMOTES"]);
         assert_eq!(got, None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn install_many_captured_concatenates_winget_per_name_chunks() {
+        // Winget loops single-name installs internally (its install
+        // command takes one query). When BatchStdio::Capture is in
+        // effect, each chunk's stdout/stderr must be appended to the
+        // returned BatchOutput so a downstream `flush_phase_outputs`
+        // can render the full transcript. Pins the `== BatchStdio::Capture`
+        // gate on line 547: an `==` -> `!=` mutation would only
+        // accumulate output under Inherit (where every chunk is empty
+        // by construction), leaving the captured buffer empty and the
+        // user staring at a blank install log.
+        use std::os::unix::fs::PermissionsExt;
+        let _g = lock_env();
+        let d = std::env::temp_dir().join(format!(
+            "keron-imc-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |t| t.subsec_nanos()),
+        ));
+        std::fs::create_dir_all(&d).unwrap();
+        let spy = d.join("winget-spy.sh");
+        // The spy echoes the package name (last argv) to stdout. The
+        // winget invocation has the name at a known argv slot (we use
+        // "$@"'s last positional) — easier to just splat the whole argv.
+        let script = "#!/bin/sh\necho \"installed $@\"\n";
+        std::fs::write(&spy, script).unwrap();
+        let mut perm = std::fs::metadata(&spy).unwrap().permissions();
+        perm.set_mode(0o755);
+        std::fs::set_permissions(&spy, perm).unwrap();
+        set_env("KERON_TEST_PACKAGE_BIN_WINGET", spy.to_str().unwrap());
+
+        let out = install_many_captured(
+            PackageManager::Winget,
+            &["Microsoft.PowerShell", "Foo.Bar"],
+            crate::platform::OsFamily::Windows,
+        )
+        .expect("spy succeeds");
+
+        clear_env(&["KERON_TEST_PACKAGE_BIN_WINGET"]);
+        let _ = std::fs::remove_dir_all(&d);
+        let stdout = String::from_utf8(out.stdout).unwrap();
+        // Both per-name chunks must appear — concatenation proves the
+        // capture-mode accumulation is wired up.
+        assert!(
+            stdout.contains("Microsoft.PowerShell"),
+            "first chunk lost; got: {stdout:?}",
+        );
+        assert!(
+            stdout.contains("Foo.Bar"),
+            "second chunk lost; got: {stdout:?}",
+        );
     }
 }
