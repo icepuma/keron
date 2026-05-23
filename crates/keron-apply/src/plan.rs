@@ -1550,6 +1550,16 @@ mod tests {
             // the test path must already be canonical (macOS rewrites
             // `/var/folders/...` -> `/private/var/folders/...`).
             let path = fs::canonicalize(&p).unwrap();
+            // Strip the Windows verbatim-UNC prefix (`\\?\C:\...`).
+            // Without this, `symlink_file(\\?\C:\…, link)` ends up
+            // storing a target Windows then reads back without the
+            // prefix, breaking `assert_eq!(read_link, original)`.
+            #[cfg(windows)]
+            let path = {
+                let s = path.to_string_lossy();
+                s.strip_prefix(r"\\?\")
+                    .map_or_else(|| path.clone(), PathBuf::from)
+            };
             Self { path }
         }
     }
