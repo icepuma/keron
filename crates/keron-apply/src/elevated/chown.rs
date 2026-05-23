@@ -417,6 +417,44 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn set_owner_to_alien_uid_fails_when_not_root() {
+        // The non-root test process cannot chown a file to a different
+        // owner: the real `lchown(2)` returns EPERM. A function-body
+        // mutation that swaps the implementation for `Ok(())` would
+        // silently skip the syscall and pass — this test pins that the
+        // real call is executed by demanding it fails.
+        //
+        // Skipped if the test happens to be running as root (CI runners
+        // sometimes do): in that case EPERM is not the kernel's answer.
+        #[allow(unsafe_code)]
+        let euid = unsafe { libc::geteuid() };
+        if euid == 0 {
+            return;
+        }
+        let d = temp("alien");
+        let file = d.join("payload");
+        fs::write(&file, "hi").unwrap();
+        // Pick a uid/gid that almost certainly isn't us. `nobody`/`nogroup`
+        // is conventionally 65534 on Linux, 4294967294 (u32::MAX-1) on
+        // macOS — in either case we are not them, so chown'ing to it
+        // from an unprivileged process must EPERM.
+        let alien_uid = 65534;
+        let alien_gid = 65534;
+        let owner = OwnerId::Posix {
+            uid: alien_uid,
+            gid: alien_gid,
+        };
+        let err =
+            set_owner(&file, &owner).expect_err("unprivileged chown to alien uid must EPERM");
+        assert!(
+            format!("{err:#}").contains("lchown"),
+            "expected lchown context in error, got: {err:#}",
+        );
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn set_owner_rejects_windows_payload_on_unix() {
         let d = temp("wrong-platform");
         let file = d.join("x");
