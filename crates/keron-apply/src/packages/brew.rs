@@ -255,15 +255,16 @@ mod tests {
 
     #[cfg(unix)]
     fn write_brew_spy(dir: &std::path::Path, stdout: &str, exit_code: i32) -> std::path::PathBuf {
+        use std::fmt::Write as _;
         use std::os::unix::fs::PermissionsExt;
         let spy = dir.join("brew-spy.sh");
         let mut body = String::from("#!/bin/sh\n");
         for line in stdout.lines() {
             // Escape any single quotes in the line by using printf.
             let escaped = line.replace('\\', "\\\\").replace('\'', "'\\''");
-            body.push_str(&format!("printf '%s\\n' '{escaped}'\n"));
+            let _ = writeln!(body, "printf '%s\\n' '{escaped}'");
         }
-        body.push_str(&format!("exit {exit_code}\n"));
+        let _ = writeln!(body, "exit {exit_code}");
         std::fs::write(&spy, body).unwrap();
         std::fs::set_permissions(&spy, std::fs::Permissions::from_mode(0o755)).unwrap();
         spy

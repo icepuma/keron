@@ -2045,11 +2045,11 @@ mod tests {
             pkg_with_tap("kernel", "icepuma/keron", Some(url)),
         ];
         let out = synthesize_taps(&resources).expect("identical URLs must coalesce");
-        let taps: Vec<_> = out
+        let tap_count = out
             .iter()
             .filter(|r| matches!(r, ResourceState::Tap(_)))
-            .collect();
-        assert_eq!(taps.len(), 1, "duplicate same-url taps collapse to one");
+            .count();
+        assert_eq!(tap_count, 1, "duplicate same-url taps collapse to one");
     }
 
     #[test]

@@ -438,11 +438,10 @@ mod tests {
         // is conventionally 65534 on Linux, 4294967294 (u32::MAX-1) on
         // macOS — in either case we are not them, so chown'ing to it
         // from an unprivileged process must EPERM.
-        let alien_uid = 65534;
-        let alien_gid = 65534;
+        let alien = 65534;
         let owner = OwnerId::Posix {
-            uid: alien_uid,
-            gid: alien_gid,
+            uid: alien,
+            gid: alien,
         };
         let err = set_owner(&file, &owner).expect_err("unprivileged chown to alien uid must EPERM");
         assert!(

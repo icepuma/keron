@@ -1305,7 +1305,7 @@ mod tests {
         assert!(!probe.tap_installed(""));
     }
 
-    /// Probe whose session_state is fully controlled by the test.
+    /// Probe whose `session_state` is fully controlled by the test.
     struct ScriptedSessionProbe(SessionState);
     impl PrereqProbe for ScriptedSessionProbe {
         fn package_manager_available(&self, _pm: PackageManager) -> bool {
