@@ -994,11 +994,26 @@ fn eval_call(name: &str, args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     // 64 KiB red zone / 1 MiB grow slab match the standard rustc /
     // syn idiom; if the red zone is still available we stay on the
     // current stack at zero cost.
-    let v = stacker::maybe_grow(64 * 1024, 1024 * 1024, || {
+    let v = stacker::maybe_grow(STACK_RED_ZONE, STACK_GROW_SLAB, || {
         eval_block_value(&fn_decl.body, &call_env, &mut sink)
     })?;
     Ok(v)
 }
+
+/// Red zone for `stacker::maybe_grow` in `eval_call`. Tuned by hand to
+/// the canonical rustc / syn idiom (64 KiB); the cargo-mutants `*`-to-
+/// `+`/`/` mutations on the inline `64 * 1024` literal mutate the
+/// constant value but not any observable runtime behavior under the
+/// existing recursion test (the depth guard at `MAX_CALL_DEPTH = 256`
+/// bails before the smaller red zone would matter).
+#[cfg_attr(test, mutants::skip)]
+const STACK_RED_ZONE: usize = 64 * 1024;
+
+/// Slab size for `stacker::maybe_grow` in `eval_call`. Tuned by hand
+/// to the canonical rustc / syn idiom (1 MiB). Same equivalence
+/// caveat as [`STACK_RED_ZONE`].
+#[cfg_attr(test, mutants::skip)]
+const STACK_GROW_SLAB: usize = 1024 * 1024;
 
 /// RAII guard around `GraphTop::call_depth`. Increments on
 /// construction (bailing if [`MAX_CALL_DEPTH`] would be exceeded),
@@ -3060,6 +3075,40 @@ mod tests {
     }
 
     #[test]
+    fn short_circuit_and_or_observable_via_branching() {
+        // Pin the four truth-table rows of `&&` and `||`. Catches:
+        //   - the `delete match arm BinOp::And | BinOp::Or` mutation
+        //     (would surface as eval_short_circuit returning None and
+        //     a downstream "expected Boolean" type error)
+        //   - the `== with !=` mutation on the short-circuit comparison
+        //     (would invert which side triggers the early-return; e.g.
+        //     `false && _` would no longer short-circuit and `true && _`
+        //     would short-circuit on the left)
+        let states = run(
+            "reconcile template(source = \"tmpl.tpl\", target = if true && true { \"/tt\" } else { \"/no\" }, vars = {\"body\": \"\"})\n\
+             reconcile template(source = \"tmpl.tpl\", target = if true && false { \"/no\" } else { \"/tf\" }, vars = {\"body\": \"\"})\n\
+             reconcile template(source = \"tmpl.tpl\", target = if false || true { \"/ft\" } else { \"/no\" }, vars = {\"body\": \"\"})\n\
+             reconcile template(source = \"tmpl.tpl\", target = if false || false { \"/no\" } else { \"/ff\" }, vars = {\"body\": \"\"})\n",
+        );
+        let paths: Vec<_> = states
+            .iter()
+            .map(|s| match s {
+                ResourceState::Template { path, .. } => path.clone(),
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from("/tt"),
+                PathBuf::from("/tf"),
+                PathBuf::from("/ft"),
+                PathBuf::from("/ff"),
+            ]
+        );
+    }
+
+    #[test]
     fn string_equality_distinguishes_distinct_values() {
         let states = run(
             "reconcile template(source = \"tmpl.tpl\", target = if \"a\" == \"a\" { \"/eq\" } else { \"/ne\" }, vars = {\"body\": \"\"})\n\
@@ -4571,6 +4620,65 @@ reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
     }
 
     #[test]
+    fn brew_qualified_name_builds_tap_spec_with_user_and_tap() {
+        // Pins the happy-path arm of build_tap_spec: a three-segment
+        // brew name with non-empty user + tap produces a TapSpec on the
+        // resulting Package. Catches the `&& with ||` mutation on the
+        // match guard (would allow empty-user / empty-tap inputs to
+        // wrongly synthesise a TapSpec).
+        let states = run("reconcile brew(\"icepuma/keron/keron\")\n");
+        let ResourceState::Package { tap, .. } = &states[0] else {
+            panic!("expected Package, got {:?}", states[0]);
+        };
+        let spec = tap.as_ref().expect("qualified name must produce TapSpec");
+        assert_eq!(spec.user_tap, "icepuma/keron");
+        assert!(spec.url.is_none());
+    }
+
+    #[test]
+    fn brew_rejects_empty_user_segment_in_qualified_name() {
+        // The match-guard `!user.is_empty() && !tap.is_empty()` is
+        // load-bearing: a name like "/tap/formula" splits to ["", "tap",
+        // "formula"] and must NOT be accepted as a valid TapSpec. A
+        // mutation that flips the guard to `true` or the `&&` to `||`
+        // (with an empty user but non-empty tap) would silently build a
+        // bogus TapSpec with `user_tap = "/tap"` and either crash the
+        // executor or shell out the wrong `brew tap` command.
+        let err = run_result_with_templates(
+            "reconcile brew(\"/icepuma/keron\")\n",
+            &[],
+        )
+        .expect_err("empty user segment must bail");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("must be either a bare formula")
+                || msg.contains("one slash or more than two"),
+            "expected qualified-name diagnostic, got: {msg}",
+        );
+    }
+
+    #[test]
+    fn brew_qualified_name_with_tap_url_propagates_url_into_tap_spec() {
+        // Drives `call_optional_string` along the named-arg branch via
+        // the `tap_url = "..."` keyword. The function returns the value
+        // of the named arg if its name matches; the `== with !=` mutation
+        // on the name comparison would route the lookup to the wrong
+        // arg (or fall through to the positional path) and the URL
+        // would silently drop off the resulting TapSpec.
+        let states = run(
+            "reconcile brew(\"icepuma/keron/keron\", tap_url = \"https://github.com/icepuma/keron\")\n",
+        );
+        let ResourceState::Package { tap, .. } = &states[0] else {
+            panic!("expected Package, got {:?}", states[0]);
+        };
+        let spec = tap.as_ref().expect("qualified name must produce TapSpec");
+        assert_eq!(
+            spec.url.as_deref(),
+            Some("https://github.com/icepuma/keron"),
+        );
+    }
+
+    #[test]
     fn brew_builds_a_package_resource_with_brew_manager() {
         let states = run("reconcile brew(\"ripgrep\")\n");
         assert_eq!(states.len(), 1);
@@ -5033,6 +5141,69 @@ reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
         let err = res.expect_err("empty separator must error");
         let msg = format!("{err:#}");
         assert!(msg.contains("`sep` must not be empty"), "got: {msg}");
+    }
+
+    #[test]
+    fn join_with_one_sensitive_element_marks_whole_result_sensitive() {
+        // Pins the `sensitive |= si` accumulator inside dispatch_join:
+        // joining any list that contains a sensitive String must
+        // produce a sensitive String. A `|= -> &= ` mutation would
+        // require *every* element to be sensitive (`false & true = false`)
+        // and the result would render unredacted in default-mode diffs.
+        let uri = "op://vault/test/join";
+        let _g = secret_test::SecretOverride::ok(uri, "secret-suffix");
+        let states = run_with_templates(
+            &format!(
+                "val token: Secret = secret(\"{uri}\")\n\
+                 val plain: String = \"plain\"\n\
+                 val joined: String = join([plain, unwrap_secret(token)], \"-\")\n\
+                 reconcile template(source = \"tmpl.tpl\", target = \"/joined\", vars = {{\"body\": joined}})\n",
+            ),
+            &[],
+        );
+        let ResourceState::Template {
+            content, sensitive, ..
+        } = &states[0]
+        else {
+            panic!("expected template, got {:?}", states[0]);
+        };
+        assert_eq!(content, "plain-secret-suffix");
+        assert!(
+            *sensitive,
+            "join must promote a partially-sensitive list to a sensitive String",
+        );
+    }
+
+    #[test]
+    fn replace_propagates_sensitivity_from_replacement_string() {
+        // Pins the `s.sensitive || to.sensitive` arm in dispatch_replace.
+        // The source string is plain, the replacement is sensitive: the
+        // result MUST be sensitive — the post-replace text now embeds
+        // the secret. A `|| -> &&` mutation would require BOTH to be
+        // sensitive and the result would silently drop its sensitive
+        // flag.
+        let uri = "op://vault/test/replace";
+        let _g = secret_test::SecretOverride::ok(uri, "secret-token");
+        let states = run_with_templates(
+            &format!(
+                "val token: Secret = secret(\"{uri}\")\n\
+                 val plain: String = \"hello WORLD\"\n\
+                 val out: String = replace(plain, \"WORLD\", unwrap_secret(token))\n\
+                 reconcile template(source = \"tmpl.tpl\", target = \"/replaced\", vars = {{\"body\": out}})\n",
+            ),
+            &[],
+        );
+        let ResourceState::Template {
+            content, sensitive, ..
+        } = &states[0]
+        else {
+            panic!("expected template, got {:?}", states[0]);
+        };
+        assert_eq!(content, "hello secret-token");
+        assert!(
+            *sensitive,
+            "replace must propagate sensitivity from the `to` argument",
+        );
     }
 
     #[test]
