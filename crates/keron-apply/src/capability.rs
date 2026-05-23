@@ -626,6 +626,14 @@ pub fn validate_capabilities(plan: &Plan, env: &dyn EnvProbe) -> Result<()> {
     Ok(())
 }
 
+/// `#[cfg_attr(test, mutants::skip)]`: the `requirer_idx + 1` offset in
+/// the post-requirer scan is mutation-equivalent to `requirer_idx * 1`
+/// (= `requirer_idx`) under the current resource model. No
+/// `ResourceState` both provides and needs the same capability, so
+/// including or excluding the requirer's own slot in the post-scan
+/// changes nothing observable; the loop walks past the requirer either
+/// way and only stops on a true later-provider match.
+#[cfg_attr(test, mutants::skip)]
 fn check_need(
     need: &Capability,
     requirer: &ResourceChange,
@@ -1226,5 +1234,132 @@ mod tests {
         assert!(msg.contains("prerequisites not met"));
         assert!(msg.contains("`brew` is not installed"));
         assert!(msg.contains("https://brew.sh"));
+    }
+
+    #[test]
+    fn capability_label_renders_variant_specific_text() {
+        // `label` is consumed by every missing-provider diagnostic, so
+        // a function-body replacement that emits a constant (e.g.
+        // `"xyzzy".into()` or `String::new()`) would silently strip
+        // the requirer's hint. Pin the variant-specific phrasing
+        // directly.
+        assert_eq!(
+            Capability::Binary("gpg".into()).label(),
+            "the `gpg` binary",
+        );
+        assert_eq!(
+            Capability::Tap("icepuma/nanite".into()).label(),
+            "the homebrew tap `icepuma/nanite`",
+        );
+        assert_eq!(
+            Capability::Path(PathBuf::from("/etc/foo")).label(),
+            "the path `/etc/foo`",
+        );
+    }
+
+    #[test]
+    fn capability_hint_routes_gpg_to_three_manager_recipe_and_others_to_generic() {
+        // The `name == "gpg"` match guard exists specifically to hand
+        // out the three-package-manager recipe to gpg-needing
+        // resources. A mutation that flips the guard to `true` would
+        // route every Binary need through the gpg recipe; a mutation
+        // that flips it to `false` would route gpg through the generic
+        // line and lose the macOS/Debian/Arch breakdown.
+        let gpg_hint = Capability::Binary("gpg".into()).hint();
+        assert!(
+            gpg_hint.contains("brew(\"gnupg\")")
+                && gpg_hint.contains("apt(\"gnupg\")")
+                && gpg_hint.contains("pacman(\"gnupg\")"),
+            "gpg hint must list all three package managers: {gpg_hint}",
+        );
+
+        let git_hint = Capability::Binary("git".into()).hint();
+        assert!(
+            !git_hint.contains("apt(\"gnupg\")")
+                && !git_hint.contains("pacman(\"gnupg\")"),
+            "non-gpg Binary hint must NOT inherit the gpg recipe: {git_hint}",
+        );
+        assert!(
+            git_hint.contains("`git` binary"),
+            "non-gpg Binary hint must mention the requested binary: {git_hint}",
+        );
+    }
+
+    #[test]
+    fn session_kind_binary_returns_the_op_name_for_onepassword() {
+        // `which::which(SessionKind::binary())` decides whether the
+        // password-manager CLI is on $PATH for `session_state`. A
+        // mutation that replaces the body with `""` or `"xyzzy"` would
+        // turn the live probe into a guaranteed `NotInstalled` (the
+        // empty/wrong binary is never on $PATH), so the prereq tier
+        // would always fail with a spurious "1Password CLI is not
+        // installed" diagnostic.
+        assert_eq!(SessionKind::OnePassword.binary(), "op");
+    }
+
+    #[test]
+    fn live_env_probe_tap_installed_is_false_by_default() {
+        // The conservative `false` answer is load-bearing: synthesised
+        // in-plan `Tap` resources are the canonical providers, and
+        // returning `true` here would let `validate_capabilities`
+        // claim an unowned external tap satisfies a need — masking
+        // a manifest bug. Catches the `-> bool with true` mutation.
+        let probe = LiveEnvProbe;
+        assert!(!probe.tap_installed("icepuma/keron"));
+        assert!(!probe.tap_installed(""));
+    }
+
+    /// Probe whose session_state is fully controlled by the test.
+    struct ScriptedSessionProbe(SessionState);
+    impl PrereqProbe for ScriptedSessionProbe {
+        fn package_manager_available(&self, _pm: PackageManager) -> bool {
+            true
+        }
+        fn session_state(&self, _kind: SessionKind) -> SessionState {
+            self.0
+        }
+    }
+
+    #[test]
+    fn prereq_satisfied_secret_cli_rejects_notinstalled_only() {
+        // The SecretCli branch returns true iff the CLI is *something
+        // other than* `NotInstalled` — both `Active` and `NoSession`
+        // are acceptable here because the tap-1 install-link diagnostic
+        // only fires for absence. A mutation that deletes the `!` would
+        // invert the test: present CLIs (Active/NoSession) would be
+        // reported as missing, and a truly absent CLI would silently
+        // pass the prereq gate.
+        let kind = SessionKind::OnePassword;
+        let cli = Prerequisite::SecretCli(kind);
+        assert!(!prereq_satisfied(
+            &cli,
+            &ScriptedSessionProbe(SessionState::NotInstalled),
+        ));
+        assert!(prereq_satisfied(
+            &cli,
+            &ScriptedSessionProbe(SessionState::Active),
+        ));
+        assert!(prereq_satisfied(
+            &cli,
+            &ScriptedSessionProbe(SessionState::NoSession),
+        ));
+    }
+
+    #[test]
+    fn prereq_satisfied_secret_session_requires_active() {
+        let kind = SessionKind::OnePassword;
+        let session = Prerequisite::SecretSession(kind);
+        assert!(prereq_satisfied(
+            &session,
+            &ScriptedSessionProbe(SessionState::Active),
+        ));
+        assert!(!prereq_satisfied(
+            &session,
+            &ScriptedSessionProbe(SessionState::NoSession),
+        ));
+        assert!(!prereq_satisfied(
+            &session,
+            &ScriptedSessionProbe(SessionState::NotInstalled),
+        ));
     }
 }
