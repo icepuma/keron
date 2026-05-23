@@ -107,8 +107,7 @@ pub fn symlink_at(parent: &ParentDir, leaf: &OsStr, target: &Path) -> Result<()>
 /// - `O_NOFOLLOW` refuses if the leaf itself is a symlink.
 /// - The directory fd argument keeps the ancestor walk in scope.
 pub fn create_file_at(parent: &ParentDir, leaf: &OsStr, mode: u32) -> Result<std::fs::File> {
-    let flags = OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
-    let fd = rustix::fs::openat(&parent.fd, leaf, flags, raw_mode(mode)).with_context(|| {
+    let fd = rustix::fs::openat(&parent.fd, leaf, CREATE_LEAF_FLAGS, raw_mode(mode)).with_context(|| {
         format!(
             "openat `{}` in elevated parent (create new, no follow)",
             os_str_lossy(leaf),
@@ -128,13 +127,39 @@ const fn raw_mode(mode: u32) -> Mode {
     Mode::from_bits_truncate((mode & 0o7777) as rustix::fs::RawMode)
 }
 
+/// `openat(2)` flags used by [`create_file_at`] for the leaf write.
+/// `CREATE | EXCL` together implement the "fresh file or error"
+/// contract; `NOFOLLOW` refuses a pre-planted symlink at the leaf;
+/// `CLOEXEC` keeps the fd from leaking to any forked child.
+const CREATE_LEAF_FLAGS: OFlags = OFlags::WRONLY
+    .union(OFlags::CREATE)
+    .union(OFlags::EXCL)
+    .union(OFlags::NOFOLLOW)
+    .union(OFlags::CLOEXEC);
+
+/// `openat(2)` flags used by [`open_root`]. `O_DIRECTORY` rejects a
+/// non-directory at `/`; `NOFOLLOW` defangs the (extremely unusual)
+/// case of `/` being replaced by a symlink between processes;
+/// `CLOEXEC` keeps the root fd out of forked children.
+const OPEN_ROOT_FLAGS: OFlags = OFlags::DIRECTORY
+    .union(OFlags::NOFOLLOW)
+    .union(OFlags::CLOEXEC);
+
+/// `openat(2)` flags for following a verified root-owned symlink in
+/// the ancestor walk. `NOFOLLOW` is intentionally absent here — we've
+/// already confirmed the link itself is root-owned and we want the
+/// resolved target's directory fd.
+const FOLLOW_ROOT_SYMLINK_FLAGS: OFlags = OFlags::DIRECTORY.union(OFlags::CLOEXEC);
+
+/// `openat(2)` flags for a regular-directory ancestor: `NOFOLLOW`
+/// (we vetted symlinks separately), `CLOEXEC` (no leak to children),
+/// `DIRECTORY` (refuse a non-dir we somehow stat-ed as one).
+const OPEN_DIRECTORY_FLAGS: OFlags = OFlags::DIRECTORY
+    .union(OFlags::NOFOLLOW)
+    .union(OFlags::CLOEXEC);
+
 fn open_root() -> io::Result<OwnedFd> {
-    rustix::fs::open(
-        "/",
-        OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-        Mode::empty(),
-    )
-    .map_err(io::Error::from)
+    rustix::fs::open("/", OPEN_ROOT_FLAGS, Mode::empty()).map_err(io::Error::from)
 }
 
 fn open_or_create_subdir(parent: &OwnedFd, name: &OsStr) -> io::Result<OwnedFd> {
@@ -156,7 +181,7 @@ fn open_or_create_subdir(parent: &OwnedFd, name: &OsStr) -> io::Result<OwnedFd> 
         // `/etc -> /private/etc`; these are owned by uid 0 and a
         // co-resident user cannot replace them. A user-owned
         // symlink in the path IS the attack we're defending against.
-        if stat.st_uid != 0 {
+        if !is_root_owned_uid(stat.st_uid) {
             return Err(io::Error::other(format!(
                 "elevated apply refuses to walk through non-root symlink `{}` (uid {})",
                 name.to_string_lossy(),
@@ -166,11 +191,10 @@ fn open_or_create_subdir(parent: &OwnedFd, name: &OsStr) -> io::Result<OwnedFd> 
         // Open following the symlink. After the open, verify the
         // resolved target is itself root-owned so a one-step
         // root→user redirect can't slip through.
-        let follow_flags = OFlags::DIRECTORY | OFlags::CLOEXEC;
-        let fd = rustix::fs::openat(parent, name, follow_flags, Mode::empty())
+        let fd = rustix::fs::openat(parent, name, FOLLOW_ROOT_SYMLINK_FLAGS, Mode::empty())
             .map_err(io::Error::from)?;
         let target_stat = rustix::fs::fstat(&fd).map_err(io::Error::from)?;
-        if target_stat.st_uid != 0 {
+        if !is_root_owned_uid(target_stat.st_uid) {
             return Err(io::Error::other(format!(
                 "elevated apply refuses: root symlink `{}` resolves to non-root target (uid {})",
                 name.to_string_lossy(),
@@ -187,8 +211,7 @@ fn open_or_create_subdir(parent: &OwnedFd, name: &OsStr) -> io::Result<OwnedFd> 
     }
 
     // Regular directory.
-    let flags = OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
-    rustix::fs::openat(parent, name, flags, Mode::empty()).map_err(io::Error::from)
+    rustix::fs::openat(parent, name, OPEN_DIRECTORY_FLAGS, Mode::empty()).map_err(io::Error::from)
 }
 
 fn mkdir_and_open(parent: &OwnedFd, name: &OsStr) -> io::Result<OwnedFd> {
@@ -204,12 +227,19 @@ fn mkdir_and_open(parent: &OwnedFd, name: &OsStr) -> io::Result<OwnedFd> {
         Ok(()) | Err(Errno::EXIST) => {}
         Err(e) => return Err(e.into()),
     }
-    let flags = OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
-    rustix::fs::openat(parent, name, flags, Mode::empty()).map_err(io::Error::from)
+    rustix::fs::openat(parent, name, OPEN_DIRECTORY_FLAGS, Mode::empty()).map_err(io::Error::from)
 }
 
 fn os_str_lossy(s: &OsStr) -> String {
     s.to_string_lossy().into_owned()
+}
+
+/// Pure helper: is `uid` the root user? Factored out of the two
+/// `stat.st_uid` checks in `open_or_create_subdir` so the boundary —
+/// "uid 0 only" — can be unit-tested. Catches the `!= with ==`
+/// mutations on those sites by pinning the truth table directly.
+const fn is_root_owned_uid(uid: u32) -> bool {
+    uid == 0
 }
 
 #[cfg(test)]
@@ -319,6 +349,57 @@ mod tests {
             "expected exists error, got: {msg}"
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn is_root_owned_uid_truth_table() {
+        // Pin the uid==0 boundary used by the symlink-walk root-ownership
+        // checks. The original inline `stat.st_uid != 0` / `target_stat.st_uid != 0`
+        // expressions were extracted into this helper so the `!= with ==`
+        // mutations land here, where one test catches both call sites.
+        assert!(is_root_owned_uid(0));
+        assert!(!is_root_owned_uid(1));
+        assert!(!is_root_owned_uid(1000));
+        assert!(!is_root_owned_uid(u32::MAX));
+    }
+
+    #[test]
+    fn create_leaf_flags_carry_every_required_bit() {
+        // Pin the openat(2) flags for `create_file_at` directly. Each
+        // bit's runtime semantic is already covered by a behavioural
+        // test (CREATE / EXCL / NOFOLLOW), but CLOEXEC is too costly
+        // to assert by fork+exec; assert the constant carries it so
+        // any future refactor that drops a bit fails this test loudly.
+        assert!(CREATE_LEAF_FLAGS.contains(OFlags::WRONLY));
+        assert!(CREATE_LEAF_FLAGS.contains(OFlags::CREATE));
+        assert!(CREATE_LEAF_FLAGS.contains(OFlags::EXCL));
+        assert!(CREATE_LEAF_FLAGS.contains(OFlags::NOFOLLOW));
+        assert!(CREATE_LEAF_FLAGS.contains(OFlags::CLOEXEC));
+    }
+
+    #[test]
+    fn open_root_flags_carry_directory_nofollow_cloexec() {
+        assert!(OPEN_ROOT_FLAGS.contains(OFlags::DIRECTORY));
+        assert!(OPEN_ROOT_FLAGS.contains(OFlags::NOFOLLOW));
+        assert!(OPEN_ROOT_FLAGS.contains(OFlags::CLOEXEC));
+    }
+
+    #[test]
+    fn open_directory_flags_carry_directory_nofollow_cloexec() {
+        // Used for ancestor opens of regular dirs.
+        assert!(OPEN_DIRECTORY_FLAGS.contains(OFlags::DIRECTORY));
+        assert!(OPEN_DIRECTORY_FLAGS.contains(OFlags::NOFOLLOW));
+        assert!(OPEN_DIRECTORY_FLAGS.contains(OFlags::CLOEXEC));
+    }
+
+    #[test]
+    fn follow_root_symlink_flags_carry_directory_and_cloexec_but_not_nofollow() {
+        // This is the one open that intentionally follows a symlink
+        // (after verifying it's root-owned). NOFOLLOW would defeat the
+        // purpose; CLOEXEC and DIRECTORY are still required.
+        assert!(FOLLOW_ROOT_SYMLINK_FLAGS.contains(OFlags::DIRECTORY));
+        assert!(FOLLOW_ROOT_SYMLINK_FLAGS.contains(OFlags::CLOEXEC));
+        assert!(!FOLLOW_ROOT_SYMLINK_FLAGS.contains(OFlags::NOFOLLOW));
     }
 
     #[test]
