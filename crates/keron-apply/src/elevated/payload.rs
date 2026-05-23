@@ -443,6 +443,36 @@ mod tests {
         );
     }
 
+    #[test]
+    fn rand_suffix_returns_nonzero_high_entropy_value() {
+        // rand_suffix encodes nanos-since-epoch, which is on the order
+        // of 1e18 in 2026 — orders of magnitude larger than the
+        // function-body mutations `-> 0` and `-> 1`. One observation is
+        // enough to distinguish.
+        let s = rand_suffix();
+        assert!(
+            s > 1_000_000_000,
+            "rand_suffix should encode nanos since epoch, got {s}",
+        );
+    }
+
+    #[test]
+    fn rand_suffix_varies_across_calls() {
+        // Belt-and-braces: rand_suffix is meant to be probabilistically
+        // unique, so 64 consecutive calls must produce at least two
+        // distinct values. Catches both `-> 0` and `-> 1` mutations,
+        // which would emit the same constant every call.
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..64 {
+            seen.insert(rand_suffix());
+        }
+        assert!(
+            seen.len() > 1,
+            "rand_suffix must vary across calls; got {} unique value(s)",
+            seen.len(),
+        );
+    }
+
     proptest! {
         #[test]
         fn payload_round_trip_preserves_order(
