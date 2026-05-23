@@ -5348,6 +5348,10 @@ reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
         assert!(value.ends_with("true-false"), "got `{value}`");
     }
 
+    // `path_join` delegates to `PathBuf::join` which uses the platform
+    // separator. The literal `/a/b` expectation is Unix-shaped; on
+    // Windows the same call would produce `/a\b`. Gate to unix.
+    #[cfg(unix)]
     #[test]
     fn path_join_appends_a_relative_segment_with_a_separator() {
         let value = first_target_path(
@@ -5358,6 +5362,7 @@ reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
         assert_eq!(value, "/a/b");
     }
 
+    #[cfg(unix)]
     #[test]
     fn path_join_replaces_when_segment_is_absolute() {
         // Matches `PathBuf::join`: an absolute `segment` discards the
@@ -5402,6 +5407,12 @@ reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
         assert!(value.ends_with("c.txt|txt"), "got `{value}`");
     }
 
+    // `path_is_absolute` delegates to `Path::is_absolute`. On Windows
+    // `/a/b` is "rooted but not absolute" (absolute needs a drive
+    // letter like `C:\`), so the literal would be `false|false` there.
+    // Gate to unix; a Windows-specific variant can be added later if
+    // we want to pin Windows semantics too.
+    #[cfg(unix)]
     #[test]
     fn path_is_absolute_distinguishes_absolute_and_relative() {
         let value = first_target_path(

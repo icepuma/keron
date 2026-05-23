@@ -23,8 +23,14 @@ concurrency:
 
 jobs:
   gate:
-    name: just
-    runs-on: ubuntu-latest
+    name: just (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Every OS reports independently — a Windows-only path failure
+      # shouldn't cancel the macOS / Linux results.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
       - name: Checkout
@@ -38,7 +44,9 @@ jobs:
       - name: Cache cargo + target
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: gate-ubuntu-latest
+          # Distinct keys per OS so the cache doesn't churn between
+          # Linux / macOS / Windows builds in the same matrix.
+          shared-key: gate-${{ matrix.os }}
 
       - name: Install just
         uses: taiki-e/install-action@v2
@@ -51,6 +59,10 @@ jobs:
           tool: nextest
 
       - name: Run repo gate
+        # `shell: bash` for cross-platform consistency — the Windows
+        # runner's default `pwsh` parses the recipe's compound commands
+        # differently and would diverge from local Unix runs.
+        shell: bash
         run: just
 
   e2e:
