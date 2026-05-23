@@ -132,12 +132,12 @@ pub mod windows {
     #[allow(unsafe_code)]
     pub fn current_user_sid_string() -> Result<String> {
         let mut token = HANDLE::default();
-        unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) }
+        unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw mut token) }
             .map_err(|e| anyhow::anyhow!("OpenProcessToken failed: {e}"))?;
 
         // Two-step `GetTokenInformation`: query size, then read.
         let mut needed: u32 = 0;
-        let _ = unsafe { GetTokenInformation(token, TokenUser, None, 0, &mut needed) };
+        let _ = unsafe { GetTokenInformation(token, TokenUser, None, 0, &raw mut needed) };
         if needed == 0 {
             let _ = unsafe { CloseHandle(token) };
             bail!(
@@ -145,33 +145,38 @@ pub mod windows {
                 std::io::Error::last_os_error()
             );
         }
-        let mut buf = vec![0u8; needed as usize];
+        // Back the buffer with `u64` so the underlying allocation is
+        // 8-byte aligned — TOKEN_USER contains a pointer, and casting
+        // through a Vec<u8> (alignment 1) would be undefined behaviour
+        // on a strict-alignment target.
+        let words = needed.div_ceil(8) as usize;
+        let mut buf = vec![0u64; words];
         let read_res = unsafe {
             GetTokenInformation(
                 token,
                 TokenUser,
                 Some(buf.as_mut_ptr().cast::<c_void>()),
                 needed,
-                &mut needed,
+                &raw mut needed,
             )
         };
         let _ = unsafe { CloseHandle(token) };
         read_res.map_err(|e| anyhow::anyhow!("GetTokenInformation read failed: {e}"))?;
 
-        let token_user: &TOKEN_USER = unsafe { &*(buf.as_ptr() as *const TOKEN_USER) };
+        let token_user: &TOKEN_USER = unsafe { &*buf.as_ptr().cast::<TOKEN_USER>() };
         let sid_ptr: PSID = token_user.User.Sid;
 
-        let mut sid_str = PWSTR::null();
-        unsafe { ConvertSidToStringSidW(sid_ptr, &mut sid_str) }
+        let mut sid_wide = PWSTR::null();
+        unsafe { ConvertSidToStringSidW(sid_ptr, &raw mut sid_wide) }
             .map_err(|e| anyhow::anyhow!("ConvertSidToStringSidW failed: {e}"))?;
         let s = unsafe {
             let mut len = 0;
-            while *sid_str.0.add(len) != 0 {
+            while *sid_wide.0.add(len) != 0 {
                 len += 1;
             }
-            String::from_utf16_lossy(std::slice::from_raw_parts(sid_str.0, len))
+            String::from_utf16_lossy(std::slice::from_raw_parts(sid_wide.0, len))
         };
-        let _ = unsafe { LocalFree(Some(HLOCAL(sid_str.0.cast::<c_void>()))) };
+        let _ = unsafe { LocalFree(Some(HLOCAL(sid_wide.0.cast::<c_void>()))) };
         Ok(s)
     }
 
@@ -198,7 +203,7 @@ pub mod windows {
     pub fn set_file_owner(path: &Path, sid_str: &str) -> Result<()> {
         let wide_sid = to_wide(sid_str);
         let mut sid = PSID::default();
-        unsafe { ConvertStringSidToSidW(PCWSTR(wide_sid.as_ptr()), &mut sid) }
+        unsafe { ConvertStringSidToSidW(PCWSTR(wide_sid.as_ptr()), &raw mut sid) }
             .map_err(|e| anyhow::anyhow!("ConvertStringSidToSidW failed for `{sid_str}`: {e}"))?;
 
         let wide_path = to_wide(path);
@@ -300,14 +305,12 @@ pub mod windows {
         let display = payload.display().to_string();
         if display.chars().any(|c| c == '"' || c.is_control()) {
             bail!(
-                "refusing to elevate: payload path `{}` contains a quote or control character",
-                display
+                "refusing to elevate: payload path `{display}` contains a quote or control character",
             );
         }
         if display.ends_with('\\') {
             bail!(
-                "refusing to elevate: payload path `{}` ends with `\\` (would escape the closing quote)",
-                display
+                "refusing to elevate: payload path `{display}` ends with `\\` (would escape the closing quote)",
             );
         }
         let identity = expected.identity.encode();
@@ -327,13 +330,14 @@ pub mod windows {
         let params_w = to_wide(&params);
 
         let mut info: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
-        info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
+        info.cbSize = u32::try_from(std::mem::size_of::<SHELLEXECUTEINFOW>())
+            .expect("SHELLEXECUTEINFOW size fits in u32");
         info.fMask = SEE_MASK_NOCLOSEPROCESS;
         info.lpVerb = PCWSTR(verb.as_ptr());
         info.lpFile = PCWSTR(exe_w.as_ptr());
         info.lpParameters = PCWSTR(params_w.as_ptr());
         info.nShow = SW_HIDE;
-        if unsafe { ShellExecuteExW(&mut info) }.is_err() {
+        if unsafe { ShellExecuteExW(&raw mut info) }.is_err() {
             let code = unsafe { GetLastError() };
             bail!("ShellExecuteExW(runas) failed: GetLastError = {code:?}");
         }
@@ -342,7 +346,7 @@ pub mod windows {
         }
         let _ = unsafe { WaitForSingleObject(info.hProcess, INFINITE) };
         let mut code: u32 = 0;
-        let exit_res = unsafe { GetExitCodeProcess(info.hProcess, &mut code) };
+        let exit_res = unsafe { GetExitCodeProcess(info.hProcess, &raw mut code) };
         let _ = unsafe { CloseHandle(info.hProcess) };
         exit_res.map_err(|e| anyhow::anyhow!("GetExitCodeProcess failed: {e}"))?;
         Ok(std::process::ExitStatus::from_raw(code))

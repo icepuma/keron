@@ -4401,7 +4401,7 @@ reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
         #[cfg(windows)]
         let status = {
             use std::os::windows::process::ExitStatusExt;
-            std::process::ExitStatus::from_raw(if success { 0 } else { 1 })
+            std::process::ExitStatus::from_raw(u32::from(!success))
         };
         std::process::Output {
             status,

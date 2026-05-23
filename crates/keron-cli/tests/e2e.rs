@@ -58,7 +58,12 @@ impl E2eHome {
 /// `\\?\` + `/` and Windows refuses to open it (`os error 123`).
 /// Strip the prefix on Windows so the fake-HOME path keeps Windows
 /// semantics without the UNC trap. No-op on Unix.
+// Same signature on both platforms so the call sites stay uniform.
+// On Windows the body may not consume the input (the strip-prefix
+// branch hands back a fresh PathBuf), which clippy flags — that's
+// the cost of the parallel Unix/Windows signature.
 #[cfg(windows)]
+#[allow(clippy::needless_pass_by_value)]
 fn strip_unc_prefix(path: PathBuf) -> PathBuf {
     let s = path.to_string_lossy();
     s.strip_prefix(r"\\?\")

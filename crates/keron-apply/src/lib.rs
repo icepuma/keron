@@ -324,6 +324,12 @@ fn render_precheck<W: Write>(stdout: &mut W, precheck: &plan::Precheck) -> io::R
 // uid 0 — which CI test runners deliberately are not. The unprivileged
 // fall-through path is exercised by every existing keron-apply test,
 // but no test can flip euid to 0 without re-execing under sudo.
+// Windows has no Unix-style euid check, so on that platform the body
+// collapses to `Ok(())` and clippy flags it as eligible for `const fn`
+// AND as `unnecessary_wraps`. The Unix path calls a non-const FFI
+// helper and DOES need the Result to surface the elevation refusal,
+// so allow both lints here rather than fork the signature per platform.
+#[allow(clippy::missing_const_for_fn, clippy::unnecessary_wraps)]
 #[cfg_attr(test, mutants::skip)]
 fn refuse_direct_elevation() -> Result<()> {
     #[cfg(unix)]
