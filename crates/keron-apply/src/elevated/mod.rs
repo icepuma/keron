@@ -297,11 +297,10 @@ fn invoke_elevator(
     chown::windows::shell_execute_runas(exe, payload, expected)
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
-    #[cfg(unix)]
     #[test]
     fn probe_elevator_returns_none_when_path_is_empty() {
         let saved = std::env::var_os("PATH");
