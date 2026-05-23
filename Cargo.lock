@@ -656,6 +656,7 @@ dependencies = [
  "os_info",
  "proptest",
  "rustix",
+ "same-file",
  "serde",
  "serde_json",
  "sha2",

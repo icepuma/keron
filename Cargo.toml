@@ -57,6 +57,13 @@ rustix = { version = "=1.1.4", features = ["fs", "process"] }
 # and dispatches to `symlink_file` or `symlink_dir`. Replaces the
 # hand-rolled `cfg(unix)/cfg(windows)` shim in `execute.rs`.
 symlink = "=0.1.0"
+# Filesystem-identity equality (device+inode on Unix, volume serial +
+# file index on Windows). Used by `classify_symlink` so the NoOp /
+# Update decision asks "does this link resolve to the same file?"
+# rather than comparing canonical path strings — which on Windows
+# differ between `\\?\C:\…` (from `fs::canonicalize`) and `C:\…`
+# (from `fs::read_link`) for the same logical path.
+same-file = "=1.0.6"
 # Jinja2-style template engine for `template(...)` resources.
 # `default-features = false` drops the optional builtin filter
 # bundle (chrono / chrono-tz / humansize / rand / slug / urlencode);

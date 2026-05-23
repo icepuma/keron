@@ -745,25 +745,25 @@ fn classify_symlink(target: &Path, source: &Path, after: &ResourceState) -> Resu
         }),
         Err(e) => Err(anyhow!("reading existing path `{}`: {e}", target.display())),
         Ok(meta) if meta.file_type().is_symlink() => {
-            // `read_link` returns the literal target for diff display;
-            // `canonicalize` follows the link so NoOp/Update compares
-            // apples to apples against `source` (already canonicalized by
-            // the evaluator). A broken link is always Update.
+            // `read_link` returns the literal target for diff display.
+            // For the NoOp/Update decision we ask the filesystem
+            // whether the link resolves to the desired source via
+            // `same_file::is_same_file` (device+inode on Unix,
+            // volume-serial + file-index on Windows). Comparing
+            // canonical path *strings* would diverge on Windows where
+            // `fs::canonicalize` yields a `\\?\C:\…` verbatim prefix
+            // but `fs::read_link` / user-shaped paths don't. A
+            // dangling link is always Update.
             let current_literal = fs::read_link(target)
                 .with_context(|| format!("reading existing symlink `{}`", target.display()))?;
-            let resolves_to_same = match fs::canonicalize(target) {
-                Ok(resolved) => resolved == source,
-                // A dangling symlink (target missing) legitimately
-                // canonicalizes-to-error; classify as Update. Any
-                // other error (EACCES on an intermediate dir, EIO,
-                // …) would silently look like "different target"
-                // and let apply fail later with worse context, so
-                // bail with the underlying error attached.
+            let resolves_to_same = match same_file::is_same_file(target, source) {
+                Ok(same) => same,
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
                 Err(e) => {
                     return Err(anyhow!(
-                        "canonicalizing existing symlink `{}`: {e}",
-                        target.display()
+                        "comparing existing symlink `{}` against `{}`: {e}",
+                        target.display(),
+                        source.display(),
                     ));
                 }
             };
@@ -1546,20 +1546,13 @@ mod tests {
                 fs::remove_dir_all(&p).ok();
             }
             fs::create_dir_all(&p).unwrap();
-            // NoOp arm compares against `fs::canonicalize(link)`, so
-            // the test path must already be canonical (macOS rewrites
-            // `/var/folders/...` -> `/private/var/folders/...`).
+            // Canonicalise so the test path equals what macOS rewrites
+            // (`/var/folders/...` → `/private/var/folders/...`) and
+            // what `fs::canonicalize` would return for downstream
+            // comparisons. The Windows `\\?\` prefix is fine here —
+            // `classify_symlink` compares by filesystem identity, not
+            // by path string.
             let path = fs::canonicalize(&p).unwrap();
-            // Strip the Windows verbatim-UNC prefix (`\\?\C:\...`).
-            // Without this, `symlink_file(\\?\C:\…, link)` ends up
-            // storing a target Windows then reads back without the
-            // prefix, breaking `assert_eq!(read_link, original)`.
-            #[cfg(windows)]
-            let path = {
-                let s = path.to_string_lossy();
-                s.strip_prefix(r"\\?\")
-                    .map_or_else(|| path.clone(), PathBuf::from)
-            };
             Self { path }
         }
     }
@@ -1711,7 +1704,16 @@ mod tests {
             panic!("expected Symlink in before");
         };
         assert_eq!(bf, from);
-        assert_eq!(bt, to);
+        // Compare by filesystem identity rather than path string:
+        // Windows' `fs::read_link` may normalise away the `\\?\`
+        // prefix the test's `to` carries, but both PathBufs still
+        // refer to the same file.
+        assert!(
+            same_file::is_same_file(&bt, &to).unwrap_or(false),
+            "before.to ({}) must point to the same file as the test's to ({})",
+            bt.display(),
+            to.display(),
+        );
     }
 
     #[test]
@@ -1732,7 +1734,14 @@ mod tests {
         let ResourceState::Symlink { to: bt, .. } = before else {
             panic!("expected Symlink before");
         };
-        assert_eq!(bt, old_target, "before should record the *current* target");
+        // Identity check rather than string equality — see the noop
+        // test above for the Windows `\\?\` rationale.
+        assert!(
+            same_file::is_same_file(&bt, &old_target).unwrap_or(false),
+            "before.to ({}) must point to the *current* (old) target ({})",
+            bt.display(),
+            old_target.display(),
+        );
     }
 
     #[cfg(unix)]
@@ -1779,22 +1788,19 @@ mod tests {
         let d = TempDir::new("loop");
         let a = d.path.join("a");
         let b = d.path.join("b");
-        // a -> b, b -> a forms a 2-cycle. canonicalize(a) returns
-        // ELOOP, which has io::ErrorKind::FilesystemLoop on modern
-        // Rust (mapped to Uncategorized on older toolchains) — in
-        // either case, NOT NotFound.
+        // a -> b, b -> a forms a 2-cycle. `is_same_file(a, …)` opens
+        // `a` which dereferences the loop and returns ELOOP — has
+        // io::ErrorKind::FilesystemLoop on modern Rust (mapped to
+        // Uncategorized on older toolchains). Either way, NOT NotFound.
         make_symlink(&b, &a).unwrap();
         make_symlink(&a, &b).unwrap();
 
         let new_target = d.path.join("target");
         fs::write(&new_target, "x").unwrap();
         let err = classify(&desired(&a, &new_target), &mut PackageCache::for_tests())
-            .expect_err("symlink loop must surface a canonicalize error, not be papered over");
+            .expect_err("symlink loop must surface a comparison error, not be papered over");
         let msg = format!("{err:#}");
-        assert!(
-            msg.contains("canonicalizing existing symlink"),
-            "got: {msg}"
-        );
+        assert!(msg.contains("comparing existing symlink"), "got: {msg}");
     }
 
     #[test]
