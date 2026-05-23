@@ -4855,6 +4855,14 @@ reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
         assert_eq!(last, "zshrc");
     }
 
+    // Containment-rule tests below pin Unix-style absolute paths
+    // (`/etc/hosts`, `${keron_root()}/...`). On Windows
+    // `fs::canonicalize` returns a verbatim `\\?\` UNC path in which
+    // `/` is a literal character, and `/etc/hosts` is not absolute
+    // (no drive letter), so the assertions don't reflect the same
+    // semantics. Gate the cluster to unix until we grow Windows-shaped
+    // companions.
+    #[cfg(unix)]
     #[test]
     fn symlink_source_absolute_path_inside_keron_root_is_accepted() {
         // Most user code interpolates `keron_root()` to build the `source`
@@ -4884,6 +4892,7 @@ reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn symlink_source_absolute_path_outside_keron_root_is_rejected() {
         // `/etc/hosts` exists on every test host but is not inside
@@ -4916,6 +4925,7 @@ reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn symlink_source_dotdot_escape_is_rejected() {
         // `source = "../escape"` is a relative form that lands outside
@@ -5039,6 +5049,7 @@ reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn template_source_outside_keron_root_is_rejected() {
         // Same containment rule applies to `template(source = ...)`.
@@ -5537,6 +5548,7 @@ reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
         assert!(value.ends_with("MISSING"), "got `{value}`");
     }
 
+    #[cfg(unix)]
     #[test]
     fn read_file_returns_null_for_absolute_path_outside_keron_root() {
         // `/etc/passwd` exists on every supported host but lives
