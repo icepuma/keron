@@ -6,18 +6,24 @@ on:
     # 03:00 UTC Monday is Sunday night in US time zones.
     - cron: "0 3 * * 1"
 
-concurrency:
-  group: mutants-${{ github.ref }}
-  cancel-in-progress: false
-
 permissions:
   contents: read
 
 jobs:
   mutants:
-    name: cargo mutants
-    runs-on: ubuntu-latest
+    name: cargo mutants (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 360
+    strategy:
+      # One platform regressing shouldn't cancel the other — we want
+      # both result artifacts so each runner's coverage is visible.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    concurrency:
+      group: mutants-${{ github.ref }}-${{ matrix.os }}
+      cancel-in-progress: false
 
     steps:
       - name: Checkout
@@ -31,7 +37,7 @@ jobs:
       - name: Cache cargo + target
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: mutants-ubuntu-latest
+          shared-key: mutants-${{ matrix.os }}
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2
@@ -44,12 +50,16 @@ jobs:
           tool: cargo-mutants
 
       - name: Run full mutation suite
+        # Git Bash on Windows runners ships `env -u`, so the same script
+        # works on both Linux and Windows runners without per-OS forks.
+        shell: bash
         env:
           # Route cargo-mutants' workspace copies under $RUNNER_TEMP
-          # (/home/runner/work/_temp/) instead of /tmp. The elevation
-          # tamper-resistance check refuses to elevate when any ancestor
-          # of the binary is world-writable, and /tmp's mode 1777 trips
-          # that check for the e2e elevation tests.
+          # instead of /tmp. The elevation tamper-resistance check
+          # (Unix-only) refuses to elevate when any ancestor of the
+          # binary is world-writable, and /tmp's mode 1777 trips it.
+          # On Windows the var is harmless (the tempfile crate honors
+          # TMP/TEMP there) and the tamper check is cfg(unix)-gated.
           TMPDIR: ${{ runner.temp }}
         run: |
           env -u CARGO_TARGET_DIR cargo mutants \
@@ -57,13 +67,13 @@ jobs:
             --all-features \
             --cargo-arg=--locked \
             --test-tool nextest \
-            -j8
+            -j4
 
       - name: Upload mutants output
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: mutants-out
+          name: mutants-out-${{ matrix.os }}
           path: mutants.out
           if-no-files-found: ignore
           retention-days: 14
