@@ -452,12 +452,24 @@ fn colorize_diff(diff: &str) -> String {
 /// Color is enabled when stdout is a real terminal AND the user
 /// hasn't opted out via the de-facto `NO_COLOR` env var (honored by
 /// rustfmt, cargo, ripgrep, prettier, ...).
+///
+/// The outer wrapper reads global state (`NO_COLOR`, `stdout().is_terminal()`)
+/// so it cannot be unit-tested without a real PTY; the pure decision lives in
+/// [`color_enabled_from`] which IS unit-tested. Skipped from mutation testing
+/// because every reachable test runs without a TTY and would silently match
+/// any `→ false` mutation.
+#[cfg_attr(test, mutants::skip)]
 fn color_enabled() -> bool {
     use std::io::IsTerminal;
-    if std::env::var_os("NO_COLOR").is_some() {
-        return false;
-    }
-    io::stdout().is_terminal()
+    color_enabled_from(
+        std::env::var_os("NO_COLOR").is_some(),
+        io::stdout().is_terminal(),
+    )
+}
+
+/// Pure decision: color iff stdout is a terminal AND `NO_COLOR` is unset.
+const fn color_enabled_from(no_color_set: bool, stdout_is_tty: bool) -> bool {
+    !no_color_set && stdout_is_tty
 }
 
 /// Write `bytes` to `target` via a sibling tempfile + rename. A
@@ -862,6 +874,49 @@ mod tests {
         assert!(
             err.error.to_string().contains("cannot be mixed"),
             "got: {err}",
+        );
+    }
+
+    /// `color_enabled_from` is the pure-function decision: only true
+    /// when both inputs say "yes color, real terminal". Pins each
+    /// quadrant so mutations of the `!no_color_set && stdout_is_tty`
+    /// expression (e.g. `&&` → `||`, `!` deletion) fail at least one row.
+    #[test]
+    fn color_enabled_from_truth_table() {
+        assert!(color_enabled_from(false, true), "tty + no NO_COLOR → color");
+        assert!(!color_enabled_from(true, true), "NO_COLOR set must veto");
+        assert!(!color_enabled_from(false, false), "no tty must veto");
+        assert!(!color_enabled_from(true, false), "both vetoes still off");
+    }
+
+    /// `colorize_diff` styles `--- ` and `+++ ` headers in BOLD —
+    /// distinct from the RED / GREEN treatment given to plain `-` /
+    /// `+` content lines. Pins both halves of the `||` so the
+    /// `&&` mutation (which would collapse the branch and let `--- `
+    /// fall through to RED, `+++ ` to GREEN) is caught.
+    #[test]
+    fn colorize_diff_styles_file_headers_bold_distinct_from_content_lines() {
+        let diff = "--- a/x\n+++ b/x\n-old\n+new\n";
+        let got = colorize_diff(diff);
+        // Header lines: BOLD (\x1b[1m), not RED or GREEN.
+        let bold_minus = got.find("\x1b[1m--- a/x").expect("--- header must be bold");
+        let bold_plus = got.find("\x1b[1m+++ b/x").expect("+++ header must be bold");
+        assert!(
+            !got[bold_minus..bold_minus + 16].contains("\x1b[31m"),
+            "--- header must not be red"
+        );
+        assert!(
+            !got[bold_plus..bold_plus + 16].contains("\x1b[32m"),
+            "+++ header must not be green"
+        );
+        // Content lines: RED for `-old`, GREEN for `+new`.
+        assert!(
+            got.contains("\x1b[31m-old"),
+            "content `-old` must be red: {got:?}"
+        );
+        assert!(
+            got.contains("\x1b[32m+new"),
+            "content `+new` must be green: {got:?}"
         );
     }
 

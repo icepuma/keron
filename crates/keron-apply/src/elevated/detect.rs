@@ -14,7 +14,6 @@
 //! O(N), and N is small for any realistic dotfile flow.
 
 use std::fs;
-use std::io;
 use std::path::Path;
 
 use crate::plan::{Action, ResourceState};
@@ -71,9 +70,9 @@ fn dir_is_writable(start: &Path) -> bool {
             let _ = fs::remove_file(&probe);
             true
         }
-        Err(e) if e.kind() == io::ErrorKind::PermissionDenied => false,
-        // ReadOnlyFilesystem, NotFound (race), etc.: classify
-        // conservatively as needing elevation.
+        // PermissionDenied is the expected "needs elevation" case;
+        // ReadOnlyFilesystem / NotFound (race) etc. are treated
+        // conservatively as also not writable.
         Err(_) => false,
     }
 }
