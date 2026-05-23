@@ -147,6 +147,12 @@ impl PackageManager {
     ///
     /// The hook stays so future managers (apt, dnf, pacman) can flip
     /// their arm to `true` without rewiring callers.
+    ///
+    /// `#[cfg_attr(test, mutants::skip)]`: every existing variant
+    /// returns `false`, so the function-body replacement
+    /// `-> bool with false` is an equivalent mutation that no test
+    /// could distinguish until a future manager flips its arm.
+    #[cfg_attr(test, mutants::skip)]
     pub const fn requires_elevation(self) -> bool {
         match self {
             Self::Brew | Self::BrewCask | Self::Cargo | Self::Winget => false,
@@ -2013,5 +2019,76 @@ mod tests {
         let change = classify_gpg_key(&state, GpgKeyringStatus::GpgUnavailable);
         assert_eq!(change.action, Action::Create);
         assert!(change.before.is_none());
+    }
+
+    fn pkg_with_tap(name: &str, user_tap: &str, url: Option<&str>) -> ResourceState {
+        ResourceState::Package {
+            manager: PackageManager::Brew,
+            name: name.into(),
+            tap: Some(TapSpec {
+                user_tap: user_tap.into(),
+                url: url.map(str::to_string),
+            }),
+        }
+    }
+
+    #[test]
+    fn synthesize_taps_collapses_same_url_into_one_entry() {
+        // Two packages reference the same tap with the same URL. The
+        // synthesizer must emit ONE Tap entry, not two. Pins the
+        // `(Some(a), Some(b)) if a == b => {}` no-op arm: a mutation
+        // that swaps the `==` for `!=` (or flips the guard to false)
+        // would either duplicate the tap or bail on conflict.
+        let url = "https://github.com/icepuma/keron";
+        let resources = vec![
+            pkg_with_tap("keron", "icepuma/keron", Some(url)),
+            pkg_with_tap("kernel", "icepuma/keron", Some(url)),
+        ];
+        let out = synthesize_taps(&resources).expect("identical URLs must coalesce");
+        let taps: Vec<_> = out
+            .iter()
+            .filter(|r| matches!(r, ResourceState::Tap(_)))
+            .collect();
+        assert_eq!(taps.len(), 1, "duplicate same-url taps collapse to one");
+    }
+
+    #[test]
+    fn synthesize_taps_rejects_conflicting_urls_for_same_tap() {
+        // Different URLs for the same tap is a manifest bug. Pins the
+        // bail. Catches the mutation that swaps the `a == b` match
+        // guard for `true`, which would silently accept whichever URL
+        // landed first instead of erroring.
+        let resources = vec![
+            pkg_with_tap("keron", "icepuma/keron", Some("https://github.com/icepuma/keron")),
+            pkg_with_tap("kernel", "icepuma/keron", Some("https://github.com/forked/keron")),
+        ];
+        let err = synthesize_taps(&resources).expect_err("conflicting URLs must bail");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("conflicting URLs") && msg.contains("icepuma/keron"),
+            "expected conflicting-URL bail, got: {msg}",
+        );
+    }
+
+    #[test]
+    fn synthesize_taps_upgrades_bare_then_qualified_to_qualified() {
+        // The bare declaration arrives first; the follow-up carries a
+        // custom URL. The qualified declaration must win — pins the
+        // `(None, Some(_))` arm so the same-url match guard can't be
+        // smuggled into covering it.
+        let url = "https://github.com/icepuma/keron";
+        let resources = vec![
+            pkg_with_tap("keron", "icepuma/keron", None),
+            pkg_with_tap("kernel", "icepuma/keron", Some(url)),
+        ];
+        let out = synthesize_taps(&resources).expect("bare-then-qualified must merge");
+        let Some(ResourceState::Tap(spec)) = out
+            .iter()
+            .find(|r| matches!(r, ResourceState::Tap(_)))
+            .cloned()
+        else {
+            panic!("expected one Tap entry");
+        };
+        assert_eq!(spec.url.as_deref(), Some(url));
     }
 }
