@@ -32,18 +32,44 @@ pub fn fetch() -> Result<HashSet<String>> {
         .stderr(Stdio::piped())
         .output()
         .context("spawning `winget list`")?;
-    if !out.status.success() {
+    let status_label = out.status.to_string();
+    decode_list_output(out.status.success(), &out.stdout, &out.stderr, &status_label)
+}
+
+/// Pure helper: branch on the `winget list` exit status. Factored out
+/// of `fetch` so the success-vs-failure path is testable without
+/// spawning a real `winget` binary (which only exists on Windows).
+fn decode_list_output(
+    ok: bool,
+    stdout: &[u8],
+    stderr: &[u8],
+    status_label: &str,
+) -> Result<HashSet<String>> {
+    if !ok {
         bail!(
-            "`winget list` exited with status {}; stderr: {}",
-            out.status,
-            String::from_utf8_lossy(&out.stderr).trim(),
+            "`winget list` exited with status {status_label}; stderr: {}",
+            String::from_utf8_lossy(stderr).trim(),
         );
     }
     // Winget prints UTF-16 on some shells; try UTF-8 first, fall
     // back to lossy.
-    let text = String::from_utf8(out.stdout.clone())
-        .unwrap_or_else(|_| String::from_utf8_lossy(&out.stdout).into_owned());
+    let text = String::from_utf8(stdout.to_vec())
+        .unwrap_or_else(|_| String::from_utf8_lossy(stdout).into_owned());
     Ok(parse(&text))
+}
+
+/// Locate the byte offset of the `Id` column in a header line. The
+/// real header has both `Name` and `Id`, and `Id` appears strictly
+/// after `Name` so a stray progress line that happens to mention
+/// either word can't be mistaken for the column header. Distinct
+/// substrings cannot both start at the same byte (`name_pos == id_pos`
+/// is impossible), so the `>` boundary is equivalent to `>=` here —
+/// the comparison is kept strict-greater for intent.
+#[cfg_attr(test, mutants::skip)]
+fn locate_id_column(line: &str) -> Option<usize> {
+    let name_pos = line.find("Name")?;
+    let id_pos = line.find("Id")?;
+    if id_pos > name_pos { Some(id_pos) } else { None }
 }
 
 /// Parse the columnar `winget list` output. Locates the `Id` column
@@ -55,14 +81,8 @@ pub fn parse(text: &str) -> HashSet<String> {
     let mut past_header = false;
     for line in text.lines() {
         if id_col.is_none() {
-            // Find a header that contains both "Name" and "Id" with
-            // "Id" appearing after "Name" — distinguishes the real
-            // header from any progress lines that happen to mention
-            // either word.
-            if let (Some(name_pos), Some(id_pos)) = (line.find("Name"), line.find("Id"))
-                && id_pos > name_pos
-            {
-                id_col = Some(id_pos);
+            if let Some(pos) = locate_id_column(line) {
+                id_col = Some(pos);
             }
             continue;
         }
@@ -188,6 +208,66 @@ Name Id    Version
             !got.iter().any(|s| s.contains('γ')),
             "must not retreat into the multibyte char, got: {got:?}"
         );
+    }
+
+    #[test]
+    fn parse_treats_first_post_header_line_as_data_when_ruler_is_missing() {
+        // Some winget builds elide the dashes-under-header ruler. The
+        // parser's fallback path commits to data-mode on the first line
+        // after the header. Pins the `&&` between the all-dashes-or-spaces
+        // check and `!line.is_empty()` — replacing it with `||` would
+        // treat the first data row as the ruler (because `!is_empty` is
+        // true), silently dropping it from the installed set.
+        let input = "\
+Name                       Id                       Version
+Foo                        Foo.Bar                  1.0
+Quux                       Quux.Baz                 2.0
+";
+        let got = parse(input);
+        let mut sorted: Vec<_> = got.into_iter().collect();
+        sorted.sort();
+        assert_eq!(sorted, vec!["Foo.Bar", "Quux.Baz"]);
+    }
+
+    #[test]
+    fn locate_id_column_rejects_when_id_precedes_name() {
+        // A progress / status line that mentions "Id" before "Name"
+        // must not be mistaken for the column header — otherwise the
+        // parser would lock onto the wrong column for the rest of the
+        // stream. Pins the strict ordering check inside
+        // locate_id_column.
+        assert_eq!(locate_id_column("Id is required, see Name help"), None);
+    }
+
+    #[test]
+    fn locate_id_column_returns_id_offset_when_after_name() {
+        let line = "Name          Id        Version";
+        let got = locate_id_column(line).expect("real header must match");
+        assert_eq!(got, line.find("Id").unwrap());
+    }
+
+    #[test]
+    fn decode_list_output_returns_parsed_set_on_success() {
+        let stdout = b"\
+Name                       Id                       Version
+-------------------------------------------------------------------------
+Microsoft PowerShell       Microsoft.PowerShell     7.4.1.0
+";
+        let got = decode_list_output(true, stdout, b"", "exit code: 0").unwrap();
+        assert!(got.contains("Microsoft.PowerShell"));
+    }
+
+    #[test]
+    fn decode_list_output_bails_on_nonzero_exit_with_stderr_context() {
+        // Pins the success-gate `!` in decode_list_output — a mutation
+        // that deletes the `!` would treat nonzero exits as success and
+        // return an empty installed-set, masking the failure from the
+        // classifier.
+        let err = decode_list_output(false, b"", b"winget not registered", "exit code: 5")
+            .expect_err("nonzero exit must bail");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("exit code: 5"), "got: {msg}");
+        assert!(msg.contains("winget not registered"), "got: {msg}");
     }
 
     #[test]
