@@ -428,6 +428,17 @@ mod tests {
         }
     }
 
+    /// Convert a Path to a string suitable for embedding in a keron
+    /// manifest string literal. Keron's string syntax treats `\` as an
+    /// escape introducer (`\n`, `\t`, …), so a real Windows path like
+    /// `C:\Users\foo` would tokenise as `\U`, an invalid escape. The
+    /// runtime accepts forward slashes on every supported OS, so the
+    /// safe lowest-common-denominator is to swap `\` → `/`. No-op on
+    /// Unix.
+    fn manifest_path(p: &Path) -> String {
+        p.display().to_string().replace('\\', "/")
+    }
+
     /// Drives `run_with_io` and returns (result, captured stdout).
     fn drive(
         path: &Path,
@@ -576,7 +587,7 @@ mod tests {
              winget(\"Microsoft.PowerShell\");\n\
              template(source = \"tmpl.tpl\", target = \"{}\", vars = {{\"body\": \"y\"}});\n\
              }}\n",
-            dest.display(),
+            manifest_path(&dest),
         );
         let entry = proj.write("entry.keron", &src);
         let (res, out) = drive(&entry, true, "no\n");
@@ -603,7 +614,7 @@ mod tests {
              winget(\"Microsoft.PowerShell\");\n\
              template(source = \"tmpl.tpl\", target = \"{}\", vars = {{\"body\": \"y\"}});\n\
              }}\n",
-            dest.display(),
+            manifest_path(&dest),
         );
         let entry = proj.write("entry.keron", &src);
         let (res, out) = drive(&entry, true, "yes\nyes\n");
@@ -647,7 +658,7 @@ mod tests {
         fs::write(&dest, "old").unwrap();
         let src = format!(
             "reconcile template(source = \"tmpl.tpl\", target = \"{}\", vars = {{\"body\": \"new\"}})\n",
-            dest.display(),
+            manifest_path(&dest),
         );
         let entry = proj.write("entry.keron", &src);
         // First "yes" approves the value prompt; "no" cancels the
@@ -675,7 +686,7 @@ mod tests {
         let dest = proj.root.join("out");
         let src = format!(
             "reconcile template(source = \"tmpl.tpl\", target = \"{}\", vars = {{\"body\": \"y\"}})\n",
-            dest.display(),
+            manifest_path(&dest),
         );
         let entry = proj.write("entry.keron", &src);
         let (res, out) = drive(&entry, true, "yes\n");
@@ -696,8 +707,8 @@ mod tests {
         let link = proj.root.join("alias");
         let src = format!(
             "reconcile symlink(source = \"{}\", target = \"{}\")\n",
-            target.display(),
-            link.display(),
+            manifest_path(&target),
+            manifest_path(&link),
         );
         let entry = proj.write("entry.keron", &src);
 
@@ -727,8 +738,8 @@ mod tests {
         std::os::unix::fs::symlink(&target, &link).unwrap();
         let src = format!(
             "reconcile symlink(source = \"{}\", target = \"{}\")\n",
-            target.display(),
-            link.display(),
+            manifest_path(&target),
+            manifest_path(&link),
         );
         let entry = proj.write("entry.keron", &src);
 
