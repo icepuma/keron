@@ -155,7 +155,12 @@ mod tests {
                     .strip_prefix(&canonical_root)
                     .unwrap_or(&f.path)
                     .to_string_lossy()
-                    .into_owned()
+                    // Normalise to `/` so the cross-platform assertions
+                    // don't have to thread `MAIN_SEPARATOR` through every
+                    // expected literal — Windows joins with `\` but the
+                    // ordering / identity these tests pin is separator-
+                    // agnostic.
+                    .replace('\\', "/")
             })
             .collect()
     }
