@@ -729,6 +729,12 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    // `resolve_path` recognises absolute imports via a `/` prefix
+    // (`raw.starts_with('/')`). That's Unix-shaped — on Windows a
+    // canonical absolute path is `\\?\C:\…` or `C:\…`, neither of
+    // which start with `/`. Supporting Windows absolute imports is a
+    // future design decision; this test pins the Unix path today.
+    #[cfg(unix)]
     #[test]
     fn resolve_path_absolute_resolves_to_canonical_file() {
         let dir = std::env::temp_dir().join("keron-resolve-path-abs");
