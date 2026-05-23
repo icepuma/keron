@@ -332,6 +332,52 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn run_failure_after_first_change_reports_one_of_two_applied() {
+        // Build a payload with two changes: a NoOp (always succeeds)
+        // and an Update with no `before` (fails before any side effect).
+        // The error context must say "after 1 of 2" so the user knows
+        // which resources were already applied. Pins the `applied += 1`
+        // arithmetic — a `*= 1` mutation would leave `applied` at 0 and
+        // report "after 0 of 2".
+        use crate::elevated::payload::{OwnerId, write_payload};
+        use crate::plan::Plan;
+        let noop = ResourceChange {
+            address: "first".into(),
+            kind: ResourceKind::Symlink,
+            action: Action::NoOp,
+            before: None,
+            after: None,
+            requires_elevation: true,
+            requires_force: false,
+        };
+        let broken_update = ResourceChange {
+            address: "second".into(),
+            kind: ResourceKind::Symlink,
+            action: Action::Update,
+            before: None,
+            after: None,
+            requires_elevation: true,
+            requires_force: false,
+        };
+        let plan = Plan {
+            changes: vec![noop, broken_update],
+        };
+        #[allow(unsafe_code)]
+        let (uid, gid) = unsafe { (libc::geteuid(), libc::getegid()) };
+        let owner = OwnerId::Posix { uid, gid };
+        let payload = write_payload(&plan, &owner).unwrap();
+        let expected = payload.expected().clone();
+        let err = run(payload.path(), &expected)
+            .expect_err("update with no prior state must fail the run");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("after 1 of 2"),
+            "must report 1 of 2 applied; got: {msg}",
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn refuse_symlinked_ancestors_treats_missing_ancestors_as_ok() {
         // `leaf`'s parent doesn't exist yet — that's the
         // mkdir-on-apply case. The ENOENT match guard must accept.
