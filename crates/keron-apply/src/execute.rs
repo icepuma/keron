@@ -811,9 +811,7 @@ fn create_gpg_key(fingerprint: &str, key: &str) -> Result<()> {
     let status = child
         .wait()
         .context("waiting for `gpg --batch --import` to finish")?;
-    if !status.success() {
-        bail!("`gpg --batch --import` exited with status {status} for fingerprint `{fingerprint}`");
-    }
+    check_gpg_import_status(status.success(), &status.to_string(), fingerprint)?;
     let probe = Command::new("gpg")
         .args([
             "--batch",
@@ -826,7 +824,26 @@ fn create_gpg_key(fingerprint: &str, key: &str) -> Result<()> {
         .stderr(Stdio::null())
         .status()
         .context("re-probing gpg keyring after import")?;
-    if !probe.success() {
+    check_gpg_probe_status(probe.success(), fingerprint)
+}
+
+/// Pure helper: turn the `gpg --import` exit status into Ok / Err with
+/// the canonical diagnostic. Factored out so the success-gate can be
+/// unit-tested without spawning a real gpg.
+fn check_gpg_import_status(ok: bool, status_label: &str, fingerprint: &str) -> Result<()> {
+    if !ok {
+        bail!(
+            "`gpg --batch --import` exited with status {status_label} for fingerprint `{fingerprint}`",
+        );
+    }
+    Ok(())
+}
+
+/// Pure helper: turn the post-import `gpg --list-secret-keys` exit
+/// status into Ok / Err. Factored out so the wrong-fingerprint
+/// detection branch can be unit-tested without spawning a real gpg.
+fn check_gpg_probe_status(ok: bool, fingerprint: &str) -> Result<()> {
+    if !ok {
         bail!(
             "`gpg --import` succeeded but fingerprint `{fingerprint}` was not added to the keyring; \
              the supplied key likely has a different fingerprint than declared",
@@ -1675,6 +1692,147 @@ mod tests {
         fs::set_permissions(&path, perm).unwrap();
         let _ = log;
         path
+    }
+
+    #[test]
+    fn bump_summary_create_increments_added_by_count() {
+        // bump_summary is the package-phase counter; a function that
+        // sees N installed names should bump `added` by N. Mutations on
+        // line 411 swap `+=` for `*=` (collapses to 0 when starting
+        // from 0) or `-=` (panics on usize underflow). Pin the
+        // arithmetic shape directly so neither mutation passes silently.
+        let mut s = ExecuteSummary {
+            added: 2,
+            changed: 0,
+            ran: 0,
+        };
+        bump_summary(&mut s, Action::Create, 3);
+        assert_eq!(s.added, 5, "Create must add count to existing total");
+        assert_eq!(s.changed, 0);
+        assert_eq!(s.ran, 0);
+    }
+
+    #[test]
+    fn bump_summary_update_increments_changed_by_count() {
+        // Companion of the Create case for line 412. Even though
+        // `keron apply` never emits an Update for a Package today, the
+        // arm is part of the public bump_summary contract for future
+        // managers and the Tap-URL drift path.
+        let mut s = ExecuteSummary {
+            added: 0,
+            changed: 4,
+            ran: 0,
+        };
+        bump_summary(&mut s, Action::Update, 2);
+        assert_eq!(s.added, 0);
+        assert_eq!(s.changed, 6, "Update must add count to existing total");
+        assert_eq!(s.ran, 0);
+    }
+
+    #[test]
+    fn apply_update_package_bails_with_planner_bug_diagnostic() {
+        // The (Package, Package) Update match arm exists to surface a
+        // planner bug — Package classify never emits Update. Pin the
+        // diagnostic so a `delete match arm` mutation that falls
+        // through to the generic `unsupported_kind` bail can't sneak
+        // past the test suite.
+        let before = ResourceState::Package {
+            manager: PackageManager::Brew,
+            name: "ripgrep".into(),
+            tap: None,
+        };
+        let after = ResourceState::Package {
+            manager: PackageManager::Brew,
+            name: "ripgrep".into(),
+            tap: None,
+        };
+        let err = apply_update(&before, &after).expect_err("Package Update must bail");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("reached the Update path") && msg.contains("ripgrep"),
+            "expected planner-bug diagnostic naming the package: {msg}",
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn apply_update_tap_invokes_brew_tap_with_custom_remote() {
+        // The (Tap, Tap) Update match arm re-taps via brew so a remote
+        // URL drift is repaired without a re-clone. Verify the arm by
+        // pointing the brew binary override at a recording spy and
+        // asserting the spy captured the `--custom-remote` flag. A
+        // `delete match arm` mutation would fall through to the
+        // unsupported_kind bail and the spy would never see the call.
+        use crate::plan::TapSpec;
+        use std::os::unix::fs::PermissionsExt;
+        let _g = crate::packages::lock_env();
+        let d = TempDir::new("tap-update");
+        let log = d.path.join("argv.log");
+        let spy = d.path.join("brew-spy.sh");
+        let script = "#!/bin/sh\necho \"$@\" >> \"$KERON_TEST_ARGV_LOG\"\nexit 0\n";
+        fs::write(&spy, script).unwrap();
+        let mut perm = fs::metadata(&spy).unwrap().permissions();
+        perm.set_mode(0o755);
+        fs::set_permissions(&spy, perm).unwrap();
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::set_var("KERON_ALLOW_TEST_OVERRIDES", "1");
+            std::env::set_var("KERON_TEST_PACKAGE_BIN_BREW", &spy);
+            std::env::set_var("KERON_TEST_ARGV_LOG", &log);
+        }
+        let before = ResourceState::Tap(TapSpec {
+            user_tap: "icepuma/keron".into(),
+            url: Some("https://github.com/old/url".into()),
+        });
+        let after = ResourceState::Tap(TapSpec {
+            user_tap: "icepuma/keron".into(),
+            url: Some("https://github.com/icepuma/keron".into()),
+        });
+        let result = apply_update(&before, &after);
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::remove_var("KERON_TEST_PACKAGE_BIN_BREW");
+            std::env::remove_var("KERON_TEST_ARGV_LOG");
+            std::env::remove_var("KERON_ALLOW_TEST_OVERRIDES");
+        }
+        result.expect("tap update must succeed against the spy");
+        let recorded = fs::read_to_string(&log).expect("spy ran");
+        assert!(
+            recorded.contains("tap")
+                && recorded.contains("icepuma/keron")
+                && recorded.contains("--custom-remote"),
+            "spy must capture a re-tap with --custom-remote: {recorded:?}",
+        );
+    }
+
+    #[test]
+    fn check_gpg_import_status_passes_only_on_success() {
+        // Pins the `!status.success()` gate on the `gpg --import` call.
+        // A mutation that deletes the `!` would bail on success and
+        // accept failure — the user would see a spurious import error
+        // even though gpg ran cleanly.
+        check_gpg_import_status(true, "exit code: 0", "ABCD1234").expect("success must pass");
+        let err = check_gpg_import_status(false, "exit code: 2", "ABCD1234")
+            .expect_err("failure must bail");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("exit code: 2"), "got: {msg}");
+        assert!(msg.contains("ABCD1234"), "got: {msg}");
+    }
+
+    #[test]
+    fn check_gpg_probe_status_passes_only_on_success() {
+        // Pins the `!probe.success()` gate on the post-import
+        // fingerprint re-probe. A mutation that deletes the `!` would
+        // accept a missing fingerprint as confirmation, letting the
+        // apply loop import-on-every-run silently.
+        check_gpg_probe_status(true, "ABCD1234").expect("success must pass");
+        let err = check_gpg_probe_status(false, "ABCD1234")
+            .expect_err("failure must bail with wrong-fingerprint diagnostic");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("different fingerprint") && msg.contains("ABCD1234"),
+            "expected fingerprint-mismatch diagnostic, got: {msg}",
+        );
     }
 
     #[cfg(unix)]
