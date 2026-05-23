@@ -236,6 +236,14 @@ fn test_elevator_override() -> Option<std::path::PathBuf> {
     std::env::var_os("KERON_TEST_ELEVATOR").map(std::path::PathBuf::from)
 }
 
+/// Release-build counterpart: always None so production cannot honour
+/// the test override even with `KERON_ALLOW_TEST_OVERRIDES=1` set.
+///
+/// `#[cfg_attr(test, mutants::skip)]`: this variant is only compiled
+/// under `not(debug_assertions)` and never reached by `cargo test`.
+/// The debug-build sibling is covered by
+/// `test_elevator_override_requires_allow_gate`.
+#[cfg_attr(test, mutants::skip)]
 #[cfg(all(unix, not(debug_assertions)))]
 fn test_elevator_override() -> Option<std::path::PathBuf> {
     None
@@ -246,6 +254,16 @@ fn allow_insecure_elevation_for_tests() -> bool {
     std::env::var_os("KERON_ALLOW_TEST_OVERRIDES").is_some_and(|v| v == "1")
 }
 
+/// Release-build counterpart to the debug version. Always `false` so
+/// the test seam can't accidentally relax the production tamper check
+/// — e.g. a CI runner that built and then ran a release binary.
+///
+/// `#[cfg_attr(test, mutants::skip)]`: this variant is only compiled
+/// under `not(debug_assertions)`, so a mutation that flips it to
+/// `true` can never reach the test harness (cargo-mutants runs `cargo
+/// test` which builds in debug). The debug-build sibling is covered
+/// by `allow_insecure_elevation_for_tests_requires_allow_gate`.
+#[cfg_attr(test, mutants::skip)]
 #[cfg(all(unix, not(debug_assertions)))]
 const fn allow_insecure_elevation_for_tests() -> bool {
     false
@@ -515,6 +533,235 @@ mod tests {
             msg.contains("non-root group"),
             "expected non-root-group refusal, got: {msg}"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn check_binary_tamper_resistance_rejects_owner_writable_non_root_ancestor() {
+        // Pins the owner-writable ancestor check at line 139:
+        // `!allow_owner_writable && mode & 0o200 != 0 && meta.uid() != 0`.
+        // Catches:
+        //   - `& with |` (mode | 0o200 is always non-zero -> always bail,
+        //      conflating with other paths)
+        //   - `& with ^` (toggles the bit; depends on existing mode)
+        //   - `!= 0 with == 0` (inverts the owner-writable check)
+        //   - `meta.uid() != 0 with == 0` (inverts to "owner is root")
+        //
+        // With the original code: an owner-writable (0o700) ancestor
+        // owned by the running non-root user must refuse elevation
+        // when `allow_owner_writable=false`.
+        use std::os::unix::fs::PermissionsExt;
+        let parent = std::env::temp_dir().join(format!(
+            "keron-elev-ow-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.subsec_nanos()),
+        ));
+        let _ = std::fs::remove_dir_all(&parent);
+        std::fs::create_dir_all(&parent).unwrap();
+        let bin = parent.join("fake-keron");
+        std::fs::write(&bin, "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o555)).unwrap();
+        // Owner-writable WITHOUT group/world write.
+        std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+        // Sanity: if the test happens to run as root, the uid != 0
+        // check would not refuse. Skip in that case.
+        #[allow(unsafe_code)]
+        let euid = unsafe { libc::geteuid() };
+        if euid == 0 {
+            let _ = std::fs::remove_dir_all(&parent);
+            return;
+        }
+
+        let result = check_binary_tamper_resistance(&bin, false);
+        std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let _ = std::fs::remove_dir_all(&parent);
+
+        let err =
+            result.expect_err("owner-writable non-root ancestor must refuse elevation");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("writable by non-root owner"),
+            "expected non-root-owner refusal, got: {msg}",
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn check_binary_tamper_resistance_rejects_owner_writable_non_root_binary() {
+        // Companion test for the binary-self check at line 164. Same
+        // mutations apply (`& with |/^`, `!= with ==` on the bit
+        // check, `!= with ==` on the uid check). An owner-writable bin
+        // owned by the running non-root user must be refused. The
+        // ancestor walk also catches this same combination via the
+        // line-139 check (parent dir is 0o755 by default and
+        // owner-writable too), so the diagnostic may come from either
+        // — we just pin that the function REFUSES.
+        use std::os::unix::fs::PermissionsExt;
+        let parent = std::env::temp_dir().join(format!(
+            "keron-elev-owb-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.subsec_nanos()),
+        ));
+        let _ = std::fs::remove_dir_all(&parent);
+        std::fs::create_dir_all(&parent).unwrap();
+        let bin = parent.join("fake-keron");
+        std::fs::write(&bin, "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        #[allow(unsafe_code)]
+        let euid = unsafe { libc::geteuid() };
+        if euid == 0 {
+            let _ = std::fs::remove_dir_all(&parent);
+            return;
+        }
+
+        let result = check_binary_tamper_resistance(&bin, false);
+        let _ = std::fs::remove_dir_all(&parent);
+
+        let err = result.expect_err(
+            "owner-writable non-root binary must refuse elevation when allow=false",
+        );
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("writable by non-root owner"),
+            "expected non-root-owner refusal, got: {msg}",
+        );
+    }
+
+    #[cfg(all(unix, debug_assertions))]
+    #[test]
+    fn test_elevator_override_requires_allow_gate() {
+        // Pins the `KERON_ALLOW_TEST_OVERRIDES` gate inside
+        // test_elevator_override: a set `KERON_TEST_ELEVATOR` without
+        // the explicit allow-flag must NOT be honoured. Catches the
+        // `!= with ==` mutation on the comparison `v != "1"` (which
+        // would invert the gate) and the body replacements that
+        // return None / Some(Default) unconditionally.
+        // Run via a small helper that single-threads its env
+        // mutations through the package-mod ENV_LOCK so it can't race
+        // the tap / cargo tests.
+        let _g = crate::packages::lock_env();
+        // SAFETY: edition-2024 set_var; lock_env serialises the
+        // section and we restore both vars on the way out.
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::remove_var("KERON_ALLOW_TEST_OVERRIDES");
+            std::env::set_var("KERON_TEST_ELEVATOR", "/tmp/fake-elevator");
+        }
+        let without_allow = test_elevator_override();
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::set_var("KERON_ALLOW_TEST_OVERRIDES", "1");
+        }
+        let with_allow = test_elevator_override();
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::remove_var("KERON_TEST_ELEVATOR");
+            std::env::remove_var("KERON_ALLOW_TEST_OVERRIDES");
+        }
+        assert!(
+            without_allow.is_none(),
+            "override must require the explicit allow gate; got: {without_allow:?}",
+        );
+        let path = with_allow.expect("override honoured with allow gate");
+        assert_eq!(path, std::path::PathBuf::from("/tmp/fake-elevator"));
+    }
+
+    #[cfg(all(unix, debug_assertions))]
+    #[test]
+    fn invoke_elevator_runs_the_overridden_binary_and_propagates_its_status() {
+        // Drive invoke_elevator with KERON_TEST_ELEVATOR pointing at a
+        // shell spy that records its argv and exits successfully. The
+        // mutation `-> Ok(Default::default())` would skip the spawn
+        // entirely and never touch the marker file, so a missing
+        // marker file proves the spawn ran.
+        use crate::elevated::payload::{PayloadExpectation, PayloadIdentity};
+        use std::os::unix::fs::PermissionsExt;
+        let _g = crate::packages::lock_env();
+        let dir = std::env::temp_dir().join(format!(
+            "keron-elev-invoke-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.subsec_nanos()),
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let marker = dir.join("marker");
+        let spy = dir.join("spy.sh");
+        std::fs::write(
+            &spy,
+            format!("#!/bin/sh\necho ran > '{}'\nexit 0\n", marker.display()),
+        )
+        .unwrap();
+        std::fs::set_permissions(&spy, std::fs::Permissions::from_mode(0o755)).unwrap();
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::set_var("KERON_ALLOW_TEST_OVERRIDES", "1");
+            std::env::set_var("KERON_TEST_ELEVATOR", &spy);
+        }
+        let exe = std::path::PathBuf::from("/usr/bin/true");
+        let payload = dir.join("payload.json");
+        std::fs::write(&payload, "{}").unwrap();
+        let expected = PayloadExpectation {
+            digest_hex: "0".repeat(64),
+            identity: PayloadIdentity::Unix {
+                dev: 0,
+                ino: 0,
+                uid: 0,
+                gid: 0,
+                mode: 0o600,
+                len: 2,
+            },
+        };
+        let status = invoke_elevator(&exe, &payload, &expected);
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::remove_var("KERON_TEST_ELEVATOR");
+            std::env::remove_var("KERON_ALLOW_TEST_OVERRIDES");
+        }
+        let status = status.expect("spy must succeed");
+        assert!(status.success(), "spy must exit 0; got: {status:?}");
+        assert!(
+            marker.exists(),
+            "elevator spy must have run and written the marker file",
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(all(unix, debug_assertions))]
+    #[test]
+    fn allow_insecure_elevation_for_tests_requires_allow_gate() {
+        // Pins the env-gated debug-only helper. With the var unset,
+        // returns false; with it set to "1", returns true. Catches the
+        // `-> bool with true` function-body replacement that would
+        // unconditionally admit insecure elevation in dev builds.
+        let _g = crate::packages::lock_env();
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::remove_var("KERON_ALLOW_TEST_OVERRIDES");
+        }
+        assert!(
+            !allow_insecure_elevation_for_tests(),
+            "must default to refusing insecure elevation",
+        );
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::set_var("KERON_ALLOW_TEST_OVERRIDES", "1");
+        }
+        assert!(
+            allow_insecure_elevation_for_tests(),
+            "must honour the explicit allow gate",
+        );
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::remove_var("KERON_ALLOW_TEST_OVERRIDES");
+        }
     }
 
     #[cfg(unix)]
