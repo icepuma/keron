@@ -2171,4 +2171,274 @@ mod tests {
         };
         assert!(!plan_has_body_blocks(&template_noop));
     }
+
+    #[test]
+    fn plan_has_body_blocks_recognises_ssh_key_create() {
+        // Pins the SshKey arm of the per-state body lookup. Catches the
+        // `delete match arm` mutation that would force every SshKey
+        // resource into the `_ => None` fallback, suppressing the
+        // verbose-banner gate and the body-body summary footer hint.
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "ssh:id_keron".into(),
+                kind: ResourceKind::SshKey,
+                action: Action::Create,
+                before: None,
+                after: Some(ResourceState::SshKey {
+                    private_path: PathBuf::from("/keys/id_keron"),
+                    public_path: PathBuf::from("/keys/id_keron.pub"),
+                    private_key: "-----BEGIN OPENSSH PRIVATE KEY-----\n…\n".into(),
+                    public_key: "ssh-ed25519 AAAA…".into(),
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        assert!(plan_has_body_blocks(&plan));
+    }
+
+    #[test]
+    fn plan_has_body_blocks_recognises_gpg_key_create() {
+        // Pins the GpgKey arm of the per-state body lookup. Same
+        // rationale as the SshKey companion test.
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "gpg:ABCD1234".into(),
+                kind: ResourceKind::GpgKey,
+                action: Action::Create,
+                before: None,
+                after: Some(ResourceState::GpgKey {
+                    fingerprint: "ABCD1234".into(),
+                    key: "-----BEGIN PGP PRIVATE KEY BLOCK-----\n…\n".into(),
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        assert!(plan_has_body_blocks(&plan));
+    }
+
+    #[test]
+    fn elevated_create_renders_under_elevated_header_and_not_unprivileged() {
+        // Pins the `is_elevated` predicate and the renderer's
+        // partitioning. A change marked `requires_elevation: true` with
+        // a non-NoOp action MUST land in the "require elevated rights"
+        // section AND NOT in the unprivileged "will perform" section.
+        // Catches both `&& -> ||` and `delete !` mutations on the
+        // `is_elevated` / `has_unprivileged_actions` predicates inside
+        // render_plan.
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/etc/x".into(),
+                kind: ResourceKind::Template,
+                action: Action::Create,
+                before: None,
+                after: Some(ResourceState::Template {
+                    path: PathBuf::from("/etc/x"),
+                    content: "hi".into(),
+                    sensitive: false,
+                }),
+                requires_elevation: true,
+                requires_force: false,
+            }],
+        };
+        let out = render(&plan);
+        assert!(
+            out.contains("The following changes require elevated rights:"),
+            "elevated section header missing: {out}",
+        );
+        assert!(
+            !out.contains("keron will perform the following actions:"),
+            "elevated-only plan must NOT emit the unprivileged header: {out}",
+        );
+    }
+
+    #[test]
+    fn elevated_noop_lists_under_unprivileged_section() {
+        // The `!matches!(c.action, Action::NoOp)` carve-out inside
+        // `is_elevated` exists so that an elevated path that ended up
+        // NoOp doesn't disappear behind the elevated-only section.
+        // Pin that behavior: an elevated NoOp resource is reported
+        // alongside the rest of the unchanged roster, NOT under the
+        // "require elevated rights" header.
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/etc/x".into(),
+                kind: ResourceKind::Template,
+                action: Action::NoOp,
+                before: Some(ResourceState::Template {
+                    path: PathBuf::from("/etc/x"),
+                    content: "same".into(),
+                    sensitive: false,
+                }),
+                after: Some(ResourceState::Template {
+                    path: PathBuf::from("/etc/x"),
+                    content: "same".into(),
+                    sensitive: false,
+                }),
+                requires_elevation: true,
+                requires_force: false,
+            }],
+        };
+        let out = render(&plan);
+        assert!(
+            out.contains("is up to date"),
+            "elevated NoOp must still surface as up-to-date: {out}",
+        );
+        assert!(
+            !out.contains("require elevated rights"),
+            "elevated NoOp must NOT trigger the elevated section header: {out}",
+        );
+    }
+
+    #[test]
+    fn render_body_verbose_drops_synthetic_unified_diff_headers() {
+        // The unified-diff renderer adds `--- file` / `+++ file`
+        // header lines when no `header(...)` is supplied to
+        // `similar`. The diff body-renderer drops both lines because
+        // the resource block already labels the field; pinning that
+        // means an `|| -> &&` mutation would let the `--- ` and `+++ `
+        // headers leak through as content.
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "/etc/x".into(),
+                kind: ResourceKind::Template,
+                action: Action::Update,
+                before: Some(ResourceState::Template {
+                    path: PathBuf::from("/etc/x"),
+                    content: "before\n".into(),
+                    sensitive: false,
+                }),
+                after: Some(ResourceState::Template {
+                    path: PathBuf::from("/etc/x"),
+                    content: "after\n".into(),
+                    sensitive: false,
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        let out = render_verbose(&plan);
+        assert!(
+            !out.contains("--- "),
+            "synthetic `--- file` header must be filtered: {out}",
+        );
+        assert!(
+            !out.contains("+++ "),
+            "synthetic `+++ file` header must be filtered: {out}",
+        );
+    }
+
+    #[test]
+    fn tap_update_diff_renders_only_when_url_changes() {
+        // Pin the `before_spec.url != after_spec.url` gate inside the
+        // Tap arm of render_diff_lines. With a URL drift, the renderer
+        // emits the `url = "<old>" -> "<new>"` line. The `!= with ==`
+        // mutation would invert the gate and refuse to render when the
+        // URL actually changed (renders the line when URLs are equal,
+        // which would never produce useful output).
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "tap.icepuma/keron".into(),
+                kind: ResourceKind::Tap,
+                action: Action::Update,
+                before: Some(ResourceState::Tap(crate::plan::TapSpec {
+                    user_tap: "icepuma/keron".into(),
+                    url: Some("https://github.com/icepuma/keron".into()),
+                })),
+                after: Some(ResourceState::Tap(crate::plan::TapSpec {
+                    user_tap: "icepuma/keron".into(),
+                    url: Some("https://github.com/forked/keron".into()),
+                })),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        let out = render(&plan);
+        assert!(
+            out.contains("github.com/icepuma/keron")
+                && out.contains("github.com/forked/keron"),
+            "tap URL drift must render both URLs: {out}",
+        );
+    }
+
+    #[test]
+    fn shell_update_diff_marks_sensitive_when_either_side_is_sensitive() {
+        // Pin the `*before_sensitive || *after_sensitive` arm inside
+        // render_diff_lines's Shell branch. A `|| with &&` mutation
+        // would only mark the diff sensitive when BOTH sides were
+        // sensitive — a one-sided sensitivity change (the common case
+        // when a secret is newly introduced) would render plain.
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "shell.refresh".into(),
+                kind: ResourceKind::Shell,
+                action: Action::Update,
+                before: Some(ResourceState::Shell {
+                    kind: ShellKind::Sh,
+                    name: "refresh".into(),
+                    cwd: PathBuf::from("/tmp"),
+                    script: "echo old\n".into(),
+                    sensitive: false,
+                }),
+                after: Some(ResourceState::Shell {
+                    kind: ShellKind::Sh,
+                    name: "refresh".into(),
+                    cwd: PathBuf::from("/tmp"),
+                    script: "echo TOKEN=secret\n".into(),
+                    sensitive: true,
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        let out = render(&plan);
+        assert!(
+            out.contains("[sensitive]"),
+            "one-sided sensitivity must still propagate to the diff: {out}",
+        );
+    }
+
+    #[test]
+    fn package_diff_renders_tap_drift_when_tap_changes() {
+        // Pin the `before.tap != after.tap` gate inside
+        // render_package_diff. A `!= with ==` mutation would emit the
+        // tap diff only when the taps were already equal (useless
+        // output), and would silently drop the diff when the tap
+        // actually changes — masking a relevant rename from the user.
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: "brew:keron".into(),
+                kind: ResourceKind::Package,
+                action: Action::Update,
+                before: Some(ResourceState::Package {
+                    manager: PackageManager::Brew,
+                    name: "keron".into(),
+                    tap: Some(crate::plan::TapSpec {
+                        user_tap: "icepuma/keron".into(),
+                        url: None,
+                    }),
+                }),
+                after: Some(ResourceState::Package {
+                    manager: PackageManager::Brew,
+                    name: "keron".into(),
+                    tap: Some(crate::plan::TapSpec {
+                        user_tap: "forked/keron".into(),
+                        url: None,
+                    }),
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            }],
+        };
+        let out = render(&plan);
+        assert!(
+            out.contains("tap"),
+            "tap drift must render a tap line: {out}",
+        );
+        assert!(
+            out.contains("icepuma/keron") && out.contains("forked/keron"),
+            "tap drift must include both old and new tap names: {out}",
+        );
+    }
 }
