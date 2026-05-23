@@ -2059,8 +2059,16 @@ mod tests {
         // guard for `true`, which would silently accept whichever URL
         // landed first instead of erroring.
         let resources = vec![
-            pkg_with_tap("keron", "icepuma/keron", Some("https://github.com/icepuma/keron")),
-            pkg_with_tap("kernel", "icepuma/keron", Some("https://github.com/forked/keron")),
+            pkg_with_tap(
+                "keron",
+                "icepuma/keron",
+                Some("https://github.com/icepuma/keron"),
+            ),
+            pkg_with_tap(
+                "kernel",
+                "icepuma/keron",
+                Some("https://github.com/forked/keron"),
+            ),
         ];
         let err = synthesize_taps(&resources).expect_err("conflicting URLs must bail");
         let msg = format!("{err:#}");

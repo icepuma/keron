@@ -2356,8 +2356,7 @@ mod tests {
         };
         let out = render(&plan);
         assert!(
-            out.contains("github.com/icepuma/keron")
-                && out.contains("github.com/forked/keron"),
+            out.contains("github.com/icepuma/keron") && out.contains("github.com/forked/keron"),
             "tap URL drift must render both URLs: {out}",
         );
     }

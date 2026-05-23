@@ -1243,10 +1243,7 @@ mod tests {
         // `"xyzzy".into()` or `String::new()`) would silently strip
         // the requirer's hint. Pin the variant-specific phrasing
         // directly.
-        assert_eq!(
-            Capability::Binary("gpg".into()).label(),
-            "the `gpg` binary",
-        );
+        assert_eq!(Capability::Binary("gpg".into()).label(), "the `gpg` binary",);
         assert_eq!(
             Capability::Tap("icepuma/nanite".into()).label(),
             "the homebrew tap `icepuma/nanite`",
@@ -1275,8 +1272,7 @@ mod tests {
 
         let git_hint = Capability::Binary("git".into()).hint();
         assert!(
-            !git_hint.contains("apt(\"gnupg\")")
-                && !git_hint.contains("pacman(\"gnupg\")"),
+            !git_hint.contains("apt(\"gnupg\")") && !git_hint.contains("pacman(\"gnupg\")"),
             "non-gpg Binary hint must NOT inherit the gpg recipe: {git_hint}",
         );
         assert!(

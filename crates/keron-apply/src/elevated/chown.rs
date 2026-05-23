@@ -444,8 +444,7 @@ mod tests {
             uid: alien_uid,
             gid: alien_gid,
         };
-        let err =
-            set_owner(&file, &owner).expect_err("unprivileged chown to alien uid must EPERM");
+        let err = set_owner(&file, &owner).expect_err("unprivileged chown to alien uid must EPERM");
         assert!(
             format!("{err:#}").contains("lchown"),
             "expected lchown context in error, got: {err:#}",

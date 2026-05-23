@@ -107,12 +107,14 @@ pub fn symlink_at(parent: &ParentDir, leaf: &OsStr, target: &Path) -> Result<()>
 /// - `O_NOFOLLOW` refuses if the leaf itself is a symlink.
 /// - The directory fd argument keeps the ancestor walk in scope.
 pub fn create_file_at(parent: &ParentDir, leaf: &OsStr, mode: u32) -> Result<std::fs::File> {
-    let fd = rustix::fs::openat(&parent.fd, leaf, CREATE_LEAF_FLAGS, raw_mode(mode)).with_context(|| {
-        format!(
-            "openat `{}` in elevated parent (create new, no follow)",
-            os_str_lossy(leaf),
-        )
-    })?;
+    let fd = rustix::fs::openat(&parent.fd, leaf, CREATE_LEAF_FLAGS, raw_mode(mode)).with_context(
+        || {
+            format!(
+                "openat `{}` in elevated parent (create new, no follow)",
+                os_str_lossy(leaf),
+            )
+        },
+    )?;
     Ok(std::fs::File::from(fd))
 }
 

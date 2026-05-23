@@ -28,7 +28,12 @@ pub fn fetch() -> Result<HashSet<String>> {
         .output()
         .context("spawning `cargo install --list`")?;
     let status_label = out.status.to_string();
-    decode_list_output(out.status.success(), &out.stdout, &out.stderr, &status_label)
+    decode_list_output(
+        out.status.success(),
+        &out.stdout,
+        &out.stderr,
+        &status_label,
+    )
 }
 
 /// Pure helper: branch on the `cargo install --list` exit status and

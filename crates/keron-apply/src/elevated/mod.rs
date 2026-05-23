@@ -579,8 +579,7 @@ mod tests {
         std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o755)).unwrap();
         let _ = std::fs::remove_dir_all(&parent);
 
-        let err =
-            result.expect_err("owner-writable non-root ancestor must refuse elevation");
+        let err = result.expect_err("owner-writable non-root ancestor must refuse elevation");
         let msg = format!("{err:#}");
         assert!(
             msg.contains("writable by non-root owner"),
@@ -623,9 +622,8 @@ mod tests {
         let result = check_binary_tamper_resistance(&bin, false);
         let _ = std::fs::remove_dir_all(&parent);
 
-        let err = result.expect_err(
-            "owner-writable non-root binary must refuse elevation when allow=false",
-        );
+        let err = result
+            .expect_err("owner-writable non-root binary must refuse elevation when allow=false");
         let msg = format!("{err:#}");
         assert!(
             msg.contains("writable by non-root owner"),

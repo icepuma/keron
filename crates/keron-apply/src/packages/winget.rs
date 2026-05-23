@@ -33,7 +33,12 @@ pub fn fetch() -> Result<HashSet<String>> {
         .output()
         .context("spawning `winget list`")?;
     let status_label = out.status.to_string();
-    decode_list_output(out.status.success(), &out.stdout, &out.stderr, &status_label)
+    decode_list_output(
+        out.status.success(),
+        &out.stdout,
+        &out.stderr,
+        &status_label,
+    )
 }
 
 /// Pure helper: branch on the `winget list` exit status. Factored out
@@ -69,7 +74,11 @@ fn decode_list_output(
 fn locate_id_column(line: &str) -> Option<usize> {
     let name_pos = line.find("Name")?;
     let id_pos = line.find("Id")?;
-    if id_pos > name_pos { Some(id_pos) } else { None }
+    if id_pos > name_pos {
+        Some(id_pos)
+    } else {
+        None
+    }
 }
 
 /// Parse the columnar `winget list` output. Locates the `Id` column

@@ -4644,11 +4644,8 @@ reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
         // (with an empty user but non-empty tap) would silently build a
         // bogus TapSpec with `user_tap = "/tap"` and either crash the
         // executor or shell out the wrong `brew tap` command.
-        let err = run_result_with_templates(
-            "reconcile brew(\"/icepuma/keron\")\n",
-            &[],
-        )
-        .expect_err("empty user segment must bail");
+        let err = run_result_with_templates("reconcile brew(\"/icepuma/keron\")\n", &[])
+            .expect_err("empty user segment must bail");
         let msg = format!("{err:#}");
         assert!(
             msg.contains("must be either a bare formula")

@@ -437,6 +437,9 @@ mod tests {
         unsafe {
             std::env::remove_var("KERON_TEST_PACKAGE_BIN_BREW");
         }
-        assert!(got.is_none(), "override must require allow-gate, got: {got:?}");
+        assert!(
+            got.is_none(),
+            "override must require allow-gate, got: {got:?}"
+        );
     }
 }
