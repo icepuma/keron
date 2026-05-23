@@ -3670,7 +3670,13 @@ reconcile template(source = "tmpl.tpl", target = "/msg", vars = {"body": body})
         let ResourceState::Template { path, .. } = &states[0] else {
             panic!("expected template, got {:?}", states[0]);
         };
-        let expected = root.join("sub");
+        // Build `expected` via the same string-concat the manifest used.
+        // On Windows `fs::canonicalize` returns a verbatim UNC path
+        // (`\\?\C:\...`) inside which `/` is a literal character — so
+        // `root.join("sub")` (backslash) compares unequal to the
+        // interpolated `<root>/sub`. Mirror the manifest's interpolation
+        // to keep this an apples-to-apples assertion on both platforms.
+        let expected: PathBuf = format!("{}/sub", root.display()).into();
         assert_eq!(path, &expected);
     }
 
