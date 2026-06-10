@@ -39,8 +39,8 @@ os_info = { version = "=3.15.0", default-features = false }
 # don't have to assemble these paths by hand.
 dirs = "=6.0.0"
 serde = { version = "=1.0.228", features = ["derive"] }
-serde_json = "=1.0.149"
-sha2 = "=0.10.9"
+serde_json = "=1.0.150"
+sha2 = "=0.11.0"
 libc = "=0.2.186"
 # Typed wrappers around POSIX/Linux syscalls (`openat`, `symlinkat`,
 # `mkdirat`, `statat`, `fchownat`, …). The elevated apply path
@@ -72,12 +72,12 @@ same-file = "=1.0.6"
 # dotfile use case. The full bundle can be re-enabled later if a
 # manifest needs e.g. date formatting.
 tera = { version = "=1.20.1", default-features = false }
-which = "=8.0.2"
+which = "=8.0.3"
 # Line-level diff engine. Used by `keron format --check` for unified-
 # diff drift output and by `keron apply` for the verbose-mode body
 # diffs (template `content` and shell `script`) under the
 # `--verbose-will-reveal-sensitive-content` flag.
-similar = "=3.1.0"
+similar = "=3.1.1"
 # Stack-overflow defense for the user-fn call dispatch. Each
 # `eval_expr` → user-fn → `eval_block_value` recursion eats a Rust
 # stack frame; the depth guard at `MAX_CALL_DEPTH` is fine on the
