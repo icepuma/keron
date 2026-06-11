@@ -99,6 +99,23 @@ pub fn symlink_at(parent: &ParentDir, leaf: &OsStr, target: &Path) -> Result<()>
     })
 }
 
+/// Atomically rename `from_leaf` over `to_leaf`, both inside `parent`.
+/// `renameat(2)` resolves both leaves relative to the directory fd, so
+/// the replace stays anchored to the `O_NOFOLLOW`-walked parent — there
+/// is no full-path re-resolution that an ancestor swap could redirect.
+/// On Unix `rename(2)` replaces an existing `to_leaf` (including a
+/// symlink) atomically, so an elevated Update never leaves the target
+/// missing between a remove and a re-create.
+pub fn rename_at(parent: &ParentDir, from_leaf: &OsStr, to_leaf: &OsStr) -> Result<()> {
+    rustix::fs::renameat(&parent.fd, from_leaf, &parent.fd, to_leaf).with_context(|| {
+        format!(
+            "renameat `{}` -> `{}` in elevated parent",
+            os_str_lossy(from_leaf),
+            os_str_lossy(to_leaf),
+        )
+    })
+}
+
 /// Create a new regular file at `leaf` inside `parent` with the
 /// given mode. Uses `O_CREAT | O_EXCL | O_NOFOLLOW | O_WRONLY` so:
 ///

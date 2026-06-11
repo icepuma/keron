@@ -56,10 +56,16 @@ fn scan_comments(src: &str) -> Vec<Comment> {
     let mut offset = 0usize;
     for line in src.split_inclusive('\n') {
         let line_len = line.len();
-        // The line slice may end in `\n` (or be the last line without
-        // one). Strip the trailing newline for scanning so column
-        // offsets line up with byte offsets within `line`.
-        let body = line.strip_suffix('\n').unwrap_or(line);
+        // The line slice may end in `\n`/`\r\n` (or be the last line
+        // without one). Strip the trailing line terminator for scanning
+        // so column offsets line up with byte offsets within `line`. The
+        // `\r` strip is essential on CRLF input: leaving it attached
+        // makes the triple-quote opener/closer checks miss (e.g. `"""\r`
+        // != `"""`), so multi-line string state is lost and `#` lines in
+        // the string body get mis-scanned as real comments.
+        let body = line.strip_suffix('\n').map_or(line, |without_lf| {
+            without_lf.strip_suffix('\r').unwrap_or(without_lf)
+        });
 
         if let Some(close) = multiline {
             if is_multiline_close(body, close) {
@@ -514,6 +520,20 @@ mod tests {
         let src = "val s: String = r#\"\"\"\n# also inside\n\"\"\"#\n";
         let m = extract(src);
         assert!(m.is_empty(), "got {:?}", m.comments);
+    }
+
+    #[test]
+    fn comment_inside_crlf_multiline_string_is_not_extracted() {
+        // CRLF input must behave like LF: the `# inside` line lives in
+        // the string body, not in a comment. A `\r` left on the opener
+        // line used to defeat multiline detection and leak the body.
+        let src = "val s: String = \"\"\"\r\n# inside\r\n\"\"\"\r\n";
+        let m = extract(src);
+        assert!(
+            m.is_empty(),
+            "CRLF multiline string body leaked into comments: {:?}",
+            m.comments
+        );
     }
 
     #[test]

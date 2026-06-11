@@ -36,6 +36,9 @@ pub enum MultilineClose {
 /// content and is ignored.
 #[must_use]
 pub fn multiline_open(line: &str) -> Option<MultilineClose> {
+    // Tolerate a trailing CR so CRLF input is treated identically to
+    // LF: the triple-quote opener check below is an exact tail match.
+    let line = line.strip_suffix('\r').unwrap_or(line);
     let mut in_string = false;
     let mut escaped = false;
 
@@ -101,6 +104,8 @@ pub fn raw_multiline_open_at(line: &str, start: usize) -> Option<usize> {
 /// else.
 #[must_use]
 pub fn is_multiline_close(line: &str, close: MultilineClose) -> bool {
+    // Tolerate a trailing CR so CRLF input closes identically to LF.
+    let line = line.strip_suffix('\r').unwrap_or(line);
     let trimmed = line.trim_start_matches([' ', '\t']);
     match close {
         MultilineClose::Cooked => trimmed == "\"\"\"",

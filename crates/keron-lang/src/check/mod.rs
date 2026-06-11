@@ -45,6 +45,22 @@ use crate::{
 
 mod match_check;
 
+/// Red zone / grow slab for [`grow_stack`]. Matches the rustc / syn
+/// idiom (64 KiB red zone, 1 MiB slab).
+const STACK_RED_ZONE: usize = 64 * 1024;
+const STACK_GROW_SLAB: usize = 1024 * 1024;
+
+/// Run `f` on a freshly grown stack segment when the current one is
+/// nearly exhausted. The checker recurses on the native stack through
+/// the AST (`resolve_expr_types`, `expr_type`, `reject_reconcile_in_value_expr`),
+/// so a left-deep AST from a long flat operator chain (`1 + 1 + 1 + …`,
+/// which the parser builds iteratively without depth) would otherwise
+/// overflow the stack and abort the process. Cheap when the stack is
+/// healthy — just a pointer comparison against the red zone.
+fn grow_stack<R>(f: impl FnOnce() -> R) -> R {
+    stacker::maybe_grow(STACK_RED_ZONE, STACK_GROW_SLAB, f)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BindingKind {
     OuterVal,
@@ -293,6 +309,14 @@ fn resolve_expr_types(
     scope: &TypeResolutionScope<'_>,
     diags: &mut Vec<Diagnostic>,
 ) {
+    grow_stack(|| resolve_expr_types_inner(expr, scope, diags));
+}
+
+fn resolve_expr_types_inner(
+    expr: &mut Expr,
+    scope: &TypeResolutionScope<'_>,
+    diags: &mut Vec<Diagnostic>,
+) {
     match expr {
         Expr::Unary { operand, .. } => {
             resolve_expr_types(&mut operand.node, scope, diags);
@@ -345,6 +369,9 @@ fn resolve_expr_types(
         Expr::Match { scrutinee, arms } => {
             resolve_expr_types(&mut scrutinee.node, scope, diags);
             for arm in arms {
+                if let Some(guard) = &mut arm.guard {
+                    resolve_expr_types(&mut guard.node, scope, diags);
+                }
                 resolve_expr_types(&mut arm.body.node, scope, diags);
             }
         }
@@ -591,10 +618,13 @@ fn build_struct_sig(s: &StructDecl, diags: &mut Vec<Diagnostic>) -> Option<FnSig
 /// top-level `val` bindings before calling the constructor.
 fn check_struct_decl(s: &StructDecl, outer_env: &Env, fns: &FnEnv, diags: &mut Vec<Diagnostic>) {
     for field in &s.fields {
-        if let Some(default) = &field.default
-            && let Err(d) = check_expr(default, &field.ty.node, outer_env, fns)
-        {
-            diags.push(d);
+        if let Some(default) = &field.default {
+            // Struct field defaults are value expressions too; a
+            // `reconcile` here would be silently dropped at eval.
+            reject_reconcile_in_value_expr(default, diags);
+            if let Err(d) = check_expr(default, &field.ty.node, outer_env, fns) {
+                diags.push(d);
+            }
         }
     }
 }
@@ -723,10 +753,14 @@ fn check_fn_decl(f: &FnDecl, outer_env: &Env, fns: &FnEnv, diags: &mut Vec<Diagn
 }
 
 fn check_param_default(p: &Param, env: &Env, fns: &FnEnv, diags: &mut Vec<Diagnostic>) {
-    if let Some(default) = &p.default
-        && let Err(d) = check_expr(default, &p.ty.node, env, fns)
-    {
-        diags.push(d);
+    if let Some(default) = &p.default {
+        // Param defaults are value expressions: a `reconcile` here is
+        // evaluated against a throwaway sink and silently dropped, so
+        // reject it like any other value position.
+        reject_reconcile_in_value_expr(default, diags);
+        if let Err(d) = check_expr(default, &p.ty.node, env, fns) {
+            diags.push(d);
+        }
     }
 }
 
@@ -746,6 +780,10 @@ fn reject_reconcile_in_value_block(block: &Block, diags: &mut Vec<Diagnostic>) {
 }
 
 fn reject_reconcile_in_value_expr(expr: &Spanned<Expr>, diags: &mut Vec<Diagnostic>) {
+    grow_stack(|| reject_reconcile_in_value_expr_inner(expr, diags));
+}
+
+fn reject_reconcile_in_value_expr_inner(expr: &Spanned<Expr>, diags: &mut Vec<Diagnostic>) {
     match &expr.node {
         Expr::Literal(_) | Expr::Var(_) => {}
         Expr::Unary { operand, .. } => reject_reconcile_in_value_expr(operand, diags),
@@ -795,6 +833,9 @@ fn reject_reconcile_in_value_expr(expr: &Spanned<Expr>, diags: &mut Vec<Diagnost
         Expr::Match { scrutinee, arms } => {
             reject_reconcile_in_value_expr(scrutinee, diags);
             for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    reject_reconcile_in_value_expr(guard, diags);
+                }
                 reject_reconcile_in_value_expr(&arm.body, diags);
             }
         }
@@ -1124,7 +1165,51 @@ pub(super) fn check_expr(
                 "`for` has type `Void` and does not produce a value; expected `{expected}`. Use `for` at statement position (top level, or inside a `Void`-bodied block) rather than as a value."
             ),
         )),
+        // `lhs ?? rhs` in checking mode. Delegated to `check_coalesce`
+        // so a literal fallback narrows into the expected slot (a
+        // closed `StringUnion`) instead of being synthesised+widened.
+        Expr::Binary {
+            op: BinOp::Coalesce,
+            lhs,
+            rhs,
+        } if !matches!(expected, Type::Void) => check_coalesce(lhs, rhs, expected, env, fns),
         _ => switch_to_synth(e, expected, env, fns),
+    }
+}
+
+/// Checking-mode rule for `lhs ?? rhs`. Synthesize the LHS to keep the
+/// "left side must be nullable" rule, then *check* the RHS against
+/// `expected` so a literal fallback narrows into a closed
+/// `StringUnion` slot (`maybe ?? "off"` against a union type) instead
+/// of widening to `String` and being rejected — mirroring how `if` /
+/// `match` arm bodies flow the expected type.
+fn check_coalesce(
+    lhs: &Spanned<Expr>,
+    rhs: &Spanned<Expr>,
+    expected: &Type,
+    env: &Env,
+    fns: &FnEnv,
+) -> Result<(), Diagnostic> {
+    let lhs_ty = expr_type(lhs, env, fns)?;
+    match &lhs_ty {
+        // `null ?? rhs` collapses to the RHS.
+        Type::Null => check_expr(rhs, expected, env, fns),
+        Type::Nullable(inner) => {
+            let inhabitant = inner.as_ref();
+            if !is_subtype(inhabitant, expected) {
+                return Err(Diagnostic::new(
+                    lhs.span.clone(),
+                    format!(
+                        "type mismatch: expected `{expected}`, found `{inhabitant}` (the non-null inhabitant of `{lhs_ty}`)"
+                    ),
+                ));
+            }
+            check_expr(rhs, expected, env, fns)
+        }
+        _ => Err(Diagnostic::new(
+            lhs.span.clone(),
+            format!("`??` requires the left side to be a nullable type (`T?`), found `{lhs_ty}`"),
+        )),
     }
 }
 
@@ -1219,6 +1304,10 @@ const fn is_resource_singleton(ty: &Type) -> bool {
 }
 
 fn expr_type(e: &Spanned<Expr>, env: &Env, fns: &FnEnv) -> Result<Type, Diagnostic> {
+    grow_stack(|| expr_type_inner(e, env, fns))
+}
+
+fn expr_type_inner(e: &Spanned<Expr>, env: &Env, fns: &FnEnv) -> Result<Type, Diagnostic> {
     match &e.node {
         Expr::Literal(lit) => Ok(lit.type_of()),
         Expr::Var(name) => env
@@ -1236,6 +1325,11 @@ fn expr_type(e: &Spanned<Expr>, env: &Env, fns: &FnEnv) -> Result<Type, Diagnost
                         op.symbol()
                     ),
                 )),
+                (UnaryOp::Not, Type::Boolean) => Ok(Type::Boolean),
+                (UnaryOp::Not, t) => Err(Diagnostic::new(
+                    e.span.clone(),
+                    format!("unary `!` requires `Boolean`, found `{t}`"),
+                )),
             }
         }
         Expr::Binary { op, lhs, rhs } => {
@@ -1252,19 +1346,10 @@ fn expr_type(e: &Spanned<Expr>, env: &Env, fns: &FnEnv) -> Result<Type, Diagnost
             for part in parts {
                 if let StringPart::Expr { expr: inner, .. } = part {
                     let ty = expr_type(inner, env, fns)?;
-                    if matches!(ty, Type::Nullable(_)) {
+                    if !is_interpolable(&ty) {
                         return Err(Diagnostic::new(
                             inner.span.clone(),
-                            format!(
-                                "cannot interpolate a `{ty}` directly; `match` it to extract the inhabitant first",
-                            ),
-                        ));
-                    }
-                    if matches!(ty, Type::Secret) {
-                        return Err(Diagnostic::new(
-                            inner.span.clone(),
-                            "cannot interpolate a `Secret` directly; call `unwrap_secret(...)` to opt into a String first"
-                                .to_string(),
+                            interpolation_error(&ty),
                         ));
                     }
                 }
@@ -1960,6 +2045,34 @@ fn binop_result(op: BinOp, lhs: &Type, rhs: &Type) -> Option<Type> {
     }
 }
 
+/// Types whose values the evaluator's `stringify` can render into an
+/// interpolation. A closed `StringUnion` is a `String` at runtime, so
+/// it interpolates too. Everything else (`List`, `Map`, `Struct`,
+/// resource singletons, `Void`, `Nullable`, `Secret`) is rejected at
+/// check time instead of failing span-less in the evaluator.
+const fn is_interpolable(ty: &Type) -> bool {
+    matches!(
+        ty,
+        Type::String | Type::Int | Type::Boolean | Type::Double | Type::StringUnion { .. }
+    )
+}
+
+/// Diagnostic for a non-stringifiable interpolation part. `Nullable`
+/// and `Secret` keep their tailored guidance; everything else gets the
+/// general "convert to a string first" message.
+fn interpolation_error(ty: &Type) -> String {
+    match ty {
+        Type::Nullable(_) => format!(
+            "cannot interpolate a `{ty}` directly; `match` it to extract the inhabitant first",
+        ),
+        Type::Secret => "cannot interpolate a `Secret` directly; call `unwrap_secret(...)` to opt into a String first"
+            .to_string(),
+        _ => format!(
+            "cannot interpolate a `{ty}`; only `String`, `Int`, `Boolean`, and `Double` values can be interpolated — convert it to a string first (e.g. `join(xs, sep)` for a list)",
+        ),
+    }
+}
+
 const fn boolean_result(lhs: &Type, rhs: &Type) -> Option<Type> {
     if matches!((lhs, rhs), (Type::Boolean, Type::Boolean)) {
         Some(Type::Boolean)
@@ -1993,10 +2106,15 @@ fn coalesce_result(lhs: &Type, rhs: &Type) -> Result<Type, String> {
         ));
     };
     let inner_ty = inner.as_ref();
-    if rhs == inner_ty {
+    // RHS pins the inhabitant: accept any subtype of the inner type
+    // (a `StringUnion` fits its `String` inner, a specific resource
+    // fits a `Resource` inner), collapsing to the wider inner type.
+    if is_subtype(rhs, inner_ty) {
         return Ok(inner_ty.clone());
     }
-    if rhs == lhs || matches!(rhs, Type::Null) {
+    // RHS may itself stay nullable (`T? ?? T?`) or be statically null
+    // (`T? ?? null`); the whole expression then stays nullable.
+    if is_subtype(rhs, lhs) || matches!(rhs, Type::Null) {
         return Ok(lhs.clone());
     }
     Err(format!(

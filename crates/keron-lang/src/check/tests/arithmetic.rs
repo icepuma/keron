@@ -37,8 +37,37 @@ fn unary_neg_on_int_is_int() {
 }
 
 #[test]
+fn deep_flat_binary_chain_does_not_overflow_the_checker() {
+    // `1 + 1 + … + 1` at the parser's chain limit folds into a deep
+    // left-deep AST. The checker recurses through it; the stacker guard
+    // keeps that from SIGABRT-ing on the 2 MiB test-thread stack, and
+    // the chain stays short enough that dropping the tree is also safe.
+    let src = format!("val a: Int = 1{}", " + 1".repeat(1_024));
+    assert!(check_src(&src).is_ok());
+}
+
+#[test]
 fn unary_neg_on_double_is_double() {
     assert!(check_src("val a: Double = -1.5").is_ok());
+}
+
+#[test]
+fn logical_not_on_boolean_is_boolean() {
+    assert!(check_src("val a: Boolean = !true").is_ok());
+    assert!(check_src("val a: Boolean = !false").is_ok());
+}
+
+#[test]
+fn logical_not_on_non_boolean_errors() {
+    let err = check_src("val a = !5").expect_err("should fail");
+    assert!(err[0].message.contains("requires `Boolean`"));
+    assert!(err[0].message.contains("found `Int`"));
+}
+
+#[test]
+fn unary_not_on_double_errors() {
+    let err = check_src("val a = !1.5").expect_err("should fail");
+    assert!(err[0].message.contains("requires `Boolean`"));
 }
 
 #[test]

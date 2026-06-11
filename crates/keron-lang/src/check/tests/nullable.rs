@@ -253,3 +253,51 @@ fn nullable_nullable_widens_through_inner_subtyping() {
         .is_ok()
     );
 }
+
+#[test]
+fn coalesce_into_string_union_admits_literal_fallback() {
+    // `maybe ?? "off"` checked against a closed union: the literal
+    // fallback narrows into the union slot instead of widening to
+    // `String` and being rejected.
+    assert!(
+        check_src(
+            "type Mode = \"on\" | \"off\"\n\
+             fn pick(maybe: Mode?): Mode { maybe ?? \"off\" }",
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn coalesce_rejects_literal_not_in_union() {
+    let err = check_src(
+        "type Mode = \"on\" | \"off\"\n\
+         fn pick(maybe: Mode?): Mode { maybe ?? \"nope\" }",
+    )
+    .expect_err("should fail");
+    assert!(err[0].message.contains("not a variant of `Mode`"));
+}
+
+#[test]
+fn coalesce_into_resource_admits_specific_resource_fallback() {
+    // `Resource? ?? symlink(...)`: the specific resource fits the
+    // `Resource` result via subtyping.
+    assert!(
+        check_src(
+            "val maybe: Resource? = symlink(source = \"b\", target = \"a\")\n\
+             val r: Resource = maybe ?? template(source = \"t\", target = \"p\", vars = {})",
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn coalesce_still_requires_nullable_left_side() {
+    let err = check_src(
+        "type Mode = \"on\" | \"off\"\n\
+         val chosen: Mode = \"on\"\n\
+         val m: Mode = chosen ?? \"off\"",
+    )
+    .expect_err("should fail");
+    assert!(err[0].message.contains("left side to be a nullable"));
+}

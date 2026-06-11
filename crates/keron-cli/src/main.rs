@@ -49,6 +49,19 @@ enum Command {
         verbose_will_reveal_sensitive_content: bool,
     },
 
+    /// Validate a keron program without planning or applying.
+    ///
+    /// Parses, resolves imports, and type-checks. Unlike `apply`, it
+    /// never resolves `secret(...)` URIs or probes package managers, so
+    /// it is the cheap, side-effect-free path for CI and editor
+    /// integration. Exits 0 when valid, non-zero on any parse, module,
+    /// or type error.
+    Check {
+        /// Path to a `.keron` file or a directory containing
+        /// `.keron` files (loaded in sorted order).
+        path: PathBuf,
+    },
+
     /// Normalize `.keron` files. Writes in place by default; in
     /// `--check` mode prints a unified diff per file that would
     /// change.
@@ -202,6 +215,16 @@ where
         } => match keron_apply::run(&path, execute, verbose_will_reveal_sensitive_content) {
             Ok(keron_apply::Outcome::Applied) => Ok(ExitCode::SUCCESS),
             Ok(keron_apply::Outcome::Cancelled) => Ok(ExitCode::from(130)),
+            Err(e) => {
+                let exit_code = e.exit_code();
+                Err(CliError {
+                    error: anyhow::Error::from(e),
+                    exit_code,
+                })
+            }
+        },
+        Command::Check { path } => match keron_apply::check(&path) {
+            Ok(()) => Ok(ExitCode::SUCCESS),
             Err(e) => {
                 let exit_code = e.exit_code();
                 Err(CliError {
@@ -617,6 +640,23 @@ mod tests {
         // "fix the manifest" from "the apply itself broke" (exit 3)
         // or "elevation failed" (exit 5).
         assert_eq!(err.exit_code, 2, "missing entry is a pre-apply failure");
+    }
+
+    #[test]
+    fn run_cli_check_validates_without_planning() {
+        let d = TempDir::new("cli-check");
+        let good = d.path.join("good.keron");
+        fs::write(&good, "val x: Int = 1\n").unwrap();
+        assert!(
+            run_cli(["keron", "check", good.to_str().unwrap()]).is_ok(),
+            "a valid manifest must check clean"
+        );
+
+        let bad = d.path.join("bad.keron");
+        fs::write(&bad, "val x: Int = \"nope\"\n").unwrap();
+        let err =
+            run_cli(["keron", "check", bad.to_str().unwrap()]).expect_err("type error must fail");
+        assert_eq!(err.exit_code, 2, "a type error is a pre-apply failure");
     }
 
     #[test]

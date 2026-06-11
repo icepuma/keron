@@ -477,6 +477,33 @@ fn build_string() -> StdModule {
             IntrinsicId::Trim,
         ),
     );
+    fns.insert(
+        "starts_with".into(),
+        intrinsic_fn(
+            "starts_with",
+            &[("s", Type::String), ("prefix", Type::String)],
+            Type::Boolean,
+            IntrinsicId::StartsWith,
+        ),
+    );
+    fns.insert(
+        "ends_with".into(),
+        intrinsic_fn(
+            "ends_with",
+            &[("s", Type::String), ("suffix", Type::String)],
+            Type::Boolean,
+            IntrinsicId::EndsWith,
+        ),
+    );
+    fns.insert(
+        "str_len".into(),
+        intrinsic_fn(
+            "str_len",
+            &[("s", Type::String)],
+            Type::Int,
+            IntrinsicId::StrLen,
+        ),
+    );
     StdModule {
         fns,
         types: BTreeMap::new(),
@@ -1267,5 +1294,26 @@ mod tests {
         assert_eq!(trim.intrinsic, Some(IntrinsicId::Trim));
         assert_eq!(trim.params.len(), 1);
         assert_eq!(trim.return_type.node, Type::String);
+    }
+
+    #[test]
+    fn string_module_registers_starts_ends_with_and_str_len() {
+        let reg = registry();
+        let s = reg.get("string").expect("string module present");
+
+        let starts = s.fns.get("starts_with").expect("starts_with present");
+        assert_eq!(starts.intrinsic, Some(IntrinsicId::StartsWith));
+        assert_eq!(starts.params.len(), 2);
+        assert_eq!(starts.return_type.node, Type::Boolean);
+
+        let ends = s.fns.get("ends_with").expect("ends_with present");
+        assert_eq!(ends.intrinsic, Some(IntrinsicId::EndsWith));
+        assert_eq!(ends.params.len(), 2);
+        assert_eq!(ends.return_type.node, Type::Boolean);
+
+        let len = s.fns.get("str_len").expect("str_len present");
+        assert_eq!(len.intrinsic, Some(IntrinsicId::StrLen));
+        assert_eq!(len.params.len(), 1);
+        assert_eq!(len.return_type.node, Type::Int);
     }
 }

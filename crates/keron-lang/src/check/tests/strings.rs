@@ -26,3 +26,23 @@ fn interpolation_inner_type_error_propagates() {
 fn nested_interpolations_all_typecheck() {
     assert!(check_src(r#"val a = "${"inner ${42}"}""#).is_ok());
 }
+
+#[test]
+fn interpolating_a_list_is_a_check_error() {
+    let src = "val xs: List<String> = [\"a\", \"b\"]\nval s: String = \"items: ${xs}\"";
+    let err = check_src(src).expect_err("should fail");
+    assert!(err[0].message.contains("cannot interpolate"));
+    assert!(err[0].message.contains("List"));
+}
+
+#[test]
+fn interpolating_a_map_is_a_check_error() {
+    let src = "val m: Map<String, Int> = {\"a\": 1}\nval s: String = \"${m}\"";
+    let err = check_src(src).expect_err("should fail");
+    assert!(err[0].message.contains("cannot interpolate"));
+}
+
+#[test]
+fn interpolating_int_bool_double_typechecks() {
+    assert!(check_src(r#"val s: String = "${1} ${true} ${2.5}""#).is_ok());
+}

@@ -289,3 +289,31 @@ fn reconcile_chain_length_four_typechecks() {
     "#;
     assert!(check_src(src).is_ok());
 }
+
+// ---------- `reconcile` rejected in value positions ----------
+
+#[test]
+fn reconcile_in_fn_param_default_is_rejected() {
+    // A `reconcile` inside a param default evaluates against a
+    // throwaway sink and would be silently dropped — reject it.
+    let src = "fn f(x: Int = if true { reconcile { shell(kind = \"sh\", name = \"dropped\", script = \"x\") } 1 } else { 1 }): Int { x }";
+    let err = check_src(src).expect_err("should fail");
+    assert!(err.iter().any(|d| d.message.contains("silently dropped")));
+}
+
+#[test]
+fn reconcile_in_struct_field_default_is_rejected() {
+    let src = "struct S { n: Int = if true { reconcile { shell(kind = \"sh\", name = \"dropped\", script = \"x\") } 1 } else { 1 } }";
+    let err = check_src(src).expect_err("should fail");
+    assert!(err.iter().any(|d| d.message.contains("silently dropped")));
+}
+
+#[test]
+fn reconcile_in_match_guard_is_rejected() {
+    let src = "val r: Int = match 1 {\n\
+               n if if true { reconcile { shell(kind = \"sh\", name = \"dropped\", script = \"x\") } true } else { false } => n,\n\
+               _ => 0,\n\
+               }";
+    let err = check_src(src).expect_err("should fail");
+    assert!(err.iter().any(|d| d.message.contains("silently dropped")));
+}

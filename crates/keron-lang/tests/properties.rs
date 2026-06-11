@@ -113,6 +113,13 @@ fn eval_simple(e: &Expr) -> Literal {
             Literal::Double(f) => Literal::Double(-f),
             other => panic!("cannot negate {other:?}"),
         },
+        Expr::Unary {
+            op: UnaryOp::Not,
+            operand,
+        } => match eval_simple(&operand.node) {
+            Literal::Boolean(b) => Literal::Boolean(!b),
+            other => panic!("cannot logically negate {other:?}"),
+        },
         Expr::Binary { .. }
         | Expr::Interpolation(_)
         | Expr::List(_)

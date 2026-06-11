@@ -142,22 +142,45 @@ where
                 Some(rhs) => merge_binary(BinOp::Pow, lhs, rhs),
             });
 
-        choice((
-            just('-')
-                .padded_by(pad())
-                .ignore_then(unary)
-                .map_with(|operand, e| Spanned {
-                    node: Expr::Unary {
-                        op: UnaryOp::Neg,
-                        operand: Box::new(operand),
-                    },
-                    span: span_to_range(e.span()),
-                }),
-            power,
-        ))
-        .labelled("expression")
+        let neg = just('-')
+            .padded_by(pad())
+            .ignore_then(unary.clone())
+            .map_with(|operand, e| Spanned {
+                node: Expr::Unary {
+                    op: UnaryOp::Neg,
+                    operand: Box::new(operand),
+                },
+                span: span_to_range(e.span()),
+            });
+
+        // `!` is logical negation. The `and_is(!= not)` lookahead keeps
+        // a stray prefix `!=` from being mis-read as `!` over `= ...`,
+        // so `a != b` (handled by `cmp_op`) is never reached here.
+        let not = just('!')
+            .and_is(just("!=").not())
+            .padded_by(pad())
+            .ignore_then(unary)
+            .map_with(|operand, e| Spanned {
+                node: Expr::Unary {
+                    op: UnaryOp::Not,
+                    operand: Box::new(operand),
+                },
+                span: span_to_range(e.span()),
+            });
+
+        choice((neg, not, power)).labelled("expression")
     })
 }
+
+/// Longest left-associative operator chain a single tier accepts
+/// before bailing. A flat `1 + 1 + … + 1` chain parses iteratively
+/// (no parser-stack recursion) but folds into a left-deep AST; with no
+/// bound, a 200k-term chain from an untrusted manifest builds a tree so
+/// deep that *dropping* it (recursive `Drop` glue on the `Box`-nested
+/// nodes) overflows the stack and aborts the process. 1024 is orders of
+/// magnitude above any real expression yet keeps the tree shallow
+/// enough to type-check, evaluate, and drop safely.
+const MAX_OPERATOR_CHAIN: usize = 1024;
 
 /// `tier := inner (op inner)*`, left-associative. Used for
 /// multiplicative, additive, and comparison stages — every
@@ -173,7 +196,25 @@ where
     inner
         .clone()
         .then(op.then(inner).repeated().collect::<Vec<_>>())
-        .map(|(lhs, ops)| ops.into_iter().fold(lhs, fold_left))
+        .validate(|(lhs, ops), e, emitter| {
+            if ops.len() > MAX_OPERATOR_CHAIN {
+                // Emit a diagnostic but return a shallow placeholder
+                // instead of `fold_left`-ing the deep tree: `validate`
+                // (unlike `try_map`) keeps the surrounding parse on its
+                // happy path, so the custom message survives instead of
+                // being discarded by error recovery — and the flat,
+                // shallow `ops` vector drops in linear time.
+                emitter.emit(Rich::custom(
+                    e.span(),
+                    format!(
+                        "operator chain too long ({} operands, limit {MAX_OPERATOR_CHAIN}); this is almost always a generated or malformed file",
+                        ops.len() + 1
+                    ),
+                ));
+                return lhs;
+            }
+            ops.into_iter().fold(lhs, fold_left)
+        })
 }
 
 fn mul_op<'src>() -> impl Parser<'src, &'src str, BinOp, Extra<'src>> + Clone {
