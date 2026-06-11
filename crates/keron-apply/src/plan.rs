@@ -829,24 +829,17 @@ fn classify_symlink(target: &Path, source: &Path, after: &ResourceState) -> Resu
     }
 }
 
-/// Diff a desired template render against the live filesystem.
-///
-/// - missing path → `Create`
-/// - regular file with byte-identical content → `NoOp`
-/// - regular file with different content → `Update` (the existing
-///   contents form the `before` state)
-/// - symlink / directory / other non-file occupant → hard error: the
-///   apply pipeline refuses to clobber user data the same way
-///   [`classify_symlink`] does for non-symlinks
-///
-/// Comparison is bytewise so a non-UTF-8 existing file falls cleanly
-/// through to `Update` rather than failing the read.
 /// True when `after` is a *sensitive* template but the live file at
 /// `meta` carries any group/other permission bit — i.e. a secret is
 /// currently world/group-readable and an Update is needed to clamp it
 /// back to `0o600`. Always false on non-Unix (Windows has no mode bits
 /// the executor manages) and for non-sensitive templates (whose mode is
 /// intentionally preserved, not enforced).
+//
+// On non-Unix the whole body collapses to `false`, which clippy would
+// flag as const-able; on Unix it reads `meta.mode()` and cannot be
+// const, so the allow is gated to the platforms where it applies.
+#[cfg_attr(not(unix), allow(clippy::missing_const_for_fn))]
 fn sensitive_template_mode_violation(after: &ResourceState, meta: &fs::Metadata) -> bool {
     #[cfg(unix)]
     {
@@ -865,6 +858,18 @@ fn sensitive_template_mode_violation(after: &ResourceState, meta: &fs::Metadata)
     false
 }
 
+/// Diff a desired template render against the live filesystem.
+///
+/// - missing path → `Create`
+/// - regular file with byte-identical content → `NoOp`
+/// - regular file with different content → `Update` (the existing
+///   contents form the `before` state)
+/// - symlink / directory / other non-file occupant → hard error: the
+///   apply pipeline refuses to clobber user data the same way
+///   [`classify_symlink`] does for non-symlinks
+///
+/// Comparison is bytewise so a non-UTF-8 existing file falls cleanly
+/// through to `Update` rather than failing the read.
 fn classify_template(path: &Path, content: &str, after: &ResourceState) -> Result<ResourceChange> {
     let address = path.display().to_string();
     let kind = ResourceKind::Template;
