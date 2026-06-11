@@ -110,6 +110,13 @@ Don't add local recipes for mutation testing; keep it in the workflow.
 - **Errors**: prefer `thiserror` for typed errors in libraries,
   `anyhow` only at the binary boundary.
 - **No `unsafe`.** Forbidden by lint.
+- **Stdlib namespace growth**: builtins share the single flat namespace
+  that user `fn`s live in, and builtins are unshadowable (a user `fn`
+  colliding with one is a hard error). So every new builtin is a
+  potential source-breaking change for existing manifests. Prefer a
+  domain prefix for new additions (`path_*`, `str_*`, `list_*`,
+  `map_*`) over squatting a maximally generic bare name (`get`, `with`,
+  `len`); bare names are grandfathered, not a pattern to extend.
 
 ### Comments
 

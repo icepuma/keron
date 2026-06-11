@@ -381,6 +381,9 @@ fn check_struct_pattern(
 /// Apply v1's exhaustiveness rule:
 /// - `StringUnion`: every variant must appear as a literal pattern,
 ///   OR there must be a catch-all (wildcard / bind).
+/// - `Boolean`: both `true` and `false` literal arms, OR a catch-all.
+/// - `Struct`: one irrefutable struct pattern (all fields bound /
+///   wildcarded), OR a catch-all.
 /// - `Nullable(T)`: a `null` literal arm is required, AND the
 ///   non-null side must be exhaustive against `T` (recursive rule;
 ///   for the common case `T = String` / `T = primitive`, that means
@@ -453,6 +456,24 @@ fn check_exhaustive(
                 .collect();
             check_exhaustive(inner, &inner_arms, scrutinee_span)
         }
+        // `Boolean` has a closed two-value domain: covering both
+        // `true` and `false` literal arms is exhaustive without a
+        // wildcard, exactly like a fully-covered `StringUnion`.
+        Type::Boolean if !has_catch_all => check_boolean_exhaustive(arms, scrutinee_span),
+        // A struct scrutinee is a single nominal type, so one
+        // irrefutable struct pattern (`Point { x, y }`, all fields
+        // bound or wildcarded) covers every value. A refutable field
+        // pattern (`Point { x: 0, y }`) does not, and still needs a
+        // wildcard — matching the `match_missing_wildcard_struct`
+        // corpus case.
+        Type::Struct { .. }
+            if has_catch_all
+                || arms
+                    .iter()
+                    .any(|a| a.guard.is_none() && is_irrefutable_pattern(&a.pattern.node)) =>
+        {
+            Ok(())
+        }
         _ => {
             if has_catch_all {
                 Ok(())
@@ -468,8 +489,53 @@ fn check_exhaustive(
     }
 }
 
+/// Exhaustiveness for a `Boolean` scrutinee with no catch-all: both
+/// `true` and `false` literal arms (unguarded) must be present.
+fn check_boolean_exhaustive(arms: &[MatchArm], scrutinee_span: Span) -> Result<(), Diagnostic> {
+    let covers = |want: bool| {
+        arms.iter().any(|a| {
+            a.guard.is_none()
+                && matches!(&a.pattern.node, Pattern::Lit(Literal::Boolean(b)) if *b == want)
+        })
+    };
+    let mut missing = Vec::new();
+    if !covers(true) {
+        missing.push("`true`");
+    }
+    if !covers(false) {
+        missing.push("`false`");
+    }
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(Diagnostic::new(
+            scrutinee_span,
+            format!(
+                "non-exhaustive `match` on `Boolean`: missing {}",
+                missing.join(", ")
+            ),
+        ))
+    }
+}
+
 const fn is_catch_all(p: &Pattern) -> bool {
     matches!(p, Pattern::Wildcard | Pattern::Bind(_))
+}
+
+/// A pattern that matches every value of its type: a wildcard, a bare
+/// bind, or a struct pattern whose every field sub-pattern is itself
+/// irrefutable. A literal field pattern (`Point { x: 0 }`) is
+/// refutable and makes the whole pattern refutable.
+fn is_irrefutable_pattern(p: &Pattern) -> bool {
+    match p {
+        Pattern::Wildcard | Pattern::Bind(_) => true,
+        Pattern::Struct { fields, .. } => fields.iter().all(|f| {
+            f.pattern
+                .as_ref()
+                .is_none_or(|sub| is_irrefutable_pattern(&sub.node))
+        }),
+        Pattern::Lit(_) => false,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

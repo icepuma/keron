@@ -8,6 +8,7 @@ mod keys;
 mod lists;
 mod literals;
 mod maps;
+mod matching;
 mod nullable;
 mod packages;
 mod reconcile;

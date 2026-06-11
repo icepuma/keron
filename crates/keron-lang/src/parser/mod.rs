@@ -1,6 +1,7 @@
 //! chumsky-based parser for keron source.
 
 mod block;
+mod depth;
 mod expr;
 mod fn_decl;
 mod match_expr;
@@ -39,6 +40,10 @@ use self::{
 /// # Errors
 /// Returns one or more [`Diagnostic`]s when the source has syntax errors.
 pub fn parse(src: &str) -> Result<Program, Vec<Diagnostic>> {
+    // Reject pathologically nested input before chumsky recurses on the
+    // native stack, so a malicious manifest gets a clean diagnostic
+    // instead of aborting the process with a stack overflow.
+    depth::enforce_nesting_limit(src)?;
     let result = program().parse(src);
     if result.has_errors() {
         Err(result.errors().map(rich_to_diagnostic).collect())

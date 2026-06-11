@@ -2,7 +2,7 @@
 
 A user-level dotfile and package manager driven by a small declarative language.
 
-> **Status:** alpha (0.1.x) — the language and CLI will change without notice.
+> **Status:** alpha (0.5.x) — the language and CLI will change without notice.
 > Co-developed with AI, reviewed by humans.
 
 ## What it is
@@ -52,8 +52,8 @@ order).
 
 ## The language at a glance
 
-- Static types: `String`, `Int`, `Bool`, nullable (`?`), lists, maps, structs,
-  closed string unions.
+- Static types: `String`, `Int`, `Double`, `Boolean`, nullable (`?`), lists,
+  maps, structs, closed string unions.
 - Control flow: `if`/`else`, `match`, `for` over lists and maps.
 - Imports: `from "./other.keron" use a, b` — user files only; the stdlib is
   implicit.
@@ -62,14 +62,16 @@ order).
   (`brew("icepuma/keron/keron", "https://github.com/icepuma/keron")`)
   and a slash-qualified name (`brew("user/tap/formula")`) auto-derives
   the conventional `homebrew-<tap>` URL.
-- `reconcile { ... }` blocks emit the resources to apply; chain with `->` for
-  ordering.
+- `reconcile { ... }` blocks emit the resources to apply. `->` and source
+  order group resources for readability, but are **not** a hard ordering
+  guarantee: the executor batches package installs and runs every step that
+  needs elevation after the unprivileged ones, so don't rely on `->` to
+  sequence a privileged write before an unprivileged step that reads it.
 - Eval-time file IO is confined to the keron root.
 
 ## License
 
-Dual-licensed under MIT OR Apache-2.0 (see `Cargo.toml`). A top-level `LICENSE`
-file will be added before 0.2.
+MIT licensed (see [`LICENSE`](LICENSE)).
 
 ---
 

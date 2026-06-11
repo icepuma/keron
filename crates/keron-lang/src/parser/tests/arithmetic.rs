@@ -108,6 +108,38 @@ fn double_negation() {
 }
 
 #[test]
+fn logical_not_parses_as_unary() {
+    let e = expr_of("val a = !true");
+    let Expr::Unary { op, operand } = e.node else {
+        panic!("expected unary, got {:?}", e.node);
+    };
+    assert_eq!(op, UnaryOp::Not);
+    assert_eq!(operand.node, Expr::Literal(Literal::Boolean(true)));
+}
+
+#[test]
+fn not_equals_is_binary_neq_not_prefix_not() {
+    // `x != y` must stay a binary `!=`, never `x` followed by `!(= y)`.
+    let e = expr_of("val a = x != y");
+    let (op, _, _) = binop(&e.node);
+    assert_eq!(op, BinOp::Neq);
+}
+
+#[test]
+fn not_binds_tighter_than_and() {
+    // `!a && b` parses as `(!a) && b`.
+    let e = expr_of("val a = !x && y");
+    let (op, lhs, _) = binop(&e.node);
+    assert_eq!(op, BinOp::And);
+    let Expr::Unary {
+        op: UnaryOp::Not, ..
+    } = lhs.node
+    else {
+        panic!("expected `!x` on the left of `&&`, got {:?}", lhs.node);
+    };
+}
+
+#[test]
 fn whitespace_around_operators() {
     assert!(parse("val a = 1+2*3-4/5**6").is_ok());
     assert!(parse("val a =  1   +   2  ").is_ok());
@@ -128,6 +160,37 @@ fn rejects_double_operator() {
 fn rejects_unmatched_paren() {
     assert!(parse("val a = (1 + 2").is_err());
     assert!(parse("val a = 1 + 2)").is_err());
+}
+
+#[test]
+fn rejects_pathologically_nested_parens_without_crashing() {
+    // The nesting guard must turn a 100k-deep paren bomb into a clean
+    // parse error instead of a native stack overflow / SIGABRT.
+    let src = format!("val a = {}1{}", "(".repeat(100_000), ")".repeat(100_000));
+    let err = parse(&src).expect_err("deep nesting must be rejected");
+    assert!(err[0].message.contains("nested too deeply"));
+}
+
+#[test]
+fn rejects_overlong_operator_chain_without_crashing() {
+    // A 200k-term flat chain parses iteratively but would fold into a
+    // tree too deep to drop safely. The chain-length bound turns it
+    // into a clean parse error.
+    let src = format!("val a = 1{}", " + 1".repeat(200_000));
+    let err = parse(&src).expect_err("overlong chain must be rejected");
+    assert!(
+        err.iter()
+            .any(|d| d.message.contains("operator chain too long")),
+        "messages: {:?}",
+        err.iter().map(|d| d.message.clone()).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn accepts_chain_at_the_limit() {
+    // 1024 operators (1025 operands) is exactly at the bound.
+    let src = format!("val a = 1{}", " + 1".repeat(1_024));
+    assert!(parse(&src).is_ok());
 }
 
 // ---------- ++ (concat) ----------

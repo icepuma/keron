@@ -743,6 +743,7 @@ dependencies = [
  "insta",
  "libtest-mimic",
  "proptest",
+ "stacker",
  "thiserror",
 ]
 

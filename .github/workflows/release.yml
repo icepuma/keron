@@ -17,7 +17,33 @@ env:
   RUST_TOOLCHAIN: 1.95.0
 
 jobs:
+  # Gate the whole pipeline on the test suite: a tag can be created on a
+  # commit that never went through PR CI, so without this nothing stops
+  # a red commit from being compiled, signed, and published as `latest`.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1
+        with:
+          components: rustfmt, clippy
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2
+        with:
+          tool: nextest
+
+      - name: fmt + clippy + tests
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+          cargo nextest run --workspace --all-features --locked --no-tests=pass
+
   build:
+    needs: test
     runs-on: ${{ matrix.runner }}
 
     strategy:
@@ -47,19 +73,19 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Install Zig
         if: matrix.build_tool == 'zigbuild'
-        uses: mlugg/setup-zig@v2
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
         with:
           version: 0.15.2
 
       - name: Install cargo-zigbuild
         if: matrix.build_tool == 'zigbuild'
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2
         with:
-          tool: cargo-zigbuild
+          tool: cargo-zigbuild@0.22.3
 
       - name: Install Rust ${{ env.RUST_TOOLCHAIN }}
         run: |
@@ -72,7 +98,7 @@ jobs:
       # the action layer the lockfile / rustc-version hashes on top so
       # a lockfile change still invalidates correctly.
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2.9.1
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: release-${{ matrix.target }}
 
@@ -114,7 +140,7 @@ jobs:
           tar -C dist -czf "dist/${archive_root}.tar.gz" "${archive_root}"
 
       - name: Upload archive artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: package-${{ matrix.archive_suffix }}
           path: dist/*.tar.gz
@@ -126,13 +152,18 @@ jobs:
 
     permissions:
       contents: write
+      # Required by `actions/attest-build-provenance` to mint a signed,
+      # publicly-verifiable provenance attestation for the release
+      # artifacts (verify with `gh attestation verify <file> --repo …`).
+      id-token: write
+      attestations: write
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Download release artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: dist
           pattern: package-*
@@ -143,8 +174,16 @@ jobs:
           cd dist
           sha256sum *.tar.gz > SHA256SUMS
 
+      # SLSA build provenance for the published tarballs. Gives users a
+      # cryptographic chain from artifact to this workflow run, so the
+      # self-attesting SHA256SUMS isn't the only integrity reference.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: dist/*.tar.gz
+
       - name: Create or update GitHub release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
         with:
           fail_on_unmatched_files: true
           files: |
@@ -152,7 +191,9 @@ jobs:
             dist/SHA256SUMS
           generate_release_notes: true
           make_latest: ${{ contains(github.ref_name, '-') && 'false' || 'true' }}
-          overwrite_files: true
+          # `overwrite_files` deliberately omitted (defaults false): a
+          # re-pushed tag should fail loudly rather than silently swap
+          # already-published, possibly-already-downloaded assets.
           prerelease: ${{ contains(github.ref_name, '-') }}
           tag_name: ${{ github.ref_name }}
 

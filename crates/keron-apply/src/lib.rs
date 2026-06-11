@@ -139,7 +139,9 @@ pub(crate) struct RunFlags {
 pub fn run(path: &Path, execute: bool, verbose: bool) -> std::result::Result<Outcome, RunError> {
     let stdin = io::stdin();
     let stdout = io::stdout();
-    let color = stdout.is_terminal();
+    // Honor `NO_COLOR` (https://no-color.org) like the `format`
+    // subcommand does, in addition to requiring a tty.
+    let color = stdout.is_terminal() && std::env::var_os("NO_COLOR").is_none();
     let mut sin = stdin.lock();
     let mut sout = stdout.lock();
     let flags = RunFlags {
@@ -148,6 +150,49 @@ pub fn run(path: &Path, execute: bool, verbose: bool) -> std::result::Result<Out
         verbose,
     };
     run_with_io(path, &mut sin, &mut sout, flags)
+}
+
+/// Parse, resolve, and type-check `path` without building a plan.
+///
+/// This is the cheap, side-effect-free validation path for CI and
+/// editor integration: unlike [`run`] it never reaches
+/// `build_prechecked_plan`, so it does not resolve `secret(...)` URIs
+/// against `op`/`bw`/`infisical` or probe package managers. It catches
+/// every parse, module-resolution, and type error.
+///
+/// # Errors
+/// Returns [`RunError::PreApply`] when loading, module resolution, or
+/// type checking fails.
+pub fn check(path: &Path) -> std::result::Result<(), RunError> {
+    let source = load::load(path).map_err(RunError::PreApply)?;
+    let roots = entry_sources(source);
+    resolve(roots).map_err(|bundle| {
+        RunError::PreApply(anyhow::anyhow!(
+            "module resolution failed:\n{}",
+            report::render(&bundle, false)
+        ))
+    })?;
+    Ok(())
+}
+
+/// Build the resolver's per-file [`EntrySource`] list from a loaded
+/// source tree. Shared by [`run_with_io`] and [`check`].
+fn entry_sources(source: load::LoadedSource) -> Vec<EntrySource> {
+    source
+        .files
+        .into_iter()
+        .map(|f| {
+            let base_dir = f
+                .path
+                .parent()
+                .map_or_else(|| f.path.clone(), Path::to_path_buf);
+            EntrySource {
+                text: f.text,
+                base_dir,
+                id: ModuleId(f.path),
+            }
+        })
+        .collect()
 }
 
 /// Test-friendly entry: same logic as [`run`] but with explicit IO so
@@ -179,26 +224,20 @@ where
 
     let source = load::load(path).map_err(RunError::PreApply)?;
     let keron_root = keron_root_for(path, &source).map_err(RunError::PreApply)?;
-    let roots: Vec<EntrySource> = source
-        .files
-        .into_iter()
-        .map(|f| {
-            let base_dir = f
-                .path
-                .parent()
-                .map_or_else(|| f.path.clone(), Path::to_path_buf);
-            EntrySource {
-                text: f.text,
-                base_dir,
-                id: ModuleId(f.path),
-            }
-        })
-        .collect();
+    let roots = entry_sources(source);
 
     let graph = resolve(roots).map_err(|bundle| {
+        // Render the diagnostic report WITHOUT color. This string is
+        // wrapped in an error chain that the CLI later runs through
+        // `sanitize_terminal_message`, which escapes every ESC byte to a
+        // literal `\u{001b}` — so baking ANSI color in here (as
+        // `color` would on an interactive run) turns every syntax /
+        // type / module error into escaped-ANSI soup. Plain text renders
+        // cleanly through the sanitizer; the source snippet's
+        // manifest-derived content still gets neutralized.
         RunError::PreApply(anyhow::anyhow!(
             "module resolution failed:\n{}",
-            report::render(&bundle, color)
+            report::render(&bundle, false)
         ))
     })?;
 
@@ -458,6 +497,37 @@ mod tests {
             },
         );
         (res, String::from_utf8(sout).unwrap())
+    }
+
+    #[test]
+    fn module_resolution_error_carries_no_ansi_even_on_color_run() {
+        // Regression for the "ANSI soup" bug: a type/module error
+        // rendered with color baked in is later escaped to literal
+        // `\u{001b}` by the CLI sanitizer, turning every interactive
+        // error into garbage. With color flowing in as `true`, the
+        // error string must still contain no raw ESC byte.
+        let proj = TempProject::new("ansi-soup");
+        let entry = proj.write("entry.keron", "val x: Int = \"nope\"\n");
+        let mut sin = Cursor::new(Vec::new());
+        let mut sout: Vec<u8> = Vec::new();
+        let err = run_with_io(
+            &entry,
+            &mut sin,
+            &mut sout,
+            RunFlags {
+                execute: false,
+                color: true,
+                verbose: false,
+            },
+        )
+        .expect_err("type error must fail");
+        let msg = format!("{err:#}");
+        assert!(
+            !msg.contains('\u{001b}'),
+            "error must not carry raw ANSI: {msg:?}"
+        );
+        // Sanity: it really is the diagnostic, not some other failure.
+        assert!(msg.contains("module resolution failed"), "got: {msg}");
     }
 
     #[test]

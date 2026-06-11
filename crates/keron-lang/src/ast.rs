@@ -73,9 +73,15 @@ pub struct UseDecl {
 /// Three surface forms collapse into one shape: the bare single
 /// resource (`reconcile x`), the inline chain (`reconcile a -> b -> c`),
 /// and the block form (`reconcile { … }`). Each top-level element of
-/// [`Self::chains`] is one logical step, executed in source order;
-/// within a step, the inner `Vec` carries `->`-chained sub-steps, also
-/// in source order.
+/// [`Self::chains`] is one logical step; within a step, the inner `Vec`
+/// carries `->`-chained sub-steps. Both are recorded in source order.
+///
+/// Note: this structure is *flattened* at evaluation time — the plan
+/// carries no chain edges. `->` and source order therefore express
+/// intent and grouping, not an enforced execution order: the executor
+/// batches package installs and partitions elevated changes after
+/// unprivileged ones, so a `->` chain that crosses a privilege boundary
+/// or a package batch is not guaranteed to run in the written order.
 ///
 /// The two `Vec`s are non-empty by construction: the parser rejects an
 /// empty block and a trailing/missing-head `->`.
@@ -181,6 +187,17 @@ pub enum IntrinsicId {
     /// the value when the variable is set (even if empty), or `null`
     /// when it is unset. Distinguishing "unset" from "empty" is the
     /// whole reason the return type is nullable rather than `String`.
+    ///
+    /// **Security:** `env(...)` output is a *plain* (untainted) string,
+    /// not a [`Self::Secret`]. A value sourced from the environment and
+    /// interpolated into a `template` is therefore written world-readable
+    /// (mode `0o644`, not `0o600`) and is shown verbatim in the diff with
+    /// no `[sensitive]` marker. This is deliberate — `env("HOME")` /
+    /// `env("USER")` are non-secret and the `Secret` taint path exists
+    /// precisely so credentials are handled explicitly. If a variable
+    /// holds a credential (`env("GITHUB_TOKEN")`), do **not** template it
+    /// directly; route it through `secret(...)` so it gets the tainted,
+    /// owner-only, redacted treatment.
     Env,
     /// `secret(uri)` — resolve an external secret URI into a
     /// `Secret` value. Eager: the URI is read at plan-build time and
@@ -211,15 +228,15 @@ pub enum IntrinsicId {
     /// form `user/tap/formula` declares the formula's tap inline; the
     /// optional `tap_url` overrides the auto-derived `homebrew-<tap>`
     /// GitHub URL for taps whose repo doesn't follow that naming
-    /// convention. State is classified Create / `NoOp` / Update by diffing
-    /// against `brew list --formula -1` (bare-name match) and
-    /// `brew outdated --formula --quiet` (qualified-name match).
+    /// convention. State is classified Create / `NoOp` by diffing
+    /// against `brew list --formula -1` (bare-name match); `keron apply`
+    /// only ensures presence and never upgrades an installed formula.
     Brew,
     /// `cask(name, tap_url? = null)` — declares a Homebrew cask. The
     /// apply step runs `brew install --cask`. Same tap rules and same
-    /// Create / `NoOp` / Update upsert as [`Self::Brew`], but diffed
-    /// against the cask-side lists (`brew list --cask -1` and
-    /// `brew outdated --cask --quiet`). Cask resources are macOS-only.
+    /// presence-only Create / `NoOp` classification as [`Self::Brew`],
+    /// but diffed against the cask-side list (`brew list --cask -1`).
+    /// Cask resources are macOS-only.
     Cask,
     /// `cargo(name)` — declares a `cargo install` binary. v1
     /// carries only the crate name.
@@ -289,6 +306,18 @@ pub enum IntrinsicId {
     Replace,
     /// `trim(s)` — strip leading and trailing Unicode whitespace.
     Trim,
+    /// `starts_with(s, prefix) -> Boolean` — true when `s` begins with
+    /// `prefix`. An empty `prefix` is `true` (matches Rust's
+    /// `str::starts_with`). The canonical host-name gate
+    /// (`if starts_with(hostname(), "work-") { … }`).
+    StartsWith,
+    /// `ends_with(s, suffix) -> Boolean` — true when `s` ends with
+    /// `suffix`. An empty `suffix` is `true`.
+    EndsWith,
+    /// `str_len(s) -> Int` — number of Unicode scalar values (chars) in
+    /// `s`, not bytes. Named distinctly from the List-only `len` so the
+    /// generic `len` machinery stays untouched.
+    StrLen,
     /// `len(xs: List<T>) -> Int` — element count. Generic in `T`.
     ListLen,
     /// `list_contains(xs: List<T>, x: T) -> Boolean` — membership
@@ -365,6 +394,13 @@ pub enum IntrinsicId {
     /// is deliberately not the right place to debug "why didn't my
     /// file load"; users diagnose with `path_exists(…)` first if they
     /// need granularity, then call `read_file` once the path resolves.
+    ///
+    /// Like [`Self::Env`], the returned string is *plain* (untainted):
+    /// it is written world-readable and shown unredacted in the diff.
+    /// The root-confinement means the content is already inside the
+    /// keron repo (so already as exposed as the repo itself); for true
+    /// secrets use `secret(...)` rather than committing them and reading
+    /// them back.
     ReadFile,
     /// `sort(xs: List<String>) -> List<String>` — Unicode codepoint
     /// order ascending. Deliberately *not* generic in `T`: real
@@ -502,7 +538,7 @@ pub enum Expr {
     /// `List<T>` annotation upstream to be type-checked.
     List(Vec<Spanned<Self>>),
     /// `{k: v, …}`. Empty maps similarly require a `Map<K, V>`
-    /// annotation. Allowed key types: `String`, `Int`, `Boolean`.
+    /// annotation. Allowed key types: `String`, `Int`.
     Map(Vec<MapEntry>),
     /// Reference to a previously-declared `val`. Resolved against the
     /// declaration order; forward references are an error.
@@ -626,7 +662,10 @@ pub enum StringPart {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOp {
+    /// Arithmetic negation `-x` (`Int`/`Double`).
     Neg,
+    /// Logical negation `!x` (`Boolean`).
+    Not,
 }
 
 impl UnaryOp {
@@ -634,6 +673,7 @@ impl UnaryOp {
     pub const fn symbol(self) -> &'static str {
         match self {
             Self::Neg => "-",
+            Self::Not => "!",
         }
     }
 }

@@ -263,11 +263,17 @@ impl PackageCache {
         if installed {
             return Ok(Action::NoOp);
         }
+        // Dedup the per-run "scheduled" set by *bare* name, matching the
+        // installed-set lookup above. Keying on the full manifest name
+        // would let a bare `brew("ripgrep")` and a tap-qualified
+        // `brew("sometap/tap/ripgrep")` both classify Create — the plan
+        // would over-report and the package phase would ask brew to
+        // install the same formula under two names in one invocation.
         let scheduled = self.scheduled.entry(manager).or_default();
-        Ok(if scheduled.contains(name) {
+        Ok(if scheduled.contains(bare) {
             Action::NoOp
         } else {
-            scheduled.insert(name.to_string());
+            scheduled.insert(bare.to_string());
             Action::Create
         })
     }
@@ -555,6 +561,17 @@ fn install_many_with_stdio(
 fn spawn_batch(binary: &str, args: &[String], stdio: BatchStdio) -> Result<BatchOutput> {
     let mut cmd = Command::new(binary);
     cmd.args(args);
+    // Match the probe path's `HOMEBREW_NO_AUTO_UPDATE=1`: without it an
+    // install can kick off an implicit `brew update`, and when the
+    // formula and cask phases run concurrently both may do so at once —
+    // maximizing contention on brew's global lock and producing flaky
+    // "Another active Homebrew process is already in progress" failures.
+    if std::path::Path::new(binary)
+        .file_name()
+        .is_some_and(|n| n == "brew")
+    {
+        cmd.env("HOMEBREW_NO_AUTO_UPDATE", "1");
+    }
     match stdio {
         BatchStdio::Inherit => {
             cmd.stdin(Stdio::inherit())
@@ -621,10 +638,16 @@ pub fn validate_package_manager_supported(manager: PackageManager, os: OsFamily)
 /// argument; a name beginning with `-` becomes a flag the CLI
 /// interprets — e.g. `cargo install --git=…` would run arbitrary
 /// build scripts as the user. Also forbid embedded NUL since
-/// argv can't carry it.
+/// argv can't carry it, and any other ASCII control character (`\r`,
+/// `\x1b`, …): such a name is never a legitimate package identifier for
+/// any manager and would otherwise reach the package-phase status lines
+/// — which print the name raw, outside the terminal-sanitization the
+/// diff renderer applies — letting a hostile manifest forge `[ok]` /
+/// `[FAILED]` markers via cursor moves.
 ///
 /// # Errors
-/// Errors when `name` is empty, begins with `-`, or contains a NUL byte.
+/// Errors when `name` is empty, begins with `-`, or contains an ASCII
+/// control character.
 pub fn validate_package_name(manager: PackageManager, name: &str) -> Result<()> {
     if name.is_empty() {
         bail!("{} package name must not be empty", manager.kind_label());
@@ -635,10 +658,11 @@ pub fn validate_package_name(manager: PackageManager, name: &str) -> Result<()> 
             manager.kind_label()
         );
     }
-    if name.contains('\0') {
+    if let Some(c) = name.chars().find(char::is_ascii_control) {
         bail!(
-            "{} package name must not contain a NUL byte",
-            manager.kind_label()
+            "{} package name must not contain control characters (found {:?})",
+            manager.kind_label(),
+            c
         );
     }
     Ok(())
@@ -1021,6 +1045,27 @@ mod tests {
     }
 
     #[test]
+    fn classify_package_dedupes_bare_and_qualified_names_in_one_plan() {
+        let _g = lock_env();
+        // Two references to the same formula — one bare, one
+        // tap-qualified — must classify Create / NoOp, not Create /
+        // Create, so the plan doesn't double-count and the package
+        // phase doesn't try to install the same formula twice in one
+        // `brew install` invocation.
+        set_env("KERON_TEST_BREW_PACKAGES", "");
+        let mut cache = PackageCache::for_tests();
+        let first = cache
+            .classify_package(PackageManager::Brew, "ripgrep")
+            .unwrap();
+        let second = cache
+            .classify_package(PackageManager::Brew, "sometap/tap/ripgrep")
+            .unwrap();
+        clear_env(&["KERON_TEST_BREW_PACKAGES"]);
+        assert_eq!(first, Action::Create);
+        assert_eq!(second, Action::NoOp);
+    }
+
+    #[test]
     fn classify_package_brew_cask_uses_its_own_installed_set() {
         let _g = lock_env();
         // Casks live in a separate namespace; a cask named "alacritty"
@@ -1262,10 +1307,15 @@ mod tests {
     }
 
     #[test]
-    fn validate_package_name_rejects_nul_byte() {
+    fn validate_package_name_rejects_control_characters() {
         let _g = lock_env();
-        let err = validate_package_name(PackageManager::Brew, "rip\0grep").unwrap_err();
-        assert!(format!("{err:#}").contains("NUL byte"), "got: {err:#}");
+        for bad in ["rip\0grep", "rg\r--- forged ---", "rg\x1b[2K"] {
+            let err = validate_package_name(PackageManager::Brew, bad).unwrap_err();
+            assert!(
+                format!("{err:#}").contains("control characters"),
+                "name {bad:?} should be rejected, got: {err:#}"
+            );
+        }
     }
 
     #[test]
