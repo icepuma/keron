@@ -32,12 +32,13 @@
 //! drive any cache state without a real `brew` / `cargo` / `winget`
 //! on the host. Brew has additional seams for casks
 //! (`KERON_TEST_BREW_CASK_PACKAGES`), installed taps
-//! (`KERON_TEST_BREW_TAPS`), and per-tap remote URLs
-//! (`KERON_TEST_BREW_TAP_REMOTES=user/repo=URL;user2/repo2=URL2`).
-//! The install side reads `KERON_TEST_PACKAGE_BIN_<MGR>` to swap the
-//! binary path for a spy script. All seams require
-//! `KERON_ALLOW_TEST_OVERRIDES=1` so stray environment variables
-//! cannot falsify a real run.
+//! (`KERON_TEST_BREW_TAPS`), per-tap remote URLs
+//! (`KERON_TEST_BREW_TAP_REMOTES=user/repo=URL;user2/repo2=URL2`),
+//! and per-tap trust flags (`KERON_TEST_BREW_TAP_TRUSTED=user/repo=true;...`,
+//! defaulting to trusted when unset). The install side reads
+//! `KERON_TEST_PACKAGE_BIN_<MGR>` to swap the binary path for a spy
+//! script. All seams require `KERON_ALLOW_TEST_OVERRIDES=1` so stray
+//! environment variables cannot falsify a real run.
 
 pub mod brew;
 pub mod cargo;
@@ -68,10 +69,10 @@ pub struct PackageCache {
     /// `user/repo` strings from `brew tap`. Loaded lazily on first
     /// `classify_tap` call.
     installed_taps: Option<HashSet<String>>,
-    /// Per-tap remote URL memo, populated on demand via
-    /// `brew tap-info --json`. Only consulted when a tap is already
-    /// installed AND the manifest declared a custom URL.
-    tap_remotes: HashMap<String, Option<String>>,
+    /// Per-tap info (remote URL + trust flag) memo, populated on demand
+    /// via `brew tap-info --json=v1`. The remote is consulted for URL
+    /// drift; the trust flag drives the brew 6.0 tap-trust action.
+    tap_info: HashMap<String, Option<brew::TapInfo>>,
     /// Names already classified as Create in this run — second
     /// occurrence collapses to `NoOp`.
     scheduled: HashMap<PackageManager, HashSet<String>>,
@@ -85,7 +86,7 @@ impl PackageCache {
             os,
             installed: HashMap::new(),
             installed_taps: None,
-            tap_remotes: HashMap::new(),
+            tap_info: HashMap::new(),
             scheduled: HashMap::new(),
             scheduled_taps: HashSet::new(),
         }
@@ -104,7 +105,7 @@ impl PackageCache {
     /// running them concurrently. Walks `resources` to determine which
     /// `(manager, query)` shell-outs would otherwise be incurred
     /// lazily by [`Self::ensure_installed_loaded`] /
-    /// [`Self::ensure_taps_loaded`] / [`Self::tap_remote`], then fans
+    /// [`Self::ensure_taps_loaded`] / [`Self::tap_info`], then fans
     /// them out across `std::thread::scope` worker threads. Each
     /// worker is I/O-bound (waiting on a subprocess), so the wall
     /// time collapses to roughly the slowest probe rather than the
@@ -126,7 +127,7 @@ impl PackageCache {
     pub fn prewarm(&mut self, resources: &[ResourceState]) -> Result<()> {
         let mut needed_installed: HashSet<PackageManager> = HashSet::new();
         let mut need_taps = false;
-        let mut needed_tap_remotes: Vec<String> = Vec::new();
+        let mut needed_tap_infos: Vec<String> = Vec::new();
 
         for state in resources {
             match state {
@@ -139,8 +140,12 @@ impl PackageCache {
                     if self.installed_taps.is_none() {
                         need_taps = true;
                     }
-                    if spec.url.is_some() && !self.tap_remotes.contains_key(&spec.user_tap) {
-                        needed_tap_remotes.push(spec.user_tap.clone());
+                    // Probe every referenced tap (not just URL-qualified
+                    // ones): brew 6.0 trust state is needed to decide
+                    // whether an installed-but-untrusted tap classifies
+                    // as an Update.
+                    if !self.tap_info.contains_key(&spec.user_tap) {
+                        needed_tap_infos.push(spec.user_tap.clone());
                     }
                 }
                 ResourceState::Symlink { .. }
@@ -151,10 +156,10 @@ impl PackageCache {
             }
         }
 
-        needed_tap_remotes.sort();
-        needed_tap_remotes.dedup();
+        needed_tap_infos.sort();
+        needed_tap_infos.dedup();
 
-        if needed_installed.is_empty() && !need_taps && needed_tap_remotes.is_empty() {
+        if needed_installed.is_empty() && !need_taps && needed_tap_infos.is_empty() {
             return Ok(());
         }
 
@@ -169,7 +174,7 @@ impl PackageCache {
         let ProbeResults {
             installed_results,
             taps_result,
-            tap_remote_results,
+            tap_info_results,
         } = std::thread::scope(|s| {
             #[allow(clippy::needless_collect)]
             let installed_handles: Vec<(PackageManager, _)> = installed_managers
@@ -183,12 +188,12 @@ impl PackageCache {
                 None
             };
             #[allow(clippy::needless_collect)]
-            let tap_remote_handles: Vec<(String, _)> = needed_tap_remotes
+            let tap_info_handles: Vec<(String, _)> = needed_tap_infos
                 .iter()
                 .cloned()
                 .map(|t| {
                     let key = t.clone();
-                    (key, s.spawn(move || fetch_tap_remote(&t)))
+                    (key, s.spawn(move || fetch_tap_info(&t)))
                 })
                 .collect();
 
@@ -198,7 +203,7 @@ impl PackageCache {
                     .map(|(m, h)| (m, join_probe(h)))
                     .collect();
             let taps_result = taps_handle.map(join_probe);
-            let tap_remote_results: Vec<(String, Result<Option<String>>)> = tap_remote_handles
+            let tap_info_results: Vec<(String, Result<Option<brew::TapInfo>>)> = tap_info_handles
                 .into_iter()
                 .map(|(t, h)| (t, join_probe(h)))
                 .collect();
@@ -206,7 +211,7 @@ impl PackageCache {
             ProbeResults {
                 installed_results,
                 taps_result,
-                tap_remote_results,
+                tap_info_results,
             }
         });
 
@@ -224,11 +229,11 @@ impl PackageCache {
             let set = r.context("listing installed brew taps (`brew tap`)")?;
             self.installed_taps = Some(set);
         }
-        for (t, r) in tap_remote_results {
-            let remote = r.with_context(|| {
-                format!("reading remote URL for tap `{t}` (`brew tap-info --json`)")
+        for (t, r) in tap_info_results {
+            let info = r.with_context(|| {
+                format!("reading remote URL for tap `{t}` (`brew tap-info --json=v1`)")
             })?;
-            self.tap_remotes.insert(t, remote);
+            self.tap_info.insert(t, info);
         }
 
         Ok(())
@@ -280,13 +285,17 @@ impl PackageCache {
 
     /// Classify a tap registration against the live state.
     ///
-    ///   - `Update` — tap is installed but its remote URL differs
-    ///     from the requested one. Only checked when the manifest
-    ///     declared a custom URL.
-    ///   - `NoOp` — tap is installed (URL matches, OR no URL was
-    ///     declared so any remote is acceptable), OR another tap
-    ///     resource in this plan already claimed a Create.
-    ///   - `Create` — tap isn't installed yet.
+    ///   - `Create` — tap isn't installed yet (the executor taps then
+    ///     trusts it).
+    ///   - `Update` — tap is installed but its remote URL differs from
+    ///     the requested one (checked only when the manifest declared a
+    ///     custom URL), OR the tap is installed but untrusted under brew
+    ///     6.0's tap-trust model. The executor re-taps (rewriting the
+    ///     remote when a URL drifted) then trusts.
+    ///   - `NoOp` — tap is installed, the remote matches (or no URL was
+    ///     declared), and it is trusted (or trust isn't enforced on this
+    ///     brew); OR another tap resource in this plan already claimed a
+    ///     Create.
     pub fn classify_tap(&mut self, spec: &TapSpec) -> Result<Action> {
         self.ensure_taps_loaded()?;
         let installed = self
@@ -301,15 +310,22 @@ impl PackageCache {
             self.scheduled_taps.insert(spec.user_tap.clone());
             return Ok(Action::Create);
         }
-        let Some(want_url) = spec.url.as_deref() else {
-            return Ok(Action::NoOp);
-        };
-        let actual = self.tap_remote(&spec.user_tap)?;
-        if actual.as_deref() == Some(want_url) {
-            Ok(Action::NoOp)
-        } else {
-            Ok(Action::Update)
+        let info = self.tap_info(&spec.user_tap)?;
+        // URL drift is only meaningful when the manifest declared a URL.
+        if let Some(want_url) = spec.url.as_deref() {
+            let actual = info.as_ref().and_then(|i| i.remote.as_deref());
+            if actual.map(brew::normalize_remote) != Some(brew::normalize_remote(want_url)) {
+                return Ok(Action::Update);
+            }
         }
+        // Brew 6.0 tap trust: an installed-but-untrusted tap needs an
+        // explicit `brew trust`. `trusted == None` (pre-6.0 brew, which
+        // doesn't enforce trust) is treated as satisfied so older brew
+        // never emits a spurious drift action.
+        if info.as_ref().and_then(|i| i.trusted) == Some(false) {
+            return Ok(Action::Update);
+        }
+        Ok(Action::NoOp)
     }
 
     fn ensure_installed_loaded(&mut self, manager: PackageManager) -> Result<()> {
@@ -339,16 +355,15 @@ impl PackageCache {
         Ok(())
     }
 
-    fn tap_remote(&mut self, user_tap: &str) -> Result<Option<String>> {
-        if let Some(cached) = self.tap_remotes.get(user_tap) {
+    fn tap_info(&mut self, user_tap: &str) -> Result<Option<brew::TapInfo>> {
+        if let Some(cached) = self.tap_info.get(user_tap) {
             return Ok(cached.clone());
         }
-        let remote = fetch_tap_remote(user_tap).with_context(|| {
-            format!("reading remote URL for tap `{user_tap}` (`brew tap-info --json`)")
+        let info = fetch_tap_info(user_tap).with_context(|| {
+            format!("reading remote URL for tap `{user_tap}` (`brew tap-info --json=v1`)")
         })?;
-        self.tap_remotes
-            .insert(user_tap.to_string(), remote.clone());
-        Ok(remote)
+        self.tap_info.insert(user_tap.to_string(), info.clone());
+        Ok(info)
     }
 }
 
@@ -364,7 +379,7 @@ fn bare_name(name: &str) -> &str {
 struct ProbeResults {
     installed_results: Vec<(PackageManager, Result<HashSet<String>>)>,
     taps_result: Option<Result<HashSet<String>>>,
-    tap_remote_results: Vec<(String, Result<Option<String>>)>,
+    tap_info_results: Vec<(String, Result<Option<brew::TapInfo>>)>,
 }
 
 /// Join a probe worker, surfacing a panic as a hard error rather than
@@ -409,11 +424,11 @@ fn fetch_taps() -> Result<HashSet<String>> {
     brew::fetch_taps()
 }
 
-fn fetch_tap_remote(user_tap: &str) -> Result<Option<String>> {
-    if let Some(remote) = test_tap_remote_override(user_tap) {
-        return Ok(remote);
+fn fetch_tap_info(user_tap: &str) -> Result<Option<brew::TapInfo>> {
+    if test_overrides_allowed() {
+        return Ok(Some(test_tap_info_override(user_tap)));
     }
-    brew::fetch_tap_remote(user_tap)
+    brew::fetch_tap_info(user_tap)
 }
 
 fn test_packages_override(manager: PackageManager) -> Option<HashSet<String>> {
@@ -438,11 +453,10 @@ fn test_taps_override() -> Option<HashSet<String>> {
     Some(parse_csv(&raw))
 }
 
-/// Test seam for `brew tap-info`. The env var format is
+/// Test seam for the tap `remote` field. The env var format is
 /// `user/repo=URL;user2/repo2=URL2`. An entry of `user/repo=` (empty
 /// value) maps to `Some(None)` — i.e. "tap is installed but has no
-/// known remote", which exercises the `None` arm of
-/// [`PackageCache::tap_remote`].
+/// known remote". Feeds [`test_tap_info_override`].
 #[allow(clippy::option_option)]
 fn test_tap_remote_override(user_tap: &str) -> Option<Option<String>> {
     if !test_overrides_allowed() {
@@ -465,6 +479,41 @@ fn test_tap_remote_override(user_tap: &str) -> Option<Option<String>> {
         }
     }
     None
+}
+
+/// Test seam for the tap `trusted` field (brew 6.0). The env var format
+/// is `user/repo=true;user2/repo2=false`. Absent entry → `None` so the
+/// caller can apply a sane default.
+fn test_tap_trusted_override(user_tap: &str) -> Option<bool> {
+    if !test_overrides_allowed() {
+        return None;
+    }
+    let raw = std::env::var("KERON_TEST_BREW_TAP_TRUSTED").ok()?;
+    for entry in raw.split(';') {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        let Some((key, val)) = entry.split_once('=') else {
+            continue;
+        };
+        if key.trim() == user_tap {
+            return Some(val.trim() == "true");
+        }
+    }
+    None
+}
+
+/// Combine the remote and trusted seams into a [`brew::TapInfo`] for
+/// the test path. When neither seam mentions `user_tap`, trusted still
+/// defaults to `Some(true)` so existing tap tests (which never set the
+/// trust seam) keep classifying as `NoOp` rather than falling through to
+/// a real `brew` shell-out.
+fn test_tap_info_override(user_tap: &str) -> brew::TapInfo {
+    brew::TapInfo {
+        remote: test_tap_remote_override(user_tap).flatten(),
+        trusted: Some(test_tap_trusted_override(user_tap).unwrap_or(true)),
+    }
 }
 
 fn parse_csv(raw: &str) -> HashSet<String> {
@@ -561,16 +610,18 @@ fn install_many_with_stdio(
 fn spawn_batch(binary: &str, args: &[String], stdio: BatchStdio) -> Result<BatchOutput> {
     let mut cmd = Command::new(binary);
     cmd.args(args);
-    // Match the probe path's `HOMEBREW_NO_AUTO_UPDATE=1`: without it an
-    // install can kick off an implicit `brew update`, and when the
-    // formula and cask phases run concurrently both may do so at once —
-    // maximizing contention on brew's global lock and producing flaky
-    // "Another active Homebrew process is already in progress" failures.
+    // brew-only env: NO_AUTO_UPDATE prevents an install kicking off an
+    // implicit `brew update` that races the concurrent install phase for
+    // brew's global lock ("Another active Homebrew process is already in
+    // progress"); NO_ASK skips brew 6.0's new install confirmation
+    // prompt, which would stall the inherit path and EOF-abort the
+    // capture path. Centralised in `brew::apply_brew_env` so probes,
+    // taps, trusts and installs can't drift.
     if std::path::Path::new(binary)
         .file_name()
         .is_some_and(|n| n == "brew")
     {
-        cmd.env("HOMEBREW_NO_AUTO_UPDATE", "1");
+        brew::apply_brew_env(&mut cmd);
     }
     match stdio {
         BatchStdio::Inherit => {
@@ -608,16 +659,42 @@ fn spawn_batch(binary: &str, args: &[String], stdio: BatchStdio) -> Result<Batch
     }
 }
 
-/// Register a homebrew tap. Idempotent on brew's side, but callers
-/// typically gate this on [`PackageCache::classify_tap`] returning
-/// Create or Update so it doesn't shell out when the tap is already
-/// configured correctly.
-pub fn tap(spec: &TapSpec, action: Action) -> Result<()> {
+/// Register and trust a homebrew tap. Idempotent on brew's side, but
+/// callers typically gate this on [`PackageCache::classify_tap`]
+/// returning Create or Update so it doesn't shell out when the tap is
+/// already configured correctly and trusted.
+///
+/// `--custom-remote` is only passed when a URL was declared and the
+/// planner reported drift; an Update purely for trust (no URL) re-taps
+/// plainly then trusts. Every tap keron manages is also
+/// `brew trust`-ed so brew 6.0's tap-trust model stays satisfied.
+///
+/// Trust is best-effort: a `brew trust` failure is recorded as a
+/// [`Warning::TapUntrusted`] in `warnings` rather than propagated,
+/// because fully-qualified installs already auto-trust per-item on
+/// brew 6.0 — so a transient `trust.json` failure (locked file,
+/// permissions) must not abort the apply and block dependent installs
+/// that would otherwise succeed. The caller spills the collected
+/// warnings to the user after the run. The tap registration itself
+/// (`do_tap`) remains fatal: without it the dependent installs
+/// genuinely cannot work.
+pub fn tap(
+    spec: &TapSpec,
+    action: Action,
+    warnings: &mut Vec<crate::execute::Warning>,
+) -> Result<()> {
     if let Some(url) = spec.url.as_deref() {
         brew::validate_tap_url(url)?;
     }
-    let custom_remote = matches!(action, Action::Update);
-    brew::do_tap(&spec.user_tap, spec.url.as_deref(), custom_remote)
+    let custom_remote = matches!(action, Action::Update) && spec.url.is_some();
+    brew::do_tap(&spec.user_tap, spec.url.as_deref(), custom_remote)?;
+    if let Err(error) = brew::do_trust(&spec.user_tap) {
+        warnings.push(crate::execute::Warning::TapUntrusted {
+            user_tap: spec.user_tap.clone(),
+            error: format!("{error:#}"),
+        });
+    }
+    Ok(())
 }
 
 pub fn validate_package_manager_supported(manager: PackageManager, os: OsFamily) -> Result<()> {
@@ -889,7 +966,7 @@ mod tests {
         cache.prewarm(&resources).unwrap();
         assert!(cache.installed.is_empty());
         assert!(cache.installed_taps.is_none());
-        assert!(cache.tap_remotes.is_empty());
+        assert!(cache.tap_info.is_empty());
     }
 
     #[test]
@@ -922,12 +999,12 @@ mod tests {
     }
 
     #[test]
-    fn prewarm_loads_tap_remotes_for_url_qualified_taps_even_with_no_packages() {
-        // Companion of the above: with the second `&&` on line 157
-        // flipped to `||`, the `needed_tap_remotes` branch is bypassed
-        // when both packages and taps are already cached. Force a probe
-        // by supplying a URL-qualified tap and an env seam, then assert
-        // the per-tap remote memo got populated.
+    fn prewarm_loads_tap_info_for_taps_even_with_no_packages() {
+        // Companion of the above: with the second `&&` on the early
+        // return flipped to `||`, the `needed_tap_infos` branch is
+        // bypassed when both packages and taps are already cached.
+        // Force a probe by supplying a URL-qualified tap and an env
+        // seam, then assert the per-tap info memo got populated.
         let _g = lock_env();
         set_env("KERON_TEST_BREW_TAPS", "icepuma/keron");
         set_env(
@@ -935,12 +1012,12 @@ mod tests {
             "icepuma/keron=https://github.com/icepuma/keron",
         );
         // Pre-load installed_taps so `need_taps` is false; only the
-        // tap-remote slot still needs probing.
+        // tap-info slot still needs probing.
         let resources_pre = vec![tap_state("icepuma/keron", None)];
         let mut cache = PackageCache::for_tests();
         cache.prewarm(&resources_pre).unwrap();
         // Now prewarm with a URL-qualified tap. needed_installed is
-        // empty, need_taps is false, needed_tap_remotes has one entry.
+        // empty, need_taps is false, needed_tap_infos has one entry.
         let resources = vec![tap_state(
             "icepuma/keron",
             Some("https://github.com/icepuma/keron"),
@@ -948,8 +1025,8 @@ mod tests {
         cache.prewarm(&resources).unwrap();
         clear_env(&["KERON_TEST_BREW_TAPS", "KERON_TEST_BREW_TAP_REMOTES"]);
         assert!(
-            cache.tap_remotes.contains_key("icepuma/keron"),
-            "prewarm must probe the tap remote when only that slot is pending",
+            cache.tap_info.contains_key("icepuma/keron"),
+            "prewarm must probe the tap info when only that slot is pending",
         );
     }
 
@@ -1149,6 +1226,67 @@ mod tests {
     }
 
     #[test]
+    fn classify_tap_treats_git_suffix_difference_as_noop() {
+        // Brew 6.0 ignores a trailing `.git` when matching GitHub
+        // remotes, so a manifest URL with `.git` and an installed remote
+        // without it (or vice versa) must NOT classify as drift —
+        // otherwise every apply would re-tap.
+        let _g = lock_env();
+        set_env("KERON_TEST_BREW_TAPS", "icepuma/keron");
+        set_env(
+            "KERON_TEST_BREW_TAP_REMOTES",
+            "icepuma/keron=https://github.com/icepuma/keron",
+        );
+        let mut cache = PackageCache::for_tests();
+        let spec = TapSpec {
+            user_tap: "icepuma/keron".into(),
+            url: Some("https://github.com/icepuma/keron.git".into()),
+        };
+        let action = cache.classify_tap(&spec).unwrap();
+        clear_env(&["KERON_TEST_BREW_TAPS", "KERON_TEST_BREW_TAP_REMOTES"]);
+        assert_eq!(action, Action::NoOp);
+    }
+
+    #[test]
+    fn classify_tap_returns_update_when_untrusted() {
+        // Brew 6.0 tap trust: an installed-but-untrusted tap needs an
+        // explicit `brew trust`, so classify it as Update (the executor
+        // re-taps idempotently then trusts).
+        let _g = lock_env();
+        set_env("KERON_TEST_BREW_TAPS", "icepuma/keron");
+        set_env("KERON_TEST_BREW_TAP_TRUSTED", "icepuma/keron=false");
+        let mut cache = PackageCache::for_tests();
+        let spec = TapSpec {
+            user_tap: "icepuma/keron".into(),
+            url: None,
+        };
+        let action = cache.classify_tap(&spec).unwrap();
+        clear_env(&["KERON_TEST_BREW_TAPS", "KERON_TEST_BREW_TAP_TRUSTED"]);
+        assert_eq!(
+            action,
+            Action::Update,
+            "installed-but-untrusted tap must classify Update",
+        );
+    }
+
+    #[test]
+    fn classify_tap_returns_noop_when_trusted_unset() {
+        // The trust seam defaults to trusted when unset, so taps
+        // installed under pre-6.0 brew (no `trusted` field) stay NoOp
+        // instead of churning every apply.
+        let _g = lock_env();
+        set_env("KERON_TEST_BREW_TAPS", "icepuma/keron");
+        let mut cache = PackageCache::for_tests();
+        let spec = TapSpec {
+            user_tap: "icepuma/keron".into(),
+            url: None,
+        };
+        let action = cache.classify_tap(&spec).unwrap();
+        clear_env(&["KERON_TEST_BREW_TAPS"]);
+        assert_eq!(action, Action::NoOp);
+    }
+
+    #[test]
     fn classify_tap_dedup_in_same_run_returns_noop_on_repeat() {
         let _g = lock_env();
         set_env("KERON_TEST_BREW_TAPS", "");
@@ -1170,6 +1308,58 @@ mod tests {
         assert_eq!(bare_name("ripgrep"), "ripgrep");
         assert_eq!(bare_name("icepuma/keron/keron"), "keron");
         assert_eq!(bare_name("fluxcd/tap/flux"), "flux");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tap_collects_warning_when_trust_fails_and_still_succeeds() {
+        // Trust is best-effort: a failed `brew trust` must NOT abort the
+        // apply (fully-qualified installs auto-trust per-item on brew
+        // 6.0). Instead tap() records a typed `Warning::TapUntrusted` so
+        // the caller can spill it to the user. The `brew tap` itself
+        // succeeds; only trust fails.
+        use std::os::unix::fs::PermissionsExt;
+        let _g = lock_env();
+        let dir = std::env::temp_dir().join(format!(
+            "keron-tap-trust-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.subsec_nanos()),
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let spy = dir.join("brew.sh");
+        std::fs::write(
+            &spy,
+            "#!/bin/sh\ncase \"$1\" in\n  tap) exit 0 ;;\n  trust) printf '%s\\n' 'Error: trust.json locked' >&2; exit 1 ;;\n  *) printf 'unexpected subcommand: %s\\n' \"$1\" >&2; exit 1 ;;\nesac\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&spy, std::fs::Permissions::from_mode(0o755)).unwrap();
+        set_env("KERON_TEST_PACKAGE_BIN_BREW", spy.to_str().unwrap());
+        let spec = TapSpec {
+            user_tap: "icepuma/keron".into(),
+            url: None,
+        };
+        let mut warnings: Vec<crate::execute::Warning> = Vec::new();
+        let result = tap(&spec, Action::Create, &mut warnings);
+        clear_env(&["KERON_TEST_PACKAGE_BIN_BREW"]);
+        let _ = std::fs::remove_dir_all(&dir);
+        result.expect("tap() must succeed even when brew trust fails (best-effort)");
+        assert_eq!(
+            warnings.len(),
+            1,
+            "exactly one warning expected, got: {warnings:?}"
+        );
+        match &warnings[0] {
+            crate::execute::Warning::TapUntrusted { user_tap, error } => {
+                assert_eq!(user_tap, "icepuma/keron");
+                assert!(
+                    error.contains("trust"),
+                    "warning error should mention trust, got: {error}",
+                );
+            }
+        }
     }
 
     #[test]

@@ -34,11 +34,38 @@ use crate::plan::{
 };
 use crate::platform::{OsFamily, detect_os_family};
 
-#[derive(Debug, Clone, Copy, Default)]
+/// A non-fatal issue encountered while applying a plan. Collected and
+/// surfaced to the user rather than aborting the run, because none of
+/// them block the outcome the user asked for — only degrade some
+/// secondary behaviour. Kept as a typed enum (not a free-form string)
+/// so callers can pattern-match and tests can assert on the variant.
+#[derive(Debug, Clone)]
+pub enum Warning {
+    /// A managed tap was registered (`brew tap` succeeded) but
+    /// `brew trust` failed. Brew 6.0 fully-qualified installs
+    /// auto-trust per-item, so dependent installs still succeed; only
+    /// `brew doctor` and bare-name installs from the tap are degraded.
+    TapUntrusted { user_tap: String, error: String },
+}
+
+impl std::fmt::Display for Warning {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TapUntrusted { user_tap, error } => write!(
+                f,
+                "tap `{user_tap}` registered but not trusted; brew 6.0 may warn or \
+                 refuse bare-name installs from it: {error}",
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct ExecuteSummary {
     pub added: usize,
     pub changed: usize,
     pub ran: usize,
+    pub warnings: Vec<Warning>,
 }
 
 pub fn execute(plan: &Plan) -> Result<ExecuteSummary> {
@@ -147,7 +174,12 @@ fn annotate_phase_failure(
 }
 
 fn apply_change(change: &ResourceChange, summary: &mut ExecuteSummary, os: OsFamily) -> Result<()> {
-    apply_change_one_in_with_os(change, ApplyContext::Unprivileged, os)?;
+    apply_change_one_in_with_os(
+        change,
+        ApplyContext::Unprivileged,
+        os,
+        &mut summary.warnings,
+    )?;
     match change.action {
         Action::Create => summary.added += 1,
         Action::Update => summary.changed += 1,
@@ -446,14 +478,19 @@ pub enum ApplyContext {
 pub fn apply_change_one_in(change: &ResourceChange, ctx: ApplyContext) -> Result<()> {
     // Single-change entry: snapshot OS on the caller's thread and pass
     // it down. Same rationale as `execute` — keeps the package
-    // validation path off the `OsOverride` thread-local.
-    apply_change_one_in_with_os(change, ctx, detect_os_family())
+    // validation path off the `OsOverride` thread-local. Warnings are
+    // dropped here: this entry serves the elevated child (which reports
+    // outcomes via its own channel) and single-change tests, and no
+    // warning-producing resource (Tap) is ever elevated.
+    let mut warnings = Vec::new();
+    apply_change_one_in_with_os(change, ctx, detect_os_family(), &mut warnings)
 }
 
 fn apply_change_one_in_with_os(
     change: &ResourceChange,
     ctx: ApplyContext,
     os: OsFamily,
+    warnings: &mut Vec<Warning>,
 ) -> Result<()> {
     match change.action {
         Action::NoOp => Ok(()),
@@ -462,7 +499,8 @@ fn apply_change_one_in_with_os(
                 .after
                 .as_ref()
                 .with_context(|| format!("create `{}` has no desired state", change.address))?;
-            apply_create(state, ctx, os).with_context(|| format!("creating `{}`", change.address))
+            apply_create(state, ctx, os, warnings)
+                .with_context(|| format!("creating `{}`", change.address))
         }
         Action::Update => {
             let before = change
@@ -477,7 +515,7 @@ fn apply_change_one_in_with_os(
             // safe-write walk as Create (anchored to an `O_NOFOLLOW`
             // parent fd), and every update replaces atomically via a
             // temp-then-rename so the target is never left missing.
-            apply_update(before, after, ctx)
+            apply_update(before, after, ctx, warnings)
                 .with_context(|| format!("updating `{}`", change.address))
         }
         Action::Run => {
@@ -490,7 +528,12 @@ fn apply_change_one_in_with_os(
     }
 }
 
-fn apply_create(state: &ResourceState, ctx: ApplyContext, os: OsFamily) -> Result<()> {
+fn apply_create(
+    state: &ResourceState,
+    ctx: ApplyContext,
+    os: OsFamily,
+    warnings: &mut Vec<Warning>,
+) -> Result<()> {
     match state {
         ResourceState::Symlink { from, to } => create_symlink(from, to, ctx),
         ResourceState::Template {
@@ -508,7 +551,7 @@ fn apply_create(state: &ResourceState, ctx: ApplyContext, os: OsFamily) -> Resul
             // no duplicated spawn code.
             packages::install_many(*manager, &[name.as_str()], os)
         }
-        ResourceState::Tap(spec) => packages::tap(spec, Action::Create),
+        ResourceState::Tap(spec) => packages::tap(spec, Action::Create, warnings),
         ResourceState::SshKey {
             private_path,
             public_path,
@@ -534,7 +577,12 @@ fn apply_run(state: &ResourceState) -> Result<()> {
     run_shell(*kind, name, cwd, script)
 }
 
-fn apply_update(before: &ResourceState, after: &ResourceState, ctx: ApplyContext) -> Result<()> {
+fn apply_update(
+    before: &ResourceState,
+    after: &ResourceState,
+    ctx: ApplyContext,
+    warnings: &mut Vec<Warning>,
+) -> Result<()> {
     match (before, after) {
         (
             ResourceState::Symlink {
@@ -591,7 +639,7 @@ fn apply_update(before: &ResourceState, after: &ResourceState, ctx: ApplyContext
         // `--custom-remote` so brew rewrites the local git remote in
         // place. No untap+retap (which would force a re-clone).
         (ResourceState::Tap(_), ResourceState::Tap(after_spec)) => {
-            packages::tap(after_spec, Action::Update)
+            packages::tap(after_spec, Action::Update, warnings)
         }
         _ => bail!(unsupported_kind(after)),
     }

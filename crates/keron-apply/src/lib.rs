@@ -287,7 +287,14 @@ where
     }
 
     let (unprivileged, elevated_plan) = plan.partition_by_elevation();
-    let unpriv_summary = execute::execute(&unprivileged).map_err(RunError::Apply)?;
+    let mut unpriv_summary = execute::execute(&unprivileged).map_err(RunError::Apply)?;
+
+    // Warnings collected during the unprivileged apply (e.g. a managed
+    // tap that registered but couldn't be trusted). The elevated child
+    // never produces these — no warning-yielding resource is elevated —
+    // so the unprivileged summary is the sole source. Spill them after
+    // the status line so the user still sees "Apply complete!" first.
+    let mut warnings = std::mem::take(&mut unpriv_summary.warnings);
 
     if elevated_plan.changes.is_empty() {
         writeln!(
@@ -311,6 +318,7 @@ where
         .map_err(RunError::Io)?;
         let elevated_summary =
             elevated::run_elevated(&elevated_plan).map_err(RunError::Elevation)?;
+        warnings.extend(elevated_summary.warnings);
         writeln!(
             stdout,
             "Apply complete! Resources: {} added, {} changed, {} ran.",
@@ -320,7 +328,17 @@ where
         )
         .map_err(RunError::Io)?;
     }
+    spill_warnings(stdout, &warnings).map_err(RunError::Io)?;
     Ok(Outcome::Applied)
+}
+
+/// Render collected apply warnings to the user, one indented line each.
+/// Empty input writes nothing so a clean run stays quiet.
+fn spill_warnings<W: Write>(stdout: &mut W, warnings: &[execute::Warning]) -> io::Result<()> {
+    for warning in warnings {
+        writeln!(stdout, "warning: {warning}")?;
+    }
+    Ok(())
 }
 
 fn render_precheck<W: Write>(stdout: &mut W, precheck: &plan::Precheck) -> io::Result<()> {
