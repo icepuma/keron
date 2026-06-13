@@ -1,10 +1,11 @@
 //! Homebrew integration.
 //!
-//! State is observed through three read-only probes:
+//! State is observed through read-only probes:
 //!   - `brew list --formula -1` — installed formulae (bare names)
 //!   - `brew list --cask -1` — installed casks (bare names)
 //!   - `brew tap` — installed taps (`user/repo` per line)
-//!   - `brew tap-info --json USER/REPO` — one tap's remote URL
+//!   - `brew tap-info --json=v1 USER/REPO` — one tap's remote URL and
+//!     trust flag (the `trusted` field is new in brew 6.0)
 //!
 //! All probes run with `HOMEBREW_NO_AUTO_UPDATE=1` so a sleepy local
 //! brew doesn't auto-update mid-classify, polluting stderr and racing
@@ -19,8 +20,15 @@
 //! probe and no `brew upgrade` path. Upgrading installed packages is
 //! the user's job via the underlying manager.
 //!
-//! Mutating commands (`tap`, `install`) inherit stdio so the user
-//! sees real progress bars and download status.
+//! Brew 6.0 introduced tap trust: non-official taps must be explicitly
+//! trusted before their formulae/casks load. Since keron owns a tap's
+//! lifecycle (it taps before it installs), it also trusts every tap it
+//! manages via `brew trust --tap` (see [`do_trust`]).
+//!
+//! Mutating commands (`tap`, `trust`, `install`) inherit stdio so the
+//! user sees real progress bars and download status. Installs are
+//! additionally launched with `HOMEBREW_NO_ASK=1` by the package
+//! executor to skip brew 6.0's new interactive install prompt.
 
 use std::collections::HashSet;
 use std::process::{Command, Stdio};
@@ -33,6 +41,26 @@ use serde::Deserialize;
 /// probe runs on a stale machine — fine interactively, ugly inside
 /// `keron apply`.
 const NO_AUTO_UPDATE: (&str, &str) = ("HOMEBREW_NO_AUTO_UPDATE", "1");
+
+/// Skip brew 6.0's new install confirmation prompt (`-y, --no-ask` is
+/// enabled by default when this is set, per `man brew`). Inert for
+/// read-only commands, load-bearing for installs run with captured or
+/// inherited stdio.
+const NO_ASK: (&str, &str) = ("HOMEBREW_NO_ASK", "1");
+
+/// Apply the brew subprocess environment uniformly to every `brew`
+/// invocation keron makes — probes, taps, trusts and installs. Without
+/// `HOMEBREW_NO_AUTO_UPDATE` a `brew tap`/`brew trust` can kick off an
+/// implicit `brew update`, racing the concurrent install phase for
+/// brew's global lock and producing flaky "Another active Homebrew
+/// process is already in progress" failures; `do_tap` previously forgot
+/// it entirely. The vars are inert for commands that don't trigger the
+/// behaviour, so applying them everywhere is strictly safer than
+/// per-call opt-in.
+pub fn apply_brew_env(cmd: &mut Command) {
+    cmd.env(NO_AUTO_UPDATE.0, NO_AUTO_UPDATE.1);
+    cmd.env(NO_ASK.0, NO_ASK.1);
+}
 
 pub fn fetch_formulae() -> Result<HashSet<String>> {
     let out = brew_probe(&["list", "--formula", "-1"])?;
@@ -49,22 +77,48 @@ pub fn fetch_taps() -> Result<HashSet<String>> {
     Ok(parse_lines(&out))
 }
 
-/// Returns the remote URL of `user_tap` per `brew tap-info --json`.
-/// `Ok(None)` when the tap isn't installed (callers only invoke this
-/// when they believe it is, so a `None` here is mildly surprising but
-/// not an error).
-pub fn fetch_tap_remote(user_tap: &str) -> Result<Option<String>> {
-    let out = brew_probe(&["tap-info", "--json", user_tap])?;
-    let parsed: Vec<TapInfo> = serde_json::from_str(&out)
-        .with_context(|| format!("parsing `brew tap-info --json {user_tap}` output"))?;
-    Ok(parsed.into_iter().next().map(|i| i.remote))
+/// Remote URL and trust state for one tap, from `brew tap-info --json=v1`.
+/// `trusted` is `None` when the field is absent (pre-6.0 brew); callers
+/// treat `None` as "trust not enforced" so older brew never emits a
+/// spurious drift action.
+#[derive(Debug, Clone)]
+pub struct TapInfo {
+    pub remote: Option<String>,
+    pub trusted: Option<bool>,
 }
 
-/// One element of the `brew tap-info --json` array. Only fields we
-/// actually read are deserialized.
+/// Fetch one tap's remote URL and trust flag. `Ok(None)` when the tap
+/// isn't installed (`brew tap-info` returns an empty array). Callers
+/// only invoke this when they believe the tap is installed, so a `None`
+/// is mildly surprising but not an error.
+pub fn fetch_tap_info(user_tap: &str) -> Result<Option<TapInfo>> {
+    let out = brew_probe(&["tap-info", "--json=v1", user_tap])?;
+    let parsed: Vec<TapInfoJson> = serde_json::from_str(&out)
+        .with_context(|| format!("parsing `brew tap-info --json=v1 {user_tap}` output"))?;
+    Ok(parsed.into_iter().next().map(|i| TapInfo {
+        remote: i.remote,
+        trusted: i.trusted,
+    }))
+}
+
+/// One element of the `brew tap-info --json=v1` array. Only fields we
+/// actually read are deserialized; both default so older brew output
+/// (which omits `trusted`) still parses.
 #[derive(Debug, Deserialize)]
-struct TapInfo {
-    remote: String,
+struct TapInfoJson {
+    #[serde(default)]
+    remote: Option<String>,
+    #[serde(default)]
+    trusted: Option<bool>,
+}
+
+/// Canonicalise a tap remote URL for equality comparison. Brew 6.0
+/// ignores a trailing `.git` (and trailing slash) when matching GitHub
+/// remotes, so two forms differing only by those must classify as the
+/// same tap rather than a URL drift that re-taps on every apply.
+pub fn normalize_remote(url: &str) -> &str {
+    let url = url.trim_end_matches('/');
+    url.strip_suffix(".git").unwrap_or(url)
 }
 
 /// Run `brew tap user_tap [URL]`. With `custom_remote=true`, passes
@@ -81,6 +135,7 @@ pub fn do_tap(user_tap: &str, url: Option<&str>, custom_remote: bool) -> Result<
     if let Some(u) = url {
         cmd.arg(u);
     }
+    apply_brew_env(&mut cmd);
     let status = cmd
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
@@ -91,6 +146,43 @@ pub fn do_tap(user_tap: &str, url: Option<&str>, custom_remote: bool) -> Result<
         bail!("`{binary} tap {user_tap}` exited with status {status}");
     }
     Ok(())
+}
+
+/// Run `brew trust --tap user_tap`. Idempotent on brew's side. Brew 6.0
+/// requires non-official taps to be explicitly trusted before their
+/// formulae/casks load; since keron manages a tap's full lifecycle, it
+/// trusts every tap it taps.
+///
+/// `brew trust` shipped in 5.1.15; older brew exits non-zero with an
+/// "unknown command"-style diagnostic. We tolerate that single case so
+/// keron keeps working on pre-6.0 installs, but propagate every other
+/// failure (network, permissions, …). Fully-qualified installs already
+/// auto-trust per-item on 6.0, so a failed `do_trust` only degrades the
+/// `brew doctor` / bare-name experience rather than blocking installs.
+pub fn do_trust(user_tap: &str) -> Result<()> {
+    let binary = test_binary_override().unwrap_or_else(|| "brew".to_string());
+    let mut cmd = Command::new(&binary);
+    cmd.args(["trust", "--tap", user_tap]);
+    apply_brew_env(&mut cmd);
+    let out = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .with_context(|| format!("spawning `{binary} trust --tap {user_tap}`"))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let lower = stderr.to_lowercase();
+    if lower.contains("unknown command") || lower.contains("unknown subcommand") {
+        return Ok(());
+    }
+    bail!(
+        "`{binary} trust --tap {user_tap}` exited with status {}; stderr: {}",
+        out.status,
+        stderr.trim(),
+    );
 }
 
 /// Reject tap URLs that would smuggle behavior past `brew tap` — same
@@ -131,14 +223,15 @@ pub fn parse_lines(text: &str) -> HashSet<String> {
         .collect()
 }
 
-/// Shell out to `brew` with `HOMEBREW_NO_AUTO_UPDATE=1` and return
-/// stdout. Routes through the test binary override so unit tests can
-/// pin behavior without a real brew.
+/// Shell out to `brew` with the standard brew env (see
+/// [`apply_brew_env`]) and return stdout. Routes through the test
+/// binary override so unit tests can pin behavior without a real brew.
 fn brew_probe(args: &[&str]) -> Result<String> {
     let binary = test_binary_override().unwrap_or_else(|| "brew".to_string());
-    let out = Command::new(&binary)
-        .args(args)
-        .env(NO_AUTO_UPDATE.0, NO_AUTO_UPDATE.1)
+    let mut cmd = Command::new(&binary);
+    cmd.args(args);
+    apply_brew_env(&mut cmd);
+    let out = cmd
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -201,17 +294,62 @@ mod tests {
     }
 
     #[test]
-    fn tap_info_json_extracts_remote() {
-        let json = r#"[{"name":"icepuma/keron","remote":"https://github.com/icepuma/keron","custom_remote":true}]"#;
-        let parsed: Vec<TapInfo> = serde_json::from_str(json).unwrap();
+    fn tap_info_json_extracts_remote_and_trusted() {
+        let json = r#"[{"name":"icepuma/keron","remote":"https://github.com/icepuma/keron","trusted":true,"custom_remote":true}]"#;
+        let parsed: Vec<TapInfoJson> = serde_json::from_str(json).unwrap();
         assert_eq!(parsed.len(), 1);
-        assert_eq!(parsed[0].remote, "https://github.com/icepuma/keron");
+        assert_eq!(
+            parsed[0].remote.as_deref(),
+            Some("https://github.com/icepuma/keron"),
+        );
+        assert_eq!(parsed[0].trusted, Some(true));
+    }
+
+    #[test]
+    fn tap_info_json_defaults_trusted_to_none_when_absent() {
+        // Pre-6.0 brew output omits `trusted`; the field must deserialize
+        // to None rather than erroring so older brew stays supported.
+        let json = r#"[{"name":"icepuma/keron","remote":"https://github.com/icepuma/keron"}]"#;
+        let parsed: Vec<TapInfoJson> = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed[0].trusted, None);
     }
 
     #[test]
     fn tap_info_json_handles_empty_array() {
-        let parsed: Vec<TapInfo> = serde_json::from_str("[]").unwrap();
+        let parsed: Vec<TapInfoJson> = serde_json::from_str("[]").unwrap();
         assert!(parsed.is_empty());
+    }
+
+    #[test]
+    fn normalize_remote_strips_git_suffix() {
+        assert_eq!(
+            normalize_remote("https://github.com/icepuma/keron.git"),
+            "https://github.com/icepuma/keron",
+        );
+    }
+
+    #[test]
+    fn normalize_remote_strips_trailing_slash() {
+        assert_eq!(
+            normalize_remote("https://github.com/icepuma/keron/"),
+            "https://github.com/icepuma/keron",
+        );
+    }
+
+    #[test]
+    fn normalize_remote_strips_git_and_slash() {
+        assert_eq!(
+            normalize_remote("https://github.com/icepuma/keron.git/"),
+            "https://github.com/icepuma/keron",
+        );
+    }
+
+    #[test]
+    fn normalize_remote_passes_through_plain_url() {
+        assert_eq!(
+            normalize_remote("https://github.com/icepuma/keron"),
+            "https://github.com/icepuma/keron",
+        );
     }
 
     #[test]
@@ -264,6 +402,24 @@ mod tests {
             let escaped = line.replace('\\', "\\\\").replace('\'', "'\\''");
             let _ = writeln!(body, "printf '%s\\n' '{escaped}'");
         }
+        let _ = writeln!(body, "exit {exit_code}");
+        std::fs::write(&spy, body).unwrap();
+        std::fs::set_permissions(&spy, std::fs::Permissions::from_mode(0o755)).unwrap();
+        spy
+    }
+
+    #[cfg(unix)]
+    fn write_brew_spy_stderr(
+        dir: &std::path::Path,
+        stderr: &str,
+        exit_code: i32,
+    ) -> std::path::PathBuf {
+        use std::fmt::Write as _;
+        use std::os::unix::fs::PermissionsExt;
+        let spy = dir.join("brew-spy-stderr.sh");
+        let mut body = String::from("#!/bin/sh\n");
+        let escaped = stderr.replace('\\', "\\\\").replace('\'', "'\\''");
+        let _ = writeln!(body, "printf '%s\\n' '{escaped}' >&2");
         let _ = writeln!(body, "exit {exit_code}");
         std::fs::write(&spy, body).unwrap();
         std::fs::set_permissions(&spy, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -390,6 +546,56 @@ mod tests {
         clear_brew_override();
         let _ = std::fs::remove_dir_all(&dir);
         let err = result.expect_err("nonzero exit must bail");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("exited with status"),
+            "expected status diagnostic, got: {msg}",
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn do_trust_ok_on_success() {
+        let _g = super::super::lock_env();
+        let dir = spy_dir("do-trust-ok");
+        let spy = write_brew_spy_stderr(&dir, "", 0);
+        set_brew_override(&spy);
+        let result = do_trust("icepuma/keron");
+        clear_brew_override();
+        let _ = std::fs::remove_dir_all(&dir);
+        result.expect("success exit must return Ok");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn do_trust_tolerates_unknown_command_on_older_brew() {
+        // `brew trust` shipped in 5.1.15; older brew rejects it as an
+        // unknown command. do_trust must swallow that single case so
+        // keron keeps working on pre-6.0 installs.
+        let _g = super::super::lock_env();
+        let dir = spy_dir("do-trust-unknown");
+        let spy = write_brew_spy_stderr(&dir, "Error: Unknown command: trust", 1);
+        set_brew_override(&spy);
+        let result = do_trust("icepuma/keron");
+        clear_brew_override();
+        let _ = std::fs::remove_dir_all(&dir);
+        result.expect("unknown-command on older brew must be tolerated");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn do_trust_bails_on_real_error() {
+        // Any non-success exit that isn't the tolerated unknown-command
+        // diagnostic must surface as an error — swallowing it would let
+        // the planner believe a tap is trusted when it isn't.
+        let _g = super::super::lock_env();
+        let dir = spy_dir("do-trust-fail");
+        let spy = write_brew_spy_stderr(&dir, "Error: network down", 1);
+        set_brew_override(&spy);
+        let result = do_trust("icepuma/keron");
+        clear_brew_override();
+        let _ = std::fs::remove_dir_all(&dir);
+        let err = result.expect_err("real error must bail");
         let msg = format!("{err:#}");
         assert!(
             msg.contains("exited with status"),

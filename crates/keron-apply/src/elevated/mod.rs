@@ -71,6 +71,7 @@ pub fn run_elevated(plan: &Plan) -> Result<ExecuteSummary> {
         added: summary.add,
         changed: summary.change,
         ran: summary.run,
+        warnings: Vec::new(),
     })
 }
 

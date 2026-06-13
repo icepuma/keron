@@ -528,8 +528,12 @@ fn synthesize_taps(resources: &[ResourceState]) -> Result<Vec<ResourceState>> {
                         // A second mention with a custom URL upgrades
                         // a previously bare tap declaration.
                         (None, Some(_)) => existing.url.clone_from(&spec.url),
-                        // Same URL or both bare → no-op.
-                        (Some(a), Some(b)) if a == b => {}
+                        // Equivalent URLs (after brew 6.0 `.git` /
+                        // trailing-slash normalisation) or both bare
+                        // → no-op.
+                        (Some(a), Some(b))
+                            if crate::packages::brew::normalize_remote(a)
+                                == crate::packages::brew::normalize_remote(b) => {}
                         (None | Some(_), None) => {}
                         // Two different custom URLs for the same tap
                         // is almost certainly a manifest bug.

@@ -296,7 +296,7 @@ fn update_symlink_bails_when_live_state_changed_since_plan() {
         from: link.clone(),
         to: new_target,
     };
-    let err = apply_update(&before, &after, ApplyContext::Unprivileged)
+    let err = apply_update(&before, &after, ApplyContext::Unprivileged, &mut Vec::new())
         .expect_err("changed live state must bail");
     assert!(
         format!("{err:#}").contains("changed since the plan"),
@@ -740,6 +740,7 @@ fn bump_summary_create_increments_added_by_count() {
         added: 2,
         changed: 0,
         ran: 0,
+        warnings: Vec::new(),
     };
     bump_summary(&mut s, Action::Create, 3);
     assert_eq!(s.added, 5, "Create must add count to existing total");
@@ -757,6 +758,7 @@ fn bump_summary_update_increments_changed_by_count() {
         added: 0,
         changed: 4,
         ran: 0,
+        warnings: Vec::new(),
     };
     bump_summary(&mut s, Action::Update, 2);
     assert_eq!(s.added, 0);
@@ -781,7 +783,7 @@ fn apply_update_package_bails_with_planner_bug_diagnostic() {
         name: "ripgrep".into(),
         tap: None,
     };
-    let err = apply_update(&before, &after, ApplyContext::Unprivileged)
+    let err = apply_update(&before, &after, ApplyContext::Unprivileged, &mut Vec::new())
         .expect_err("Package Update must bail");
     let msg = format!("{err:#}");
     assert!(
@@ -824,7 +826,7 @@ fn apply_update_tap_invokes_brew_tap_with_custom_remote() {
         user_tap: "icepuma/keron".into(),
         url: Some("https://github.com/icepuma/keron".into()),
     });
-    let result = apply_update(&before, &after, ApplyContext::Unprivileged);
+    let result = apply_update(&before, &after, ApplyContext::Unprivileged, &mut Vec::new());
     #[allow(unsafe_code)]
     unsafe {
         std::env::remove_var("KERON_TEST_PACKAGE_BIN_BREW");
