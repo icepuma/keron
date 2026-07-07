@@ -88,6 +88,16 @@ enum Command {
         quiet: bool,
     },
 
+    /// Run a Language Server Protocol server over stdio for editor
+    /// integration.
+    ///
+    /// Editors spawn this (`command = "keron", args = ["lsp"]`) and
+    /// speak JSON-RPC over stdin/stdout: diagnostics, hover,
+    /// completion, go-to-definition, formatting, document symbols,
+    /// signature help, and semantic-token highlighting. Never run it
+    /// by hand — without a client it just waits on stdin.
+    Lsp,
+
     /// Internal: invoked by the unprivileged keron process under
     /// sudo / `ShellExecuteExW` to apply the subset of a plan that
     /// requires elevated rights. Reads the work payload from the
@@ -252,6 +262,10 @@ where
             let target = resolve_format_target(paths)?;
             run_format(target, check, quiet, &mut stdin.lock(), &mut stdout.lock())
                 .map_err(CliError::from)
+        }
+        Command::Lsp => {
+            keron_lsp::run_stdio_server()?;
+            Ok(ExitCode::SUCCESS)
         }
         Command::ApplyElevated {
             payload,
@@ -648,6 +662,19 @@ mod tests {
         let err =
             run_cli(["keron", "check", bad.to_str().unwrap()]).expect_err("type error must fail");
         assert_eq!(err.exit_code, 2, "a type error is a pre-apply failure");
+    }
+
+    /// Parse-level only: dispatching `lsp` would block on stdin
+    /// waiting for an LSP client, so pin the clap wiring instead.
+    #[test]
+    fn cli_parses_lsp_subcommand() {
+        use clap::Parser as _;
+        let cli = Cli::try_parse_from(["keron", "lsp"]).expect("`keron lsp` must parse");
+        assert!(matches!(cli.command, Command::Lsp));
+        assert!(
+            Cli::try_parse_from(["keron", "lsp", "--nonsense"]).is_err(),
+            "`lsp` takes no flags"
+        );
     }
 
     #[test]
