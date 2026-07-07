@@ -1,0 +1,60 @@
+{
+  "name": "keron",
+  "displayName": "keron",
+  "description": "Language support for keron — diagnostics, hover, completion, go-to-definition, formatting, and semantic highlighting via `keron lsp`.",
+  "version": "0.1.0",
+  "publisher": "icepuma",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/icepuma/keron"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Formatters"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "keron",
+        "aliases": [
+          "keron"
+        ],
+        "extensions": [
+          ".keron"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "configuration": {
+      "title": "keron",
+      "properties": {
+        "keron.serverPath": {
+          "type": "string",
+          "default": "keron",
+          "description": "Path to the `keron` binary. The extension runs `<serverPath> lsp`."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^10.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.5.0"
+  }
+}
