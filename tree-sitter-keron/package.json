@@ -1,0 +1,31 @@
+{
+  "name": "tree-sitter-keron",
+  "version": "0.1.0",
+  "description": "Tree-sitter grammar for the keron dotfile-manager language",
+  "repository": "github:icepuma/keron",
+  "license": "MIT",
+  "author": "Stefan Ruzitschka <stefan@icepuma.dev>",
+  "main": "bindings/node",
+  "types": "bindings/node",
+  "keywords": [
+    "tree-sitter",
+    "keron",
+    "parser"
+  ],
+  "files": [
+    "grammar.js",
+    "tree-sitter.json",
+    "queries/*",
+    "src/**"
+  ],
+  "tree-sitter": [
+    {
+      "scope": "source.keron",
+      "file-types": [
+        "keron"
+      ],
+      "injection-regex": "^keron$",
+      "highlights": "queries/highlights.scm"
+    }
+  ]
+}

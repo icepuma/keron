@@ -1,0 +1,83 @@
+================================================================================
+reconcile forms: bare, chain, block
+================================================================================
+
+reconcile zshrc
+
+reconcile [a, b] -> c -> link("d")
+
+reconcile {
+  zshrc
+  gitcfg -> xdgcfg
+  all_links
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (reconcile_statement
+    (reconcile_chain
+      (identifier)))
+  (reconcile_statement
+    (reconcile_chain
+      (list
+        (identifier)
+        (identifier))
+      (identifier)
+      (call_expression
+        (identifier)
+        (argument_list
+          (argument
+            (string))))))
+  (reconcile_statement
+    (reconcile_block
+      (reconcile_chain
+        (identifier))
+      (reconcile_chain
+        (identifier)
+        (identifier))
+      (reconcile_chain
+        (identifier)))))
+
+================================================================================
+reconcile gated by top-level if and for
+================================================================================
+
+if use_zsh {
+  reconcile all_links
+}
+
+for f in flags {
+  if f {
+    val name: String = "x"
+    reconcile link(name)
+  }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (if_expression
+    (identifier)
+    (block
+      (reconcile_statement
+        (reconcile_chain
+          (identifier)))))
+  (for_expression
+    (identifier)
+    (identifier)
+    (block
+      (if_expression
+        (identifier)
+        (block
+          (val_declaration
+            (identifier)
+            (primitive_type)
+            (string))
+          (reconcile_statement
+            (reconcile_chain
+              (call_expression
+                (identifier)
+                (argument_list
+                  (argument
+                    (identifier)))))))))))

@@ -1,0 +1,148 @@
+================================================================================
+val declarations
+================================================================================
+
+val name: String = "keron"
+val inferred = 42
+val ratio: Double = 1.618
+val maybe: String? = null
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (val_declaration
+    (identifier)
+    (primitive_type)
+    (string))
+  (val_declaration
+    (identifier)
+    (number))
+  (val_declaration
+    (identifier)
+    (primitive_type)
+    (number))
+  (val_declaration
+    (identifier)
+    (nullable_type
+      (primitive_type))
+    (null)))
+
+================================================================================
+import declaration
+================================================================================
+
+from "./helpers.keron" use Host, Tier, link
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (use_declaration
+    (string)
+    (type_identifier)
+    (type_identifier)
+    (identifier)))
+
+================================================================================
+function declaration with defaults
+================================================================================
+
+fn rgb(r: Int, g: Int = 0, b: Int = 0): Int {
+  r + g + b
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameter_list
+      (parameter
+        (identifier)
+        (primitive_type))
+      (parameter
+        (identifier)
+        (primitive_type)
+        (number))
+      (parameter
+        (identifier)
+        (primitive_type)
+        (number)))
+    (primitive_type)
+    (block
+      (binary_expression
+        (binary_expression
+          (identifier)
+          (identifier))
+        (identifier)))))
+
+================================================================================
+struct declaration and literal
+================================================================================
+
+struct Host { name: String, port: Int = 22 }
+
+val origin: Host = Host { name: "alpha", port }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (struct_declaration
+    (type_identifier)
+    (field_declaration
+      (identifier)
+      (primitive_type))
+    (field_declaration
+      (identifier)
+      (primitive_type)
+      (number)))
+  (val_declaration
+    (identifier)
+    (type_identifier)
+    (struct_literal
+      (type_identifier)
+      (struct_literal_field
+        (field_identifier)
+        (string))
+      (struct_literal_field
+        (field_identifier)))))
+
+================================================================================
+type alias
+================================================================================
+
+type Mode = "on" | "off" | "auto"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (type_alias_declaration
+    (type_identifier)
+    (string)
+    (string)
+    (string)))
+
+================================================================================
+generic and nullable types
+================================================================================
+
+val m: Map<String, List<Int>> = {}
+val xs: List<Boolean?> = [true, null]
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (val_declaration
+    (identifier)
+    (map_type
+      (primitive_type)
+      (list_type
+        (primitive_type)))
+    (map))
+  (val_declaration
+    (identifier)
+    (list_type
+      (nullable_type
+        (primitive_type)))
+    (list
+      (boolean)
+      (null))))

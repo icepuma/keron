@@ -1,12 +1,10 @@
 # keron for Zed
 
-Registers the keron language in [Zed](https://zed.dev) and connects it
-to `keron lsp`: diagnostics, hover, completion, go-to-definition,
-formatting, outline symbols, and signature help.
-
-Note: Zed highlights via tree-sitter grammars and does not render LSP
-semantic tokens, so `.keron` files stay uncolored until keron grows a
-tree-sitter grammar. Every other language feature works.
+Registers the keron language in [Zed](https://zed.dev) with tree-sitter
+syntax highlighting (grammar bundled from `tree-sitter-keron/` in this
+repository) and connects it to `keron lsp`: diagnostics, hover,
+completion, go-to-definition, formatting, outline symbols, and
+signature help.
 
 ## Requirements
 
@@ -21,11 +19,17 @@ The extension is not in the Zed registry yet. Install it locally:
 3. Pick this directory (`editors/zed`).
 
 Zed compiles the extension to WebAssembly itself (it will fetch the
-`wasm32-wasip1` toolchain if needed) and starts `keron lsp` the next
-time you open a `.keron` file.
+`wasm32-wasip1` toolchain if needed), fetches and builds the grammar
+declared in `extension.toml`, and starts `keron lsp` the next time you
+open a `.keron` file.
 
 ## Files
 
-- `extension.toml` — extension + language-server registration.
+- `extension.toml` — extension, grammar, and language-server
+  registration. The `[grammars.keron]` entry points at the
+  `tree-sitter-keron` subdirectory of this repository via the `path`
+  field; pin its `rev` to a commit SHA when cutting a release.
 - `languages/keron/config.toml` — the keron language definition.
+- `languages/keron/highlights.scm` — highlight queries (a copy of
+  `tree-sitter-keron/queries/highlights.scm`; keep them in sync).
 - `src/lib.rs` — spawns `keron lsp` from PATH.

@@ -1,0 +1,86 @@
+================================================================================
+escapes and bare dollars
+================================================================================
+
+val s = "a\tb\n\"c\\d \$5"
+val t = "price is $100"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (val_declaration
+    (identifier)
+    (string
+      (escape_sequence)
+      (escape_sequence)
+      (escape_sequence)
+      (escape_sequence)
+      (escape_sequence)))
+  (val_declaration
+    (identifier)
+    (string)))
+
+================================================================================
+interpolation, nested
+================================================================================
+
+val s = "v${1 + 2}w ${"inner ${x}"}"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (val_declaration
+    (identifier)
+    (string
+      (interpolation
+        (binary_expression
+          (number)
+          (number)))
+      (interpolation
+        (string
+          (interpolation
+            (identifier)))))))
+
+================================================================================
+multiline cooked string with interpolation
+================================================================================
+
+val cfg: String = """
+  [user]
+    name = ${user()}
+    quote = "hi"
+  """
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (val_declaration
+    (identifier)
+    (primitive_type)
+    (multiline_string
+      (interpolation
+        (call_expression
+          (identifier)
+          (argument_list))))))
+
+================================================================================
+raw multiline strings with hash delimiters
+================================================================================
+
+val raw0 = r"""
+  export PATH="${HOME}/bin:$PATH"
+  """
+
+val raw1 = r#"""
+  contains a bare """ inside
+  """#
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (val_declaration
+    (identifier)
+    (raw_string))
+  (val_declaration
+    (identifier)
+    (raw_string)))

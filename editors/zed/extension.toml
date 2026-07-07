@@ -1,10 +1,19 @@
 id = "keron"
 name = "keron"
-description = "keron language support (diagnostics, hover, completion, formatting via keron lsp)"
+description = "keron language support (highlighting via tree-sitter; diagnostics, hover, completion, formatting via keron lsp)"
 version = "0.1.0"
 schema_version = 1
 authors = ["Stefan Ruzitschka <stefan@icepuma.dev>"]
 repository = "https://github.com/icepuma/keron"
+
+# The grammar lives in the `tree-sitter-keron` subdirectory of the main
+# repository (Zed's `path` field selects it). Pin `rev` to a commit SHA
+# once this lands on `main` — Zed resolves the rev at install time, so a
+# moving branch means unreproducible installs.
+[grammars.keron]
+repository = "https://github.com/icepuma/keron"
+rev = "main"
+path = "tree-sitter-keron"
 
 [language_servers.keron-lsp]
 name = "keron LSP"
