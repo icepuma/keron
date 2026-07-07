@@ -38,20 +38,42 @@ use self::{
 /// Parse keron source into a [`Program`].
 ///
 /// # Errors
-/// Returns one or more [`Diagnostic`]s when the source has syntax errors.
+/// Returns one or more [`Diagnostic`]s when the source has syntax
+/// errors. Item-level recovery means a file with several broken
+/// top-level items reports one diagnostic per broken item, not just
+/// the first.
 pub fn parse(src: &str) -> Result<Program, Vec<Diagnostic>> {
+    let (program, diagnostics) = parse_recovering(src);
+    if diagnostics.is_empty() {
+        Ok(program)
+    } else {
+        Err(diagnostics)
+    }
+}
+
+/// Parse keron source with error recovery, returning the partial AST
+/// alongside all diagnostics.
+///
+/// This is the entry point for editor tooling: a buffer that is
+/// mid-edit still yields every top-level item that parses, so
+/// features like outline, hover, and completion keep working while
+/// the user types. Valid input yields the full program and an empty
+/// diagnostics vector — the AST is byte-identical to what [`parse`]
+/// returns.
+#[must_use]
+pub fn parse_recovering(src: &str) -> (Program, Vec<Diagnostic>) {
     // Reject pathologically nested input before chumsky recurses on the
     // native stack, so a malicious manifest gets a clean diagnostic
     // instead of aborting the process with a stack overflow.
-    depth::enforce_nesting_limit(src)?;
-    let result = program().parse(src);
-    if result.has_errors() {
-        Err(result.errors().map(rich_to_diagnostic).collect())
-    } else {
-        Ok(result
-            .into_output()
-            .unwrap_or(Program { items: Vec::new() }))
+    if let Err(diagnostics) = depth::enforce_nesting_limit(src) {
+        return (Program { items: Vec::new() }, diagnostics);
     }
+    let result = program().parse(src);
+    let diagnostics = result.errors().map(rich_to_diagnostic).collect();
+    let program = result
+        .into_output()
+        .unwrap_or(Program { items: Vec::new() });
+    (program, diagnostics)
 }
 
 /// Build a [`Diagnostic`] from a chumsky [`Rich`] error.
@@ -200,11 +222,47 @@ fn custom_help(msg: &str) -> Option<String> {
 
 fn program<'src>() -> impl Parser<'src, &'src str, Program, Extra<'src>> {
     item()
+        .map(Some)
+        .recover_with(via_parser(item_recovery()))
         .repeated()
         .collect::<Vec<_>>()
-        .map(|items| Program { items })
+        .map(|items: Vec<Option<Item>>| Program {
+            items: items.into_iter().flatten().collect(),
+        })
         .padded_by(pad())
         .then_ignore(end())
+}
+
+/// Recovery for a broken top-level item: emit the item's error, then
+/// skip forward to the next plausible item start so the items after
+/// it still parse.
+///
+/// The synchronization point is a top-level keyword at column zero —
+/// i.e. immediately after a newline. Requiring column zero avoids
+/// re-syncing on a `val`/`if`/… inside the (indented) body of the
+/// broken item, which would turn one typo into a cascade of bogus
+/// follow-on errors. The mandatory leading `any()` consumes at least
+/// one character, so recovery always makes progress and can never
+/// loop on adversarial input; at end of input it fails, which simply
+/// ends the item loop.
+fn item_recovery<'src>() -> impl Parser<'src, &'src str, Option<Item>, Extra<'src>> {
+    let sync_keyword = choice((
+        text::keyword("val"),
+        text::keyword("fn"),
+        text::keyword("struct"),
+        text::keyword("type"),
+        text::keyword("reconcile"),
+        text::keyword("from"),
+        text::keyword("if"),
+        text::keyword("for"),
+        text::keyword("match"),
+    ))
+    .ignored();
+    let sync_point = just('\n').ignore_then(sync_keyword);
+    any()
+        .ignored()
+        .then_ignore(any().and_is(sync_point.not()).ignored().repeated())
+        .to(None)
 }
 
 fn item<'src>() -> impl Parser<'src, &'src str, Item, Extra<'src>> {

@@ -22,7 +22,7 @@ pub use check::{
 pub use diagnostic::Diagnostic;
 pub use format::format;
 pub use lex::{MultilineClose, is_multiline_close, multiline_open, raw_multiline_open_at};
-pub use parser::parse;
+pub use parser::{parse, parse_recovering};
 pub use tokens::{LexToken, LexTokenKind, lex_tokens};
 pub use trivia::extract_comments;
 

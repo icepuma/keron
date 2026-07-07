@@ -1,7 +1,7 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
 ---
-error: unexpected `"`, expected `!`, `&`, `(`, `*`, `+`, `-`, `.`, `/`, `<`, `=`, `>`, `?`, `fn`, `for`, `from`, `if`, `match`, `reconcile`, `struct`, `type`, `val`, `|`, or end of input
+error: unexpected `"`, expected `!`, `&`, `(`, `*`, `+`, `-`, `.`, `/`, `<`, `=`, `>`, `?`, `fn`, `for`, `from`, `if`, `match`, `reconcile`, `struct`, `type`, `val`, or `|`
   --> 1:12
   |
 1 | val bad = r"""nope"""
