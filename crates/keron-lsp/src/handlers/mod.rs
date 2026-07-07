@@ -33,13 +33,12 @@ use lsp_types::{
 use crate::analysis::analyze;
 use crate::analysis::symbols::module_for;
 use crate::line_index::{LineIndex, PositionEncoding};
-use crate::state::{Document, LastGood, ServerState};
+use crate::state::{Document, Parsed, ServerState};
 use crate::uri::uri_to_path;
 
-/// The read view feature handlers work against: the last-good parse of
-/// one document plus the workspace resolution. Spans in `program` are
-/// valid against `text`/`index` (which may lag the live buffer while
-/// an edit is unparseable).
+/// The read view feature handlers work against: the latest (possibly
+/// partial) parse of one document plus the workspace resolution.
+/// Spans in `program` are valid against `text`/`index`.
 pub struct Snapshot<'s> {
     pub program: &'s Program,
     pub text: &'s str,
@@ -70,15 +69,15 @@ impl Snapshot<'_> {
 }
 
 /// Build the feature-request view for `uri`. `None` when the document
-/// isn't open or has never parsed.
+/// isn't open.
 #[must_use]
 pub fn snapshot_at<'s>(state: &'s ServerState, uri: &Uri) -> Option<Snapshot<'s>> {
     let (path, doc) = state.doc_by_uri(uri)?;
-    let last_good = doc.last_good.as_ref()?;
+    let parsed = doc.parsed.as_ref()?;
     Some(Snapshot {
-        program: &last_good.program,
-        text: &last_good.text,
-        index: &last_good.line_index,
+        program: &parsed.program,
+        text: &parsed.text,
+        index: &parsed.line_index,
         doc,
         path,
         resolution: state.resolution.as_ref(),
@@ -163,14 +162,17 @@ fn doc_key(uri: &Uri) -> Option<PathBuf> {
     Some(fs::canonicalize(&path).unwrap_or(path))
 }
 
-fn refresh_last_good(doc: &mut Document) {
-    if let Ok(program) = keron_lang::parse(&doc.text) {
-        doc.last_good = Some(LastGood {
-            program,
-            text: doc.text.clone(),
-            line_index: doc.line_index.clone(),
-        });
-    }
+/// Re-parse with recovery: even a broken buffer yields a partial AST
+/// (broken items absent), so features track the live text instead of
+/// serving stale spans. The diagnostics are dropped here — the
+/// resolver re-reports them with module context during [`analyze`].
+fn refresh_parsed(doc: &mut Document) {
+    let (program, _) = keron_lang::parse_recovering(&doc.text);
+    doc.parsed = Some(Parsed {
+        program,
+        text: doc.text.clone(),
+        line_index: doc.line_index.clone(),
+    });
 }
 
 fn did_open(state: &mut ServerState, params: DidOpenTextDocumentParams) -> Vec<Notification> {
@@ -183,9 +185,9 @@ fn did_open(state: &mut ServerState, params: DidOpenTextDocumentParams) -> Vec<N
         version: params.text_document.version,
         line_index: LineIndex::new(&text),
         text,
-        last_good: None,
+        parsed: None,
     };
-    refresh_last_good(&mut doc);
+    refresh_parsed(&mut doc);
     state.docs.insert(key, doc);
     publish_notifications(analyze(state))
 }
@@ -204,7 +206,7 @@ fn did_change(state: &mut ServerState, params: DidChangeTextDocumentParams) -> V
     doc.text = change.text;
     doc.version = params.text_document.version;
     doc.line_index = LineIndex::new(&doc.text);
-    refresh_last_good(doc);
+    refresh_parsed(doc);
     publish_notifications(analyze(state))
 }
 
@@ -233,7 +235,7 @@ pub mod test_support {
     use lsp_types::Uri;
 
     use crate::line_index::LineIndex;
-    use crate::state::{Document, LastGood, ServerState};
+    use crate::state::{Document, Parsed, ServerState};
 
     /// One open in-memory document at `file:///test/main.keron` whose
     /// last-good snapshot is parsed from `good` while the live buffer
@@ -248,7 +250,7 @@ pub mod test_support {
             version: 1,
             text: live.to_string(),
             line_index: LineIndex::new(live),
-            last_good: Some(LastGood {
+            parsed: Some(Parsed {
                 program,
                 text: good.to_string(),
                 line_index: LineIndex::new(good),
