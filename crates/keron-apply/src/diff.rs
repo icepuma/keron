@@ -348,8 +348,7 @@ fn render_body_summary<W: Write>(
 }
 
 /// Render a body field as a unified diff block, indented inside the
-/// resource body. Synthetic `---` / `+++` file-header lines are
-/// dropped — they carry no useful info here. Real `\n` / `\t` pass
+/// resource body. Real `\n` / `\t` pass
 /// through; `\r` / ANSI / bidi controls inside any individual line
 /// are escaped via `sanitize_terminal_message` so a hostile content
 /// byte cannot redraw the rendered diff.
@@ -377,12 +376,10 @@ fn render_body_verbose<W: Write>(
     let safe = sanitize_terminal_message(&rendered);
     for line in safe.split_inclusive('\n') {
         let trimmed = line.trim_end_matches('\n');
-        // The two synthetic header lines (`--- file` / `+++ file`)
-        // are placeholders since `header(...)` wasn't supplied; drop
-        // them — the resource block already labels the field.
-        if trimmed.starts_with("--- ") || trimmed.starts_with("+++ ") {
-            continue;
-        }
+        // No `---` / `+++` header filtering here: `unified_diff()` only
+        // emits those lines when `.header(...)` is set (it isn't), so
+        // any line that looks like one is real content — e.g. a removed
+        // Lua comment `-- x` renders as `--- x` and must stay visible.
         let painted = if trimmed.starts_with("@@") {
             paint(opts.color, CYAN, trimmed)
         } else if trimmed.starts_with('-') {
@@ -590,17 +587,7 @@ fn render_diff_lines<W: Write>(
             render_package_diff(out, before, after, &s)?;
         }
         (ResourceState::Tap(before_spec), ResourceState::Tap(after_spec)) => {
-            // The only field that meaningfully changes between
-            // before/after for a tap Update is the remote URL; the
-            // `user_tap` identity is the address itself.
-            if before_spec.url != after_spec.url {
-                writeln!(
-                    out,
-                    "      {s} url = \"{}\" -> \"{}\"",
-                    before_spec.url.as_deref().unwrap_or("(none)"),
-                    after_spec.url.as_deref().unwrap_or("(none)"),
-                )?;
-            }
+            render_tap_diff(out, before_spec, after_spec, &s)?;
         }
         (
             ResourceState::Shell {
@@ -666,6 +653,19 @@ fn render_template_diff<W: Write>(
             show_path(after.path)
         )?;
     }
+    // Content unchanged with the same path means the only reason this is
+    // an Update is a permission clamp on a sensitive file (back to
+    // 0o600) — say so, otherwise the body renders empty and the Update
+    // looks inexplicable while (previously) demanding a force override.
+    if before.path == after.path && before.content == after.content {
+        if sensitive {
+            writeln!(
+                out,
+                "      {s} mode -> 0600 (restricting permissions on a sensitive file)"
+            )?;
+        }
+        return Ok(());
+    }
     render_body_field(
         out,
         "content",
@@ -675,6 +675,35 @@ fn render_template_diff<W: Write>(
         sensitive,
         opts,
     )?;
+    Ok(())
+}
+
+fn render_tap_diff<W: Write>(
+    out: &mut W,
+    before_spec: &crate::plan::TapSpec,
+    after_spec: &crate::plan::TapSpec,
+    s: &str,
+) -> io::Result<()> {
+    // The only field that meaningfully changes between before/after for
+    // a tap Update is the remote URL; the `user_tap` identity is the
+    // address itself. The URLs are manifest- (and, for the `before`
+    // remote, `brew tap-info`-) controlled and only shape-validated, so
+    // escape them like every other body line before they reach the
+    // terminal.
+    if before_spec.url != after_spec.url {
+        writeln!(
+            out,
+            "      {s} url = \"{}\" -> \"{}\"",
+            before_spec
+                .url
+                .as_deref()
+                .map_or_else(|| "(none)".to_string(), escape_inline),
+            after_spec
+                .url
+                .as_deref()
+                .map_or_else(|| "(none)".to_string(), escape_inline),
+        )?;
+    }
     Ok(())
 }
 
@@ -730,9 +759,11 @@ fn render_package_diff<W: Write>(
             t.map_or_else(
                 || "(none)".to_string(),
                 |spec| {
+                    // `user_tap` and `url` are manifest-controlled and
+                    // reach the terminal raw here; escape both.
                     spec.url.as_ref().map_or_else(
-                        || spec.user_tap.clone(),
-                        |url| format!("{} ({url})", spec.user_tap),
+                        || escape_inline(&spec.user_tap),
+                        |url| format!("{} ({})", escape_inline(&spec.user_tap), escape_inline(url)),
                     )
                 },
             )

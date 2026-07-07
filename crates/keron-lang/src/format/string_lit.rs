@@ -7,15 +7,23 @@
 //! through this module — the emitter walks the original source for
 //! their bytes instead.
 
-use std::fmt::Write;
-
 /// Render `content` as the body of a cooked single-line string,
-/// without the surrounding `"`. Each non-printable / non-ASCII byte
-/// gets the shortest valid keron escape; printable ASCII passes
-/// through untouched except for `"`, `\`, and the dollar-brace
-/// sequence (`${`) — `$` is escaped only when immediately followed
-/// by `{`, since the parser uses `${...}` as the interpolation
-/// trigger and a bare `$` elsewhere is plain content.
+/// without the surrounding `"`. Only the escapes the keron parser
+/// actually understands are emitted — `\"`, `\\`, `\n`, `\r`, `\t`,
+/// and the dollar-brace sequence (`\$`, escaped only when `$` is
+/// immediately followed by `{`, since the parser uses `${...}` as
+/// the interpolation trigger and a bare `$` elsewhere is plain
+/// content). Every other character passes through verbatim.
+///
+/// The verbatim path is what keeps the formatter's output
+/// re-parseable. The keron string grammar has no `\u{...}` and no
+/// `\0` escape (see `parser/string.rs::parse_escape`, which accepts
+/// exactly `" \ n r t $`); non-ASCII letters and rare control
+/// characters can only ever enter a cooked literal as raw bytes, so
+/// they must leave it the same way. Escaping them — as an earlier
+/// "keep the source 7-bit clean" version did — produced files that
+/// no longer parsed, silently corrupting any manifest containing an
+/// accented character the moment `keron format` rewrote it in place.
 #[must_use]
 pub fn render_cooked_inner(content: &str) -> String {
     let mut out = String::with_capacity(content.len());
@@ -27,18 +35,8 @@ pub fn render_cooked_inner(content: &str) -> String {
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
-            '\0' => out.push_str("\\0"),
             '$' if chars.peek() == Some(&'{') => out.push_str("\\$"),
-            c if c.is_ascii_graphic() || c == ' ' => out.push(c),
-            c => {
-                // Anything else (control chars, non-ASCII letters) is
-                // emitted as a `\u{HHHH}` unicode escape. This keeps
-                // the source 7-bit clean and survives clipboards and
-                // terminals that fight non-ASCII content. Users who
-                // want literal unicode can use multi-line strings
-                // which don't go through this path.
-                write!(out, "\\u{{{:04x}}}", c as u32).unwrap();
-            }
+            c => out.push(c),
         }
     }
     out
@@ -64,23 +62,36 @@ mod tests {
     }
 
     #[test]
-    fn null_byte_uses_short_escape() {
-        assert_eq!(render_cooked_inner("\0"), "\\0");
+    fn null_byte_passes_through_verbatim() {
+        // The parser has no `\0` escape, so a NUL can only round-trip
+        // as a raw byte.
+        assert_eq!(render_cooked_inner("\0"), "\0");
     }
 
     #[test]
-    fn non_ascii_uses_unicode_escape() {
-        assert_eq!(render_cooked_inner("é"), "\\u{00e9}");
+    fn non_ascii_passes_through_verbatim() {
+        // Non-ASCII letters are valid raw string content; escaping
+        // them to `\u{...}` would produce output the parser rejects.
+        assert_eq!(render_cooked_inner("é"), "é");
     }
 
     #[test]
-    fn ascii_control_chars_use_unicode_escape() {
-        // U+0007 (bell) has no short form; should become \u{0007}.
-        assert_eq!(render_cooked_inner("\u{0007}"), "\\u{0007}");
+    fn ascii_control_chars_pass_through_verbatim() {
+        // U+0007 (bell) has no keron escape; it round-trips raw.
+        assert_eq!(render_cooked_inner("\u{0007}"), "\u{0007}");
     }
 
     #[test]
     fn space_is_preserved_verbatim() {
         assert_eq!(render_cooked_inner("a b c"), "a b c");
+    }
+
+    #[test]
+    fn only_parser_supported_escapes_are_emitted() {
+        // Guard against regressing to an escape the parser can't read.
+        // The output must contain no `\u` or `\0` sequences.
+        let rendered = render_cooked_inner("mixed: café \u{0007} \0 tab\tnewline\n");
+        assert!(!rendered.contains("\\u"), "must not emit \\u escapes");
+        assert!(!rendered.contains("\\0"), "must not emit \\0 escapes");
     }
 }

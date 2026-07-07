@@ -27,7 +27,7 @@ chumsky = "=0.13.0"
 thiserror = "=2.0.18"
 ariadne = "=0.6.0"
 
-anyhow = "=1.0.102"
+anyhow = "=1.0.103"
 clap = { version = "=4.6.1", features = ["derive"] }
 petgraph = "=0.8.3"
 os_info = { version = "=3.15.0", default-features = false }
@@ -65,14 +65,17 @@ symlink = "=0.1.0"
 # (from `fs::read_link`) for the same logical path.
 same-file = "=1.0.6"
 # Jinja2-style template engine for `template(...)` resources.
-# `default-features = false` drops the optional builtin filter
-# bundle (chrono / chrono-tz / humansize / rand / slug / urlencode);
-# the core engine still ships standard filters like `upper`, `lower`,
-# `replace`, `default`, `trim`, `length` that are sufficient for the
-# dotfile use case. The full bundle can be re-enabled later if a
-# manifest needs e.g. date formatting.
-tera = { version = "=1.20.1", default-features = false }
-which = "=8.0.3"
+# Tera 2's default feature set is already empty (the 1.x optional
+# chrono / rand / slug filter bundle no longer exists) and its only
+# builtin functions are the pure `range` / `throw` — the impure 1.x
+# builtins (`get_env`, `now`, `get_random`) were removed upstream,
+# which is what keeps `template(...)` a pure text transform. The
+# core engine still ships standard filters like `upper`, `lower`,
+# `replace`, `default`, `trim`, `length` that are sufficient for
+# the dotfile use case. `default-features = false` is kept so a
+# future non-empty default (e.g. `glob_fs`) can't sneak in.
+tera = { version = "=2.0.0", default-features = false }
+which = "=8.0.4"
 # Line-level diff engine. Used by `keron format --check` for unified-
 # diff drift output and by `keron apply` for the verbose-mode body
 # diffs (template `content` and shell `script`) under the
@@ -111,7 +114,7 @@ windows = { version = "=0.62.2", default-features = false, features = [
     "Win32_UI_Shell",
 ] }
 
-insta = "=1.47.2"
+insta = "=1.48.0"
 libtest-mimic = "=0.8.2"
 bolero = "=0.13.4"
 proptest = "=1.11.0"

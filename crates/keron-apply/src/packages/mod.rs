@@ -365,6 +365,18 @@ impl PackageCache {
         self.tap_info.insert(user_tap.to_string(), info.clone());
         Ok(info)
     }
+
+    /// The installed tap's current remote URL, when the tap is
+    /// installed and brew reports one. Lets the planner build the
+    /// *actual* before-state for a URL-drift Update, so the diff can
+    /// render `url = "<installed>" -> "<declared>"` instead of a
+    /// fabricated before == after pair that shows nothing.
+    ///
+    /// # Errors
+    /// Errors when `brew tap-info` cannot be run or parsed.
+    pub fn installed_tap_remote(&mut self, user_tap: &str) -> Result<Option<String>> {
+        Ok(self.tap_info(user_tap)?.and_then(|i| i.remote))
+    }
 }
 
 /// Strip any `user/tap/` prefix from a manifest name, leaving the
@@ -716,15 +728,17 @@ pub fn validate_package_manager_supported(manager: PackageManager, os: OsFamily)
 /// interprets — e.g. `cargo install --git=…` would run arbitrary
 /// build scripts as the user. Also forbid embedded NUL since
 /// argv can't carry it, and any other ASCII control character (`\r`,
-/// `\x1b`, …): such a name is never a legitimate package identifier for
-/// any manager and would otherwise reach the package-phase status lines
-/// — which print the name raw, outside the terminal-sanitization the
-/// diff renderer applies — letting a hostile manifest forge `[ok]` /
-/// `[FAILED]` markers via cursor moves.
+/// `\x1b`, …) or Unicode bidirectional/format character (`U+202E`
+/// RIGHT-TO-LEFT OVERRIDE, the isolates, the zero-width joiners): such
+/// a name is never a legitimate package identifier for any manager and
+/// would otherwise reach the package-phase status lines — which print
+/// the name raw, outside the terminal-sanitization the diff renderer
+/// applies — letting a hostile manifest forge `[ok]` / `[FAILED]`
+/// markers via cursor moves or visually reorder the printed line.
 ///
 /// # Errors
 /// Errors when `name` is empty, begins with `-`, or contains an ASCII
-/// control character.
+/// control or Unicode bidi/format character.
 pub fn validate_package_name(manager: PackageManager, name: &str) -> Result<()> {
     if name.is_empty() {
         bail!("{} package name must not be empty", manager.kind_label());
@@ -735,14 +749,33 @@ pub fn validate_package_name(manager: PackageManager, name: &str) -> Result<()> 
             manager.kind_label()
         );
     }
-    if let Some(c) = name.chars().find(char::is_ascii_control) {
+    if let Some(c) = name
+        .chars()
+        .find(|c| c.is_ascii_control() || is_bidi_or_format_char(*c))
+    {
         bail!(
-            "{} package name must not contain control characters (found {:?})",
+            "{} package name must not contain control or bidirectional/format characters (found {:?})",
             manager.kind_label(),
             c
         );
     }
     Ok(())
+}
+
+/// Unicode characters that don't render as visible glyphs but can
+/// reorder or hide surrounding text in a terminal — the Trojan-Source
+/// class. Rejected in package names (and any other value that reaches a
+/// raw, unsanitized status line) so a hostile manifest can't disguise
+/// what it is installing or forge status markers.
+const fn is_bidi_or_format_char(c: char) -> bool {
+    matches!(c,
+        '\u{200E}' | '\u{200F}'              // LRM, RLM
+        | '\u{202A}'..='\u{202E}'            // LRE, RLE, PDF, LRO, RLO
+        | '\u{2066}'..='\u{2069}'            // LRI, RLI, FSI, PDI
+        | '\u{061C}'                         // Arabic letter mark
+        | '\u{200B}'..='\u{200D}'            // zero-width space / non-joiner / joiner
+        | '\u{FEFF}'                         // zero-width no-break space / BOM
+    )
 }
 
 fn install_invocation(manager: PackageManager, name: &str) -> (String, Vec<String>) {
@@ -1502,7 +1535,27 @@ mod tests {
         for bad in ["rip\0grep", "rg\r--- forged ---", "rg\x1b[2K"] {
             let err = validate_package_name(PackageManager::Brew, bad).unwrap_err();
             assert!(
-                format!("{err:#}").contains("control characters"),
+                format!("{err:#}").contains("control or bidirectional/format characters"),
+                "name {bad:?} should be rejected, got: {err:#}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_package_name_rejects_bidi_and_format_characters() {
+        let _g = lock_env();
+        // U+202E (RLO), a bidi isolate, a zero-width joiner, and the BOM
+        // all pass the ASCII-control check but can reorder or hide the
+        // printed status line — reject them.
+        for bad in [
+            "rip\u{202E}grep",
+            "rg\u{2066}forged\u{2069}",
+            "rg\u{200D}x",
+            "rg\u{FEFF}",
+        ] {
+            let err = validate_package_name(PackageManager::Brew, bad).unwrap_err();
+            assert!(
+                format!("{err:#}").contains("bidirectional/format"),
                 "name {bad:?} should be rejected, got: {err:#}"
             );
         }

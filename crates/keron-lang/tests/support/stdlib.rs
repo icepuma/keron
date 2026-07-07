@@ -1,6 +1,30 @@
+//! Test-support mirror of the stdlib symbols keron-lang's corpus /
+//! property / fuzz harnesses type-check against.
+//!
+//! NOTE: keron-lang sits *below* `keron-modules` in the dependency
+//! graph, so it cannot import the real `keron_modules::stdlib`
+//! registry without a dev-dependency cycle. This mirror is therefore
+//! hand-maintained and MUST be kept in sync with
+//! `crates/keron-modules/src/stdlib.rs` — when you add or change a
+//! builtin there, mirror the signature here. `properties.rs`'s
+//! `stdlib_mirror_covers_drift_prone_builtins` test pins the
+//! signatures that have drifted before; the reserved-identifier set is
+//! derived from `imports()` so those two can never diverge.
+
+// Shared support module: not every integration-test consumer
+// (`properties`, `fuzz`) references every symbol.
+#![allow(dead_code)]
+
+use std::collections::HashSet;
+use std::sync::LazyLock;
+
 use keron_lang::{FnSig, ImportedSymbols, ParamSig, Type};
 
-pub const RESERVED_OR_BUILTIN_NAMES: &[&str] = &[
+/// Language keywords and type names — the reserved identifiers that are
+/// *not* stdlib functions. The builtin function names are folded in
+/// automatically by [`RESERVED_OR_BUILTIN_NAMES`] from `imports()`, so
+/// they can never drift from the type-checking mirror.
+const KEYWORDS_AND_TYPE_NAMES: &[&str] = &[
     "val",
     "fn",
     "reconcile",
@@ -32,54 +56,21 @@ pub const RESERVED_OR_BUILTIN_NAMES: &[&str] = &[
     "ShellKind",
     "OsType",
     "OsArch",
-    "symlink",
-    "template",
-    "shell",
-    "ssh_key",
-    "gpg_key",
-    "keron_root",
-    "env",
-    "secret",
-    "unwrap_secret",
-    "brew",
-    "cargo",
-    "winget",
-    "os_type",
-    "os_arch",
-    "hostname",
-    "user",
-    "home_dir",
-    "config_dir",
-    "cache_dir",
-    "data_dir",
-    "state_dir",
-    "runtime_dir",
-    "split",
-    "join",
-    "contains",
-    "replace",
-    "trim",
-    "len",
-    "list_contains",
-    "first",
-    "last",
-    "keys",
-    "values",
-    "get",
-    "map_contains",
-    "path_join",
-    "path_parent",
-    "path_basename",
-    "path_extension",
-    "path_is_absolute",
-    "path_exists",
-    "path_is_dir",
-    "path_is_file",
-    "read_file",
 ];
 
+/// Every identifier a generated program must avoid: keywords, type
+/// names, and — derived from `imports()` so the two lists cannot
+/// diverge — every stdlib builtin function name.
+pub static RESERVED_OR_BUILTIN_NAMES: LazyLock<HashSet<String>> = LazyLock::new(|| {
+    let mut set: HashSet<String> = KEYWORDS_AND_TYPE_NAMES
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+    set.extend(imports().builtins.iter().cloned());
+    set
+});
+
 pub fn imports() -> ImportedSymbols {
-    debug_assert!(RESERVED_OR_BUILTIN_NAMES.contains(&"symlink"));
     let mut imp = ImportedSymbols::default();
     insert_fs(&mut imp);
     insert_keron(&mut imp);
@@ -141,7 +132,30 @@ fn insert_secrets(imp: &mut ImportedSymbols) {
 }
 
 fn insert_packages(imp: &mut ImportedSymbols) {
-    for name in ["brew", "cargo", "winget"] {
+    // brew and cask take an optional `tap_url: String? = null` second
+    // argument (mirrors `build_brewish_fn` in the real registry).
+    for name in ["brew", "cask"] {
+        imp.fns.insert(
+            name.into(),
+            FnSig {
+                params: vec![
+                    ParamSig {
+                        name: "name".into(),
+                        ty: Type::String,
+                        has_default: false,
+                    },
+                    ParamSig {
+                        name: "tap_url".into(),
+                        ty: Type::Nullable(Box::new(Type::String)),
+                        has_default: true,
+                    },
+                ],
+                return_type: Type::Package,
+            },
+        );
+        imp.builtins.insert(name.into());
+    }
+    for name in ["cargo", "winget"] {
         insert_fn(imp, name, &[("name", Type::String)], Type::Package);
     }
 }
@@ -224,6 +238,19 @@ fn insert_string(imp: &mut ImportedSymbols) {
         ],
         Type::String,
     );
+    insert_fn(
+        imp,
+        "starts_with",
+        &[("s", Type::String), ("prefix", Type::String)],
+        Type::Boolean,
+    );
+    insert_fn(
+        imp,
+        "ends_with",
+        &[("s", Type::String), ("suffix", Type::String)],
+        Type::Boolean,
+    );
+    insert_fn(imp, "str_len", &[("s", Type::String)], Type::Int);
     insert_fn(
         imp,
         "contains",

@@ -392,26 +392,25 @@ impl ResolveState {
                 // Already reported during queue_dep.
                 Err(_) => continue,
             };
+            // A resolvable `dep_id` that is absent from `modules` means
+            // `queue_dep` already failed to read or parse the file and
+            // reported it. Emitting "does not export" for each imported
+            // name would just pile misleading duplicates on top of the
+            // real error, so skip the whole import.
+            let Some(dep_module) = modules.get(&dep_id) else {
+                continue;
+            };
             for name in &u.names {
-                let exported = modules.get(&dep_id).is_some_and(|m| {
-                    m.exported_fns.contains(&name.node)
-                        || m.exported_vals.contains(&name.node)
-                        || m.exported_types.contains_key(&name.node)
-                });
+                let exported = dep_module.exported_fns.contains(&name.node)
+                    || dep_module.exported_vals.contains(&name.node)
+                    || dep_module.exported_types.contains_key(&name.node);
                 if !exported {
-                    let message = modules.get(&dep_id).map_or_else(
-                        || {
-                            format!(
-                                "module `{}` does not export `{}`",
-                                dep_id.display(),
-                                name.node
-                            )
-                        },
-                        |m| missing_export_message(m, &name.node),
-                    );
                     self.errors.push(ResolveError {
                         module: importer.clone(),
-                        diagnostics: vec![Diagnostic::new(name.span.clone(), message)],
+                        diagnostics: vec![Diagnostic::new(
+                            name.span.clone(),
+                            missing_export_message(dep_module, &name.node),
+                        )],
                     });
                     continue;
                 }
@@ -440,6 +439,16 @@ fn resolve_path(raw: &str, base_dir: &Path) -> Result<PathBuf, String> {
             fs::canonicalize(&joined).map_err(|e| format!("could not resolve `{raw}`: {e}"))?;
         if canonical.extension().and_then(|e| e.to_str()) != Some("keron") {
             return Err(format!("`{raw}` is not a `.keron` file"));
+        }
+        // A `.keron`-suffixed *directory* (or other non-regular file)
+        // canonicalizes and passes the extension check, then fails later
+        // with a raw "Is a directory" read error plus bogus
+        // "does not export" diagnostics. Reject it here with a clear
+        // message instead.
+        if !canonical.is_file() {
+            return Err(format!(
+                "`{raw}` is not a regular file (a directory or special file cannot be a module)"
+            ));
         }
         return Ok(canonical);
     }
@@ -769,6 +778,18 @@ mod tests {
         fs::write(&target, "").unwrap();
         let err = resolve_path("./hi.txt", &dir).unwrap_err();
         assert!(err.contains("not a `.keron` file"), "got: {err}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolve_path_rejects_keron_suffixed_directory() {
+        let dir = std::env::temp_dir().join("keron-resolve-path-dir");
+        fs::create_dir_all(&dir).unwrap();
+        // A directory literally named `sub.keron` passes the extension
+        // check but is not a module file.
+        fs::create_dir_all(dir.join("sub.keron")).unwrap();
+        let err = resolve_path("./sub.keron", &dir).unwrap_err();
+        assert!(err.contains("not a regular file"), "got: {err}");
         let _ = fs::remove_dir_all(&dir);
     }
 

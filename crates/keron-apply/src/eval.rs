@@ -605,7 +605,25 @@ fn eval_expr_inner(expr: &Spanned<Expr>, env: &Env<'_, '_>) -> Result<Value> {
             let mut sink = Vec::new();
             eval_block_value(block, env, &mut sink)
         }
-        Expr::For { .. } => bail!("`for` is not a value expression"),
+        Expr::For {
+            pattern,
+            iter_expr,
+            body,
+        } => {
+            // `for` yields no value; the checker types it as `Void` and
+            // admits it wherever `Void` is expected (a `Void` fn body's
+            // trailing expression, a `val _: Void = …`). Evaluate it for
+            // effect into a throwaway sink and return `Void`, mirroring
+            // the value-position `if` arm above — previously this armed
+            // bailed with "`for` is not a value expression" on programs
+            // the checker had already accepted. A value-position `for`
+            // body cannot contain a `reconcile` (rejected in value
+            // position at check time), so the sink is always empty.
+            let iterable = eval_expr(iter_expr, env)?;
+            let mut sink = Vec::new();
+            iterate(&iterable, pattern, env, body, &mut sink)?;
+            Ok(Value::Void)
+        }
         Expr::Field { receiver, field } => {
             let v = eval_expr(receiver, env)?;
             match v {
@@ -1211,30 +1229,40 @@ fn construct_struct(
     arg_env: &Env<'_, '_>,
     default_env: &Env<'_, '_>,
 ) -> Result<Value> {
-    let mut fields: Vec<(String, Value)> = Vec::with_capacity(decl.fields.len());
-    let mut positional = args.iter().filter(|a| a.name.is_none());
-    for field in &decl.fields {
-        let named = args
-            .iter()
-            .find(|a| a.name.as_ref().is_some_and(|n| n.node == field.name.node));
-        let value = if let Some(arg) = named {
-            eval_expr(&arg.value, arg_env)?
-        } else if let Some(arg) = positional.next() {
-            eval_expr(&arg.value, arg_env)?
-        } else if let Some(default) = &field.default {
-            eval_expr(default, default_env)?
-        } else {
-            bail!(
-                "missing argument for field `{}` of struct `{}`",
-                field.name.node,
-                decl.name.node
-            );
-        };
-        fields.push((field.name.node.clone(), value));
-    }
-    Ok(Value::Struct {
-        name: decl.name.node.clone(),
-        fields,
+    // Struct construction recurses whenever a field default constructs
+    // another struct (`struct A { b: B = B() }` / `struct B { a: A =
+    // A() }`), so it needs the same recursion bound as user-fn calls —
+    // without it a self-referential default overflows the Rust stack
+    // (SIGABRT) instead of surfacing the clean depth diagnostic. Share
+    // the fn-call counter and stack-growth so either kind of runaway
+    // recursion is capped at `MAX_CALL_DEPTH`.
+    let _depth = CallDepthGuard::enter(arg_env.graph)?;
+    stacker::maybe_grow(STACK_RED_ZONE, STACK_GROW_SLAB, || {
+        let mut fields: Vec<(String, Value)> = Vec::with_capacity(decl.fields.len());
+        let mut positional = args.iter().filter(|a| a.name.is_none());
+        for field in &decl.fields {
+            let named = args
+                .iter()
+                .find(|a| a.name.as_ref().is_some_and(|n| n.node == field.name.node));
+            let value = if let Some(arg) = named {
+                eval_expr(&arg.value, arg_env)?
+            } else if let Some(arg) = positional.next() {
+                eval_expr(&arg.value, arg_env)?
+            } else if let Some(default) = &field.default {
+                eval_expr(default, default_env)?
+            } else {
+                bail!(
+                    "missing argument for field `{}` of struct `{}`",
+                    field.name.node,
+                    decl.name.node
+                );
+            };
+            fields.push((field.name.node.clone(), value));
+        }
+        Ok(Value::Struct {
+            name: decl.name.node.clone(),
+            fields,
+        })
     })
 }
 
@@ -1373,6 +1401,10 @@ fn dispatch_ssh_key(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
 /// --list-secret-keys` output, so its non-sensitivity is fine.
 fn dispatch_gpg_key(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     let fingerprint = call_string(args, env, "fingerprint", 0)?;
+    // Validate here, at the single choke point, so the plan-time keyring
+    // probe (`gpg --list-secret-keys <fp>`) can never receive an
+    // option-like fingerprint. See `execute::validate_gpg_fingerprint`.
+    crate::execute::validate_gpg_fingerprint(&fingerprint)?;
     let key = match eval_call_arg(args, env, "key", 1)? {
         Value::Secret(s) => s,
         other => bail!(
@@ -1394,10 +1426,7 @@ fn dispatch_gpg_key(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
 /// resolver — not the dispatch — owns the containment decision.
 fn dispatch_read_file(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     let raw = call_string(args, env, "path", 0)?;
-    let Ok(resolved) = resolve_managed_path(&raw, env, "read_file", "path") else {
-        return Ok(Value::Null);
-    };
-    let Ok(bytes) = std::fs::read(&resolved) else {
+    let Ok(bytes) = read_managed_file(&raw, env, "read_file", "path") else {
         return Ok(Value::Null);
     };
     let Ok(text) = String::from_utf8(bytes) else {
@@ -1931,17 +1960,28 @@ fn dispatch_shell(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
 fn dispatch_package(args: &[CallArg], env: &Env<'_, '_>, manager: PackageManager) -> Result<Value> {
     let name = call_string(args, env, "name", 0)?;
     crate::packages::validate_package_name(manager, &name)?;
-    // Only brew/cask understand tap qualification; cargo/winget reject
-    // a tap_url even if one snuck through the type system (it can't —
-    // their stdlib signatures don't accept it — but a defensive bail
-    // here is cheap).
-    let tap_url = match manager {
+    // Only brew/cask understand `user/tap/formula` qualification and a
+    // `tap_url`; for cargo/winget a slash-qualified name must be a hard
+    // error, not input to tap parsing — otherwise `cargo("a/b/c")`
+    // would synthesize (and later execute) a Homebrew tap for a
+    // resource that has nothing to do with brew. (Their stdlib
+    // signatures don't accept `tap_url`, but the name is free-form.)
+    let tap = match manager {
         PackageManager::Brew | PackageManager::BrewCask => {
-            call_optional_string(args, env, "tap_url", 1)?
+            let tap_url = call_optional_string(args, env, "tap_url", 1)?;
+            build_tap_spec(manager, &name, tap_url)?
         }
-        PackageManager::Cargo | PackageManager::Winget => None,
+        PackageManager::Cargo | PackageManager::Winget => {
+            if name.contains('/') {
+                bail!(
+                    "{} package name `{name}` must not contain `/` — \
+                     tap qualification is a Homebrew concept",
+                    manager.kind_label()
+                );
+            }
+            None
+        }
     };
-    let tap = build_tap_spec(manager, &name, tap_url)?;
     Ok(Value::Resource(ResourceState::Package {
         manager,
         name,
@@ -1976,12 +2016,17 @@ fn build_tap_spec(
             }
             Ok(None)
         }
-        [user, tap, _formula] if !user.is_empty() && !tap.is_empty() => {
+        [user, tap, formula] if !user.is_empty() && !tap.is_empty() && !formula.is_empty() => {
             if let Some(url) = tap_url.as_deref() {
                 crate::packages::brew::validate_tap_url(url)?;
             }
+            // Lowercase to brew's canonical form — `TapSpec::user_tap`
+            // documents "always lowercase ASCII" and `brew tap` lists
+            // installed taps lowercased, so a mixed-case manifest name
+            // (`D12frosted/emacs-plus/…`) would otherwise never match
+            // the installed set and re-tap on every apply.
             Ok(Some(crate::plan::TapSpec {
-                user_tap: format!("{user}/{tap}"),
+                user_tap: format!("{user}/{tap}").to_ascii_lowercase(),
                 url: tap_url,
             }))
         }
@@ -2338,13 +2383,10 @@ fn dispatch_template(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     let source = call_string(args, env, "source", 0)?;
     let target = call_string(args, env, "target", 1)?;
     let (vars, sensitive) = call_string_map(args, env, "vars", 2)?;
-    let resolved = resolve_managed_path(&source, env, "template", "source")?;
-    let raw = std::fs::read_to_string(&resolved).with_context(|| {
-        format!(
-            "could not read template source `{source}` (resolved to `{}`)",
-            resolved.display()
-        )
-    })?;
+    let bytes = read_managed_file(&source, env, "template", "source")
+        .with_context(|| format!("could not read template source `{source}`"))?;
+    let raw = String::from_utf8(bytes)
+        .map_err(|_| anyhow!("template source `{source}` is not valid UTF-8"))?;
     let rendered = render_template(&source, &raw, &vars)
         .with_context(|| format!("rendering template `{source}`"))?;
     Ok(Value::Resource(ResourceState::Template {
@@ -2416,13 +2458,65 @@ fn resolve_managed_path(raw: &str, env: &Env<'_, '_>, kind: &str, arg: &str) -> 
     Ok(canonical)
 }
 
+/// Read a keron-root-confined file, closing the leaf TOCTOU between the
+/// [`resolve_managed_path`] confinement check and the read. On Unix the
+/// validated leaf is opened with `O_NOFOLLOW` and read from that same
+/// handle, so a concurrent swap of the regular file for a symlink
+/// pointing outside the root (e.g. `~/.ssh/id_ed25519`) between the
+/// check and a by-name read is refused with `ELOOP` rather than
+/// followed. (Swapping an *ancestor directory* to a symlink is a
+/// narrower residual — it needs a co-resident writer inside the keron
+/// root — noted in the eval-IO threat model.)
+fn read_managed_file(raw: &str, env: &Env<'_, '_>, kind: &str, arg: &str) -> Result<Vec<u8>> {
+    let resolved = resolve_managed_path(raw, env, kind, arg)?;
+    #[cfg(unix)]
+    {
+        use std::io::Read as _;
+        use std::os::unix::fs::OpenOptionsExt as _;
+        let mut file = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(&resolved)
+            .with_context(|| {
+                format!(
+                    "opening {kind} `{arg}` = `{raw}` (`{}`); a symlink at the leaf is refused",
+                    resolved.display()
+                )
+            })?;
+        let meta = file
+            .metadata()
+            .with_context(|| format!("stat {kind} `{arg}` = `{raw}`"))?;
+        if !meta.is_file() {
+            bail!("{kind} `{arg}` = `{raw}` is not a regular file");
+        }
+        let mut buf = Vec::new();
+        file.read_to_end(&mut buf)
+            .with_context(|| format!("reading {kind} `{arg}` = `{raw}`"))?;
+        Ok(buf)
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::read(&resolved).with_context(|| {
+            format!(
+                "reading {kind} `{arg}` = `{raw}` (`{}`)",
+                resolved.display()
+            )
+        })
+    }
+}
+
 /// Render a Tera template against the supplied variable map.
 ///
 /// Missing variables are a hard error: Tera's default behaviour
-/// raises a "Variable X not found in context while rendering ..."
-/// error from the renderer, which preserves the old hand-rolled
-/// `${name}` engine's "typo'd placeholder is a build failure, not
-/// silent empty text" guarantee.
+/// raises a "Tried to render a variable that is not defined" error
+/// from the renderer, which preserves the old hand-rolled `${name}`
+/// engine's "typo'd placeholder is a build failure, not silent
+/// empty text" guarantee.
+///
+/// Templates stay pure text transforms: Tera 2's only builtin
+/// functions are `range` and `throw` — the 1.x impure builtins
+/// (`get_env`, `now`, `get_random`) were removed upstream, so
+/// nothing here can read the environment or other ambient state.
 ///
 /// Autoescape is disabled. Dotfile content is not HTML; `&`, `<`,
 /// `>`, `"` must pass through verbatim. Tera's default autoescape
@@ -2431,22 +2525,21 @@ fn resolve_managed_path(raw: &str, env: &Env<'_, '_>, kind: &str, arg: &str) -> 
 /// autoescape list defensively in case that ever changes.
 fn render_template(name: &str, src: &str, vars: &HashMap<String, String>) -> Result<String> {
     let mut tera = tera::Tera::default();
-    tera.functions.clear();
-    tera.autoescape_on(Vec::new());
+    tera.autoescape_on(Vec::<&str>::new());
     tera.add_raw_template(name, src)
         .map_err(|e| anyhow!("parsing template: {}", format_tera_error(&e)))?;
     let mut ctx = tera::Context::new();
     for (k, v) in vars {
-        ctx.insert(k, v);
+        ctx.insert(k.clone(), v);
     }
     tera.render(name, &ctx)
         .map_err(|e| anyhow!("rendering template: {}", format_tera_error(&e)))
 }
 
 /// Flatten Tera's source chain into a single line. Tera wraps the
-/// real cause (e.g. "Variable who not found in context") inside a
-/// generic "Failed to render ..." outer error; without the chain
-/// walk the user only sees the outer wrapper.
+/// real cause (e.g. "Tried to render a variable that is not
+/// defined") inside a generic "Failed to render ..." outer error;
+/// without the chain walk the user only sees the outer wrapper.
 fn format_tera_error(err: &tera::Error) -> String {
     use std::error::Error as _;
     let mut msg = err.to_string();

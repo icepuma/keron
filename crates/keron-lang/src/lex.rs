@@ -65,7 +65,15 @@ pub fn multiline_open(line: &str) -> Option<MultilineClose> {
                 in_string = true;
             }
             'r' => {
-                if let Some(hashes) = raw_multiline_open_at(line, i) {
+                // Only a raw-string opener when the `r` doesn't
+                // continue an identifier: `bar#"""` is the identifier
+                // `bar` plus the comment `#"""`, and treating the `r`
+                // as a raw opener would make the scanner swallow every
+                // following line (and every later comment) as string
+                // body until a `"""#` line that may never come.
+                if !prev_char_is_ident(line, i)
+                    && let Some(hashes) = raw_multiline_open_at(line, i)
+                {
                     return Some(MultilineClose::Raw(hashes));
                 }
             }
@@ -73,6 +81,17 @@ pub fn multiline_open(line: &str) -> Option<MultilineClose> {
         }
     }
     None
+}
+
+/// True when the character immediately before byte offset `i` in `line`
+/// is an identifier character (`[A-Za-z0-9_]`) — i.e. a leading `r` at
+/// `i` continues an identifier rather than opening a raw string.
+#[must_use]
+pub fn prev_char_is_ident(line: &str, i: usize) -> bool {
+    line[..i]
+        .chars()
+        .next_back()
+        .is_some_and(|p| p.is_alphanumeric() || p == '_')
 }
 
 /// If `line[start..]` begins with `r#*"""` and nothing follows after

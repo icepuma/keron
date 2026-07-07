@@ -131,11 +131,18 @@ fn find_comment_start(line: &str) -> Option<usize> {
                 }
                 in_string = true;
             }
-            'r' if crate::lex::raw_multiline_open_at(line, i).is_some() => {
+            'r' if !crate::lex::prev_char_is_ident(line, i)
+                && crate::lex::raw_multiline_open_at(line, i).is_some() =>
+            {
                 // `r#*"""` opens a raw multi-line string. The keron
                 // grammar requires the opener to be followed by a
                 // newline (see `parser::string`), so everything after
                 // `r#*"""` on this line is string body, not comment.
+                // Guard on `prev_char_is_ident` so an identifier ending
+                // in `r` before a `#"""` comment (`bar#"""`) isn't
+                // mistaken for a raw opener — which would drop this and
+                // every later comment from the map, and the formatter
+                // would then delete them.
                 return None;
             }
             _ => {}

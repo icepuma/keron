@@ -60,19 +60,29 @@ pub fn run(payload_path: &Path, expected: &PayloadExpectation) -> Result<()> {
             )
         })?;
         applied += 1;
-        if let Some(path) = leaf_path(change)
-            && let Err(e) = chown::set_owner(&path, &payload.owner)
-        {
-            // Write succeeded, chown failed: don't abort the loop —
-            // finish the rest and surface a complete list of broken
-            // ownerships at the end. Per-resource warnings go to
-            // stderr so a closed stdout pipe can't swallow them.
-            let _ = writeln!(
-                stderr,
-                "warning: failed to set owner on `{}`: {e:#}",
-                show_path(&path),
-            );
-            ownership_failures.push(path);
+        if let Some(path) = leaf_path(change) {
+            if should_chown_back(&path) {
+                if let Err(e) = chown::set_owner(&path, &payload.owner) {
+                    // Write succeeded, chown failed: don't abort the
+                    // loop — finish the rest and surface a complete list
+                    // of broken ownerships at the end. Per-resource
+                    // warnings go to stderr so a closed stdout pipe
+                    // can't swallow them.
+                    let _ = writeln!(
+                        stderr,
+                        "warning: failed to set owner on `{}`: {e:#}",
+                        show_path(&path),
+                    );
+                    ownership_failures.push(path);
+                }
+            } else {
+                // Deliberately left root-owned — see `should_chown_back`.
+                let _ = writeln!(
+                    stderr,
+                    "note: left `{}` root-owned (system config directory)",
+                    show_path(&path),
+                );
+            }
         }
     }
 
@@ -157,6 +167,20 @@ fn refuse_symlinked_ancestors(leaf: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Whether a successfully-applied leaf should be chowned back to the
+/// invoking user. Files under `/etc` — where `sudoers.d`, `cron.d`,
+/// `logrotate.d`, and friends live — must stay root-owned: those
+/// consumers ignore or reject a config file owned by a non-root uid, so
+/// chowning it back would silently deactivate the rules keron just
+/// deployed. It is also a privilege downgrade (a root-owned system
+/// config becoming user-writable). Everywhere else, the file keron
+/// placed becomes the user's to manage. `Path::starts_with` is
+/// component-wise (so `/etcfoo` is not treated as under `/etc`), and
+/// `/etc` never matches a Windows path, so this is a no-op there.
+fn should_chown_back(leaf: &Path) -> bool {
+    !leaf.starts_with("/etc")
+}
+
 fn leaf_path(change: &ResourceChange) -> Option<PathBuf> {
     let state = change.after.as_ref().or(change.before.as_ref())?;
     match state {
@@ -212,6 +236,17 @@ mod tests {
             sensitive: false,
         });
         assert_eq!(leaf_path(&c), Some(PathBuf::from("/c")));
+    }
+
+    #[test]
+    fn should_chown_back_skips_etc_but_allows_home_and_sibling_paths() {
+        assert!(!should_chown_back(Path::new("/etc/sudoers.d/99-keron")));
+        assert!(!should_chown_back(Path::new("/etc/cron.d/keron")));
+        assert!(!should_chown_back(Path::new("/etc")));
+        // Component-wise: `/etcfoo` is unrelated to `/etc`.
+        assert!(should_chown_back(Path::new("/etcfoo/bar")));
+        assert!(should_chown_back(Path::new("/usr/local/etc/foo")));
+        assert!(should_chown_back(Path::new("/home/alice/.config/foo")));
     }
 
     #[test]

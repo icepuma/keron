@@ -317,3 +317,35 @@ fn reconcile_in_match_guard_is_rejected() {
     let err = check_src(src).expect_err("should fail");
     assert!(err.iter().any(|d| d.message.contains("silently dropped")));
 }
+
+#[test]
+fn reconcile_in_top_level_if_condition_is_rejected() {
+    // A top-level `if`/`for`/`match` statement is exec-void, but its
+    // *condition* is a value position: a reconcile there is dropped.
+    let src = "if (if true { reconcile brew(\"ripgrep\") true } else { false }) {} else {}";
+    let err = check_src(src).expect_err("reconcile in top-level if cond must be rejected");
+    assert!(
+        err.iter().any(|d| d.message.contains("silently dropped")),
+        "got: {err:?}"
+    );
+}
+
+#[test]
+fn reconcile_in_top_level_for_iterable_is_rejected() {
+    let src = "for x in (if true { reconcile brew(\"ripgrep\") [1] } else { [] }) { reconcile brew(\"jq\") }";
+    let err = check_src(src).expect_err("reconcile in top-level for iterable must be rejected");
+    assert!(
+        err.iter().any(|d| d.message.contains("silently dropped")),
+        "got: {err:?}"
+    );
+}
+
+#[test]
+fn reconcile_in_top_level_if_body_is_allowed() {
+    // The whole point of exec-void: a statement-level reconcile inside a
+    // top-level `if` body is real and must NOT be rejected.
+    assert!(
+        check_src("if true { reconcile brew(\"ripgrep\") } else {}").is_ok(),
+        "reconcile in a top-level if body is legitimate"
+    );
+}

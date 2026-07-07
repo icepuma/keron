@@ -423,6 +423,43 @@ fn update_file_renders_full_diff_in_verbose_mode() {
 }
 
 #[test]
+fn verbose_diff_keeps_content_lines_that_resemble_diff_headers() {
+    // A removed line whose content starts with `-- ` renders as
+    // `--- ...` in the unified diff (and `++ ` as `+++ ...`). Such
+    // lines are real user content — e.g. Lua comments — and used to be
+    // silently filtered out as "synthetic headers", hiding changed
+    // lines from the reviewed diff.
+    let plan = Plan {
+        changes: vec![ResourceChange {
+            address: "/x".into(),
+            kind: ResourceKind::Template,
+            action: Action::Update,
+            before: Some(ResourceState::Template {
+                path: PathBuf::from("/x"),
+                content: "-- old lua comment\n".into(),
+                sensitive: false,
+            }),
+            after: Some(ResourceState::Template {
+                path: PathBuf::from("/x"),
+                content: "++ new marker\n".into(),
+                sensitive: false,
+            }),
+            requires_elevation: false,
+            requires_force: false,
+        }],
+    };
+    let out = render_verbose(&plan);
+    assert!(
+        out.contains("--- old lua comment"),
+        "removed `-- ` content line must stay visible: {out}"
+    );
+    assert!(
+        out.contains("+++ new marker"),
+        "added `++ ` content line must stay visible: {out}"
+    );
+}
+
+#[test]
 fn update_file_renders_only_path_when_content_unchanged() {
     let plan = Plan {
         changes: vec![ResourceChange {

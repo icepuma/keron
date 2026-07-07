@@ -301,3 +301,47 @@ fn coalesce_still_requires_nullable_left_side() {
     .expect_err("should fail");
     assert!(err[0].message.contains("left side to be a nullable"));
 }
+
+#[test]
+fn union_literal_narrows_into_nullable_union_slot() {
+    // `val m: Mode? = "on"` must be accepted: the literal narrows into
+    // the union through one `Nullable` layer, exactly as `val m: Mode =
+    // "on"` does. Previously it widened to `String` and was rejected.
+    assert!(
+        check_src("type Mode = \"on\" | \"off\"\nval m: Mode? = \"on\"").is_ok(),
+        "union literal must narrow into a nullable union slot"
+    );
+    // A non-variant literal is still rejected.
+    assert!(
+        check_src("type Mode = \"on\" | \"off\"\nval m: Mode? = \"bogus\"").is_err(),
+        "a non-variant literal must still be rejected"
+    );
+}
+
+#[test]
+fn empty_container_is_admitted_into_nullable_slot() {
+    assert!(
+        check_src("val xs: List<Int>? = []").is_ok(),
+        "empty list must be admitted into a nullable list slot"
+    );
+    assert!(
+        check_src("val m: Map<String, Int>? = {}").is_ok(),
+        "empty map must be admitted into a nullable map slot"
+    );
+}
+
+#[test]
+fn struct_pattern_matches_nullable_scrutinee() {
+    // A struct pattern against a `Point?` scrutinee must typecheck (the
+    // runtime falls through on `null`); the wildcard arm keeps it
+    // exhaustive.
+    assert!(
+        check_src(
+            "struct Point { x: Int }\n\
+             val maybe: Point? = Point(1)\n\
+             val r: Int = match maybe { Point { x } => x, _ => 0 }",
+        )
+        .is_ok(),
+        "struct pattern must unwrap a nullable scrutinee"
+    );
+}

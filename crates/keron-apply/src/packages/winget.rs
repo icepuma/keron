@@ -56,11 +56,35 @@ fn decode_list_output(
             String::from_utf8_lossy(stderr).trim(),
         );
     }
-    // Winget prints UTF-16 on some shells; try UTF-8 first, fall
-    // back to lossy.
-    let text = String::from_utf8(stdout.to_vec())
-        .unwrap_or_else(|_| String::from_utf8_lossy(stdout).into_owned());
-    Ok(parse(&text))
+    Ok(parse(&decode_console_output(stdout)))
+}
+
+/// Decode raw `winget list` bytes to text.
+///
+/// Some PowerShell hosts pipe winget's output as UTF-16 with a BOM; a
+/// UTF-16LE stream is *mostly valid UTF-8* (ASCII interleaved with NUL
+/// bytes, which are themselves valid UTF-8), so the old `from_utf8`
+/// path "succeeded" and produced `"I\0d\0"`, where `find("Id")` never
+/// matches and every package silently classifies as Create. Detect the
+/// BOM and decode the two UTF-16 byte orders properly; otherwise treat
+/// the bytes as UTF-8 (winget's default on modern Windows), lossily.
+fn decode_console_output(stdout: &[u8]) -> String {
+    if let Some(rest) = stdout.strip_prefix(&[0xFF, 0xFE]) {
+        return decode_utf16(rest, u16::from_le_bytes);
+    }
+    if let Some(rest) = stdout.strip_prefix(&[0xFE, 0xFF]) {
+        return decode_utf16(rest, u16::from_be_bytes);
+    }
+    String::from_utf8(stdout.to_vec())
+        .unwrap_or_else(|_| String::from_utf8_lossy(stdout).into_owned())
+}
+
+fn decode_utf16(bytes: &[u8], to_u16: fn([u8; 2]) -> u16) -> String {
+    let units: Vec<u16> = bytes
+        .chunks_exact(2)
+        .map(|pair| to_u16([pair[0], pair[1]]))
+        .collect();
+    String::from_utf16_lossy(&units)
 }
 
 /// Locate the byte offset of the `Id` column in a header line. The
@@ -277,6 +301,38 @@ Microsoft PowerShell       Microsoft.PowerShell     7.4.1.0
         let msg = format!("{err:#}");
         assert!(msg.contains("exit code: 5"), "got: {msg}");
         assert!(msg.contains("winget not registered"), "got: {msg}");
+    }
+
+    #[test]
+    fn decode_console_output_decodes_utf16le_with_bom() {
+        // UTF-16LE ("...\0" interleaved) with a `FF FE` BOM — the shape
+        // some PowerShell hosts pipe. It must decode to real text so the
+        // `Id` header is found; the old UTF-8-only path silently yielded
+        // an empty installed set here.
+        let header = "Name Id    Version\n------------------\nFoo  Foo.Bar 1.0\n";
+        let mut bytes = vec![0xFF, 0xFE];
+        for u in header.encode_utf16() {
+            bytes.extend_from_slice(&u.to_le_bytes());
+        }
+        let decoded = decode_console_output(&bytes);
+        assert_eq!(decoded, header);
+        assert!(parse(&decoded).contains("Foo.Bar"), "got: {decoded:?}");
+    }
+
+    #[test]
+    fn decode_console_output_decodes_utf16be_with_bom() {
+        let header = "Name Id    Version\n------------------\nBar  Bar.Qux 2.0\n";
+        let mut bytes = vec![0xFE, 0xFF];
+        for u in header.encode_utf16() {
+            bytes.extend_from_slice(&u.to_be_bytes());
+        }
+        assert!(parse(&decode_console_output(&bytes)).contains("Bar.Qux"));
+    }
+
+    #[test]
+    fn decode_console_output_passes_utf8_through() {
+        let text = b"Name Id    Version\n------------------\nFoo  Foo.Bar 1.0\n";
+        assert!(parse(&decode_console_output(text)).contains("Foo.Bar"));
     }
 
     #[test]
