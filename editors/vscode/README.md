@@ -30,3 +30,19 @@ code --install-extension keron-*.vsix
 
 - `keron.serverPath` — path to the `keron` binary (default: `keron`
   from `PATH`). The extension runs `<serverPath> lsp`.
+
+## Publishing to the marketplace (maintainer)
+
+Needs a one-time [publisher](https://marketplace.visualstudio.com/manage)
+named `icepuma` (matching `publisher` in package.json) and an Azure
+DevOps PAT with the *Marketplace → Manage* scope:
+
+```sh
+cd editors/vscode
+npm install && npm run compile
+npx @vscode/vsce login icepuma   # paste the PAT once
+npx @vscode/vsce publish         # publishes the version in package.json
+```
+
+Also worth publishing to [open-vsx.org](https://open-vsx.org) for
+VSCodium/Cursor users: `npx ovsx publish -p <open-vsx-token>`.

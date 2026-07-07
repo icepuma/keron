@@ -78,6 +78,12 @@ struct Client {
 
 impl Client {
     fn start() -> Self {
+        Self::start_with(InitializeParams::default()).0
+    }
+
+    /// Start a server and run the initialize handshake with custom
+    /// client params; returns the raw initialize result too.
+    fn start_with(init: InitializeParams) -> (Self, serde_json::Value) {
         let (server_side, client_side) = Connection::memory();
         let server = std::thread::spawn(move || {
             keron_lsp::run_with_connection(&server_side).expect("server run");
@@ -88,10 +94,9 @@ impl Client {
             pending: VecDeque::new(),
             next_id: 0,
         };
-        let _: serde_json::Value =
-            client.request::<InitializeParams>(Initialize::METHOD, InitializeParams::default());
+        let result = client.request(Initialize::METHOD, init);
         client.notify("initialized", serde_json::json!({}));
-        client
+        (client, result)
     }
 
     fn request<P: serde::Serialize>(&mut self, method: &str, params: P) -> serde_json::Value {
@@ -410,6 +415,46 @@ fn partially_broken_buffer_serves_hover_for_intact_items() {
         markup.value.contains("fn symlink("),
         "got: {}",
         markup.value
+    );
+    client.shutdown();
+}
+
+#[test]
+fn utf8_position_encoding_is_negotiated() {
+    let proj = TempProject::new("utf8");
+    let path = proj.write("main.keron", "");
+    let uri = file_uri(&path);
+    let init = InitializeParams {
+        capabilities: lsp_types::ClientCapabilities {
+            general: Some(lsp_types::GeneralClientCapabilities {
+                position_encodings: Some(vec![
+                    lsp_types::PositionEncodingKind::UTF8,
+                    lsp_types::PositionEncodingKind::UTF16,
+                ]),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let (mut client, result) = Client::start_with(init);
+    assert_eq!(
+        result["capabilities"]["positionEncoding"], "utf-8",
+        "server must advertise the negotiated encoding"
+    );
+
+    // 'é' is 2 bytes / 1 UTF-16 unit; with utf-8 columns the type
+    // error on the string literal starts at byte column 14 (it would
+    // be 13 under utf-16).
+    let src = "val é: Int = \"x\"\n";
+    client.open(&uri, src);
+    let published = client.diagnostics();
+    let diag = &published.diagnostics[0];
+    assert_eq!(diag.range.start.line, 0);
+    assert_eq!(
+        diag.range.start.character, 14,
+        "utf-8 columns are byte offsets: got {:?}",
+        diag.range
     );
     client.shutdown();
 }
