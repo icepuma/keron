@@ -125,10 +125,10 @@ fn if_branch_type_mismatch_errors() {
 }
 
 #[test]
-fn if_int_double_branches_do_not_promote() {
-    // No implicit Int->Double promotion in if branches, mirroring vals.
-    let err = check_src("val r = if true { 1 } else { 2.5 }").expect_err("should fail");
-    assert!(err[0].message.contains("mismatched types"));
+fn if_int_double_branches_promote_to_double() {
+    // `if` branches share one value slot, so mixed numerics promote
+    // to Double via the same join as list elements and match arms.
+    assert!(check_src("val r: Double = if true { 1 } else { 2.5 }").is_ok());
 }
 
 #[test]

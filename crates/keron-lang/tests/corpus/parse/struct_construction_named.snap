@@ -53,51 +53,51 @@ Program {
                     },
                 ),
                 value: Spanned {
-                    node: Call {
-                        callee: Spanned {
+                    node: StructLiteral {
+                        name: Spanned {
                             node: "Point",
                             span: 48..53,
                         },
-                        args: [
-                            CallArg {
-                                name: Some(
+                        fields: [
+                            StructLiteralField {
+                                name: Spanned {
+                                    node: "x",
+                                    span: 56..57,
+                                },
+                                value: Some(
                                     Spanned {
-                                        node: "x",
-                                        span: 54..55,
+                                        node: Literal(
+                                            Int(
+                                                1,
+                                            ),
+                                        ),
+                                        span: 59..60,
                                     },
                                 ),
-                                value: Spanned {
-                                    node: Literal(
-                                        Int(
-                                            1,
-                                        ),
-                                    ),
-                                    span: 58..59,
-                                },
-                                span: 54..59,
+                                span: 56..60,
                             },
-                            CallArg {
-                                name: Some(
+                            StructLiteralField {
+                                name: Spanned {
+                                    node: "y",
+                                    span: 62..63,
+                                },
+                                value: Some(
                                     Spanned {
-                                        node: "y",
-                                        span: 61..62,
+                                        node: Literal(
+                                            Int(
+                                                2,
+                                            ),
+                                        ),
+                                        span: 65..66,
                                     },
                                 ),
-                                value: Spanned {
-                                    node: Literal(
-                                        Int(
-                                            2,
-                                        ),
-                                    ),
-                                    span: 65..66,
-                                },
-                                span: 61..66,
+                                span: 62..67,
                             },
                         ],
                     },
-                    span: 48..68,
+                    span: 48..69,
                 },
-                span: 33..68,
+                span: 33..69,
             },
         ),
     ],

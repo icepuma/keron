@@ -108,7 +108,7 @@ fn elevated_subset_runs_under_spy_and_chowns_back() {
     fs::set_permissions(&protected_dir, perm).unwrap();
 
     let manifest = format!(
-        "reconcile {{\n  symlink(source = \"{}\", target = \"{}\");\n  symlink(source = \"{}\", target = \"{}\");\n}}\n",
+        "reconcile {{\n  symlink(source = \"{}\", target = \"{}\")\n  symlink(source = \"{}\", target = \"{}\")\n}}\n",
         plain_target.display(),
         plain_link.display(),
         protected_target.display(),

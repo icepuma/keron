@@ -207,6 +207,7 @@ fn collect_block_spans(block: &Block, spans: &mut Vec<Span>) {
                     }
                 }
             }
+            Stmt::Expr(x) => collect_expr_spans(&x.node, spans),
         }
     }
     if let Some(trailing) = &block.trailing {
@@ -226,6 +227,13 @@ fn collect_expr_spans(expr: &Expr, spans: &mut Vec<Span>) {
         Expr::Binary { lhs, rhs, .. } => {
             collect_expr_spans(&lhs.node, spans);
             collect_expr_spans(&rhs.node, spans);
+        }
+        Expr::StructLiteral { fields, .. } => {
+            for field in fields {
+                if let Some(value) = &field.value {
+                    collect_expr_spans(&value.node, spans);
+                }
+            }
         }
         Expr::Interpolation(parts) => {
             for part in parts {
@@ -283,6 +291,7 @@ fn stmt_span(stmt: &Stmt) -> Span {
     match stmt {
         Stmt::Val(v) => v.span.clone(),
         Stmt::Reconcile(r) => r.span.clone(),
+        Stmt::Expr(x) => x.span.clone(),
     }
 }
 

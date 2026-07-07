@@ -8,7 +8,7 @@
 //! "readability". Users who want extra parens for their own reasons
 //! can keep them by re-running the formatter after editing.
 
-use crate::ast::{BinOp, Expr};
+use crate::ast::{BinOp, Expr, Literal};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Side {
@@ -22,10 +22,10 @@ pub enum Side {
 /// Higher = tighter binding. Levels match the grammar comment at the
 /// top of `crate::parser::expr`:
 ///
-/// 1. `||`
-/// 2. `&&`
-/// 3. comparisons (`==`, `!=`, `<`, `<=`, `>`, `>=`)
-/// 4. `??` (right-associative)
+/// 1. `??` (right-associative, the loosest binary operator)
+/// 2. `||`
+/// 3. `&&`
+/// 4. comparisons (`==`, `!=`, `<`, `<=`, `>`, `>=`)
 /// 5. additive (`+`, `-`, `++`)
 /// 6. multiplicative (`*`, `/`)
 /// 7. unary `-`
@@ -33,10 +33,10 @@ pub enum Side {
 #[must_use]
 pub const fn binop_prec(op: BinOp) -> u8 {
     match op {
-        BinOp::Or => 1,
-        BinOp::And => 2,
-        BinOp::Eq | BinOp::Neq | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => 3,
-        BinOp::Coalesce => 4,
+        BinOp::Coalesce => 1,
+        BinOp::Or => 2,
+        BinOp::And => 3,
+        BinOp::Eq | BinOp::Neq | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => 4,
         BinOp::Add | BinOp::Sub | BinOp::Concat => 5,
         BinOp::Mul | BinOp::Div => 6,
         BinOp::Pow => 8,
@@ -95,6 +95,17 @@ pub const fn child_needs_parens(
             // LHS of `**` — reachable via explicit parens like
             // `(-a) ** b` — must keep them, or the emitted `-a ** b`
             // silently re-parses to a different value.
+            parent_prec > UNARY_PREC
+        }
+        // A negative numeric literal renders with a leading `-`, which
+        // re-parses through the unary tier (and folds back into the
+        // literal) — so positionally it has unary strength and needs
+        // the same `**`-LHS guard: `(-2) ** 2` must not flatten to
+        // `-2 ** 2` (= `-(2 ** 2)`).
+        Expr::Literal(Literal::Int(n)) if *n < 0 && matches!(side, Side::Left) => {
+            parent_prec > UNARY_PREC
+        }
+        Expr::Literal(Literal::Double(d)) if *d < 0.0 && matches!(side, Side::Left) => {
             parent_prec > UNARY_PREC
         }
         _ => false,

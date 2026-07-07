@@ -1,0 +1,97 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "maybe_names",
+                    span: 265..276,
+                },
+                ty: Some(
+                    Spanned {
+                        node: List(
+                            Nullable(
+                                String,
+                            ),
+                        ),
+                        span: 278..292,
+                    },
+                ),
+                value: Spanned {
+                    node: List(
+                        [
+                            Spanned {
+                                node: Literal(
+                                    Null,
+                                ),
+                                span: 295..299,
+                            },
+                            Spanned {
+                                node: Literal(
+                                    String(
+                                        "ada",
+                                    ),
+                                ),
+                                span: 301..306,
+                            },
+                        ],
+                    ),
+                    span: 294..308,
+                },
+                span: 261..308,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "display",
+                    span: 312..319,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 321..327,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Coalesce,
+                        lhs: Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "first",
+                                    span: 330..335,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: None,
+                                        value: Spanned {
+                                            node: Var(
+                                                "maybe_names",
+                                            ),
+                                            span: 336..347,
+                                        },
+                                        span: 336..347,
+                                    },
+                                ],
+                            },
+                            span: 330..349,
+                        },
+                        rhs: Spanned {
+                            node: Literal(
+                                String(
+                                    "anonymous",
+                                ),
+                            ),
+                            span: 352..363,
+                        },
+                    },
+                    span: 330..363,
+                },
+                span: 308..364,
+            },
+        ),
+    ],
+}

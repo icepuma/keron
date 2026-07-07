@@ -1,0 +1,186 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        ExprStmt(
+            Spanned {
+                node: Match {
+                    scrutinee: Spanned {
+                        node: Call {
+                            callee: Spanned {
+                                node: "os_type",
+                                span: 278..285,
+                            },
+                            args: [],
+                        },
+                        span: 278..288,
+                    },
+                    arms: [
+                        MatchArm {
+                            pattern: Spanned {
+                                node: Lit(
+                                    String(
+                                        "Macos",
+                                    ),
+                                ),
+                                span: 292..299,
+                            },
+                            guard: None,
+                            body: Spanned {
+                                node: For {
+                                    pattern: Elem(
+                                        Spanned {
+                                            node: "pkg",
+                                            span: 307..310,
+                                        },
+                                    ),
+                                    iter_expr: Spanned {
+                                        node: List(
+                                            [
+                                                Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "ripgrep",
+                                                        ),
+                                                    ),
+                                                    span: 315..324,
+                                                },
+                                                Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "fd",
+                                                        ),
+                                                    ),
+                                                    span: 326..330,
+                                                },
+                                            ],
+                                        ),
+                                        span: 314..332,
+                                    },
+                                    body: Block {
+                                        stmts: [
+                                            Reconcile(
+                                                ReconcileDecl {
+                                                    chains: [
+                                                        [
+                                                            Spanned {
+                                                                node: Call {
+                                                                    callee: Spanned {
+                                                                        node: "brew",
+                                                                        span: 348..352,
+                                                                    },
+                                                                    args: [
+                                                                        CallArg {
+                                                                            name: None,
+                                                                            value: Spanned {
+                                                                                node: Var(
+                                                                                    "pkg",
+                                                                                ),
+                                                                                span: 353..356,
+                                                                            },
+                                                                            span: 353..356,
+                                                                        },
+                                                                    ],
+                                                                },
+                                                                span: 348..360,
+                                                            },
+                                                        ],
+                                                    ],
+                                                    span: 338..360,
+                                                },
+                                            ),
+                                        ],
+                                        trailing: None,
+                                        span: 332..361,
+                                    },
+                                },
+                                span: 303..361,
+                            },
+                            span: 292..361,
+                        },
+                        MatchArm {
+                            pattern: Spanned {
+                                node: Wildcard,
+                                span: 365..367,
+                            },
+                            guard: None,
+                            body: Spanned {
+                                node: For {
+                                    pattern: Elem(
+                                        Spanned {
+                                            node: "pkg",
+                                            span: 374..377,
+                                        },
+                                    ),
+                                    iter_expr: Spanned {
+                                        node: List(
+                                            [
+                                                Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "ripgrep",
+                                                        ),
+                                                    ),
+                                                    span: 382..391,
+                                                },
+                                                Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "fd",
+                                                        ),
+                                                    ),
+                                                    span: 393..397,
+                                                },
+                                            ],
+                                        ),
+                                        span: 381..399,
+                                    },
+                                    body: Block {
+                                        stmts: [
+                                            Reconcile(
+                                                ReconcileDecl {
+                                                    chains: [
+                                                        [
+                                                            Spanned {
+                                                                node: Call {
+                                                                    callee: Spanned {
+                                                                        node: "cargo",
+                                                                        span: 415..420,
+                                                                    },
+                                                                    args: [
+                                                                        CallArg {
+                                                                            name: None,
+                                                                            value: Spanned {
+                                                                                node: Var(
+                                                                                    "pkg",
+                                                                                ),
+                                                                                span: 421..424,
+                                                                            },
+                                                                            span: 421..424,
+                                                                        },
+                                                                    ],
+                                                                },
+                                                                span: 415..428,
+                                                            },
+                                                        ],
+                                                    ],
+                                                    span: 405..428,
+                                                },
+                                            ),
+                                        ],
+                                        trailing: None,
+                                        span: 399..429,
+                                    },
+                                },
+                                span: 370..429,
+                            },
+                            span: 365..429,
+                        },
+                    ],
+                },
+                span: 272..433,
+            },
+        ),
+    ],
+}

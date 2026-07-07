@@ -1,9 +1,9 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 error: unexpected end of input, expected identifier
   --> 2:1
   |
 2 | 
   | ^
+  = help: write a name (lowercase letter or `_`, then letters / digits / `_`).

@@ -1,0 +1,137 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "pretend_os",
+                    span: 206..216,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 218..224,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Coalesce,
+                        lhs: Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "env",
+                                    span: 227..230,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: None,
+                                        value: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "KERON_FAKE_OS",
+                                                ),
+                                            ),
+                                            span: 231..246,
+                                        },
+                                        span: 231..246,
+                                    },
+                                ],
+                            },
+                            span: 227..248,
+                        },
+                        rhs: Spanned {
+                            node: Literal(
+                                String(
+                                    "Linux",
+                                ),
+                            ),
+                            span: 251..258,
+                        },
+                    },
+                    span: 227..258,
+                },
+                span: 202..259,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "matches_host",
+                    span: 263..275,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 277..284,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Eq,
+                        lhs: Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "os_type",
+                                    span: 287..294,
+                                },
+                                args: [],
+                            },
+                            span: 287..297,
+                        },
+                        rhs: Spanned {
+                            node: Var(
+                                "pretend_os",
+                            ),
+                            span: 300..310,
+                        },
+                    },
+                    span: 287..310,
+                },
+                span: 259..354,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "self_equal",
+                    span: 358..368,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 370..377,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Eq,
+                        lhs: Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "os_type",
+                                    span: 380..387,
+                                },
+                                args: [],
+                            },
+                            span: 380..390,
+                        },
+                        rhs: Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "os_type",
+                                    span: 393..400,
+                                },
+                                args: [],
+                            },
+                            span: 393..403,
+                        },
+                    },
+                    span: 380..403,
+                },
+                span: 354..403,
+            },
+        ),
+    ],
+}

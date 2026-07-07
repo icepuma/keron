@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: unknown variable `port`
+  --> 4:33
+  |
+4 | val h: Host = Host { name: "a", port }
+  |                                 ^^^^

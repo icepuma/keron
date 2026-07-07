@@ -145,6 +145,51 @@ fn cross_file_import_resolves() {
 }
 
 #[test]
+fn importing_a_builtin_name_errors() {
+    // Local declarations shadowing a builtin are check errors; an
+    // import replacing stdlib `split` must be rejected the same way
+    // instead of silently rerouting every call site.
+    let proj = TempProject::new("import-shadows-builtin");
+    let helpers_src = "fn split(s: String): List<String> { [s] }\n";
+    proj.write("helpers.keron", helpers_src);
+    let entry_src = "from \"./helpers.keron\" use split\n\
+                     val parts: List<String> = split(\"a,b\")\n";
+    let entry = proj.write("entry.keron", entry_src);
+    let bundle = resolve(TempProject::entry_source(&entry, entry_src)).expect_err("should fail");
+    let messages: Vec<_> = bundle
+        .errors
+        .iter()
+        .flat_map(|e| &e.diagnostics)
+        .map(|d| d.message.as_str())
+        .collect();
+    assert!(
+        messages
+            .iter()
+            .any(|m| m.contains("`split` is a builtin and cannot be redefined")),
+        "got: {messages:?}",
+    );
+}
+
+#[test]
+fn importing_a_builtin_type_name_errors() {
+    let proj = TempProject::new("import-shadows-builtin-type");
+    // The exporting module can't even declare `OsType` (its own check
+    // would fail), but the import line is rejected before the dep's
+    // exports are consulted — pin that ordering.
+    proj.write("helpers.keron", "val x: Int = 1\n");
+    let entry_src = "from \"./helpers.keron\" use OsType\n";
+    let entry = proj.write("entry.keron", entry_src);
+    let bundle = resolve(TempProject::entry_source(&entry, entry_src)).expect_err("should fail");
+    assert!(
+        bundle
+            .errors
+            .iter()
+            .flat_map(|e| &e.diagnostics)
+            .any(|d| d.message.contains("`OsType` is a builtin")),
+    );
+}
+
+#[test]
 fn missing_export_errors() {
     let proj = TempProject::new("missing-export");
     let helpers_src = "fn other(): Int { 1 }\n";
@@ -177,10 +222,10 @@ fn importing_unannotated_val_errors_clearly() {
         .flat_map(|e| &e.diagnostics)
         .map(|d| d.message.as_str())
         .collect();
+    // The actionable step moved into the diagnostic's `help`, so the
+    // message itself just states the fact.
     assert!(
-        messages
-            .iter()
-            .any(|m| m.contains("explicit type annotation")),
+        messages.iter().any(|m| m.contains("defines `answer`")),
         "got: {messages:?}",
     );
 }

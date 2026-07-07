@@ -4,16 +4,32 @@
 //!
 //! ```text
 //! reconcile_decl  := "reconcile" ( reconcile_block | chain )
-//! reconcile_block := "{" chain ( ";" chain )* ";"? "}"
+//! reconcile_block := "{" chain+ "}"
 //! chain           := expr ( "->" expr )*
 //! ```
 //!
 //! The inline form parses a single chain (length 1 = the original
-//! `reconcile <expr>`). The block form groups multiple chains; chains
-//! are separated by `;` (a trailing `;` is permitted) and the visual
-//! "one chain per line" arrangement is convention. The `->` operator
-//! only appears in this context — there is no general expression-level
-//! chain operator.
+//! `reconcile <expr>`). The block form groups multiple chains, one
+//! after another with no separator — like every other statement
+//! block in the language (statement braces have no separator; data
+//! braces, i.e. maps, use commas). Expressions are self-terminating,
+//! so adjacent chains parse deterministically; the visual "one chain
+//! per line" arrangement is convention, and a multi-line `->` chain
+//! may break before or after the arrow (whitespace is free). The `->`
+//! operator only appears in this context — there is no general
+//! expression-level chain operator.
+//!
+//! Two whitespace-insensitivity hazards to know about (both surface
+//! as type errors, never as silent misbehavior, and neither occurs
+//! with ordinary call-shaped steps): a bare-variable step followed by
+//! a parenthesized step merges into a call (`foo` ␤ `(bar)` reads as
+//! `foo(bar)`), and a step followed by a line starting with a binary
+//! operator merges into one expression (`a` ␤ `- b` reads as
+//! `a - b`).
+//!
+//! A stray `;` between chains — the pre-0.6 separator — gets a
+//! targeted diagnostic instead of a generic parse error, and parsing
+//! continues so every occurrence is reported in one run.
 
 use chumsky::prelude::*;
 
@@ -39,13 +55,21 @@ where
             steps
         });
 
-    let semi = just(';').padded_by(pad());
+    // Recognize the removed `;` separator explicitly: emit a targeted
+    // diagnostic but keep parsing, so a file migrated by hand reports
+    // every stray semicolon in a single run.
+    let stray_semi = just(';').padded_by(pad()).validate(|_, e, emitter| {
+        emitter.emit(Rich::custom(
+            e.span(),
+            "`;` chain separators were removed; put each chain on its own line",
+        ));
+    });
 
     let block_form = chain
         .clone()
-        .separated_by(semi.clone())
+        .then_ignore(stray_semi.repeated())
+        .repeated()
         .at_least(1)
-        .allow_trailing()
         .collect::<Vec<_>>()
         .padded_by(pad())
         .delimited_by(just('{').padded_by(pad()), just('}').padded_by(pad()));

@@ -1,0 +1,8 @@
+# Fn bodies are value context — a reconcile inside one runs against a
+# throwaway sink, so it is rejected even inside an effect-statement
+# gate.
+fn install(): Void {
+  if true {
+    reconcile brew("git")
+  }
+}

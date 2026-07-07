@@ -28,11 +28,13 @@ use super::{
     util::{Extra, pad, span_to_range},
 };
 
-pub(super) fn match_expr<'src, P>(
+pub(super) fn match_expr<'src, P, H>(
     expr: P,
+    header: H,
 ) -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone
 where
     P: Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone + 'src,
+    H: Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone + 'src,
 {
     let kw_match = text::keyword("match").padded_by(pad());
     let kw_if = text::keyword("if").padded_by(pad());
@@ -45,7 +47,7 @@ where
     let arm = pattern()
         .then(guard)
         .then_ignore(arrow)
-        .then(expr.clone())
+        .then(expr)
         .map_with(|((pat, guard), body), e| MatchArm {
             pattern: pat,
             guard,
@@ -61,7 +63,11 @@ where
         .delimited_by(lbrace, rbrace);
 
     kw_match
-        .ignore_then(expr)
+        // The scrutinee parses at `header` tier: no top-level struct
+        // literal, so `match Cfg { … }` can't swallow the arms block
+        // as construct fields. Guards and arm bodies use the full
+        // grammar (they're `=>`-delimited, not `{`-delimited).
+        .ignore_then(header)
         .then(arms)
         .map_with(|(scrutinee, arms), e| Spanned {
             node: Expr::Match {

@@ -1,0 +1,3 @@
+# Two distinct closed unions have disjoint variant spaces; comparing
+# them can never be true and is rejected.
+val never: Boolean = os_type() == os_arch()

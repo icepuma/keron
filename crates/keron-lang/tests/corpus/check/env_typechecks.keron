@@ -4,7 +4,7 @@ val raw_home: String? = env("HOME")
 
 val raw_via_named: String? = env(name = "EDITOR")
 
-# `T? == null` / `null != T?` are the canonical "is it set" idioms;
+# `T? == null` / `null != T?` are the canonical "is it set" idioms
 # both directions are accepted by the equality rule.
 val home_set: Boolean = raw_home == null
 

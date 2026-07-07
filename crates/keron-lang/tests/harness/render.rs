@@ -1,9 +1,12 @@
 //! Deterministic diagnostic rendering for snapshot fixtures.
 //!
-//! Output is `error: <msg>` followed by a `--> line:col` pointer and a
-//! single-line caret excerpt. ANSI codes are not emitted; column counts
-//! are byte-based (UTF-8 fixtures are intentional). This is the contract
-//! that `errors/*` snapshots pin.
+//! Output is `error: <msg>` followed by a `--> line:col` pointer, a
+//! single-line caret excerpt, and — when the diagnostic carries them —
+//! `= note:` / `= help:` lines in that order (matching the shipped
+//! ariadne renderer in `keron-apply::report`, so the snapshots pin the
+//! *content* users actually see). ANSI codes are not emitted; column
+//! counts are byte-based (UTF-8 fixtures are intentional). This is the
+//! contract that `errors/*` snapshots pin.
 
 use std::fmt::Write as _;
 
@@ -33,6 +36,12 @@ fn render_one(out: &mut String, src: &str, d: &Diagnostic) {
     writeln!(out, "{pad} |").expect("write to String");
     writeln!(out, "{gutter} | {line_text}").expect("write to String");
     writeln!(out, "{pad} | {caret_indent}{carets}").expect("write to String");
+    if let Some(note) = &d.note {
+        writeln!(out, "{pad} = note: {note}").expect("write to String");
+    }
+    if let Some(help) = &d.help {
+        writeln!(out, "{pad} = help: {help}").expect("write to String");
+    }
 }
 
 fn locate(src: &str, byte: usize) -> (usize, usize, &str) {

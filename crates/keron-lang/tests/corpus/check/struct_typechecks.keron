@@ -1,7 +1,9 @@
 struct Point { x: Int, y: Int }
 
-val origin: Point = Point(0, 0)
+val origin: Point = Point { x: 0, y: 0 }
 
-val labeled: Point = Point(x = 3, y = 4)
+val labeled: Point = Point { x: 3, y: 4 }
 
-val mixed: Point = Point(7, y = 8)
+val y: Int = 8
+
+val shorthand: Point = Point { x: 7, y }

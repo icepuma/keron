@@ -505,15 +505,29 @@ fn if_branches_with_specific_resources_satisfy_resource_annotation() {
 }
 
 #[test]
-fn if_synthesis_of_mismatched_resource_branches_still_errors() {
-    // Without an annotation, `if_type` strict-equates the branches.
-    // Symlink ≠ File, so the synthesis path fails — users wanting the
-    // unified type must annotate against `Resource`.
+fn if_synthesis_of_mixed_resource_branches_lifts_to_resource() {
+    // `if` branches share one value slot, so they use the same join
+    // as list elements: heterogeneous resource singletons lift to
+    // `Resource` instead of strict-equating.
+    let src = r#"
+        val r: Resource = if true {
+          symlink(source = "b", target = "a")
+        } else {
+          template(source = "tmpl.tpl", target = "p", vars = {"body": "c"})
+        }
+    "#;
+    assert!(check_src(src).is_ok());
+}
+
+#[test]
+fn if_synthesis_of_unjoinable_branches_still_errors() {
+    // The join only unifies resource singletons; unrelated types keep
+    // the mismatched-branches error.
     let src = r#"
         val r = if true {
           symlink(source = "b", target = "a")
         } else {
-          template(source = "tmpl.tpl", target = "p", vars = {"body": "c"})
+          7
         }
     "#;
     let err = check_src(src).expect_err("should fail");

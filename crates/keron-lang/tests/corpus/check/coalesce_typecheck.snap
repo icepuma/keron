@@ -147,7 +147,7 @@ Program {
                         node: Nullable(
                             String,
                         ),
-                        span: 266..274,
+                        span: 266..273,
                     },
                 ),
                 value: Spanned {
@@ -251,7 +251,7 @@ Program {
                         node: Nullable(
                             String,
                         ),
-                        span: 358..366,
+                        span: 358..365,
                     },
                 ),
                 value: Spanned {

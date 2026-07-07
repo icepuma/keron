@@ -1,8 +1,7 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
-error: unexpected `"`, expected `fn`, `for`, `from`, `if`, `reconcile`, `struct`, `type`, `val`, `|`, or end of input
+error: unexpected `"`, expected `fn`, `for`, `from`, `if`, `match`, `reconcile`, `struct`, `type`, `val`, `|`, or end of input
   --> 1:20
   |
 1 | type Color = "red" "green"

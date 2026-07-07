@@ -23,7 +23,8 @@
 use crate::ast::{
     BinOp, Block, CallArg, CommentAttachment, CommentMap, Expr, FnDecl, ForPattern, Item, Literal,
     MapEntry, MatchArm, Param, Pattern, Program, ReconcileDecl, Span, Spanned, Stmt, StringPart,
-    StructDecl, StructField, StructPatternField, TypeAliasDecl, UnaryOp, UseDecl, ValDecl,
+    StructDecl, StructField, StructLiteralField, StructPatternField, TypeAliasDecl, UnaryOp,
+    UseDecl, ValDecl,
 };
 
 use super::precedence::{Side, UNARY_PREC, binop_prec, child_needs_parens, is_right_assoc};
@@ -468,11 +469,12 @@ impl<'src> Emitter<'src> {
         if multi_top || reconcile_leads_with_map(r) {
             self.write(" {");
             self.indent += 1;
+            // One chain per line, no separator — reconcile blocks are
+            // statement braces, and statement braces have none.
             for chain in &r.chains {
                 self.newline();
                 self.write_indent();
                 self.emit_chain(chain);
-                self.write_separator(";");
             }
             self.indent -= 1;
             self.newline();
@@ -521,6 +523,7 @@ impl<'src> Emitter<'src> {
             Expr::Unary { op, operand } => self.emit_unary(*op, operand),
             Expr::Field { receiver, field } => self.emit_field(receiver, &field.node),
             Expr::Call { callee, args } => self.emit_call(&callee.node, args),
+            Expr::StructLiteral { name, fields } => self.emit_struct_literal(name, fields),
             Expr::List(items) => self.emit_list(items),
             Expr::Map(entries) => self.emit_map(entries),
             Expr::If {
@@ -667,6 +670,48 @@ impl<'src> Emitter<'src> {
         self.write("]");
     }
 
+    fn emit_struct_literal(&mut self, name: &Spanned<String>, fields: &[StructLiteralField]) {
+        self.write(&name.node);
+        self.write(" {");
+        if fields.is_empty() {
+            self.write("}");
+            return;
+        }
+        let inline = render_struct_literal_fields_inline(fields);
+        let starts: Vec<usize> = fields.iter().map(|f| f.name.span.start).collect();
+        let force_block = self.elements_are_multiline(&starts)
+            || fields.iter().any(|f| {
+                f.value
+                    .as_ref()
+                    .is_some_and(|v| expr_requires_block_context(v, self.src))
+            });
+        if !force_block && self.column() + 1 + inline.len() + 2 <= LINE_BUDGET {
+            self.write(" ");
+            self.write(&inline);
+            self.write(" }");
+            return;
+        }
+        self.indent += 1;
+        for field in fields {
+            self.newline();
+            self.write_indent();
+            self.emit_struct_literal_field(field);
+            self.write_separator(",");
+        }
+        self.indent -= 1;
+        self.newline();
+        self.write_indent();
+        self.write("}");
+    }
+
+    fn emit_struct_literal_field(&mut self, field: &StructLiteralField) {
+        self.write(&field.name.node);
+        if let Some(value) = &field.value {
+            self.write(": ");
+            self.emit_expr(value);
+        }
+    }
+
     fn emit_map(&mut self, entries: &[MapEntry]) {
         if entries.is_empty() {
             self.write("{}");
@@ -699,9 +744,25 @@ impl<'src> Emitter<'src> {
         self.write("}");
     }
 
+    /// Emit an if-condition / for-iterable / match-scrutinee. The
+    /// grammar forbids a struct literal at the *top level* of these
+    /// header positions (it would swallow the construct's block), so
+    /// an AST that reaches one — only possible via source parens,
+    /// which the AST does not record — must be re-parenthesized or
+    /// the output would not re-parse.
+    fn emit_header_expr(&mut self, expr: &Spanned<Expr>) {
+        if header_needs_parens(&expr.node) {
+            self.write("(");
+            self.emit_expr(expr);
+            self.write(")");
+        } else {
+            self.emit_expr(expr);
+        }
+    }
+
     fn emit_if(&mut self, cond: &Spanned<Expr>, then_b: &Block, else_b: &Block) {
         self.write("if ");
-        self.emit_expr(cond);
+        self.emit_header_expr(cond);
         self.write(" ");
         self.emit_block(then_b);
         if let Some((ec, et, ee)) = else_if_parts(else_b) {
@@ -729,14 +790,14 @@ impl<'src> Emitter<'src> {
             }
         }
         self.write(" in ");
-        self.emit_expr(iter);
+        self.emit_header_expr(iter);
         self.write(" ");
         self.emit_block(body);
     }
 
     fn emit_match(&mut self, scrutinee: &Spanned<Expr>, arms: &[MatchArm]) {
         self.write("match ");
-        self.emit_expr(scrutinee);
+        self.emit_header_expr(scrutinee);
         self.write(" {");
         self.indent += 1;
         for arm in arms {
@@ -877,6 +938,7 @@ impl<'src> Emitter<'src> {
         match stmt {
             Stmt::Val(v) => self.emit_val(v),
             Stmt::Reconcile(r) => self.emit_reconcile(r),
+            Stmt::Expr(x) => self.emit_expr(x),
         }
     }
 }
@@ -885,6 +947,7 @@ fn stmt_span(stmt: &Stmt) -> Span {
     match stmt {
         Stmt::Val(v) => v.span.clone(),
         Stmt::Reconcile(r) => r.span.clone(),
+        Stmt::Expr(x) => x.span.clone(),
     }
 }
 
@@ -956,6 +1019,11 @@ fn expr_requires_block_context(expr: &Spanned<Expr>, src: &str) -> bool {
         Expr::Call { args, .. } => args
             .iter()
             .any(|a| expr_requires_block_context(&a.value, src)),
+        Expr::StructLiteral { fields, .. } => fields.iter().any(|f| {
+            f.value
+                .as_ref()
+                .is_some_and(|v| expr_requires_block_context(v, src))
+        }),
         Expr::List(items) => items
             .iter()
             .any(|item| expr_requires_block_context(item, src)),
@@ -1034,6 +1102,48 @@ fn render_struct_fields_inline(fields: &[StructField]) -> String {
                 s.push_str(&render_expr_inline(&default.node));
             }
             s
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// True when `expr` contains a struct literal reachable at the top
+/// level of a header position — i.e. without crossing a boundary
+/// (parens, call args, collections, blocks, arm bodies) that
+/// re-enters the full expression grammar. Mirrors the parser's
+/// `header` tier: what that tier cannot parse, the emitter must wrap
+/// in parentheses.
+fn header_needs_parens(expr: &Expr) -> bool {
+    match expr {
+        Expr::StructLiteral { .. } => true,
+        Expr::Field {
+            receiver: inner, ..
+        }
+        | Expr::Unary { operand: inner, .. } => header_needs_parens(&inner.node),
+        Expr::Binary { lhs, rhs, .. } => {
+            header_needs_parens(&lhs.node) || header_needs_parens(&rhs.node)
+        }
+        _ => false,
+    }
+}
+
+/// Inline-rendering companion of `Emitter::emit_header_expr`.
+fn render_header_expr_inline(expr: &Expr) -> String {
+    if header_needs_parens(expr) {
+        format!("({})", render_expr_inline(expr))
+    } else {
+        render_expr_inline(expr)
+    }
+}
+
+fn render_struct_literal_fields_inline(fields: &[StructLiteralField]) -> String {
+    fields
+        .iter()
+        .map(|f| {
+            f.value.as_ref().map_or_else(
+                || f.name.node.clone(),
+                |v| format!("{}: {}", f.name.node, render_expr_inline(&v.node)),
+            )
         })
         .collect::<Vec<_>>()
         .join(", ")
@@ -1121,6 +1231,17 @@ fn render_expr_inline(expr: &Expr) -> String {
         }
         Expr::List(items) => render_list_inline(items),
         Expr::Map(entries) => render_map_inline(entries),
+        Expr::StructLiteral { name, fields } => {
+            if fields.is_empty() {
+                format!("{} {{}}", name.node)
+            } else {
+                format!(
+                    "{} {{ {} }}",
+                    name.node,
+                    render_struct_literal_fields_inline(fields)
+                )
+            }
+        }
         Expr::If {
             cond,
             then_branch,
@@ -1197,7 +1318,7 @@ fn else_if_parts(block: &Block) -> Option<(&Spanned<Expr>, &Block, &Block)> {
 fn render_if_inline(cond: &Spanned<Expr>, then_branch: &Block, else_branch: &Block) -> String {
     let head = format!(
         "if {} {}",
-        render_expr_inline(&cond.node),
+        render_header_expr_inline(&cond.node),
         render_block_inline(then_branch)
     );
     if let Some((ec, et, ee)) = else_if_parts(else_branch) {
@@ -1216,7 +1337,7 @@ fn render_for_inline(pattern: &ForPattern, iter_expr: &Spanned<Expr>, body: &Blo
     };
     format!(
         "for {pat} in {} {}",
-        render_expr_inline(&iter_expr.node),
+        render_header_expr_inline(&iter_expr.node),
         render_block_inline(body)
     )
 }
@@ -1243,7 +1364,7 @@ fn render_match_inline(scrutinee: &Spanned<Expr>, arms: &[MatchArm]) -> String {
         .collect();
     format!(
         "match {} {{ {} }}",
-        render_expr_inline(&scrutinee.node),
+        render_header_expr_inline(&scrutinee.node),
         arms_s.join(", ")
     )
 }
@@ -1289,6 +1410,7 @@ fn render_stmt_inline(stmt: &Stmt) -> String {
             )
         }
         Stmt::Reconcile(r) => render_reconcile_inline(r),
+        Stmt::Expr(x) => render_expr_inline(&x.node),
     }
 }
 

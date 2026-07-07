@@ -1,9 +1,9 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 error: unexpected end of input, expected expression
   --> 2:1
   |
 2 | 
   | ^
+  = help: an expression is required here — write a value, name, or call.

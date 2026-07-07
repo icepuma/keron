@@ -139,7 +139,374 @@ Program {
                     },
                     span: 88..103,
                 },
-                span: 62..104,
+                span: 62..308,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "xs",
+                    span: 312..314,
+                },
+                ty: Some(
+                    Spanned {
+                        node: List(
+                            Double,
+                        ),
+                        span: 316..329,
+                    },
+                ),
+                value: Spanned {
+                    node: List(
+                        [
+                            Spanned {
+                                node: Literal(
+                                    Int(
+                                        1,
+                                    ),
+                                ),
+                                span: 332..333,
+                            },
+                            Spanned {
+                                node: Literal(
+                                    Double(
+                                        2.5,
+                                    ),
+                                ),
+                                span: 335..338,
+                            },
+                        ],
+                    ),
+                    span: 331..341,
+                },
+                span: 308..341,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "inferred",
+                    span: 345..353,
+                },
+                ty: None,
+                value: Spanned {
+                    node: List(
+                        [
+                            Spanned {
+                                node: Literal(
+                                    Int(
+                                        1,
+                                    ),
+                                ),
+                                span: 357..358,
+                            },
+                            Spanned {
+                                node: Literal(
+                                    Double(
+                                        2.5,
+                                    ),
+                                ),
+                                span: 360..363,
+                            },
+                        ],
+                    ),
+                    span: 356..366,
+                },
+                span: 341..366,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "m",
+                    span: 370..371,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Map(
+                            String,
+                            Double,
+                        ),
+                        span: 373..393,
+                    },
+                ),
+                value: Spanned {
+                    node: Map(
+                        [
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "a",
+                                        ),
+                                    ),
+                                    span: 396..399,
+                                },
+                                value: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            1,
+                                        ),
+                                    ),
+                                    span: 401..402,
+                                },
+                                span: 396..402,
+                            },
+                            MapEntry {
+                                key: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "b",
+                                        ),
+                                    ),
+                                    span: 404..407,
+                                },
+                                value: Spanned {
+                                    node: Literal(
+                                        Double(
+                                            2.5,
+                                        ),
+                                    ),
+                                    span: 409..412,
+                                },
+                                span: 404..412,
+                            },
+                        ],
+                    ),
+                    span: 395..415,
+                },
+                span: 366..415,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "branchy",
+                    span: 419..426,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Double,
+                        span: 428..434,
+                    },
+                ),
+                value: Spanned {
+                    node: If {
+                        cond: Spanned {
+                            node: Binary {
+                                op: Gt,
+                                lhs: Spanned {
+                                    node: Var(
+                                        "pure_double",
+                                    ),
+                                    span: 440..451,
+                                },
+                                rhs: Spanned {
+                                    node: Literal(
+                                        Double(
+                                            3.0,
+                                        ),
+                                    ),
+                                    span: 454..457,
+                                },
+                            },
+                            span: 440..457,
+                        },
+                        then_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: Literal(
+                                        Int(
+                                            1,
+                                        ),
+                                    ),
+                                    span: 462..463,
+                                },
+                            ),
+                            span: 458..466,
+                        },
+                        else_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: Literal(
+                                        Double(
+                                            2.5,
+                                        ),
+                                    ),
+                                    span: 475..478,
+                                },
+                            ),
+                            span: 471..482,
+                        },
+                    },
+                    span: 437..482,
+                },
+                span: 415..482,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "matched",
+                    span: 486..493,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Double,
+                        span: 495..501,
+                    },
+                ),
+                value: Spanned {
+                    node: Match {
+                        scrutinee: Spanned {
+                            node: Var(
+                                "pure_int",
+                            ),
+                            span: 510..518,
+                        },
+                        arms: [
+                            MatchArm {
+                                pattern: Spanned {
+                                    node: Lit(
+                                        Int(
+                                            1023,
+                                        ),
+                                    ),
+                                    span: 523..527,
+                                },
+                                guard: None,
+                                body: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            1,
+                                        ),
+                                    ),
+                                    span: 531..532,
+                                },
+                                span: 523..532,
+                            },
+                            MatchArm {
+                                pattern: Spanned {
+                                    node: Wildcard,
+                                    span: 536..538,
+                                },
+                                guard: None,
+                                body: Spanned {
+                                    node: Literal(
+                                        Double(
+                                            2.5,
+                                        ),
+                                    ),
+                                    span: 541..544,
+                                },
+                                span: 536..544,
+                            },
+                        ],
+                    },
+                    span: 504..549,
+                },
+                span: 482..549,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "concatenated",
+                    span: 553..565,
+                },
+                ty: Some(
+                    Spanned {
+                        node: List(
+                            Double,
+                        ),
+                        span: 567..580,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Concat,
+                        lhs: Spanned {
+                            node: List(
+                                [
+                                    Spanned {
+                                        node: Literal(
+                                            Int(
+                                                1,
+                                            ),
+                                        ),
+                                        span: 583..584,
+                                    },
+                                ],
+                            ),
+                            span: 582..586,
+                        },
+                        rhs: Spanned {
+                            node: List(
+                                [
+                                    Spanned {
+                                        node: Literal(
+                                            Double(
+                                                2.5,
+                                            ),
+                                        ),
+                                        span: 590..593,
+                                    },
+                                ],
+                            ),
+                            span: 589..596,
+                        },
+                    },
+                    span: 582..596,
+                },
+                span: 549..596,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "lit",
+                    span: 600..603,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Double,
+                        span: 605..611,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        Int(
+                            1,
+                        ),
+                    ),
+                    span: 614..615,
+                },
+                span: 596..617,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "neg_lit",
+                    span: 621..628,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Double,
+                        span: 630..636,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        Int(
+                            -1,
+                        ),
+                    ),
+                    span: 639..642,
+                },
+                span: 617..642,
             },
         ),
     ],

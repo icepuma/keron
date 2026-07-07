@@ -7,9 +7,9 @@ val cfg: String = path_join(home, ".config/nvim/init.lua")
 
 val parent: String = path_parent(cfg) ?? home
 
-val name: String = path_basename(cfg)
+val name: String = path_basename(cfg) ?? "init.lua"
 
-val ext: String = path_extension(cfg)
+val ext: String = path_extension(cfg) ?? "lua"
 
 val abs: Boolean = path_is_absolute(cfg)
 

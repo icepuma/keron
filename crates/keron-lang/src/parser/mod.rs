@@ -210,15 +210,18 @@ fn program<'src>() -> impl Parser<'src, &'src str, Program, Extra<'src>> {
 fn item<'src>() -> impl Parser<'src, &'src str, Item, Extra<'src>> {
     let e = expr();
     // Top-level expression statements are restricted to expressions
-    // beginning with `if` or `for` — those are the constructs that
-    // produce a `Void` value (and so the only ones whose top-level
-    // use as a statement is meaningful). Gating this with a `peek`
-    // for the leading keyword also keeps normal declarations' error
-    // messages crisp: errors inside `val x = …` aren't merged with a
-    // generic "expression here" alternative.
+    // beginning with `if`, `for`, or `match` — the three constructs
+    // that can produce a `Void` value (and so the only ones whose
+    // top-level use as a statement is meaningful; a Void `match`
+    // dispatching `reconcile`s per OS is as legitimate an effect as
+    // the equivalent `if` ladder). Gating this with a `peek` for the
+    // leading keyword also keeps normal declarations' error messages
+    // crisp: errors inside `val x = …` aren't merged with a generic
+    // "expression here" alternative.
     let void_stmt = choice((
         text::keyword("if").rewind().ignored(),
         text::keyword("for").rewind().ignored(),
+        text::keyword("match").rewind().ignored(),
     ))
     .ignore_then(e.clone())
     .map(Item::ExprStmt);

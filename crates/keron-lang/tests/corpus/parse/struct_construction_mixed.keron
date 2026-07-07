@@ -1,3 +1,8 @@
+# Field shorthand mirrors the pattern shorthand: `x` binds the
+# same-named variable, exactly the inverse of `Point { x }` in a
+# match arm.
 struct Point { x: Int, y: Int }
 
-val p: Point = Point(0, y = 9)
+val x: Int = 0
+
+val p: Point = Point { x, y: 9 }

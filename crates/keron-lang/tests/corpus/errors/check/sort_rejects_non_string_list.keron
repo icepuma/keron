@@ -1,4 +1,0 @@
-# `sort` is deliberately non-generic on `List<String>`; passing
-# `List<Int>` is a type error rather than a silent identity (see
-# `IntrinsicId::Sort` for why a generic comparator was rejected).
-val xs: List<String> = sort([3, 1, 2])

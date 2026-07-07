@@ -1,9 +1,9 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 error: unexpected `"`, expected expression
   --> 1:9
   |
 1 | val a = "x = ${1 + 2"
   |         ^
+  = help: write an expression (literal, name, call, or `(…)`).

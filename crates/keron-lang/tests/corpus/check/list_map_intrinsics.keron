@@ -7,7 +7,7 @@ val nums: List<Int> = [1, 2, 3, 4]
 
 val n: Int = len(nums)
 
-val has_two: Boolean = list_contains(nums, 2)
+val has_two: Boolean = contains(nums, 2)
 
 val head: Int = first(nums) ?? -1
 
@@ -27,4 +27,4 @@ val all_values: List<String> = values(mapping)
 # subtype rule (`StringUnion <: String`) lets the lookup type-check.
 val prefix: String = get(mapping, os_type(), "/tmp")
 
-val knows_linux: Boolean = map_contains(mapping, "linux")
+val knows_linux: Boolean = contains(mapping, "linux")

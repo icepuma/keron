@@ -4,8 +4,10 @@ val on_arm_mac: Boolean = os_type() == "Macos" && os_arch() == "aarch64"
 
 val any_unix: Boolean = os_type() == "Macos" || os_type() == "Linux"
 
-# `??` is tighter than `==`, so this reads as `(env(CI) ?? "false") == "true"`.
-val on_ci: Boolean = env("CI") ?? "false" == "true"
+# `??` is the loosest binary operator, so a fallback-then-compare
+# needs parens: bare `env("CI") ?? "false" == "true"` would group as
+# `env("CI") ?? ("false" == "true")` and fail to type-check.
+val on_ci: Boolean = (env("CI") ?? "false") == "true"
 
 # Nested && / || compose naturally.
 val ready: Boolean = on_arm_mac && any_unix || on_ci

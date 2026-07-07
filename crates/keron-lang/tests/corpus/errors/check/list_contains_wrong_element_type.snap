@@ -1,8 +1,0 @@
----
-source: crates/keron-lang/tests/harness/mod.rs
----
-error: type mismatch in `list_contains`: type parameter `T` was inferred as `String` from an earlier argument, but this argument is `Int`
-  --> 3:36
-  |
-3 | val n: Boolean = list_contains(xs, 42)
-  |                                    ^^

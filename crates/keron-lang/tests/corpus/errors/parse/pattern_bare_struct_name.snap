@@ -6,3 +6,4 @@ error: bare pattern bindings must start with a lowercase letter or `_`
   |
 2 |   Color => "color",
   |   ^
+  = help: use a lowercase name (e.g. `x`) or `_` for a wildcard.

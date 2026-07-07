@@ -6,3 +6,4 @@ error: struct pattern names must start with an uppercase letter
   |
 2 |   point { x } => "point",
   |   ^
+  = help: capitalize the leading letter — struct names are uppercase, binds are lowercase.

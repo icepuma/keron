@@ -1,3 +1,0 @@
-val xs: List<String> = ["a", "b"]
-
-val n: Boolean = list_contains(xs, 42)

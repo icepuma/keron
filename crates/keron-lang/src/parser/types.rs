@@ -42,15 +42,18 @@ pub(super) fn type_annotation<'src>() -> impl Parser<'src, &'src str, Type, Extr
             .map(|s: &str| Type::Named(s.to_string()));
         let base = choice((list, map, primitive, named));
         // Postfix `?` makes a type nullable. We absorb a run of one or
-        // more `?`s and emit a single `Type::Nullable` wrapper —
-        // `T??` collapses to `T?` so the AST never carries nested
-        // nullables. Padding is allowed between the type and the
-        // first `?` (e.g. `String ?`) but not within the run, since
-        // `String? ?` reads as a stuttered annotation rather than a
-        // single normalized form.
-        base.then(just('?').padded_by(pad()).repeated().count())
-            .map(|(inner, count)| {
-                if count == 0 || matches!(inner, Type::Null | Type::Nullable(_)) {
+        // more *adjacent* `?`s and emit a single `Type::Nullable`
+        // wrapper — `T??` collapses to `T?` so the AST never carries
+        // nested nullables. Padding is allowed between the type and
+        // the first `?` (e.g. `String ?`) but not within the run:
+        // `String? ?` is a stuttered annotation, not a normalized
+        // form, and is rejected.
+        let nullable_run = pad()
+            .ignore_then(just('?'))
+            .ignore_then(just('?').repeated().count());
+        base.then(nullable_run.or_not())
+            .map(|(inner, run)| {
+                if run.is_none() || matches!(inner, Type::Null | Type::Nullable(_)) {
                     inner
                 } else {
                     Type::Nullable(Box::new(inner))

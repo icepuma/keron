@@ -1,9 +1,9 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 error: unexpected `"`, expected expression
   --> 1:11
   |
 1 | val bad = "hello
   |           ^
+  = help: write an expression (literal, name, call, or `(…)`).

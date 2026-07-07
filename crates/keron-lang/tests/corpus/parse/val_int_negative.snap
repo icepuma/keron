@@ -16,17 +16,11 @@ Program {
                     },
                 ),
                 value: Spanned {
-                    node: Unary {
-                        op: Neg,
-                        operand: Spanned {
-                            node: Literal(
-                                Int(
-                                    7,
-                                ),
-                            ),
-                            span: 14..15,
-                        },
-                    },
+                    node: Literal(
+                        Int(
+                            -7,
+                        ),
+                    ),
                     span: 13..16,
                 },
                 span: 0..16,

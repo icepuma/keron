@@ -1,0 +1,3 @@
+# A dynamic String never narrows into a closed union; the help lists
+# the variants the slot accepts.
+val fake: OsType = hostname()

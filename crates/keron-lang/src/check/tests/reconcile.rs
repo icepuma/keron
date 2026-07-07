@@ -169,7 +169,7 @@ fn reconcile_block_of_single_steps_typechecks() {
         val a: Symlink = symlink(source = "y", target = "x")
         val b: Template = template(source = "tmpl.tpl", target = "p", vars = {"body": "c"})
         reconcile {
-          a;
+          a
           b
         }
     "#;
@@ -183,7 +183,7 @@ fn reconcile_block_with_chain_steps_typechecks() {
         val b: Symlink = symlink(source = "q", target = "p")
         val c: Symlink = symlink(source = "v", target = "u")
         reconcile {
-          a;
+          a
           b -> c
         }
     "#;
@@ -230,7 +230,7 @@ fn reconcile_block_inside_if_typechecks() {
         val b: Symlink = symlink(source = "q", target = "p")
         if true {
           reconcile {
-            a;
+            a
             b
           }
         }
@@ -271,7 +271,7 @@ fn reconcile_block_with_resource_step_typechecks() {
           template(source = "tmpl.tpl", target = "q", vars = {"body": "d"}),
         ]
         reconcile {
-          r;
+          r
           rs
         }
     "#;

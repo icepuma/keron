@@ -2,7 +2,7 @@
 
 use super::{expr_of, first_val, lit, ok};
 use crate::{
-    ast::{Expr, Literal, Type, UnaryOp},
+    ast::{Expr, Item, Literal, Type},
     parser::parse,
 };
 
@@ -37,22 +37,17 @@ fn val_int_positive() {
 }
 
 #[test]
-fn val_int_negative_is_unary() {
+fn val_int_negative_is_a_folded_literal() {
+    // `-` on a bare numeric literal folds — same AST shape the
+    // pattern grammar produces for `-7`.
     let e = expr_of("val n: Int = -7");
-    let Expr::Unary { op, operand } = e.node else {
-        panic!("expected unary expr");
-    };
-    assert_eq!(op, UnaryOp::Neg);
-    assert_eq!(operand.node, Expr::Literal(Literal::Int(7)));
+    assert_eq!(e.node, Expr::Literal(Literal::Int(-7)));
 }
 
 #[test]
-fn val_double_negative_is_unary() {
+fn val_double_negative_is_a_folded_literal() {
     let e = expr_of("val d: Double = -0.5");
-    let Expr::Unary { operand, .. } = e.node else {
-        panic!("expected unary");
-    };
-    assert_eq!(operand.node, Expr::Literal(Literal::Double(0.5)));
+    assert_eq!(e.node, Expr::Literal(Literal::Double(-0.5)));
 }
 
 #[test]
@@ -168,4 +163,32 @@ fn span_covers_full_decl_without_annotation() {
     assert_eq!(&src[v.name.span.clone()], "a");
     assert!(v.ty.is_none());
     assert_eq!(&src[v.value.span.clone()], "42");
+}
+
+#[test]
+fn type_alias_tolerates_leading_pipe() {
+    // Matches the hand-written multi-line union style; the formatter
+    // canonicalizes the leading `|` away.
+    let prog = ok("type Mode =\n  | \"on\"\n  | \"off\"\n");
+    let Item::TypeAlias(t) = prog.items.first().expect("one item") else {
+        panic!("expected type alias");
+    };
+    assert_eq!(t.variants.len(), 2);
+    assert_eq!(t.variants[0].node, "on");
+}
+
+#[test]
+fn type_alias_rejects_trailing_pipe() {
+    // Unlike comma lists, the last variant is the natural terminator;
+    // a dangling `|` reads as a missing variant.
+    assert!(parse("type Mode = \"on\" | \"off\" |\n").is_err());
+}
+
+#[test]
+fn nullable_run_must_be_adjacent() {
+    // Padding before the first `?` is fine; padding *inside* the run
+    // is a stuttered annotation and rejected.
+    assert!(parse("val x: String ? = null").is_ok());
+    assert!(parse("val x: String?? = null").is_ok());
+    assert!(parse("val x: String ? ? = null").is_err());
 }

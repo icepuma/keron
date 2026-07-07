@@ -6,3 +6,4 @@ error: non-exhaustive `match` on `OsType`: missing `"Linux"`, `"Macos"`, `"Windo
   |
 4 | val x: String = match os_type() {
   |                       ^^^^^^^^^^
+  = help: add arms for the missing variants, or a wildcard `_` arm

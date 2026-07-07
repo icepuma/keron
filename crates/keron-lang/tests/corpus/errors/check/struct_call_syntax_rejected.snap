@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `Point` is a struct; construct it with `Point { field: value, … }`
+  --> 5:16
+  |
+5 | val p: Point = Point(0, 0)
+  |                ^^^^^^^^^^^^

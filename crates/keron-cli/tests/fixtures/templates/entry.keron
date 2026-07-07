@@ -9,3 +9,10 @@ reconcile template(
   target = "${home}/.testgreeting",
   vars = {"name": "keron", "scope": "e2e"},
 )
+
+# Plain file: `vars` is omitted and defaults to `{}` — pins the
+# intrinsic-default path end-to-end.
+reconcile template(
+  source = "./plain.tpl",
+  target = "${home}/.testplain",
+)

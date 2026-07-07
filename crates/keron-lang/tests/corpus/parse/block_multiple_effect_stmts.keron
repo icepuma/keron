@@ -1,0 +1,14 @@
+# A block holds several Void effect statements in sequence — the same
+# multiplicity as the top level. Only the final expression may
+# produce the block's value.
+val want_editor: Boolean = env("EDITOR") != null
+
+if true {
+  if want_editor {
+    reconcile brew("neovim")
+  }
+  for pkg in ["ripgrep", "fd"] {
+    reconcile brew(pkg)
+  }
+  reconcile brew("git")
+}

@@ -286,8 +286,8 @@ fn template_renders_then_is_idempotent() {
         first.stdout, first.stderr,
     );
     assert!(
-        first.stdout.contains("1 added"),
-        "first run should add 1 template: {}",
+        first.stdout.contains("2 added"),
+        "first run should add both templates: {}",
         first.stdout,
     );
     let rendered = home.path.join(".testgreeting");
@@ -296,6 +296,10 @@ fn template_renders_then_is_idempotent() {
         content, "hello keron, this is a e2e fixture\n",
         "template should have placeholders substituted",
     );
+    // The `vars`-omitted template exercises the intrinsic-default
+    // path end-to-end: `{}` is materialized from the signature.
+    let plain = fs::read_to_string(home.path.join(".testplain")).expect("plain file written");
+    assert_eq!(plain, "no placeholders here, just bytes\n");
 
     let second = run(keron_apply(&fixture, &home.path), "yes\n");
     assert!(

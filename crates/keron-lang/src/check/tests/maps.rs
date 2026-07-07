@@ -173,8 +173,15 @@ fn empty_map_in_fn_return() {
 }
 
 #[test]
-fn map_does_not_promote_int_to_double_in_values() {
-    let err = check_src(r#"val m = {"a": 1, "b": 2.5}"#).expect_err("should fail");
-    assert!(err[0].message.contains("Int"));
-    assert!(err[0].message.contains("Double"));
+fn map_promotes_int_and_double_values_to_double() {
+    // Map values share one slot type, so mixed numerics join to
+    // Double like list elements; keys stay exact (Double is not a
+    // valid key type).
+    assert!(check_src(r#"val m: Map<String, Double> = {"a": 1, "b": 2.5}"#).is_ok());
+}
+
+#[test]
+fn map_does_not_promote_int_keys() {
+    let err = check_src(r#"val m = {1: "a", 2.5: "b"}"#).expect_err("should fail");
+    assert!(err[0].message.contains("key type mismatch"));
 }

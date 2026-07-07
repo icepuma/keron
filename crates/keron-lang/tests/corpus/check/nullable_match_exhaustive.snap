@@ -1,6 +1,5 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 Program {
     items: [
@@ -15,7 +14,7 @@ Program {
                         node: Nullable(
                             String,
                         ),
-                        span: 16..24,
+                        span: 16..23,
                     },
                 ),
                 value: Spanned {

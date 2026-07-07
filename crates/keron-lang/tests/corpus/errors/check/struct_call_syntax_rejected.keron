@@ -1,0 +1,5 @@
+# Structs are constructed with the brace-literal form; the old call
+# syntax gets a targeted migration hint.
+struct Point { x: Int, y: Int }
+
+val p: Point = Point(0, 0)

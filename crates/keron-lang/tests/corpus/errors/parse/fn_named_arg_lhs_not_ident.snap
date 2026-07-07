@@ -6,3 +6,4 @@ error: named-argument LHS must be an identifier
   |
 2 | val x: Int = f(1 + 2 = 3)
   |                ^
+  = help: use the form `name = value` in call arguments.

@@ -4,7 +4,7 @@
 # below).
 struct Color { name: String, hex: String }
 
-val c: Color = Color(name = "red", hex = "#f00")
+val c: Color = Color { name: "red", hex: "#f00" }
 
 val tag: String = match c {
   Color { name } if contains(name, "red") => "warm",

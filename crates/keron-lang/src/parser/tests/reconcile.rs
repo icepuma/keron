@@ -198,8 +198,8 @@ fn reconcile_block_three_chains_parses() {
         val b: Symlink = symlink(source = \"q\", target = \"p\")
         val c: Symlink = symlink(source = \"v\", target = \"u\")
         reconcile {
-          a;
-          b;
+          a
+          b
           c
         }
         ",
@@ -218,7 +218,7 @@ fn reconcile_block_chain_can_use_arrow_within_step() {
         val b: Symlink = symlink(source = \"q\", target = \"p\")
         val c: Symlink = symlink(source = \"v\", target = \"u\")
         reconcile {
-          a;
+          a
           b -> c
         }
         ",
@@ -229,8 +229,11 @@ fn reconcile_block_chain_can_use_arrow_within_step() {
 }
 
 #[test]
-fn reconcile_block_allows_trailing_semicolon() {
-    let r = first_reconcile(
+fn reconcile_block_rejects_semicolon_separators_with_targeted_message() {
+    // `;` was the pre-0.6 chain separator. It now gets a dedicated
+    // diagnostic (parsing continues, so every occurrence reports in
+    // one run) instead of a generic "unexpected `;`".
+    let errs = parse(
         "
         val a: Symlink = symlink(source = \"y\", target = \"x\")
         val b: Symlink = symlink(source = \"q\", target = \"p\")
@@ -239,8 +242,13 @@ fn reconcile_block_allows_trailing_semicolon() {
           b;
         }
         ",
-    );
-    assert_eq!(r.chains.len(), 2);
+    )
+    .expect_err("stray `;` must be an error");
+    let semi_errs = errs
+        .iter()
+        .filter(|d| d.message.contains("`;` chain separators were removed"))
+        .count();
+    assert_eq!(semi_errs, 2, "one targeted error per `;`: {errs:?}");
 }
 
 #[test]
@@ -251,9 +259,9 @@ fn reconcile_block_tolerates_blank_lines_and_comments() {
         val b: Symlink = symlink(source = \"q\", target = \"p\")
         reconcile {
           # leading comment
-          a;   # trailing comment
+          a   # trailing comment
 
-          b;
+          b
         }
         ",
     );
@@ -266,27 +274,13 @@ fn rejects_empty_reconcile_block() {
 }
 
 #[test]
-fn rejects_reconcile_block_with_missing_separator() {
-    assert!(
-        parse(
-            "
-        val a: Symlink = symlink(source = \"y\", target = \"x\")
-        val b: Symlink = symlink(source = \"q\", target = \"p\")
-        reconcile { a b }
-        "
-        )
-        .is_err()
-    );
-}
-
-#[test]
 fn block_inside_if_branch_parses() {
     let prog = ok("
         val a: Symlink = symlink(source = \"y\", target = \"x\")
         val b: Symlink = symlink(source = \"q\", target = \"p\")
         if true {
           reconcile {
-            a;
+            a
             b
           }
         }
@@ -315,11 +309,14 @@ fn reconcile_chain_four_parses() {
 
 #[test]
 fn reconcile_block_one_line_parses() {
+    // Chains juxtapose: expressions are self-terminating, so two
+    // adjacent bare-variable steps parse as two chains even on one
+    // physical line.
     let r = first_reconcile(
         "
         val a: Symlink = symlink(source = \"b\", target = \"a\")
         val b: Symlink = symlink(source = \"d\", target = \"c\")
-        reconcile { a; b }
+        reconcile { a b }
         ",
     );
     assert_eq!(r.chains.len(), 2);
@@ -335,7 +332,7 @@ fn reconcile_block_inside_fn_body_parses() {
             val a: Symlink = symlink(source = \"b\", target = \"a\")
             val b: Symlink = symlink(source = \"d\", target = \"c\")
             reconcile {
-              a;
+              a
               b
             }
         }

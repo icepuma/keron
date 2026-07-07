@@ -17,10 +17,11 @@ pub mod stdlib;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use keron_lang::{
     Diagnostic, FnDecl, FnSig, ImportedSymbols, Item, ParamSig, Program, StructDecl, Type, UseDecl,
-    ValDecl, check_module, parse, resolve_type_names,
+    ValDecl, check_module_full, parse, resolve_type_names,
 };
 use petgraph::Graph;
 use petgraph::algo::toposort;
@@ -67,6 +68,11 @@ pub struct CheckedModule {
     /// (Stdlib types are exposed as builtins, not via the module
     /// graph.)
     pub exported_types: HashMap<String, Type>,
+    /// `(start, end)` byte-offset spans (into [`Self::source`]) of
+    /// expressions the checker promoted from `Int` into a `Double`
+    /// slot. The evaluator coerces the runtime value at these spans —
+    /// see `CheckOutput::double_promotions`.
+    pub double_promotions: HashSet<(usize, usize)>,
 }
 
 /// All modules reachable from the entry roots, indexed for evaluation.
@@ -278,15 +284,17 @@ impl ResolveState {
             // cascades like duplicate "unknown type" reports and bogus
             // "expected `X`, found `X`" mismatches where one side is
             // the unresolved name and the other the canonical variant.
+            let mut double_promotions = HashSet::new();
             match resolve_type_names(&mut program, &imported) {
-                Ok(()) => {
-                    if let Err(diags) = check_module(&program, &imported) {
+                Ok(()) => match check_module_full(&program, &imported) {
+                    Ok(output) => double_promotions = output.double_promotions,
+                    Err(diags) => {
                         self.errors.push(ResolveError {
                             module: id.clone(),
                             diagnostics: diags,
                         });
                     }
-                }
+                },
                 Err(diags) => {
                     self.errors.push(ResolveError {
                         module: id.clone(),
@@ -305,6 +313,7 @@ impl ResolveState {
                     exported_fns,
                     exported_vals,
                     exported_types,
+                    double_promotions,
                 },
             );
         }
@@ -401,15 +410,34 @@ impl ResolveState {
                 continue;
             };
             for name in &u.names {
+                // Builtins are unshadowable — locally declaring one is a
+                // check error (`redefine_message`), so silently letting an
+                // *import* replace stdlib `split`/`len`/… would make the
+                // two paths disagree. Reject with the same message family
+                // and skip the insert so the builtin stays in scope.
+                if stdlib_builtin_names().contains(name.node.as_str()) {
+                    self.errors.push(ResolveError {
+                        module: importer.clone(),
+                        diagnostics: vec![Diagnostic::new(
+                            name.span.clone(),
+                            format!(
+                                "`{}` is a builtin and cannot be redefined, so it cannot be imported",
+                                name.node
+                            ),
+                        )],
+                    });
+                    continue;
+                }
                 let exported = dep_module.exported_fns.contains(&name.node)
                     || dep_module.exported_vals.contains(&name.node)
                     || dep_module.exported_types.contains_key(&name.node);
                 if !exported {
                     self.errors.push(ResolveError {
                         module: importer.clone(),
-                        diagnostics: vec![Diagnostic::new(
+                        diagnostics: vec![missing_export_diagnostic(
                             name.span.clone(),
-                            missing_export_message(dep_module, &name.node),
+                            dep_module,
+                            &name.node,
                         )],
                     });
                     continue;
@@ -430,6 +458,22 @@ impl ResolveState {
         }
         imports
     }
+}
+
+/// Every name the implicit stdlib injects into scope — fn names and
+/// exported type names. Imports colliding with any of these are
+/// rejected in `resolve_uses`, mirroring the checker's unshadowable-
+/// builtin rule for local declarations.
+fn stdlib_builtin_names() -> &'static HashSet<&'static str> {
+    static NAMES: OnceLock<HashSet<&'static str>> = OnceLock::new();
+    NAMES.get_or_init(|| {
+        let mut names = HashSet::new();
+        for stdmod in stdlib::registry().values() {
+            names.extend(stdmod.fns.keys().map(String::as_str));
+            names.extend(stdmod.types.keys().map(String::as_str));
+        }
+        names
+    })
 }
 
 fn resolve_path(raw: &str, base_dir: &Path) -> Result<PathBuf, String> {
@@ -578,6 +622,7 @@ fn sig_for(module: &CheckedModule, name: &str) -> Option<FnSig> {
 
 fn sig_from_fn_decl(f: &FnDecl) -> FnSig {
     FnSig {
+        struct_name: None,
         params: f
             .params
             .iter()
@@ -596,6 +641,7 @@ fn sig_from_fn_decl(f: &FnDecl) -> FnSig {
 /// field defaults stay optional across module boundaries.
 fn sig_from_struct_decl(s: &StructDecl) -> FnSig {
     FnSig {
+        struct_name: Some(s.name.node.clone()),
         params: s
             .fields
             .iter()
@@ -633,7 +679,11 @@ fn val_type_for(module: &CheckedModule, name: &str) -> Option<Type> {
     None
 }
 
-fn missing_export_message(module: &CheckedModule, name: &str) -> String {
+fn missing_export_diagnostic(
+    span: keron_lang::Span,
+    module: &CheckedModule,
+    name: &str,
+) -> Diagnostic {
     if module.program.items.iter().any(|item| {
         matches!(
             item,
@@ -644,13 +694,73 @@ fn missing_export_message(module: &CheckedModule, name: &str) -> String {
             }) if n.node == name
         )
     }) {
-        format!(
-            "module `{}` defines `{name}`, but imported vals must have an explicit type annotation",
-            module.id.display()
+        return Diagnostic::new(
+            span,
+            format!("module `{}` defines `{name}`", module.id.display()),
         )
-    } else {
-        format!("module `{}` does not export `{name}`", module.id.display())
+        .with_help(format!(
+            "imported vals need an explicit type annotation — add one to `val {name}` in `{}`",
+            module.id.display()
+        ));
     }
+    let mut d = Diagnostic::new(
+        span,
+        format!("module `{}` does not export `{name}`", module.id.display()),
+    );
+    let mut exports: Vec<&str> = module
+        .exported_fns
+        .iter()
+        .chain(module.exported_vals.iter())
+        .chain(module.exported_types.keys())
+        .map(String::as_str)
+        .collect();
+    exports.sort_unstable();
+    exports.dedup();
+    if let Some(sugg) = nearest_export(&exports, name) {
+        d = d.with_help(format!("did you mean `{sugg}`?"));
+    }
+    d
+}
+
+/// Bounded nearest-name pick over a module's exports — the same
+/// rustc-style "at most a third of the name's length" heuristic the
+/// checker's `suggest` module uses for in-scope names.
+fn nearest_export(candidates: &[&str], name: &str) -> Option<String> {
+    let max_dist = (name.chars().count() / 3).max(1);
+    let mut best: Option<(usize, &str)> = None;
+    for candidate in candidates {
+        if *candidate == name {
+            continue;
+        }
+        let d = levenshtein(name, candidate);
+        if d <= max_dist && best.is_none_or(|(bd, _)| d < bd) {
+            best = Some((d, candidate));
+        }
+    }
+    best.map(|(_, c)| c.to_string())
+}
+
+fn levenshtein(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    if a.is_empty() {
+        return b.len();
+    }
+    if b.is_empty() {
+        return a.len();
+    }
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.iter().enumerate() {
+        let mut prev_diag = row[0];
+        row[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let cost = usize::from(ca != cb);
+            let next = (prev_diag + cost).min(row[j] + 1).min(row[j + 1] + 1);
+            prev_diag = row[j + 1];
+            row[j + 1] = next;
+        }
+    }
+    row[b.len()]
 }
 
 /// Collect every exportable name from a module:
@@ -840,6 +950,7 @@ mod tests {
             exported_fns: fns,
             exported_vals: vals,
             exported_types: HashMap::new(),
+            double_promotions: HashSet::new(),
         };
         assert_eq!(val_type_for(&module, "s"), Some(Type::String));
         assert_eq!(val_type_for(&module, "n"), Some(Type::Int));
@@ -858,6 +969,7 @@ mod tests {
             exported_fns: fns,
             exported_vals: vals,
             exported_types: HashMap::new(),
+            double_promotions: HashSet::new(),
         };
         assert_eq!(val_type_for(&module, "v"), None);
     }
@@ -913,6 +1025,7 @@ mod tests {
             exported_fns: fns,
             exported_vals: vals,
             exported_types: types,
+            double_promotions: HashSet::new(),
         };
         let sig = sig_for(&module, "only").expect("`only` is exported");
         assert_eq!(sig.return_type, Type::String);

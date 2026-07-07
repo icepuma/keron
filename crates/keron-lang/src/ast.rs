@@ -24,7 +24,8 @@ pub enum Item {
     Val(ValDecl),
     Fn(FnDecl),
     /// `struct Name { f: T, ... }` — nominal record. Constructed via
-    /// the existing call form (`Name(...)`); field access via `v.f`.
+    /// the brace-literal form (`Name { f: v, ... }`), mirroring the
+    /// struct pattern; field access via `v.f`.
     Struct(StructDecl),
     /// `type Name = "a" | "b" | ...` — nominal alias for a closed set
     /// of string literals. The only kind of type alias today.
@@ -115,9 +116,11 @@ pub struct FnDecl {
     pub intrinsic: Option<IntrinsicId>,
 }
 
-/// `struct Name { field: Type, ... }` — a nominal record type. Field
-/// order is significant: the implicit constructor accepts positional
-/// arguments in declared order (and named arguments by field name).
+/// `struct Name { field: Type, ... }` — a nominal record type.
+///
+/// Constructed with the brace-literal form (`Name { field: value }`,
+/// fields in any order, shorthand `field` for `field: field`);
+/// declared order matters only for display.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructDecl {
     pub name: Spanned<String>,
@@ -296,9 +299,12 @@ pub enum IntrinsicId {
     /// `join(xs, sep)` — concatenate `xs` with `sep` between every
     /// pair. Returns `String`. Empty list produces `""`.
     Join,
-    /// `contains(haystack, needle)` — true when `needle` appears
-    /// anywhere in `haystack`. An empty `needle` is `true` for any
-    /// `haystack` (matches Rust's `str::contains`).
+    /// `contains(x, item) -> Boolean` — type-directed membership:
+    /// substring test on `String` (empty `item` is `true`, matching
+    /// Rust's `str::contains`), element test on `List<T>` (same
+    /// equality rule as `==`), key test on `Map<K, V>`. One name, one
+    /// mental model — "is this in that?" — resolved by the checker
+    /// from the first argument's type.
     Contains,
     /// `replace(s, from, to)` — replace every (non-overlapping)
     /// occurrence of `from` in `s` with `to`. Empty `from` is an
@@ -314,18 +320,11 @@ pub enum IntrinsicId {
     /// `ends_with(s, suffix) -> Boolean` — true when `s` ends with
     /// `suffix`. An empty `suffix` is `true`.
     EndsWith,
-    /// `str_len(s) -> Int` — number of Unicode scalar values (chars) in
-    /// `s`, not bytes. Named distinctly from the List-only `len` so the
-    /// generic `len` machinery stays untouched.
-    StrLen,
-    /// `len(xs: List<T>) -> Int` — element count. Generic in `T`.
-    ListLen,
-    /// `list_contains(xs: List<T>, x: T) -> Boolean` — membership
-    /// test (uses the same equality rule as `==`). Distinct from the
-    /// `std:string` `contains` (substring check) — both are useful
-    /// and live in the same flat namespace, so the list form gets a
-    /// `list_` prefix. Generic in `T`.
-    ListContains,
+    /// `len(x) -> Int` — type-directed size: Unicode scalar values
+    /// (chars, not bytes) for `String`, element count for `List<T>`,
+    /// entry count for `Map<K, V>`. Resolved by the checker from the
+    /// argument's type.
+    Len,
     /// `first(xs: List<T>) -> T?` — first element, or `null` for an
     /// empty list. Generic in `T`.
     ListFirst,
@@ -343,11 +342,6 @@ pub enum IntrinsicId {
     /// release wants `V?`-returning lookup, that's a separate
     /// intrinsic. Generic in `K` and `V`.
     MapGet,
-    /// `map_contains(m: Map<K, V>, k: K) -> Boolean` — does the map
-    /// have a binding for `k`? Distinct from list `contains` because
-    /// the two have different shapes (key vs. element); shared name
-    /// would be ambiguous when both Lists and Maps are in scope.
-    MapContains,
     /// `path_join(p: String, segment: String) -> String` — append
     /// `segment` to `p` with platform-native separator handling. If
     /// `segment` is absolute it replaces `p` (matching `PathBuf::join`),
@@ -358,12 +352,13 @@ pub enum IntrinsicId {
     /// `p`, or `null` when `p` is a root (`/`, `C:\`) or has no
     /// parent. Use `??` to thread the "no parent" case through.
     PathParent,
-    /// `path_basename(p: String) -> String` — the final component of
-    /// `p` (file name, or last directory segment). Empty for paths
-    /// ending in a separator.
+    /// `path_basename(p: String) -> String?` — the final component of
+    /// `p` (file name, or last directory segment), or `null` for
+    /// paths with no final component (`/`, `..`). Absence is `null`
+    /// across the whole component family, matching `path_parent`.
     PathBasename,
-    /// `path_extension(p: String) -> String` — the substring after
-    /// the final `.` of the basename, or `""` when there is none.
+    /// `path_extension(p: String) -> String?` — the substring after
+    /// the final `.` of the basename, or `null` when there is none.
     /// Mirrors `std::path::Path::extension` — leading-dot files (e.g.
     /// `.zshrc`) are treated as having no extension.
     PathExtension,
@@ -402,17 +397,15 @@ pub enum IntrinsicId {
     /// secrets use `secret(...)` rather than committing them and reading
     /// them back.
     ReadFile,
-    /// `sort(xs: List<String>) -> List<String>` — Unicode codepoint
-    /// order ascending. Deliberately *not* generic in `T`: real
-    /// dotfile use cases (`PATH` segments, package lists) are
-    /// String-typed, and generic ordering would force a comparator
-    /// design (Int/Double comparison, lexicographic structs) we don't
-    /// have a workflow for. Lift to generics only when a manifest
-    /// needs it.
+    /// `sort(xs: List<T>) -> List<T>` — ascending order. Generic in
+    /// `T` like its siblings, gated by the checker to orderable
+    /// element types: `String` (Unicode codepoint order), `Int`,
+    /// `Double`, and string unions. Mixed `Int`/`Double` lists order
+    /// exactly (no `i64 → f64` promotion).
     Sort,
     /// `unique(xs: List<T>) -> List<T>` — preserve first occurrence,
     /// drop subsequent duplicates. Element equality follows the same
-    /// rule as `==` / `list_contains`. Generic in `T`.
+    /// rule as `==` / `contains`. Generic in `T`.
     Unique,
     /// `index_of(xs: List<T>, x: T) -> Int?` — position of the first
     /// element equal to `x`, or `null` when absent. Returning `Int?`
@@ -482,12 +475,14 @@ pub struct Param {
 /// `then` / `else` arm of an `if` expression. The block's type is the
 /// trailing expression's type if present, otherwise [`Type::Void`].
 ///
-/// Statements inside a block are restricted to local `val`s and
-/// `reconcile` directives (see [`Stmt`]); arbitrary expression
-/// statements are not permitted, since keron is otherwise pure and
-/// such statements would be no-ops. Conditional side effects use the
-/// trailing expression slot or appear at top level via
-/// [`Item::ExprStmt`].
+/// Statements inside a block are local `val`s, `reconcile`
+/// directives, and `Void`-typed effect expressions (see [`Stmt`]) —
+/// the same multiplicity as the top level, so a block can hold
+/// several `if`-gated `reconcile`s in sequence. Only the *final*
+/// expression of a block may produce a value (it lands in
+/// [`Self::trailing`]); every earlier expression statement must check
+/// against `Void`, since keron is otherwise pure and a discarded
+/// value would be a no-op.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Block {
     pub stmts: Vec<Stmt>,
@@ -495,12 +490,19 @@ pub struct Block {
     pub span: Span,
 }
 
-/// A statement inside a [`Block`]. Restricted to local bindings and
-/// `reconcile` directives; the type checker rejects everything else.
+/// A statement inside a [`Block`].
+///
+/// A local binding, a `reconcile` directive, or a non-final
+/// `Void`-typed effect expression (an `if`/`for`/`match` gate). The
+/// type checker rejects value-producing expression statements.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     Val(ValDecl),
     Reconcile(ReconcileDecl),
+    /// A non-final expression evaluated for its effect. Must have
+    /// type `Void`; the parser folds a block's *last* expression into
+    /// [`Block::trailing`] instead.
+    Expr(Spanned<Expr>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -549,6 +551,18 @@ pub enum Expr {
     Call {
         callee: Spanned<String>,
         args: Vec<CallArg>,
+    },
+    /// `Name { field: value, shorthand, … }` — construct a struct.
+    /// Mirrors the struct *pattern* syntax so construction and
+    /// destructuring read as inverses. Named-only (no positional
+    /// form); `Name {}` is legal for an all-defaults struct. Not
+    /// permitted at the top level of an `if`-condition /
+    /// `for`-iterable / `match`-scrutinee (Rust-style restriction —
+    /// with shorthand fields the header would be genuinely ambiguous
+    /// with the construct's block); parenthesize to opt in.
+    StructLiteral {
+        name: Spanned<String>,
+        fields: Vec<StructLiteralField>,
     },
     /// `if cond { … } else { … }`. Both branches are full [`Block`]s.
     /// `else` is optional in source; an omitted `else` is stored as an
@@ -630,6 +644,16 @@ pub enum Pattern {
     },
 }
 
+/// One field of a struct *literal*. `value: None` is the shorthand
+/// (`name` ≡ `name: name`), the exact mirror of the pattern
+/// shorthand's `pattern: None`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructLiteralField {
+    pub name: Spanned<String>,
+    pub value: Option<Spanned<Expr>>,
+    pub span: Span,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructPatternField {
     pub name: Spanned<String>,
@@ -701,13 +725,17 @@ pub enum BinOp {
     Ge,
     /// `??` — null-coalesce. LHS must be `T?` (or the bare `null`
     /// literal of type `Null`); RHS must be `T` (or `T?`). Evaluates
-    /// RHS only when LHS is `null`. Right-associative.
+    /// RHS only when LHS is `null`. Right-associative and the loosest
+    /// binary operator (C#-style): comparisons/logical ops all produce
+    /// non-nullable `Boolean`, so an unparenthesized mix like
+    /// `a ?? b == c` groups as `a ?? (b == c)` — the only grouping
+    /// that could ever type-check with a nullable `a`.
     Coalesce,
     /// `&&` / `||` — short-circuit logical conjunction / disjunction
     /// over `Boolean`. Both operands must be `Boolean` (no coercion);
     /// the RHS is evaluated only when the LHS doesn't already decide
     /// the result. `&&` binds tighter than `||`; both bind looser than
-    /// comparison.
+    /// comparison (and tighter than `??`).
     And,
     Or,
 }

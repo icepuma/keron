@@ -28,70 +28,71 @@ pub struct LoadedSource {
 }
 
 pub fn load(path: &Path) -> Result<LoadedSource> {
+    let files = collect_keron_paths(path)?
+        .into_iter()
+        .map(|path| {
+            let text = fs::read_to_string(&path)
+                .with_context(|| format!("reading `{}`", path.display()))?;
+            Ok(LoadedFile { path, text })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(LoadedSource { files })
+}
+
+/// Resolve `path` (a single `.keron` file or a directory tree) to the
+/// canonicalized, deduplicated, relative-path-sorted list of `.keron`
+/// files it denotes.
+///
+/// Shared by `load` (apply/check) and `keron format` so every verb
+/// resolves the same file set under the same symlink confinement
+/// rules.
+///
+/// # Errors
+/// Fails on an unreadable path, a non-`.keron` file, a special file,
+/// or a directory containing no `.keron` files.
+pub fn collect_keron_paths(path: &Path) -> Result<Vec<PathBuf>> {
     let meta = fs::metadata(path).with_context(|| format!("reading `{}`", path.display()))?;
 
     if meta.is_file() {
-        Ok(LoadedSource {
-            files: vec![load_file(path)?],
-        })
+        if path.extension().and_then(|e| e.to_str()) != Some("keron") {
+            bail!("`{}` is not a .keron file", path.display());
+        }
+        let canonical = fs::canonicalize(path)
+            .with_context(|| format!("canonicalizing `{}`", path.display()))?;
+        Ok(vec![canonical])
     } else if meta.is_dir() {
-        let files = load_dir(path)?;
-        if files.is_empty() {
+        // Sort by relative path so the ordering matches the model's
+        // promised alphanumeric tree-walk, independent of `read_dir`.
+        let mut paths: Vec<PathBuf> = Vec::new();
+        walk(path, &mut paths)?;
+        paths.sort_by(|a, b| {
+            let ra = a.strip_prefix(path).unwrap_or(a);
+            let rb = b.strip_prefix(path).unwrap_or(b);
+            ra.cmp(rb)
+        });
+
+        let mut out: Vec<PathBuf> = Vec::with_capacity(paths.len());
+        let mut seen: HashSet<PathBuf> = HashSet::new();
+        for path in paths {
+            // Canonicalize so two entries pointing at the same real file
+            // (e.g. via a symlinked subdir) collapse to one module; the
+            // resolver also keys `ModuleId` by canonical path.
+            let canonical = fs::canonicalize(&path)
+                .with_context(|| format!("canonicalizing `{}`", path.display()))?;
+            if seen.insert(canonical.clone()) {
+                out.push(canonical);
+            }
+        }
+        if out.is_empty() {
             bail!("no .keron files in `{}`", path.display());
         }
-        Ok(LoadedSource { files })
+        Ok(out)
     } else {
         bail!(
             "`{}` is neither a regular file nor a directory",
             path.display()
         );
     }
-}
-
-fn load_file(path: &Path) -> Result<LoadedFile> {
-    if path.extension().and_then(|e| e.to_str()) != Some("keron") {
-        bail!("`{}` is not a .keron file", path.display());
-    }
-    let canonical =
-        fs::canonicalize(path).with_context(|| format!("canonicalizing `{}`", path.display()))?;
-    let text = fs::read_to_string(&canonical)
-        .with_context(|| format!("reading `{}`", canonical.display()))?;
-    Ok(LoadedFile {
-        path: canonical,
-        text,
-    })
-}
-
-fn load_dir(root: &Path) -> Result<Vec<LoadedFile>> {
-    // Sort by relative path so the ordering matches the model's
-    // promised alphanumeric tree-walk, independent of `read_dir`.
-    let mut paths: Vec<PathBuf> = Vec::new();
-    walk(root, &mut paths)?;
-    paths.sort_by(|a, b| {
-        let ra = a.strip_prefix(root).unwrap_or(a);
-        let rb = b.strip_prefix(root).unwrap_or(b);
-        ra.cmp(rb)
-    });
-
-    let mut files: Vec<LoadedFile> = Vec::with_capacity(paths.len());
-    let mut seen: HashSet<PathBuf> = HashSet::new();
-    for path in paths {
-        // Canonicalize so two entries pointing at the same real file
-        // (e.g. via a symlinked subdir) collapse to one module; the
-        // resolver also keys `ModuleId` by canonical path.
-        let canonical = fs::canonicalize(&path)
-            .with_context(|| format!("canonicalizing `{}`", path.display()))?;
-        if !seen.insert(canonical.clone()) {
-            continue;
-        }
-        let text = fs::read_to_string(&canonical)
-            .with_context(|| format!("reading `{}`", canonical.display()))?;
-        files.push(LoadedFile {
-            path: canonical,
-            text,
-        });
-    }
-    Ok(files)
 }
 
 fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {

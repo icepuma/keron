@@ -3,3 +3,29 @@ val mixed: Double = 1 + 2.5
 val pure_int: Int = 2 ** 10 - 1
 
 val pure_double: Double = 1.0 * 2.0 + 3.0
+
+# The same Int|Double join applies wherever expressions share one
+# value slot — list elements, map values, `if` branches, `match`
+# arms, `++` — and Int *literals* are admitted into `Double` slots.
+val xs: List<Double> = [1, 2.5]
+
+val inferred = [1, 2.5]
+
+val m: Map<String, Double> = {"a": 1, "b": 2.5}
+
+val branchy: Double = if pure_double > 3.0 {
+  1
+} else {
+  2.5
+}
+
+val matched: Double = match pure_int {
+  1023 => 1,
+  _ => 2.5,
+}
+
+val concatenated: List<Double> = [1] ++ [2.5]
+
+val lit: Double = 1
+
+val neg_lit: Double = -1

@@ -63,63 +63,63 @@ Program {
                     },
                 ),
                 value: Spanned {
-                    node: Call {
-                        callee: Spanned {
+                    node: StructLiteral {
+                        name: Spanned {
                             node: "Host",
                             span: 55..59,
                         },
-                        args: [
-                            CallArg {
-                                name: Some(
+                        fields: [
+                            StructLiteralField {
+                                name: Spanned {
+                                    node: "name",
+                                    span: 62..66,
+                                },
+                                value: Some(
                                     Spanned {
-                                        node: "name",
-                                        span: 60..64,
+                                        node: Literal(
+                                            String(
+                                                "alpha",
+                                            ),
+                                        ),
+                                        span: 68..75,
                                     },
                                 ),
-                                value: Spanned {
-                                    node: Literal(
-                                        String(
-                                            "alpha",
-                                        ),
-                                    ),
-                                    span: 67..74,
-                                },
-                                span: 60..74,
+                                span: 62..75,
                             },
-                            CallArg {
-                                name: Some(
+                            StructLiteralField {
+                                name: Spanned {
+                                    node: "port",
+                                    span: 77..81,
+                                },
+                                value: Some(
                                     Spanned {
-                                        node: "port",
-                                        span: 76..80,
+                                        node: Literal(
+                                            Int(
+                                                22,
+                                            ),
+                                        ),
+                                        span: 83..85,
                                     },
                                 ),
-                                value: Spanned {
-                                    node: Literal(
-                                        Int(
-                                            22,
-                                        ),
-                                    ),
-                                    span: 83..85,
-                                },
-                                span: 76..85,
+                                span: 77..86,
                             },
                         ],
                     },
-                    span: 55..88,
+                    span: 55..89,
                 },
-                span: 41..88,
+                span: 41..89,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "n",
-                    span: 92..93,
+                    span: 93..94,
                 },
                 ty: Some(
                     Spanned {
                         node: String,
-                        span: 95..101,
+                        span: 96..102,
                     },
                 ),
                 value: Spanned {
@@ -128,28 +128,28 @@ Program {
                             node: Var(
                                 "h",
                             ),
-                            span: 104..105,
+                            span: 105..106,
                         },
                         field: Spanned {
                             node: "name",
-                            span: 106..110,
+                            span: 107..111,
                         },
                     },
-                    span: 104..110,
+                    span: 105..111,
                 },
-                span: 88..110,
+                span: 89..111,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "p",
-                    span: 116..117,
+                    span: 117..118,
                 },
                 ty: Some(
                     Spanned {
                         node: Int,
-                        span: 119..122,
+                        span: 120..123,
                     },
                 ),
                 value: Spanned {
@@ -158,16 +158,16 @@ Program {
                             node: Var(
                                 "h",
                             ),
-                            span: 125..126,
+                            span: 126..127,
                         },
                         field: Spanned {
                             node: "port",
-                            span: 127..131,
+                            span: 128..132,
                         },
                     },
-                    span: 125..131,
+                    span: 126..132,
                 },
-                span: 112..131,
+                span: 113..132,
             },
         ),
     ],

@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `"Banana"` is not a variant of `OsType` (expected one of `"Linux"`, `"Macos"`, `"Windows"`, `"Unknown"`)
+  --> 4:40
+  |
+4 | val impossible: Boolean = os_type() == "Banana"
+  |                                        ^^^^^^^^

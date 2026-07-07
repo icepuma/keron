@@ -11,10 +11,16 @@
 //! Arithmetic operators (`- * / **` and unary `-`) require numeric
 //! operands. `+` is overloaded: numeric like the others, plus
 //! `String + String → String`. Mixed `Int`/`Double` operands promote
-//! to `Double`. Val annotations are strict.
-//!
-//! Lists are strictly homogeneous (no `Int`→`Double` promotion within
-//! a list). `++` is list concat with strict element-type equality.
+//! to `Double` — and the same promotion applies wherever several
+//! expressions share one value slot (list elements, map values, `if`
+//! branches, `match` arms, `++`) and to `Int` *literals* written into
+//! a `Double` slot (`val x: Double = 1`). Non-literal `Int`
+//! expressions still do not flow into `Double` slots: there is no
+//! general `Int <: Double` subtyping, only the join and the literal
+//! admission. Every promotion records its expression span into
+//! [`CheckOutput::double_promotions`] so the evaluator (which has no
+//! type environment) coerces the runtime value at exactly those
+//! positions.
 //!
 //! **Functions** live in their own namespace. The checker runs in two
 //! passes: pass 1 collects every top-level name (rejecting duplicates
@@ -32,18 +38,22 @@
 //! itself is module-agnostic — it only sees the local AST plus this
 //! imported symbol set.
 
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use crate::{
     ast::{
         BinOp, Block, CallArg, Expr, FnDecl, ForPattern, Item, Literal, MapEntry, Param, Program,
-        ReconcileDecl, Span, Spanned, Stmt, StringPart, StructDecl, Type, TypeAliasDecl, UnaryOp,
-        ValDecl,
+        ReconcileDecl, Span, Spanned, Stmt, StringPart, StructDecl, StructLiteralField, Type,
+        TypeAliasDecl, UnaryOp, ValDecl,
     },
     diagnostic::Diagnostic,
 };
 
 mod match_check;
+mod overload;
+mod suggest;
 
 /// Red zone / grow slab for [`grow_stack`]. Matches the rustc / syn
 /// idiom (64 KiB red zone, 1 MiB slab).
@@ -71,6 +81,14 @@ enum BindingKind {
 #[derive(Debug, Default, Clone)]
 pub(super) struct Env {
     bindings: HashMap<String, (Type, BindingKind)>,
+    /// Spans of expressions whose checked type promoted a synthesized
+    /// `Int` into a `Double` slot (`[1, 2.5]`, `if c { 1 } else
+    /// { 2.5 }`, `val x: Double = 1`, …). The evaluator has no type
+    /// environment, so this is how it learns to coerce the runtime
+    /// `Value::Int` at exactly those positions — without it, `/` on a
+    /// "promoted" Int would silently do integer division. Shared
+    /// across clones (`Rc`) so every scope feeds one per-module table.
+    promotions: Rc<RefCell<Vec<Span>>>,
 }
 
 impl Env {
@@ -85,6 +103,31 @@ impl Env {
     fn bind(&mut self, name: String, ty: Type, kind: BindingKind) {
         self.bindings.insert(name, (ty, kind));
     }
+
+    /// Fresh binding scope that still feeds the parent's promotion
+    /// table — used where a scope starts from empty bindings (fn
+    /// bodies) rather than by cloning.
+    fn child_scope(&self) -> Self {
+        Self {
+            bindings: HashMap::new(),
+            promotions: Rc::clone(&self.promotions),
+        }
+    }
+
+    fn record_promotion(&self, span: &Span) {
+        self.promotions.borrow_mut().push(span.clone());
+    }
+
+    /// Snapshot for speculative checking (see the nullable-narrowing
+    /// probe in [`check_expr`]): a probe that fails must not leave its
+    /// promotion spans behind.
+    fn promotions_mark(&self) -> usize {
+        self.promotions.borrow().len()
+    }
+
+    fn truncate_promotions(&self, mark: usize) {
+        self.promotions.borrow_mut().truncate(mark);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -98,6 +141,13 @@ pub struct ParamSig {
 pub struct FnSig {
     pub params: Vec<ParamSig>,
     pub return_type: Type,
+    /// `Some(name)` when this signature is a struct's synthesized
+    /// constructor. Structs are built with the brace-literal form —
+    /// `check_call` uses this to reject call-syntax construction with
+    /// a targeted hint, and `check_struct_literal` to find the field
+    /// signature. A plain fn *returning* a struct has `None` here,
+    /// which is why the marker can't be derived from `return_type`.
+    pub struct_name: Option<String>,
 }
 
 pub type FnEnv = HashMap<String, FnSig>;
@@ -265,6 +315,19 @@ impl TypeResolutionScope<'_> {
             .get(name)
             .or_else(|| self.imported.types.get(name))
     }
+
+    /// Every type name in scope, sorted for deterministic
+    /// nearest-name suggestions.
+    fn type_names(&self) -> Vec<&str> {
+        let mut names: Vec<&str> = self
+            .local
+            .keys()
+            .chain(self.imported.types.keys())
+            .map(String::as_str)
+            .collect();
+        names.sort_unstable();
+        names
+    }
 }
 
 fn resolve_block_types(
@@ -287,6 +350,7 @@ fn resolve_block_types(
                 resolve_expr_types(&mut v.value.node, scope, diags);
             }
             Stmt::Reconcile(r) => resolve_reconcile_types(r, scope, diags),
+            Stmt::Expr(x) => resolve_expr_types(&mut x.node, scope, diags),
         }
     }
     if let Some(trailing) = &mut block.trailing {
@@ -324,6 +388,13 @@ fn resolve_expr_types_inner(
         Expr::Binary { lhs, rhs, .. } => {
             resolve_expr_types(&mut lhs.node, scope, diags);
             resolve_expr_types(&mut rhs.node, scope, diags);
+        }
+        Expr::StructLiteral { fields, .. } => {
+            for field in fields {
+                if let Some(value) = &mut field.value {
+                    resolve_expr_types(&mut value.node, scope, diags);
+                }
+            }
         }
         Expr::Interpolation(parts) => {
             for part in parts {
@@ -387,8 +458,8 @@ fn resolve_type_in_place(
     stack: &mut Vec<String>,
 ) {
     match ty {
-        Type::Named(name) => match scope.lookup(name) {
-            Some(canonical) => {
+        Type::Named(name) => {
+            if let Some(canonical) = scope.lookup(name) {
                 if stack.iter().any(|n| n == name) {
                     diags.push(Diagnostic::new(
                         span.clone(),
@@ -403,16 +474,19 @@ fn resolve_type_in_place(
                 // Resolving those eagerly here keeps the val
                 // annotation's payload structurally identical to the
                 // one synthesised for the struct's constructor.
+                let canonical = canonical.clone();
                 stack.push(name.clone());
-                *ty = canonical.clone();
+                *ty = canonical;
                 resolve_type_in_place(ty, span, scope, diags, stack);
                 stack.pop();
+            } else {
+                let mut d = Diagnostic::new(span.clone(), format!("unknown type `{name}`"));
+                if let Some(sugg) = suggest::nearest(scope.type_names(), name) {
+                    d = d.with_help(format!("did you mean `{sugg}`?"));
+                }
+                diags.push(d);
             }
-            None => diags.push(Diagnostic::new(
-                span.clone(),
-                format!("unknown type `{name}`"),
-            )),
-        },
+        }
         Type::List(inner) | Type::Nullable(inner) => {
             resolve_type_in_place(inner, span, scope, diags, stack);
         }
@@ -460,6 +534,30 @@ fn resolve_type_in_place(
 /// error short-circuits the rest of *that* declaration but sibling
 /// items are still checked.
 pub fn check_module(program: &Program, imported: &ImportedSymbols) -> Result<(), Vec<Diagnostic>> {
+    check_module_full(program, imported).map(|_| ())
+}
+
+/// Byproducts of a successful check that downstream phases consume.
+#[derive(Debug, Default, Clone)]
+pub struct CheckOutput {
+    /// `(start, end)` byte-offset spans of expressions whose checked
+    /// type promoted a synthesized `Int` into a `Double` slot. The
+    /// evaluator coerces the runtime value at these spans; without
+    /// the table, an Int inhabiting a static `Double` (e.g. from
+    /// `[1, 2.5]`) would silently take the integer-division path.
+    pub double_promotions: HashSet<(usize, usize)>,
+}
+
+/// [`check_module`] plus the [`CheckOutput`] byproducts. Split so the
+/// many existing callers that only care about diagnostics keep their
+/// signature.
+///
+/// # Errors
+/// Same contract as [`check_module`].
+pub fn check_module_full(
+    program: &Program,
+    imported: &ImportedSymbols,
+) -> Result<CheckOutput, Vec<Diagnostic>> {
     let mut diags = Vec::new();
 
     let mut top_names: HashSet<String> = HashSet::new();
@@ -477,9 +575,10 @@ pub fn check_module(program: &Program, imported: &ImportedSymbols) -> Result<(),
         match item {
             Item::Val(v) => {
                 if top_names.contains(&v.name.node) {
-                    diags.push(Diagnostic::new(
+                    diags.push(redefine_diagnostic(
                         v.name.span.clone(),
-                        redefine_message(&v.name.node, imported),
+                        &v.name.node,
+                        imported,
                     ));
                 } else {
                     top_names.insert(v.name.node.clone());
@@ -487,9 +586,10 @@ pub fn check_module(program: &Program, imported: &ImportedSymbols) -> Result<(),
             }
             Item::Fn(f) => {
                 if top_names.contains(&f.name.node) {
-                    diags.push(Diagnostic::new(
+                    diags.push(redefine_diagnostic(
                         f.name.span.clone(),
-                        redefine_message(&f.name.node, imported),
+                        &f.name.node,
+                        imported,
                     ));
                     continue;
                 }
@@ -500,9 +600,10 @@ pub fn check_module(program: &Program, imported: &ImportedSymbols) -> Result<(),
             }
             Item::Struct(s) => {
                 if top_names.contains(&s.name.node) {
-                    diags.push(Diagnostic::new(
+                    diags.push(redefine_diagnostic(
                         s.name.span.clone(),
-                        redefine_message(&s.name.node, imported),
+                        &s.name.node,
+                        imported,
                     ));
                     continue;
                 }
@@ -513,9 +614,10 @@ pub fn check_module(program: &Program, imported: &ImportedSymbols) -> Result<(),
             }
             Item::TypeAlias(t) => {
                 if top_names.contains(&t.name.node) {
-                    diags.push(Diagnostic::new(
+                    diags.push(redefine_diagnostic(
                         t.name.span.clone(),
-                        redefine_message(&t.name.node, imported),
+                        &t.name.node,
+                        imported,
                     ));
                     continue;
                 }
@@ -541,14 +643,29 @@ pub fn check_module(program: &Program, imported: &ImportedSymbols) -> Result<(),
         }
     }
 
-    if diags.is_empty() { Ok(()) } else { Err(diags) }
+    if diags.is_empty() {
+        let double_promotions = val_env
+            .promotions
+            .borrow()
+            .iter()
+            .map(|span| (span.start, span.end))
+            .collect();
+        Ok(CheckOutput { double_promotions })
+    } else {
+        Err(diags)
+    }
 }
 
-fn redefine_message(name: &str, imported: &ImportedSymbols) -> String {
+fn redefine_diagnostic(span: Span, name: &str, imported: &ImportedSymbols) -> Diagnostic {
     if imported.builtins.contains(name) {
-        format!("`{name}` is a builtin and cannot be redefined")
+        Diagnostic::new(
+            span,
+            format!("`{name}` is a builtin and cannot be redefined"),
+        )
+        .with_note("builtins are implicitly in scope in every module")
+        .with_help(format!("rename the declaration — e.g. `my_{name}`"))
     } else {
-        format!("`{name}` is already defined")
+        Diagnostic::new(span, format!("`{name}` is already defined"))
     }
 }
 
@@ -604,6 +721,7 @@ fn build_struct_sig(s: &StructDecl, diags: &mut Vec<Diagnostic>) -> Option<FnSig
                 name: s.name.node.clone(),
                 fields: field_pairs,
             },
+            struct_name: Some(s.name.node.clone()),
         })
     } else {
         None
@@ -690,6 +808,7 @@ fn build_sig(f: &FnDecl, diags: &mut Vec<Diagnostic>) -> Option<FnSig> {
         Some(FnSig {
             params,
             return_type: f.return_type.node.clone(),
+            struct_name: None,
         })
     } else {
         None
@@ -732,7 +851,9 @@ fn check_fn_decl(f: &FnDecl, outer_env: &Env, fns: &FnEnv, diags: &mut Vec<Diagn
     if f.intrinsic.is_some() {
         return;
     }
-    let mut scope = Env::default();
+    // `child_scope`, not `Env::default()`: the fn body's promotions
+    // must land in the same per-module table.
+    let mut scope = outer_env.child_scope();
     for (name, (ty, _)) in &outer_env.bindings {
         scope.bind(name.clone(), ty.clone(), BindingKind::OuterVal);
     }
@@ -768,6 +889,10 @@ fn reject_reconcile_in_value_block(block: &Block, diags: &mut Vec<Diagnostic>) {
     for stmt in &block.stmts {
         match stmt {
             Stmt::Val(v) => reject_reconcile_in_value_expr(&v.value, diags),
+            // A value-context block runs in a throwaway sink, so an
+            // effect statement's reconciles are as lost as the
+            // trailing expression's would be.
+            Stmt::Expr(x) => reject_reconcile_in_value_expr(x, diags),
             Stmt::Reconcile(r) => diags.push(Diagnostic::new(
                 r.span.clone(),
                 "`reconcile` is not allowed inside a value expression; resources emitted here would be silently dropped — move it to a top-level `reconcile` or to a top-level `for` / `if` statement",
@@ -790,6 +915,13 @@ fn reject_reconcile_in_value_expr_inner(expr: &Spanned<Expr>, diags: &mut Vec<Di
         Expr::Binary { lhs, rhs, .. } => {
             reject_reconcile_in_value_expr(lhs, diags);
             reject_reconcile_in_value_expr(rhs, diags);
+        }
+        Expr::StructLiteral { fields, .. } => {
+            for field in fields {
+                if let Some(value) = &field.value {
+                    reject_reconcile_in_value_expr(value, diags);
+                }
+            }
         }
         Expr::Interpolation(parts) => {
             for part in parts {
@@ -901,6 +1033,12 @@ fn process_block_stmts_collecting(
         match stmt {
             Stmt::Val(v) => check_local_val_collecting(v, env, fns, diags),
             Stmt::Reconcile(r) => check_reconcile_decl(r, env, fns, diags),
+            // Non-final expression statements must be Void effects.
+            Stmt::Expr(x) => {
+                if let Err(d) = check_expr(x, &Type::Void, env, fns) {
+                    diags.push(d);
+                }
+            }
         }
     }
 }
@@ -991,6 +1129,8 @@ fn process_block_stmts_strict(
     for stmt in stmts {
         match stmt {
             Stmt::Val(v) => check_local_val_strict(v, env, fns)?,
+            // Non-final expression statements must be Void effects.
+            Stmt::Expr(x) => check_expr(x, &Type::Void, env, fns)?,
             Stmt::Reconcile(r) => {
                 for step in r.chains.iter().flatten() {
                     // Chain steps are evaluated in value position;
@@ -1121,6 +1261,11 @@ fn reject_reconcile_in_exec_void_block(block: &Block, diags: &mut Vec<Diagnostic
             // A statement-level reconcile in an exec-void block is real.
             Stmt::Reconcile(_) => {}
             Stmt::Val(v) => reject_reconcile_in_value_expr(&v.value, diags),
+            // Effect statements route to the real sink at eval time
+            // (`exec_void_block` gives `Stmt::Expr` the same
+            // exec-void treatment as the trailing expression) — keep
+            // this arm in lockstep with that one.
+            Stmt::Expr(x) => reject_reconcile_in_exec_void_expr(x, diags),
         }
     }
     if let Some(trailing) = &block.trailing {
@@ -1145,9 +1290,16 @@ pub(super) fn check_expr(
     // subtyping).
     if let Type::Nullable(inner) = expected
         && !matches!(e.node, Expr::Literal(Literal::Null))
-        && check_expr(e, inner, env, fns).is_ok()
     {
-        return Ok(());
+        // The probe is speculative: on failure we fall through to the
+        // normal path, so any promotion spans it recorded must be
+        // rolled back or the evaluator would coerce a value the
+        // accepted typing never promoted.
+        let mark = env.promotions_mark();
+        if check_expr(e, inner, env, fns).is_ok() {
+            return Ok(());
+        }
+        env.truncate_promotions(mark);
     }
     // String literal targeted at a `StringUnion` slot: admit only
     // when the literal is in the variant set. The reverse — assigning
@@ -1161,17 +1313,17 @@ pub(super) fn check_expr(
         },
     ) = (&e.node, expected)
     {
-        return if variants.iter().any(|v| v == s) {
-            Ok(())
-        } else {
-            Err(Diagnostic::new(
-                e.span.clone(),
-                format!(
-                    "`\"{s}\"` is not a variant of `{union_name}` (expected one of {})",
-                    format_variants(variants)
-                ),
-            ))
-        };
+        return literal_variant_check(s, union_name, variants, &e.span);
+    }
+    // Int literal targeted at a `Double` slot: admit and record the
+    // literal's span so the evaluator produces a Double there. This is
+    // the literal-only companion of the numeric join — non-literal Int
+    // expressions still do not flow into `Double` (no `Int <: Double`
+    // subtyping), so `val xs: List<Double> = [1, 2.5]` works while
+    // `val x: Double = some_int` stays an error.
+    if let (Expr::Literal(Literal::Int(_)), Type::Double) = (&e.node, expected) {
+        env.record_promotion(&e.span);
+        return Ok(());
     }
     match &e.node {
         Expr::List(items) => match expected {
@@ -1291,10 +1443,20 @@ fn check_coalesce(
             }
             check_expr(rhs, expected, env, fns)
         }
-        _ => Err(Diagnostic::new(
-            lhs.span.clone(),
-            format!("`??` requires the left side to be a nullable type (`T?`), found `{lhs_ty}`"),
-        )),
+        _ => {
+            let mut d = Diagnostic::new(
+                lhs.span.clone(),
+                format!(
+                    "`??` requires the left side to be a nullable type (`T?`), found `{lhs_ty}`"
+                ),
+            );
+            if matches!(lhs_ty, Type::Secret) {
+                d = d.with_note(
+                    "secret resolution failure is a hard error by design; `secret(...)` never returns null",
+                );
+            }
+            Err(d)
+        }
     }
 }
 
@@ -1308,10 +1470,16 @@ fn switch_to_synth(
     if is_subtype(&got, expected) {
         Ok(())
     } else {
-        Err(Diagnostic::new(
+        let mut d = Diagnostic::new(
             e.span.clone(),
             format!("type mismatch: expected `{expected}`, found `{got}`"),
-        ))
+        );
+        // A dynamic `String` meeting a closed-union slot is the one
+        // mismatch with an enumerable fix.
+        if let (Type::StringUnion { variants, .. }, Type::String) = (expected, &got) {
+            d = d.with_help(format!("expected one of {}", format_variants(variants)));
+        }
+        Err(d)
     }
 }
 
@@ -1395,10 +1563,15 @@ fn expr_type(e: &Spanned<Expr>, env: &Env, fns: &FnEnv) -> Result<Type, Diagnost
 fn expr_type_inner(e: &Spanned<Expr>, env: &Env, fns: &FnEnv) -> Result<Type, Diagnostic> {
     match &e.node {
         Expr::Literal(lit) => Ok(lit.type_of()),
-        Expr::Var(name) => env
-            .lookup(name)
-            .cloned()
-            .ok_or_else(|| Diagnostic::new(e.span.clone(), format!("unknown variable `{name}`"))),
+        Expr::Var(name) => env.lookup(name).cloned().ok_or_else(|| {
+            let mut d = Diagnostic::new(e.span.clone(), format!("unknown variable `{name}`"));
+            let mut in_scope: Vec<&str> = env.bindings.keys().map(String::as_str).collect();
+            in_scope.sort_unstable();
+            if let Some(sugg) = suggest::nearest(in_scope, name) {
+                d = d.with_help(format!("did you mean `{sugg}`?"));
+            }
+            d
+        }),
         Expr::Unary { op, operand } => {
             let inner = expr_type(operand, env, fns)?;
             match (op, &inner) {
@@ -1424,8 +1597,22 @@ fn expr_type_inner(e: &Spanned<Expr>, env: &Env, fns: &FnEnv) -> Result<Type, Di
                 return coalesce_result(&lt, &rt)
                     .map_err(|msg| Diagnostic::new(e.span.clone(), msg));
             }
-            binop_result(*op, &lt, &rt)
-                .ok_or_else(|| Diagnostic::new(e.span.clone(), binop_error(*op, &lt, &rt)))
+            if matches!(op, BinOp::Eq | BinOp::Neq) {
+                check_union_comparison(&e.span, &lt, lhs, &rt, rhs)?;
+            }
+            let result = binop_result(*op, &lt, &rt)
+                .ok_or_else(|| Diagnostic::new(e.span.clone(), binop_error(*op, &lt, &rt)))?;
+            // `[1] ++ [2.5]` joins element types to Double like the
+            // literal `[1, 2.5]` does — record so the evaluator
+            // coerces the concatenated list's Int elements.
+            if *op == BinOp::Concat
+                && matches!(&result, Type::List(elem) if **elem == Type::Double)
+                && (matches!(&lt, Type::List(elem) if **elem == Type::Int)
+                    || matches!(&rt, Type::List(elem) if **elem == Type::Int))
+            {
+                env.record_promotion(&e.span);
+            }
+            Ok(result)
         }
         Expr::Interpolation(parts) => {
             for part in parts {
@@ -1444,11 +1631,14 @@ fn expr_type_inner(e: &Spanned<Expr>, env: &Env, fns: &FnEnv) -> Result<Type, Di
         Expr::List(items) => list_type(e.span.clone(), items, env, fns),
         Expr::Map(entries) => map_type(e.span.clone(), entries, env, fns),
         Expr::Call { callee, args } => check_call(e.span.clone(), callee, args, env, fns),
+        Expr::StructLiteral { name, fields } => {
+            check_struct_literal(&e.span, name, fields, env, fns)
+        }
         Expr::If {
             cond,
             then_branch,
             else_branch,
-        } => if_type(cond, then_branch, else_branch, env, fns),
+        } => if_type(&e.span, cond, then_branch, else_branch, env, fns),
         Expr::For { .. } => {
             // Synthesis mode means a value is expected; `for` has type
             // `Void` and produces none. The dedicated arm in
@@ -1457,11 +1647,16 @@ fn expr_type_inner(e: &Spanned<Expr>, env: &Env, fns: &FnEnv) -> Result<Type, Di
             // block trailing). Anything else lands here.
             Err(Diagnostic::new(
                 e.span.clone(),
-                "`for` has type `Void` and does not produce a value; use it at statement position rather than in a value position (match scrutinee, val initializer, argument)",
+                "`for` has type `Void` and does not produce a value",
+            )
+            .with_help(
+                "use `for` at statement position rather than in a value position (match scrutinee, val initializer, argument)",
             ))
         }
         Expr::Field { receiver, field } => field_type(receiver, field, env, fns),
-        Expr::Match { scrutinee, arms } => match_check::match_type(scrutinee, arms, env, fns),
+        Expr::Match { scrutinee, arms } => {
+            match_check::match_type(&e.span, scrutinee, arms, env, fns)
+        }
     }
 }
 
@@ -1507,6 +1702,82 @@ fn format_variants(variants: &[String]) -> String {
         .map(|v| format!("`\"{v}\"`"))
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// Shared admission rule for a string literal targeted at a closed
+/// `StringUnion`: `Ok` when the literal names a variant, otherwise the
+/// canonical "not a variant of" diagnostic. One implementation serves
+/// the assignment path (`check_expr`), literal patterns
+/// (`match_check::check_lit_pattern`), and `==`/`!=` comparisons so
+/// the three sites can never drift apart.
+pub(super) fn literal_variant_check(
+    s: &str,
+    union_name: &str,
+    variants: &[String],
+    span: &Span,
+) -> Result<(), Diagnostic> {
+    if variants.iter().any(|v| v == s) {
+        Ok(())
+    } else {
+        let mut d = Diagnostic::new(
+            span.clone(),
+            format!(
+                "`\"{s}\"` is not a variant of `{union_name}` (expected one of {})",
+                format_variants(variants)
+            ),
+        );
+        if let Some(sugg) = suggest::nearest(variants.iter().map(String::as_str), s) {
+            d = d.with_help(format!("did you mean `\"{sugg}\"`?"));
+        }
+        Err(d)
+    }
+}
+
+/// Wrap `inner` in a single `Nullable` layer, idempotently: an
+/// already-nullable type passes through unchanged so no context ever
+/// constructs the unwritable `T??`.
+pub(super) fn wrap_nullable(inner: Type) -> Type {
+    match inner {
+        already @ Type::Nullable(_) => already,
+        other => Type::Nullable(Box::new(other)),
+    }
+}
+
+/// Join two types that must inhabit one value slot — list elements,
+/// map values, `if` branches, `match` arm bodies, and the element
+/// types of `++`. The rules are exact equality plus the single
+/// non-equality unification: mixed resource singletons lift to
+/// `Resource`. Returns `None` when the types can't share the slot.
+///
+/// Having one join keeps every "several expressions, one slot"
+/// context in agreement — before it existed, `[symlink, template]`
+/// inferred `List<Resource>` while the equivalent `if`/`else` pair
+/// was rejected.
+pub(super) fn join_types(a: &Type, b: &Type) -> Option<Type> {
+    if a == b {
+        return Some(a.clone());
+    }
+    if is_resource_singleton(a) && is_resource_singleton(b) {
+        return Some(Type::Resource);
+    }
+    // Mixed numerics promote to `Double`, mirroring arithmetic. Top
+    // level only — no recursion into containers, so `[[1], [2.5]]`
+    // stays an error. Every caller that can produce this join records
+    // the expression's span for the evaluator's runtime coercion.
+    if join_promotes(a, b) {
+        return Some(Type::Double);
+    }
+    None
+}
+
+/// True when joining `a` and `b` promotes an `Int` side to `Double` —
+/// the callers of [`join_types`] use this to know when to record a
+/// promotion span for the evaluator.
+const fn join_promotes(a: &Type, b: &Type) -> bool {
+    matches!(
+        (a, b),
+        (Type::Int, Type::Double) | (Type::Double, Type::Int)
+    )
 }
 
 /// Type-check a `for` expression. Always synthesises [`Type::Void`].
@@ -1592,6 +1863,7 @@ fn bind_loop_var(env: &mut Env, name: &Spanned<String>, ty: Type) -> Result<(), 
 }
 
 fn if_type(
+    if_span: &Span,
     cond: &Spanned<Expr>,
     then_branch: &Block,
     else_branch: &Block,
@@ -1601,25 +1873,33 @@ fn if_type(
     check_expr(cond, &Type::Boolean, env, fns)?;
     let then_ty = block_type(then_branch, env, fns)?;
     let else_ty = block_type(else_branch, env, fns)?;
-    if then_ty == else_ty {
-        Ok(then_ty)
-    } else {
-        // The branch we point at depends on which side is the "implicit
-        // empty Void block" (an omitted `else`); pointing at the
-        // non-trailing else with span at the closing `}` is more
-        // legible than at the missing token.
-        let span = if else_branch.trailing.is_none() && else_branch.stmts.is_empty() {
-            then_branch.span.clone()
-        } else {
-            else_branch.span.clone()
-        };
-        Err(Diagnostic::new(
-            span,
-            format!(
-                "`if` branches have mismatched types: `then` is `{then_ty}`, `else` is `{else_ty}`"
-            ),
-        ))
-    }
+    join_types(&then_ty, &else_ty).map_or_else(
+        || {
+            // The branch we point at depends on which side is the
+            // "implicit empty Void block" (an omitted `else`);
+            // pointing at the non-trailing else with span at the
+            // closing `}` is more legible than at the missing token.
+            let span = if else_branch.trailing.is_none() && else_branch.stmts.is_empty() {
+                then_branch.span.clone()
+            } else {
+                else_branch.span.clone()
+            };
+            Err(Diagnostic::new(
+                span,
+                format!(
+                    "`if` branches have mismatched types: `then` is `{then_ty}`, `else` is `{else_ty}`"
+                ),
+            ))
+        },
+        |joined| {
+            if join_promotes(&then_ty, &else_ty) {
+                // Only one branch runs; the evaluator coerces
+                // whichever value arrives at this span.
+                env.record_promotion(if_span);
+            }
+            Ok(joined)
+        },
+    )
 }
 
 fn check_call(
@@ -1630,11 +1910,28 @@ fn check_call(
     fns: &FnEnv,
 ) -> Result<Type, Diagnostic> {
     let sig = fns.get(&callee.node).ok_or_else(|| {
-        Diagnostic::new(
+        let mut d = Diagnostic::new(
             callee.span.clone(),
             format!("unknown function `{}`", callee.node),
-        )
+        );
+        let mut known: Vec<&str> = fns.keys().map(String::as_str).collect();
+        known.sort_unstable();
+        if let Some(sugg) = suggest::nearest(known, &callee.node) {
+            d = d.with_help(format!("did you mean `{sugg}`?"));
+        }
+        d
     })?;
+
+    // Structs are constructed with the brace-literal form, not call
+    // syntax — reject with the migration hint.
+    if let Some(struct_name) = &sig.struct_name {
+        return Err(Diagnostic::new(
+            call_span,
+            format!(
+                "`{struct_name}` is a struct; construct it with `{struct_name} {{ field: value, … }}`"
+            ),
+        ));
+    }
 
     let mut seen_named = false;
     for arg in args {
@@ -1685,9 +1982,17 @@ fn check_call(
         }
     }
 
+    // Type-directed overloads: `len` / `contains` are resolved from
+    // the first argument's kind (String / List / Map), not from the
+    // registry's representative generic signature. Must run before
+    // the generic path so `Generic("C")` is never bound literally.
+    if overload::is_collection_overload(&callee.node, sig) {
+        return overload::check_collection_overload(callee, &matched, env, fns, &call_span);
+    }
+
     // Generic-aware path: when the signature mentions `Type::Generic`
-    // anywhere (set up only by stdlib intrinsics like `len`,
-    // `contains`, `get`), switch from the cheap bidirectional
+    // anywhere (set up only by stdlib intrinsics like `sort`,
+    // `unique`, `get`), switch from the cheap bidirectional
     // `check_expr` mode to an inference-then-bind mode that lets us
     // resolve `T`/`K`/`V` from concrete argument types. Non-generic
     // signatures keep the existing fast path.
@@ -1714,6 +2019,75 @@ fn check_call(
         }
     }
 
+    Ok(sig.return_type.clone())
+}
+
+/// Type a `Name { field: value, shorthand }` struct literal against
+/// the struct's synthesized constructor signature. Fields may appear
+/// in any order; shorthand `field` binds a same-named variable;
+/// omitted fields must have declared defaults.
+fn check_struct_literal(
+    span: &Span,
+    name: &Spanned<String>,
+    fields: &[StructLiteralField],
+    env: &Env,
+    fns: &FnEnv,
+) -> Result<Type, Diagnostic> {
+    let Some(sig) = fns.get(&name.node) else {
+        return Err(Diagnostic::new(
+            name.span.clone(),
+            format!("unknown struct `{}`", name.node),
+        ));
+    };
+    if sig.struct_name.is_none() {
+        return Err(Diagnostic::new(
+            name.span.clone(),
+            format!(
+                "`{0}` is a function, not a struct; call it with `{0}(…)`",
+                name.node
+            ),
+        ));
+    }
+    let mut seen: HashSet<&str> = HashSet::new();
+    for field in fields {
+        if !seen.insert(field.name.node.as_str()) {
+            return Err(Diagnostic::new(
+                field.name.span.clone(),
+                format!("field `{}` is already supplied", field.name.node),
+            ));
+        }
+        if !sig.params.iter().any(|p| p.name == field.name.node) {
+            return Err(Diagnostic::new(
+                field.name.span.clone(),
+                format!("struct `{}` has no field `{}`", name.node, field.name.node),
+            ));
+        }
+    }
+    for param in &sig.params {
+        match fields.iter().find(|f| f.name.node == param.name) {
+            Some(field) => {
+                if let Some(value) = &field.value {
+                    check_expr(value, &param.ty, env, fns)?;
+                } else {
+                    // Shorthand: check a synthesized `Var` so the
+                    // lookup and type diagnostics match an explicit
+                    // `f: f`.
+                    let var = Spanned {
+                        node: Expr::Var(field.name.node.clone()),
+                        span: field.name.span.clone(),
+                    };
+                    check_expr(&var, &param.ty, env, fns)?;
+                }
+            }
+            None if param.has_default => {}
+            None => {
+                return Err(Diagnostic::new(
+                    span.clone(),
+                    format!("missing field `{}` for struct `{}`", param.name, name.node),
+                ));
+            }
+        }
+    }
     Ok(sig.return_type.clone())
 }
 
@@ -1756,10 +2130,8 @@ fn check_generic_call(
             &callee.node,
         )?;
     }
-    if matches!(
-        callee.node.as_str(),
-        "list_contains" | "unique" | "index_of"
-    ) && let Some(elem) = bindings.get("T")
+    if matches!(callee.node.as_str(), "unique" | "index_of")
+        && let Some(elem) = bindings.get("T")
         && !is_list_equality_comparable(elem)
     {
         return Err(Diagnostic::new(
@@ -1770,7 +2142,30 @@ fn check_generic_call(
             ),
         ));
     }
+    // `sort` additionally needs a total order, which is narrower than
+    // equality (no `Boolean`/`Null`/`Secret` ordering).
+    if callee.node == "sort"
+        && let Some(elem) = bindings.get("T")
+        && !is_orderable(elem)
+    {
+        return Err(Diagnostic::new(
+            call_span,
+            format!(
+                "`sort` requires an orderable list element type (`String`, `Int`, `Double`, or a string union), found `{elem}`"
+            ),
+        ));
+    }
     Ok(substitute_generics(&sig.return_type, &bindings))
+}
+
+/// Element types `sort` can order: the same set the `<`-family
+/// operators accept, plus string unions (which order as their
+/// underlying strings at runtime).
+const fn is_orderable(ty: &Type) -> bool {
+    matches!(
+        ty,
+        Type::String | Type::Int | Type::Double | Type::StringUnion { .. }
+    )
 }
 
 const fn is_list_equality_comparable(ty: &Type) -> bool {
@@ -1873,7 +2268,13 @@ fn substitute_generics(t: &Type, bindings: &HashMap<String, Type>) -> Type {
             .cloned()
             .unwrap_or_else(|| Type::Generic(name.clone())),
         Type::List(inner) => Type::List(Box::new(substitute_generics(inner, bindings))),
-        Type::Nullable(inner) => Type::Nullable(Box::new(substitute_generics(inner, bindings))),
+        // Collapse through `wrap_nullable`: binding `T` to `String?`
+        // in a `T?` return (e.g. `first(xs)` on `List<String?>`) must
+        // yield `String?`, not the unwritable `String??`. The two
+        // absences merge — `null` then means "empty list OR the first
+        // element is null" — which matches the runtime, where both
+        // arrive through the same `Value::Null` channel.
+        Type::Nullable(inner) => wrap_nullable(substitute_generics(inner, bindings)),
         Type::Map(k, v) => Type::Map(
             Box::new(substitute_generics(k, bindings)),
             Box::new(substitute_generics(v, bindings)),
@@ -1910,8 +2311,11 @@ fn map_type(
             ),
         ));
     }
-    let value_ty = expr_type(&first.value, env, fns)?;
+    let mut value_ty = expr_type(&first.value, env, fns)?;
+    let mut promoted = false;
     for entry in rest {
+        // Keys stay exact-equality: the valid key types (`String`,
+        // `Int`) have no join, so delegating would only blur the error.
         let k = expr_type(&entry.key, env, fns)?;
         if k != key_ty {
             return Err(Diagnostic::new(
@@ -1920,12 +2324,23 @@ fn map_type(
             ));
         }
         let v = expr_type(&entry.value, env, fns)?;
-        if v != value_ty {
-            return Err(Diagnostic::new(
-                entry.value.span.clone(),
-                format!("map value type mismatch: expected `{value_ty}`, found `{v}`"),
-            ));
+        match join_types(&value_ty, &v) {
+            Some(joined) => {
+                promoted |= join_promotes(&value_ty, &v);
+                value_ty = joined;
+            }
+            None => {
+                return Err(Diagnostic::new(
+                    entry.value.span.clone(),
+                    format!("map value type mismatch: expected `{value_ty}`, found `{v}`"),
+                ));
+            }
         }
+    }
+    if promoted {
+        // Evaluator coerces every Int *value* of this map to Double;
+        // keys are untouched (Double is not a valid key type).
+        env.record_promotion(&map_span);
     }
     reject_duplicate_static_map_keys(entries)?;
     Ok(Type::Map(Box::new(key_ty), Box::new(value_ty)))
@@ -2097,21 +2512,25 @@ fn list_type(
         ));
     };
     let mut elem_ty = expr_type(first, env, fns)?;
+    let mut promoted = false;
     for item in rest {
         let ty = expr_type(item, env, fns)?;
-        if ty == elem_ty {
-            continue;
+        match join_types(&elem_ty, &ty) {
+            Some(joined) => {
+                promoted |= join_promotes(&elem_ty, &ty);
+                elem_ty = joined;
+            }
+            None => {
+                return Err(Diagnostic::new(
+                    item.span.clone(),
+                    format!("list element type mismatch: expected `{elem_ty}`, found `{ty}`"),
+                ));
+            }
         }
-        // Heterogeneous resource elements lift the element type to
-        // `Resource`; that is the only non-equality unification today.
-        if is_resource_singleton(&ty) && is_resource_singleton(&elem_ty) {
-            elem_ty = Type::Resource;
-            continue;
-        }
-        return Err(Diagnostic::new(
-            item.span.clone(),
-            format!("list element type mismatch: expected `{elem_ty}`, found `{ty}`"),
-        ));
+    }
+    if promoted {
+        // Evaluator coerces every Int element of this list to Double.
+        env.record_promotion(&list_span);
     }
     Ok(Type::List(Box::new(elem_ty)))
 }
@@ -2226,16 +2645,9 @@ fn concat_result(lhs: &Type, rhs: &Type) -> Option<Type> {
     let (Type::List(a), Type::List(b)) = (lhs, rhs) else {
         return None;
     };
-    if a == b {
-        return Some(Type::List(a.clone()));
-    }
-    // Mirror `list_type`: heterogeneous resource-singleton elements
-    // lift to `List<Resource>`. Without this, `[sym] ++ [file]` would
-    // error in synthesis even though `[sym, file]` infers cleanly.
-    if is_resource_singleton(a) && is_resource_singleton(b) {
-        return Some(Type::List(Box::new(Type::Resource)));
-    }
-    None
+    // Mirror `list_type` exactly via the shared join: `[sym] ++ [file]`
+    // lifts to `List<Resource>` just like `[sym, file]` does.
+    join_types(a, b).map(|elem| Type::List(Box::new(elem)))
 }
 
 const fn is_numeric_pair(lhs: &Type, rhs: &Type) -> bool {
@@ -2274,7 +2686,12 @@ const fn ordering_result(lhs: &Type, rhs: &Type) -> Option<Type> {
     if is_numeric_pair(lhs, rhs) {
         return Some(Type::Boolean);
     }
-    if is_string_or_union(lhs) && is_string_or_union(rhs) {
+    // Plain strings order lexicographically. Closed string unions are
+    // deliberately excluded: their variants are categories, not points
+    // on a scale, so `os_type() < "Macos"` is a coding mistake. A
+    // union value widened through an explicit `String` annotation
+    // remains orderable — that annotation is the opt-in.
+    if matches!((lhs, rhs), (Type::String, Type::String)) {
         return Some(Type::Boolean);
     }
     None
@@ -2285,6 +2702,55 @@ const fn ordering_result(lhs: &Type, rhs: &Type) -> Option<Type> {
 /// a plain string (`if c == "red"`) or with another union value.
 const fn is_string_or_union(ty: &Type) -> bool {
     matches!(ty, Type::String | Type::StringUnion { .. })
+}
+
+/// Extra strictness for `==`/`!=` involving a closed `StringUnion`,
+/// layered on top of `equality_result`'s string admission:
+///
+/// - a string *literal* compared against a union must name one of its
+///   variants — `os_type() == "Banana"` is statically always-false
+///   and gets the same "not a variant of" error as assignment and
+///   `match` arms;
+/// - two distinct unions have disjoint variant spaces, so comparing
+///   them (`os_type() == os_arch()`) is rejected outright.
+///
+/// A union compared against a *dynamic* `String` expression stays
+/// legal — runtime strings (env vars, file contents) are the reason
+/// the union/String comparison exists at all.
+fn check_union_comparison(
+    span: &Span,
+    lt: &Type,
+    lhs: &Spanned<Expr>,
+    rt: &Type,
+    rhs: &Spanned<Expr>,
+) -> Result<(), Diagnostic> {
+    match (lt, rt) {
+        (Type::StringUnion { name: ln, .. }, Type::StringUnion { name: rn, .. }) => {
+            if lt == rt {
+                Ok(())
+            } else {
+                Err(Diagnostic::new(
+                    span.clone(),
+                    format!("cannot compare distinct string unions `{ln}` and `{rn}`"),
+                ))
+            }
+        }
+        (Type::StringUnion { name, variants }, _) => {
+            if let Expr::Literal(Literal::String(s)) = &rhs.node {
+                literal_variant_check(s, name, variants, &rhs.span)
+            } else {
+                Ok(())
+            }
+        }
+        (_, Type::StringUnion { name, variants }) => {
+            if let Expr::Literal(Literal::String(s)) = &lhs.node {
+                literal_variant_check(s, name, variants, &lhs.span)
+            } else {
+                Ok(())
+            }
+        }
+        _ => Ok(()),
+    }
 }
 
 fn binop_error(op: BinOp, lhs: &Type, rhs: &Type) -> String {

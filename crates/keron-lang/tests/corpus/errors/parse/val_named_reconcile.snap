@@ -6,3 +6,4 @@ error: `reconcile` is a reserved keyword
   |
 1 | val reconcile = 1
   |     ^
+  = help: rename the binding to a non-keyword identifier.

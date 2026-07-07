@@ -65,6 +65,11 @@ enum Command {
     /// Normalize `.keron` files. Writes in place by default; in
     /// `--check` mode prints a unified diff per file that would
     /// change.
+    ///
+    /// Unlike `apply` (plan-by-default, mutate on `--execute`), the
+    /// bare invocation writes: formatting only rewrites the named
+    /// source files, atomically and idempotently, matching the
+    /// `cargo fmt` convention. `--check` is the CI dry-run.
     Format {
         /// One or more `.keron` files or directories. When empty,
         /// reads source from stdin and writes formatted output to
@@ -354,7 +359,7 @@ where
 {
     let mut files = Vec::new();
     for path in paths {
-        let mut sub = collect_keron_files(path)?;
+        let mut sub = keron_apply::collect_keron_paths(path)?;
         files.append(&mut sub);
     }
     let mut drifted: Vec<(PathBuf, String, String)> = Vec::new();
@@ -579,41 +584,6 @@ impl Drop for TmpFileGuard {
     }
 }
 
-fn collect_keron_files(path: &std::path::Path) -> anyhow::Result<Vec<PathBuf>> {
-    let meta =
-        fs::metadata(path).map_err(|e| anyhow::anyhow!("reading `{}`: {e}", path.display()))?;
-    if meta.is_file() {
-        if path.extension().and_then(|e| e.to_str()) != Some("keron") {
-            anyhow::bail!("`{}` is not a .keron file", path.display());
-        }
-        return Ok(vec![path.to_path_buf()]);
-    }
-    if !meta.is_dir() {
-        anyhow::bail!(
-            "`{}` is neither a regular file nor a directory",
-            path.display()
-        );
-    }
-    let mut files = Vec::new();
-    collect_keron_files_from_dir(path, &mut files)?;
-    files.sort();
-    Ok(files)
-}
-
-fn collect_keron_files_from_dir(dir: &std::path::Path, out: &mut Vec<PathBuf>) -> io::Result<()> {
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        let ft = entry.file_type()?;
-        if ft.is_dir() {
-            collect_keron_files_from_dir(&path, out)?;
-        } else if ft.is_file() && path.extension().and_then(|e| e.to_str()) == Some("keron") {
-            out.push(path);
-        }
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -814,14 +784,31 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn collect_keron_files_rejects_special_files() {
-        let err = collect_keron_files(std::path::Path::new("/dev/null"))
+    fn collect_keron_paths_rejects_special_files() {
+        let err = keron_apply::collect_keron_paths(std::path::Path::new("/dev/null"))
             .expect_err("special files should be rejected before read_dir");
         let msg = format!("{err:#}");
         assert!(
             msg.contains("neither a regular file nor a directory"),
             "got: {msg}",
         );
+    }
+
+    #[test]
+    fn run_cli_format_errors_on_directory_without_keron_files() {
+        // `format` resolves paths through the same walker as
+        // `apply`/`check`, so an empty tree is an error (exit 1), not a
+        // silent success — a typo'd path in CI must not pass.
+        let dir = TempDir::new("format-empty");
+        fs::write(dir.path.join("notes.txt"), "not keron").unwrap();
+        let err = run_cli([
+            OsString::from("keron"),
+            OsString::from("format"),
+            dir.path.clone().into_os_string(),
+        ])
+        .expect_err("empty directory should be an error");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("no .keron files"), "got: {msg}");
     }
 
     #[cfg(unix)]

@@ -53,63 +53,63 @@ Program {
                     },
                 ),
                 value: Spanned {
-                    node: Call {
-                        callee: Spanned {
+                    node: StructLiteral {
+                        name: Spanned {
                             node: "Color",
                             span: 269..274,
                         },
-                        args: [
-                            CallArg {
-                                name: Some(
+                        fields: [
+                            StructLiteralField {
+                                name: Spanned {
+                                    node: "name",
+                                    span: 277..281,
+                                },
+                                value: Some(
                                     Spanned {
-                                        node: "name",
-                                        span: 275..279,
+                                        node: Literal(
+                                            String(
+                                                "red",
+                                            ),
+                                        ),
+                                        span: 283..288,
                                     },
                                 ),
-                                value: Spanned {
-                                    node: Literal(
-                                        String(
-                                            "red",
-                                        ),
-                                    ),
-                                    span: 282..287,
-                                },
-                                span: 275..287,
+                                span: 277..288,
                             },
-                            CallArg {
-                                name: Some(
+                            StructLiteralField {
+                                name: Spanned {
+                                    node: "hex",
+                                    span: 290..293,
+                                },
+                                value: Some(
                                     Spanned {
-                                        node: "hex",
-                                        span: 289..292,
+                                        node: Literal(
+                                            String(
+                                                "#f00",
+                                            ),
+                                        ),
+                                        span: 295..301,
                                     },
                                 ),
-                                value: Spanned {
-                                    node: Literal(
-                                        String(
-                                            "#f00",
-                                        ),
-                                    ),
-                                    span: 295..301,
-                                },
-                                span: 289..301,
+                                span: 290..302,
                             },
                         ],
                     },
-                    span: 269..304,
+                    span: 269..305,
                 },
-                span: 254..304,
+                span: 254..305,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "tag",
-                    span: 308..311,
+                    span: 309..312,
                 },
                 ty: Some(
                     Spanned {
                         node: String,
-                        span: 313..319,
+                        span: 314..320,
                     },
                 ),
                 value: Spanned {
@@ -118,7 +118,7 @@ Program {
                             node: Var(
                                 "c",
                             ),
-                            span: 328..329,
+                            span: 329..330,
                         },
                         arms: [
                             MatchArm {
@@ -126,27 +126,27 @@ Program {
                                     node: Struct {
                                         name: Spanned {
                                             node: "Color",
-                                            span: 334..339,
+                                            span: 335..340,
                                         },
                                         fields: [
                                             StructPatternField {
                                                 name: Spanned {
                                                     node: "name",
-                                                    span: 342..346,
+                                                    span: 343..347,
                                                 },
                                                 pattern: None,
-                                                span: 342..347,
+                                                span: 343..348,
                                             },
                                         ],
                                     },
-                                    span: 334..349,
+                                    span: 335..350,
                                 },
                                 guard: Some(
                                     Spanned {
                                         node: Call {
                                             callee: Spanned {
                                                 node: "contains",
-                                                span: 352..360,
+                                                span: 353..361,
                                             },
                                             args: [
                                                 CallArg {
@@ -155,9 +155,9 @@ Program {
                                                         node: Var(
                                                             "name",
                                                         ),
-                                                        span: 361..365,
+                                                        span: 362..366,
                                                     },
-                                                    span: 361..365,
+                                                    span: 362..366,
                                                 },
                                                 CallArg {
                                                     name: None,
@@ -167,13 +167,13 @@ Program {
                                                                 "red",
                                                             ),
                                                         ),
-                                                        span: 367..372,
+                                                        span: 368..373,
                                                     },
-                                                    span: 367..372,
+                                                    span: 368..373,
                                                 },
                                             ],
                                         },
-                                        span: 352..374,
+                                        span: 353..375,
                                     },
                                 ),
                                 body: Spanned {
@@ -182,36 +182,36 @@ Program {
                                             "warm",
                                         ),
                                     ),
-                                    span: 377..383,
+                                    span: 378..384,
                                 },
-                                span: 334..383,
+                                span: 335..384,
                             },
                             MatchArm {
                                 pattern: Spanned {
                                     node: Struct {
                                         name: Spanned {
                                             node: "Color",
-                                            span: 387..392,
+                                            span: 388..393,
                                         },
                                         fields: [
                                             StructPatternField {
                                                 name: Spanned {
                                                     node: "name",
-                                                    span: 395..399,
+                                                    span: 396..400,
                                                 },
                                                 pattern: None,
-                                                span: 395..400,
+                                                span: 396..401,
                                             },
                                         ],
                                     },
-                                    span: 387..402,
+                                    span: 388..403,
                                 },
                                 guard: Some(
                                     Spanned {
                                         node: Call {
                                             callee: Spanned {
                                                 node: "contains",
-                                                span: 405..413,
+                                                span: 406..414,
                                             },
                                             args: [
                                                 CallArg {
@@ -220,9 +220,9 @@ Program {
                                                         node: Var(
                                                             "name",
                                                         ),
-                                                        span: 414..418,
+                                                        span: 415..419,
                                                     },
-                                                    span: 414..418,
+                                                    span: 415..419,
                                                 },
                                                 CallArg {
                                                     name: None,
@@ -232,13 +232,13 @@ Program {
                                                                 "blue",
                                                             ),
                                                         ),
-                                                        span: 420..426,
+                                                        span: 421..427,
                                                     },
-                                                    span: 420..426,
+                                                    span: 421..427,
                                                 },
                                             ],
                                         },
-                                        span: 405..428,
+                                        span: 406..429,
                                     },
                                 ),
                                 body: Spanned {
@@ -247,14 +247,14 @@ Program {
                                             "cool",
                                         ),
                                     ),
-                                    span: 431..437,
+                                    span: 432..438,
                                 },
-                                span: 387..437,
+                                span: 388..438,
                             },
                             MatchArm {
                                 pattern: Spanned {
                                     node: Wildcard,
-                                    span: 441..443,
+                                    span: 442..444,
                                 },
                                 guard: None,
                                 body: Spanned {
@@ -263,27 +263,27 @@ Program {
                                             "neutral",
                                         ),
                                     ),
-                                    span: 446..455,
+                                    span: 447..456,
                                 },
-                                span: 441..455,
+                                span: 442..456,
                             },
                         ],
                     },
-                    span: 322..460,
+                    span: 323..461,
                 },
-                span: 304..460,
+                span: 305..461,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "verdict",
-                    span: 464..471,
+                    span: 465..472,
                 },
                 ty: Some(
                     Spanned {
                         node: String,
-                        span: 473..479,
+                        span: 474..480,
                     },
                 ),
                 value: Spanned {
@@ -292,11 +292,11 @@ Program {
                             node: Call {
                                 callee: Spanned {
                                     node: "os_type",
-                                    span: 488..495,
+                                    span: 489..496,
                                 },
                                 args: [],
                             },
-                            span: 488..498,
+                            span: 489..499,
                         },
                         arms: [
                             MatchArm {
@@ -306,7 +306,7 @@ Program {
                                             "Macos",
                                         ),
                                     ),
-                                    span: 502..509,
+                                    span: 503..510,
                                 },
                                 guard: Some(
                                     Spanned {
@@ -316,11 +316,11 @@ Program {
                                                 node: Call {
                                                     callee: Spanned {
                                                         node: "os_arch",
-                                                        span: 513..520,
+                                                        span: 514..521,
                                                     },
                                                     args: [],
                                                 },
-                                                span: 513..523,
+                                                span: 514..524,
                                             },
                                             rhs: Spanned {
                                                 node: Literal(
@@ -328,10 +328,10 @@ Program {
                                                         "aarch64",
                                                     ),
                                                 ),
-                                                span: 526..535,
+                                                span: 527..536,
                                             },
                                         },
-                                        span: 513..535,
+                                        span: 514..536,
                                     },
                                 ),
                                 body: Spanned {
@@ -340,9 +340,9 @@ Program {
                                             "macos-arm",
                                         ),
                                     ),
-                                    span: 539..550,
+                                    span: 540..551,
                                 },
-                                span: 502..550,
+                                span: 503..551,
                             },
                             MatchArm {
                                 pattern: Spanned {
@@ -351,7 +351,7 @@ Program {
                                             "Macos",
                                         ),
                                     ),
-                                    span: 554..561,
+                                    span: 555..562,
                                 },
                                 guard: None,
                                 body: Spanned {
@@ -360,14 +360,14 @@ Program {
                                             "macos-intel",
                                         ),
                                     ),
-                                    span: 565..578,
+                                    span: 566..579,
                                 },
-                                span: 554..578,
+                                span: 555..579,
                             },
                             MatchArm {
                                 pattern: Spanned {
                                     node: Wildcard,
-                                    span: 582..584,
+                                    span: 583..585,
                                 },
                                 guard: None,
                                 body: Spanned {
@@ -376,15 +376,15 @@ Program {
                                             "other",
                                         ),
                                     ),
-                                    span: 587..594,
+                                    span: 588..595,
                                 },
-                                span: 582..594,
+                                span: 583..595,
                             },
                         ],
                     },
-                    span: 482..598,
+                    span: 483..599,
                 },
-                span: 460..598,
+                span: 461..599,
             },
         ),
     ],

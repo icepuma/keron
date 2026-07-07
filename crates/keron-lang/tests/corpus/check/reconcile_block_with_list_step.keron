@@ -10,7 +10,7 @@ val shells: List<Symlink> = [
 ]
 
 reconcile {
-  [a, b];
-  shells;
-  c;
+  [a, b]
+  shells
+  c
 }

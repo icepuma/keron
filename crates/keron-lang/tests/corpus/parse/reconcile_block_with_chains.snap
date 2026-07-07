@@ -267,13 +267,13 @@ Program {
                             node: Var(
                                 "b",
                             ),
-                            span: 267..268,
+                            span: 266..267,
                         },
                         Spanned {
                             node: Var(
                                 "c",
                             ),
-                            span: 272..273,
+                            span: 271..272,
                         },
                     ],
                     [
@@ -281,11 +281,11 @@ Program {
                             node: Var(
                                 "d",
                             ),
-                            span: 277..278,
+                            span: 275..276,
                         },
                     ],
                 ],
-                span: 248..282,
+                span: 248..279,
             },
         ),
     ],

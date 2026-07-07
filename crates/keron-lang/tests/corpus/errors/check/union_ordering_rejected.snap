@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `<` requires `Int`, `Double`, or `String` operands, found `OsType` and `String`
+  --> 3:25
+  |
+3 | val nonsense: Boolean = os_type() < "Macos"
+  |                         ^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,12 @@
+# A Void `match` is a legal top-level effect statement, like the
+# equivalent `if` ladder: arms dispatch differing amounts of work per
+# OS. (For one resource per arm, `reconcile match { ... }` — where
+# the match *produces* the resource — remains the tighter idiom.)
+match os_type() {
+  "Macos" => for pkg in ["ripgrep", "fd"] {
+    reconcile brew(pkg)
+  },
+  _ => for pkg in ["ripgrep", "fd"] {
+    reconcile cargo(pkg)
+  },
+}

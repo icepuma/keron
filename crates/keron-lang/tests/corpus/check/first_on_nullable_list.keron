@@ -1,0 +1,6 @@
+# Binding `T` to `String?` in `first`'s `T?` return collapses to
+# `String?` (never the unwritable `String??`): the "empty list" and
+# "first element is null" absences merge into one `null`, matching
+# the runtime, which delivers both through the same channel.
+val maybe_names: List<String?> = [null, "ada"]
+val display: String = first(maybe_names) ?? "anonymous"

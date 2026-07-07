@@ -24,6 +24,7 @@ mod platform;
 mod report;
 mod terminal_safe;
 
+pub use load::collect_keron_paths;
 pub use terminal_safe::sanitize_terminal_message;
 
 pub use elevated::child::run as run_elevated_child;
@@ -702,8 +703,8 @@ mod tests {
         let dest = proj.root.join("out");
         let src = format!(
             "reconcile {{\n\
-             winget(\"Microsoft.PowerShell\");\n\
-             template(source = \"tmpl.tpl\", target = \"{}\", vars = {{\"body\": \"y\"}});\n\
+             winget(\"Microsoft.PowerShell\")\n\
+             template(source = \"tmpl.tpl\", target = \"{}\", vars = {{\"body\": \"y\"}})\n\
              }}\n",
             manifest_path(&dest),
         );
@@ -729,8 +730,8 @@ mod tests {
         let dest = proj.root.join("out");
         let src = format!(
             "reconcile {{\n\
-             winget(\"Microsoft.PowerShell\");\n\
-             template(source = \"tmpl.tpl\", target = \"{}\", vars = {{\"body\": \"y\"}});\n\
+             winget(\"Microsoft.PowerShell\")\n\
+             template(source = \"tmpl.tpl\", target = \"{}\", vars = {{\"body\": \"y\"}})\n\
              }}\n",
             manifest_path(&dest),
         );

@@ -7,3 +7,5 @@
 cc 7e6337e91e770f89c03349a9055cc00caa03b56f4f6849767d5853fd37dfd58a # shrinks to n = 0
 cc 572c152be4b8ba45d1cf665226844b85122ba645302169a50adc6c45cae985f1 # shrinks to names = ["if"]
 cc 0e2089996218f1ddc74326100e1aea4f971065d914d03ac13590132af2b5fbc0 # shrinks to a = "", b = "", op = "=="
+cc 924d5f1942e7e505116ef2d93780b18fa02865643b853c8d7d57522dec05bc7b # shrinks to cases = [("a", Double, ("0", Int))]
+cc 70a71792215baee6bf98d00bd123c2790ad576ec7607a0693d092ad62c3b091a # shrinks to name = "a", annot = Double, lit_pair = ("0", Int)

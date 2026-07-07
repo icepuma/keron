@@ -3,13 +3,19 @@
 //! Grammar:
 //!
 //! ```text
-//! type_alias := 'type' ident '=' string_lit ('|' string_lit)*
+//! type_alias := 'type' ident '=' '|'? string_lit ('|' string_lit)*
 //! ```
 //!
 //! At least one variant is required; duplicates and emptiness are
 //! reported by the type checker. The string-literal payload uses the
 //! plain (no-interpolation) form: variants are compile-time constants,
 //! so `${...}` inside a variant string is a parse error.
+//!
+//! A *leading* `|` is tolerated (and dropped by the formatter): it
+//! matches the formatter's multi-line union style where every variant
+//! line starts with `| `. A *trailing* `|` stays an error — unlike
+//! comma-separated lists, the last variant is the natural terminator
+//! and a dangling `|` reads as a missing variant, not as style.
 
 use chumsky::prelude::*;
 
@@ -28,13 +34,14 @@ pub(super) fn type_alias_decl<'src>()
 
     let variants = spanned(plain_string())
         .padded_by(pad())
-        .separated_by(pipe)
+        .separated_by(pipe.clone())
         .at_least(1)
         .collect::<Vec<Spanned<String>>>();
 
     kw_type
         .ignore_then(spanned(ident()).padded_by(pad()))
         .then_ignore(eq)
+        .then_ignore(pipe.or_not())
         .then(variants)
         .map_with(|(name, variants), e| TypeAliasDecl {
             name,

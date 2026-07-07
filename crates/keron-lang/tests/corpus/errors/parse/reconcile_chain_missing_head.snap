@@ -1,9 +1,9 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 error: unexpected `>`, expected expression
   --> 2:12
   |
 2 | reconcile -> a
   |            ^
+  = help: write an expression (literal, name, call, or `(…)`).

@@ -6,3 +6,4 @@ error: `in` is a reserved keyword
   |
 1 | val in: Int = 1
   |     ^
+  = help: rename the binding to a non-keyword identifier.

@@ -550,11 +550,11 @@ fn default_param_can_reference_earlier_param_at_runtime() {
 
 #[test]
 fn string_predicates_and_length_evaluate() {
-    // starts_with / ends_with gate on host name shape; str_len
+    // starts_with / ends_with gate on host name shape; len
     // counts chars not bytes (`é` is two UTF-8 bytes, one char).
     let states = run("val a: Boolean = starts_with(\"work-laptop\", \"work-\")\n\
              val b: Boolean = ends_with(\"host.local\", \".local\")\n\
-             val n: Int = str_len(\"héllo\")\n\
+             val n: Int = len(\"héllo\")\n\
              reconcile template(source = \"tmpl.tpl\", target = \"/x\", vars = {\"body\": \"${a} ${b} ${n}\"})\n");
     assert_eq!(first_file_content(&states), "true true 5");
 }
@@ -567,7 +567,7 @@ fn struct_field_default_sees_module_scope_not_caller_local() {
     // different param type, a type-soundness hole.
     let states = run("val greeting: String = \"module\"\n\
              struct Msg { text: String = greeting }\n\
-             fn make(greeting: String): Msg { Msg() }\n\
+             fn make(greeting: String): Msg { Msg {} }\n\
              reconcile template(source = \"tmpl.tpl\", target = \"/x\", vars = {\"body\": make(\"param\").text})\n");
     assert_eq!(first_file_content(&states), "module");
 }
@@ -635,6 +635,24 @@ fn exec_void_expr_skips_else_branch_when_true() {
              }\n");
     assert_eq!(states.len(), 1);
     assert_eq!(first_file_path(&states), &PathBuf::from("/yes"));
+}
+
+#[test]
+fn exec_void_block_runs_multiple_effect_statements() {
+    // Several gated effect statements in one exec-void block all
+    // reach the *real* sink — the eval arm for `Stmt::Expr` must stay
+    // in lockstep with `reject_reconcile_in_exec_void_block`.
+    let states = run("if true {\n\
+             \tif true {\n\
+             \t\treconcile template(source = \"tmpl.tpl\", target = \"/one\", vars = {\"body\": \"\"})\n\
+             \t}\n\
+             \tfor n in [2, 3] {\n\
+             \t\treconcile template(source = \"tmpl.tpl\", target = \"/${n}\", vars = {\"body\": \"\"})\n\
+             \t}\n\
+             \treconcile template(source = \"tmpl.tpl\", target = \"/four\", vars = {\"body\": \"\"})\n\
+             }\n");
+    assert_eq!(states.len(), 4, "all four gated resources must land");
+    assert_eq!(first_file_path(&states), &PathBuf::from("/one"));
 }
 
 #[test]
@@ -899,16 +917,16 @@ fn val_eval_succeeds_when_not_in_progress() {
 #[test]
 fn struct_field_access_round_trips() {
     let states = run("struct Host { name: String, port: Int }\n\
-             val h: Host = Host(name = \"alpha\", port = 22)\n\
+             val h: Host = Host { name: \"alpha\", port: 22 }\n\
              reconcile template(source = \"tmpl.tpl\", target = \"/${h.name}-${h.port}\", vars = {\"body\": \"\"})\n");
     assert_eq!(first_file_path(&states), &PathBuf::from("/alpha-22"));
 }
 
 #[test]
-fn struct_construction_positional_and_named_match() {
+fn struct_construction_field_order_is_free() {
     let states = run("struct Pair { a: String, b: String }\n\
-             val p1: Pair = Pair(\"x\", \"y\")\n\
-             val p2: Pair = Pair(b = \"y\", a = \"x\")\n\
+             val p1: Pair = Pair { a: \"x\", b: \"y\" }\n\
+             val p2: Pair = Pair { b: \"y\", a: \"x\" }\n\
              reconcile template(source = \"tmpl.tpl\", target = \"/${p1.a}-${p1.b}\", vars = {\"body\": \"\"})\n\
              reconcile template(source = \"tmpl.tpl\", target = \"/${p2.a}-${p2.b}\", vars = {\"body\": \"\"})\n");
     let paths: Vec<_> = states
@@ -947,10 +965,10 @@ fn match_struct_destructure_binds_fields() {
                  _ => \"other\",\n\
                }\n\
              }\n\
-             reconcile template(source = \"tmpl.tpl\", target = \"/${axis(Point(0, 0))}\", vars = {\"body\": \"\"})\n\
-             reconcile template(source = \"tmpl.tpl\", target = \"/${axis(Point(3, 0))}\", vars = {\"body\": \"\"})\n\
-             reconcile template(source = \"tmpl.tpl\", target = \"/${axis(Point(0, 5))}\", vars = {\"body\": \"\"})\n\
-             reconcile template(source = \"tmpl.tpl\", target = \"/${axis(Point(2, 3))}\", vars = {\"body\": \"\"})\n");
+             reconcile template(source = \"tmpl.tpl\", target = \"/${axis(Point { x: 0, y: 0 })}\", vars = {\"body\": \"\"})\n\
+             reconcile template(source = \"tmpl.tpl\", target = \"/${axis(Point { x: 3, y: 0 })}\", vars = {\"body\": \"\"})\n\
+             reconcile template(source = \"tmpl.tpl\", target = \"/${axis(Point { x: 0, y: 5 })}\", vars = {\"body\": \"\"})\n\
+             reconcile template(source = \"tmpl.tpl\", target = \"/${axis(Point { x: 2, y: 3 })}\", vars = {\"body\": \"\"})\n");
     let paths: Vec<_> = states
         .iter()
         .map(|s| match s {
@@ -2500,9 +2518,9 @@ fn reconcile_can_mix_package_and_filesystem_resources() {
     // `resolve_managed_path` check passes.
     let states = run_with_templates(
         "reconcile {\n\
-                 brew(\"ripgrep\");\n\
-                 symlink(source = \"./inside\", target = \"/from\");\n\
-                 cargo(\"sccache\");\n\
+                 brew(\"ripgrep\")\n\
+                 symlink(source = \"./inside\", target = \"/from\")\n\
+                 cargo(\"sccache\")\n\
              }\n",
         &[("inside", "")],
     );
@@ -2771,6 +2789,47 @@ fn first_target_path(src: &str) -> String {
 }
 
 #[test]
+fn promoted_list_element_divides_as_double() {
+    // THE case the promotion span table exists for: `[10, 2.5]` types
+    // as `List<Double>`, so `first(...)` must yield `10.0`, and the
+    // division below must be float division (4.0), not integer
+    // division. Without the eval-side coercion, the runtime Int would
+    // silently take the `(Div, Int, Int)` path.
+    let value = first_target_path(
+        r#"val xs = [10, 2.5]
+               val head: Double = first(xs) ?? 0.0
+               val q: Double = head / 2.5
+               reconcile template(source = "tmpl.tpl", target = "q=${q}", vars = {"body": ""})
+            "#,
+    );
+    assert!(value.ends_with("q=4"), "got `{value}`");
+}
+
+#[test]
+fn promoted_if_branch_yields_double() {
+    // Only one branch runs; the coercion applies at the `if` span, so
+    // the Int branch arrives as a Double.
+    let value = first_target_path(
+        r#"val n = if true { 1 } else { 2.5 }
+               val q: Double = n / 2
+               reconcile template(source = "tmpl.tpl", target = "q=${q}", vars = {"body": ""})
+            "#,
+    );
+    assert!(value.ends_with("q=0.5"), "got `{value}`");
+}
+
+#[test]
+fn promoted_int_literal_into_double_slot_divides_as_double() {
+    let value = first_target_path(
+        r#"val x: Double = 1
+               val q: Double = x / 2
+               reconcile template(source = "tmpl.tpl", target = "q=${q}", vars = {"body": ""})
+            "#,
+    );
+    assert!(value.ends_with("q=0.5"), "got `{value}`");
+}
+
+#[test]
 fn split_then_join_round_trips_with_the_same_separator() {
     let value = first_target_path(
         "reconcile template(source = \"tmpl.tpl\", \
@@ -2943,20 +3002,20 @@ fn len_intrinsic_counts_list_elements() {
 }
 
 #[test]
-fn list_contains_returns_true_for_present_element() {
+fn contains_list_returns_true_for_present_element() {
     let value = first_target_path(
         "reconcile template(source = \"tmpl.tpl\", \
-             target = if list_contains(split(\"a:b:c\", \":\"), \"b\") { \"hit\" } else { \"miss\" }, \
+             target = if contains(split(\"a:b:c\", \":\"), \"b\") { \"hit\" } else { \"miss\" }, \
              vars = {\"body\": \"\"})\n",
     );
     assert!(value.ends_with("hit"), "got `{value}`");
 }
 
 #[test]
-fn list_contains_returns_false_for_absent_element() {
+fn contains_list_returns_false_for_absent_element() {
     let value = first_target_path(
         "reconcile template(source = \"tmpl.tpl\", \
-             target = if list_contains(split(\"a:b:c\", \":\"), \"z\") { \"hit\" } else { \"miss\" }, \
+             target = if contains(split(\"a:b:c\", \":\"), \"z\") { \"hit\" } else { \"miss\" }, \
              vars = {\"body\": \"\"})\n",
     );
     assert!(value.ends_with("miss"), "got `{value}`");
@@ -3028,11 +3087,11 @@ fn map_keys_and_values_return_declared_order() {
 }
 
 #[test]
-fn map_contains_distinguishes_present_and_absent_keys() {
+fn contains_map_distinguishes_present_and_absent_keys() {
     let value = first_target_path(
         r#"val m: Map<String, String> = {"a": "1"}
-               val present: Boolean = map_contains(m, "a")
-               val absent: Boolean = map_contains(m, "z")
+               val present: Boolean = contains(m, "a")
+               val absent: Boolean = contains(m, "z")
                reconcile template(source = "tmpl.tpl", target = "${present}-${absent}", vars = {"body": ""})
             "#,
     );
@@ -3090,8 +3149,8 @@ fn path_parent_strips_the_final_component() {
 #[test]
 fn path_basename_and_extension_split_the_final_component() {
     let value = first_target_path(
-        r#"val name: String = path_basename("/a/b/c.txt")
-               val ext: String = path_extension("/a/b/c.txt")
+        r#"val name: String = path_basename("/a/b/c.txt") ?? "none"
+               val ext: String = path_extension("/a/b/c.txt") ?? "none"
                reconcile template(source = "tmpl.tpl", target = "${name}|${ext}", vars = {"body": ""})
             "#,
     );
@@ -3268,6 +3327,19 @@ fn sort_orders_strings_ascending() {
 }
 
 #[test]
+fn sort_orders_ints_numerically() {
+    // Generic `sort` routes through `value_cmp`, so Ints order
+    // numerically (10 after 2), not lexicographically.
+    let value = first_target_path(
+        r#"val nums: List<Int> = sort([10, 2, 1])
+               val out: String = "${first(nums) ?? 0}-${last(nums) ?? 0}"
+               reconcile template(source = "tmpl.tpl", target = out, vars = {"body": ""})
+            "#,
+    );
+    assert!(value.ends_with("1-10"), "got `{value}`");
+}
+
+#[test]
 fn unique_preserves_first_occurrence_order() {
     let value = first_target_path(
         r#"val out: String = join(unique(["a", "b", "a", "c", "b"]), ",")
@@ -3394,7 +3466,7 @@ fn struct_field_default_fills_in_when_arg_is_omitted() {
                  port: Int = 8080,
                  protocol: String = "https" + ""
                }
-               val s: Server = Server("api.example.com")
+               val s: Server = Server { host: "api.example.com" }
                reconcile template(
                  source = "tmpl.tpl",
                  target = "${s.host}:${s.port}/${s.protocol}",
@@ -3414,7 +3486,7 @@ fn struct_field_default_yields_to_explicit_named_arg() {
     // bypassed entirely — no shadowing, no merge surprises.
     let value = first_target_path(
         r#"struct Server { host: String, port: Int = 8080 }
-               val s: Server = Server(host = "api", port = 443)
+               val s: Server = Server { host: "api", port: 443 }
                reconcile template(
                  source = "tmpl.tpl",
                  target = "${s.host}:${s.port}",
@@ -3437,7 +3509,7 @@ fn imported_struct_field_default_uses_defining_module_scope() {
     .expect("write defs module");
     let src = r#"from "./defs.keron" use Server
                     val default_port: Int = 443
-                    val s: Server = Server("api")
+                    val s: Server = Server { host: "api" }
                     reconcile template(source = "tmpl.tpl", target = "${s.host}:${s.port}", vars = {"body": ""})
         "#;
     let entry = proj.entry(src);
