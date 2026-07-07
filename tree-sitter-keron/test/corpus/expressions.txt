@@ -1,0 +1,118 @@
+================================================================================
+arithmetic precedence
+================================================================================
+
+val a = 1 + 2 * 3 - 4 / 2
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (val_declaration
+    (identifier)
+    (binary_expression
+      (binary_expression
+        (number)
+        (binary_expression
+          (number)
+          (number)))
+      (binary_expression
+        (number)
+        (number)))))
+
+================================================================================
+power is right-associative and tighter than unary minus
+================================================================================
+
+val a = -2 ** 3 ** 2
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (val_declaration
+    (identifier)
+    (unary_expression
+      (binary_expression
+        (number)
+        (binary_expression
+          (number)
+          (number))))))
+
+================================================================================
+comparison, logic, and coalesce precedence
+================================================================================
+
+val a = x ?? y == z && flag || other
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (val_declaration
+    (identifier)
+    (binary_expression
+      (identifier)
+      (binary_expression
+        (binary_expression
+          (binary_expression
+            (identifier)
+            (identifier))
+          (identifier))
+        (identifier)))))
+
+================================================================================
+list concat and field access chain
+================================================================================
+
+val a = xs ++ [1, 2] ++ ys
+val b = ep.host.name
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (val_declaration
+    (identifier)
+    (binary_expression
+      (binary_expression
+        (identifier)
+        (list
+          (number)
+          (number)))
+      (identifier)))
+  (val_declaration
+    (identifier)
+    (field_expression
+      (field_expression
+        (identifier)
+        (field_identifier))
+      (field_identifier))))
+
+================================================================================
+calls with named arguments
+================================================================================
+
+val color = rgb(255, b = 128)
+val s = symlink(source = "a", target = "b")
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (val_declaration
+    (identifier)
+    (call_expression
+      (identifier)
+      (argument_list
+        (argument
+          (number))
+        (argument
+          (identifier)
+          (number)))))
+  (val_declaration
+    (identifier)
+    (call_expression
+      (identifier)
+      (argument_list
+        (argument
+          (identifier)
+          (string))
+        (argument
+          (identifier)
+          (string))))))

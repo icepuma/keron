@@ -1,0 +1,121 @@
+================================================================================
+if else-if chain
+================================================================================
+
+val label = if released {
+  "stable"
+} else if warm {
+  "rc"
+} else {
+  "wip"
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (val_declaration
+    (identifier)
+    (if_expression
+      (identifier)
+      (block
+        (string))
+      (if_expression
+        (identifier)
+        (block
+          (string))
+        (block
+          (string))))))
+
+================================================================================
+for over list and map
+================================================================================
+
+for x in xs {
+  reconcile x
+}
+
+for (k, v) in m {
+  reconcile link(k)
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (for_expression
+    (identifier)
+    (identifier)
+    (block
+      (reconcile_statement
+        (reconcile_chain
+          (identifier)))))
+  (for_expression
+    (for_entry_pattern
+      (identifier)
+      (identifier))
+    (identifier)
+    (block
+      (reconcile_statement
+        (reconcile_chain
+          (call_expression
+            (identifier)
+            (argument_list
+              (argument
+                (identifier)))))))))
+
+================================================================================
+match with literals, guard, bind, struct pattern, wildcard
+================================================================================
+
+val tag = match c {
+  "red" => "warm",
+  Color { name } if contains(name, "blue") => "cool",
+  Host { name: "alpha", port: 22, tls } => "ssh",
+  22 => "port",
+  other => other,
+  _ => "neutral",
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (val_declaration
+    (identifier)
+    (match_expression
+      (identifier)
+      (match_arm
+        (string)
+        (string))
+      (match_arm
+        (struct_pattern
+          (type_identifier)
+          (struct_pattern_field
+            (field_identifier)))
+        (call_expression
+          (identifier)
+          (argument_list
+            (argument
+              (identifier))
+            (argument
+              (string))))
+        (string))
+      (match_arm
+        (struct_pattern
+          (type_identifier)
+          (struct_pattern_field
+            (field_identifier)
+            (string))
+          (struct_pattern_field
+            (field_identifier)
+            (number))
+          (struct_pattern_field
+            (field_identifier)))
+        (string))
+      (match_arm
+        (number)
+        (string))
+      (match_arm
+        (identifier)
+        (identifier))
+      (match_arm
+        (wildcard_pattern)
+        (string)))))
