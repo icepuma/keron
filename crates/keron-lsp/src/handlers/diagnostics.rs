@@ -2,7 +2,7 @@
 
 use lsp_types::DiagnosticSeverity;
 
-use crate::line_index::LineIndex;
+use crate::line_index::{LineIndex, PositionEncoding};
 
 /// Convert one keron diagnostic against the source text its span
 /// refers to. keron diagnostics carry no severity — everything the
@@ -13,6 +13,7 @@ pub fn to_lsp(
     diag: &keron_lang::Diagnostic,
     text: &str,
     index: &LineIndex,
+    enc: PositionEncoding,
 ) -> lsp_types::Diagnostic {
     let mut message = diag.message.clone();
     if let Some(note) = &diag.note {
@@ -24,7 +25,7 @@ pub fn to_lsp(
         message.push_str(help);
     }
     lsp_types::Diagnostic {
-        range: index.range(text, &diag.span),
+        range: index.range(text, &diag.span, enc),
         severity: Some(DiagnosticSeverity::ERROR),
         source: Some("keron".to_string()),
         message,
@@ -45,7 +46,7 @@ mod tests {
         let diag = Diagnostic::new(13..17, "expected `Int`, found `String`")
             .with_note("the annotation says `Int`")
             .with_help("change the annotation to `String`");
-        let lsp = to_lsp(&diag, text, &index);
+        let lsp = to_lsp(&diag, text, &index, PositionEncoding::Utf16);
         assert_eq!(lsp.range.start, Position::new(0, 13));
         assert_eq!(lsp.range.end, Position::new(0, 17));
         assert_eq!(lsp.severity, Some(DiagnosticSeverity::ERROR));
@@ -61,7 +62,7 @@ mod tests {
         let text = "x";
         let index = LineIndex::new(text);
         let diag = Diagnostic::new(50..60, "boom");
-        let lsp = to_lsp(&diag, text, &index);
+        let lsp = to_lsp(&diag, text, &index, PositionEncoding::Utf16);
         assert_eq!(lsp.range.start, Position::new(0, 1));
         assert_eq!(lsp.range.end, Position::new(0, 1));
     }

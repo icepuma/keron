@@ -32,7 +32,7 @@ use lsp_types::{
 
 use crate::analysis::analyze;
 use crate::analysis::symbols::module_for;
-use crate::line_index::LineIndex;
+use crate::line_index::{LineIndex, PositionEncoding};
 use crate::state::{Document, LastGood, ServerState};
 use crate::uri::uri_to_path;
 
@@ -47,6 +47,7 @@ pub struct Snapshot<'s> {
     pub doc: &'s Document,
     pub path: &'s PathBuf,
     pub resolution: Option<&'s Resolution>,
+    pub enc: PositionEncoding,
 }
 
 impl Snapshot<'_> {
@@ -81,6 +82,7 @@ pub fn snapshot_at<'s>(state: &'s ServerState, uri: &Uri) -> Option<Snapshot<'s>
         doc,
         path,
         resolution: state.resolution.as_ref(),
+        enc: state.encoding,
     })
 }
 
@@ -221,4 +223,49 @@ fn publish_notifications(payloads: Vec<PublishDiagnosticsParams>) -> Vec<Notific
         .into_iter()
         .map(|p| Notification::new(PublishDiagnostics::METHOD.to_string(), p))
         .collect()
+}
+
+#[cfg(test)]
+pub mod test_support {
+    use std::path::PathBuf;
+    use std::str::FromStr;
+
+    use lsp_types::Uri;
+
+    use crate::line_index::LineIndex;
+    use crate::state::{Document, LastGood, ServerState};
+
+    /// One open in-memory document at `file:///test/main.keron` whose
+    /// last-good snapshot is parsed from `good` while the live buffer
+    /// holds `live` — pass the same string twice for a buffer that
+    /// parses. No resolution is attached, so scope falls back to
+    /// stdlib builtins plus the module's own declarations.
+    pub fn state_with_doc(live: &str, good: &str) -> (ServerState, Uri) {
+        let uri = Uri::from_str("file:///test/main.keron").expect("static uri");
+        let program = keron_lang::parse(good).expect("good text parses");
+        let doc = Document {
+            uri: uri.clone(),
+            version: 1,
+            text: live.to_string(),
+            line_index: LineIndex::new(live),
+            last_good: Some(LastGood {
+                program,
+                text: good.to_string(),
+                line_index: LineIndex::new(good),
+            }),
+        };
+        let mut state = ServerState::default();
+        state.docs.insert(PathBuf::from("/test/main.keron"), doc);
+        (state, uri)
+    }
+
+    /// Zero-based LSP position of `needle`'s first byte plus `add`
+    /// columns, assuming single-byte characters around the needle.
+    pub fn pos_of(src: &str, needle: &str, add: u32) -> lsp_types::Position {
+        let offset = src.find(needle).expect("needle present");
+        let line = src[..offset].matches('\n').count();
+        let line_start = src[..offset].rfind('\n').map_or(0, |i| i + 1);
+        let character = u32::try_from(offset - line_start).expect("short lines") + add;
+        lsp_types::Position::new(u32::try_from(line).expect("short files"), character)
+    }
 }

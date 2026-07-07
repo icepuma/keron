@@ -311,6 +311,28 @@ pub fn enclosing_call(program: &Program, offset: usize) -> Option<CallCtx<'_>> {
     best.map(|(ctx, _)| ctx)
 }
 
+/// The innermost struct literal whose braces contain `offset` —
+/// completion offers its missing fields there.
+#[must_use]
+pub fn enclosing_struct_literal(
+    program: &Program,
+    offset: usize,
+) -> Option<(&Spanned<String>, &[keron_lang::StructLiteralField])> {
+    let mut best: Option<(&Spanned<String>, &[keron_lang::StructLiteralField], usize)> = None;
+    walk_exprs(program, &mut |e| {
+        if let Expr::StructLiteral { name, fields } = &e.node
+            && contains(&e.span, offset)
+            && offset > name.span.end
+        {
+            let width = e.span.end - e.span.start;
+            if best.is_none_or(|(_, _, w)| width <= w) {
+                best = Some((name, fields, width));
+            }
+        }
+    });
+    best.map(|(name, fields, _)| (name, fields))
+}
+
 /// Visit every expression node in the program, depth-first.
 pub fn walk_exprs<'a>(program: &'a Program, f: &mut impl FnMut(&'a Spanned<Expr>)) {
     use keron_lang::Item;

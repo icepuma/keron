@@ -29,6 +29,7 @@ use lsp_types::{
     TextDocumentSyncCapability, TextDocumentSyncKind,
 };
 
+use line_index::PositionEncoding;
 use state::ServerState;
 
 /// Run the language server over stdio until the client disconnects or
@@ -55,17 +56,45 @@ pub fn run_stdio_server() -> Result<()> {
 /// # Errors
 /// Same contract as [`run_stdio_server`].
 pub fn run_with_connection(connection: &Connection) -> Result<()> {
-    let capabilities = serde_json::to_value(server_capabilities())?;
-    connection.initialize(capabilities)?;
-    main_loop(connection)
+    let (id, init_params) = connection.initialize_start()?;
+    let encoding = serde_json::from_value::<lsp_types::InitializeParams>(init_params)
+        .map_or(PositionEncoding::Utf16, |p| negotiate_encoding(&p));
+    let result = lsp_types::InitializeResult {
+        capabilities: server_capabilities(encoding),
+        server_info: None,
+    };
+    connection.initialize_finish(id, serde_json::to_value(result)?)?;
+    main_loop(connection, encoding)
 }
 
-fn server_capabilities() -> ServerCapabilities {
+/// Prefer UTF-8 columns (byte offsets — free for us) when the client
+/// offered them; fall back to the mandatory UTF-16 otherwise.
+fn negotiate_encoding(params: &lsp_types::InitializeParams) -> PositionEncoding {
+    let offers_utf8 = params
+        .capabilities
+        .general
+        .as_ref()
+        .and_then(|g| g.position_encodings.as_ref())
+        .is_some_and(|encodings| encodings.contains(&PositionEncodingKind::UTF8));
+    if offers_utf8 {
+        PositionEncoding::Utf8
+    } else {
+        PositionEncoding::Utf16
+    }
+}
+
+fn server_capabilities(encoding: PositionEncoding) -> ServerCapabilities {
     ServerCapabilities {
-        position_encoding: Some(PositionEncodingKind::UTF16),
+        position_encoding: Some(match encoding {
+            PositionEncoding::Utf16 => PositionEncodingKind::UTF16,
+            PositionEncoding::Utf8 => PositionEncodingKind::UTF8,
+        }),
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
-        completion_provider: Some(CompletionOptions::default()),
+        completion_provider: Some(CompletionOptions {
+            trigger_characters: Some(vec![".".to_string()]),
+            ..Default::default()
+        }),
         definition_provider: Some(OneOf::Left(true)),
         document_symbol_provider: Some(OneOf::Left(true)),
         document_formatting_provider: Some(OneOf::Left(true)),
@@ -89,8 +118,11 @@ fn server_capabilities() -> ServerCapabilities {
     }
 }
 
-fn main_loop(connection: &Connection) -> Result<()> {
-    let mut state = ServerState::default();
+fn main_loop(connection: &Connection, encoding: PositionEncoding) -> Result<()> {
+    let mut state = ServerState {
+        encoding,
+        ..Default::default()
+    };
     for msg in &connection.receiver {
         match msg {
             Message::Request(req) => {

@@ -16,7 +16,7 @@ use crate::state::ServerState;
 pub fn handle(state: &ServerState, params: &SignatureHelpParams) -> Option<SignatureHelp> {
     let pos = &params.text_document_position_params;
     let snap = snapshot_at(state, &pos.text_document.uri)?;
-    let offset = snap.index.offset(snap.text, pos.position)?;
+    let offset = snap.index.offset(snap.text, pos.position, snap.enc)?;
     let ctx = enclosing_call(snap.program, offset)?;
     let sig = resolve_sig(
         snap.program,
@@ -90,4 +90,52 @@ fn active_param(ctx: &CallCtx<'_>, params: &[ParamSig]) -> Option<u32> {
         .and_then(|n| params.iter().position(|p| p.name == n.node))
         .unwrap_or_else(|| ctx.active.min(params.len() - 1));
     u32::try_from(index).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lsp_types::{
+        Position, TextDocumentIdentifier, TextDocumentPositionParams, WorkDoneProgressParams,
+    };
+
+    use crate::handlers::test_support::{pos_of, state_with_doc};
+    use crate::state::ServerState;
+
+    fn help_at(state: &ServerState, uri: &lsp_types::Uri, position: Position) -> SignatureHelp {
+        let params = SignatureHelpParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position,
+            },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            context: None,
+        };
+        handle(state, &params).expect("signature help available")
+    }
+
+    #[test]
+    fn positional_args_track_the_cursor() {
+        let src = "fn two(a: Int, b: Int): Int { a + b }\nval n: Int = two(1, 2)\n";
+        let (state, uri) = state_with_doc(src, src);
+        let help = help_at(&state, &uri, pos_of(src, "two(1", 4));
+        assert_eq!(help.signatures.len(), 1);
+        assert_eq!(help.signatures[0].label, "fn two(a: Int, b: Int): Int");
+        assert_eq!(help.active_parameter, Some(0));
+        let help = help_at(&state, &uri, pos_of(src, ", 2", 2));
+        assert_eq!(help.active_parameter, Some(1));
+    }
+
+    #[test]
+    fn named_args_map_to_their_parameter() {
+        // `target` is the *second* declared param of symlink; naming it
+        // first must highlight index 1, not 0.
+        let src = "val s: Symlink = symlink(target = \"b\", source = \"a\")\nreconcile s\n";
+        let (state, uri) = state_with_doc(src, src);
+        let help = help_at(&state, &uri, pos_of(src, "target", 3));
+        assert!(help.signatures[0].label.starts_with("fn symlink("));
+        assert_eq!(help.active_parameter, Some(1));
+        let help = help_at(&state, &uri, pos_of(src, "source", 3));
+        assert_eq!(help.active_parameter, Some(0));
+    }
 }
