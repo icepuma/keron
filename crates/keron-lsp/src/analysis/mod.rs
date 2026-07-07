@@ -62,7 +62,7 @@ pub fn analyze(state: &mut ServerState) -> Vec<PublishDiagnosticsParams> {
             .entry(uri.as_str().to_string())
             .or_insert_with(|| (uri, Vec::new()));
         for diag in &err.diagnostics {
-            entry.1.push(to_lsp(diag, source, &index));
+            entry.1.push(to_lsp(diag, source, &index, state.encoding));
         }
     }
     for (_, diags) in fresh.values_mut() {

@@ -16,7 +16,7 @@ pub fn handle(
         .program
         .items
         .iter()
-        .filter_map(|item| item_symbol(item, snap.text, snap.index))
+        .filter_map(|item| item_symbol(item, snap.text, snap.index, snap.enc))
         .collect();
     Some(DocumentSymbolResponse::Nested(symbols))
 }
@@ -48,15 +48,16 @@ fn item_symbol(
     item: &Item,
     text: &str,
     index: &crate::line_index::LineIndex,
+    enc: crate::line_index::PositionEncoding,
 ) -> Option<DocumentSymbol> {
-    let range = index.range(text, &item.span());
+    let range = index.range(text, &item.span(), enc);
     match item {
         Item::Fn(f) => Some(symbol(
             f.name.node.clone(),
             Some(render::fn_decl_signature(f)),
             SymbolKind::FUNCTION,
             range,
-            index.range(text, &f.name.span),
+            index.range(text, &f.name.span, enc),
             None,
         )),
         Item::Val(v) => Some(symbol(
@@ -64,7 +65,7 @@ fn item_symbol(
             Some(render::val_decl_signature(v)),
             SymbolKind::CONSTANT,
             range,
-            index.range(text, &v.name.span),
+            index.range(text, &v.name.span, enc),
             None,
         )),
         Item::Struct(s) => {
@@ -76,8 +77,8 @@ fn item_symbol(
                         f.name.node.clone(),
                         Some(f.ty.node.to_string()),
                         SymbolKind::FIELD,
-                        index.range(text, &f.span),
-                        index.range(text, &f.name.span),
+                        index.range(text, &f.span, enc),
+                        index.range(text, &f.name.span, enc),
                         None,
                     )
                 })
@@ -87,7 +88,7 @@ fn item_symbol(
                 Some(render::struct_decl_signature(s)),
                 SymbolKind::STRUCT,
                 range,
-                index.range(text, &s.name.span),
+                index.range(text, &s.name.span, enc),
                 Some(children),
             ))
         }
@@ -96,7 +97,7 @@ fn item_symbol(
             Some(render::type_alias_signature(t)),
             SymbolKind::ENUM,
             range,
-            index.range(text, &t.name.span),
+            index.range(text, &t.name.span, enc),
             None,
         )),
         Item::Reconcile(r) => Some(symbol(
@@ -104,9 +105,58 @@ fn item_symbol(
             None,
             SymbolKind::EVENT,
             range,
-            index.range(text, &r.span),
+            index.range(text, &r.span, enc),
             None,
         )),
         Item::Use(_) | Item::ExprStmt(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lsp_types::{PartialResultParams, TextDocumentIdentifier, WorkDoneProgressParams};
+
+    use crate::handlers::test_support::state_with_doc;
+
+    #[test]
+    fn outline_covers_every_item_kind() {
+        let src = "from \"./lib.keron\" use ignored\n\
+                   fn f(a: Int): Int { a }\n\
+                   val v: Int = 1\n\
+                   struct P { x: Int, y: String }\n\
+                   type C = \"red\" | \"blue\"\n\
+                   reconcile symlink(source = \"a\", target = \"b\")\n";
+        // The `use` line references a file that doesn't exist; symbols
+        // come from the last-good parse alone, so that's fine.
+        let (state, uri) = state_with_doc(src, src);
+        let params = DocumentSymbolParams {
+            text_document: TextDocumentIdentifier { uri },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
+        };
+        let Some(DocumentSymbolResponse::Nested(symbols)) = handle(&state, &params) else {
+            panic!("expected nested symbols");
+        };
+        let outline: Vec<String> = symbols
+            .iter()
+            .map(|s| {
+                let children = s.children.as_ref().map_or(0, Vec::len);
+                format!("{:?} {} ({} children)", s.kind, s.name, children)
+            })
+            .collect();
+        insta::assert_snapshot!(outline.join("\n"), @r"
+        Function f (0 children)
+        Constant v (0 children)
+        Struct P (2 children)
+        Enum C (0 children)
+        Event reconcile (0 children)
+        ");
+        let p = &symbols[2];
+        assert_eq!(p.children.as_ref().unwrap()[0].name, "x");
+        assert!(
+            p.selection_range.start.line < p.range.end.line
+                || p.range.start.line == p.selection_range.start.line
+        );
     }
 }

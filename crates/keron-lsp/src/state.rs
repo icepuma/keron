@@ -8,7 +8,7 @@ use keron_lang::Program;
 use keron_modules::Resolution;
 use lsp_types::Uri;
 
-use crate::line_index::LineIndex;
+use crate::line_index::{LineIndex, PositionEncoding};
 
 /// One open editor document. Keyed in [`ServerState::docs`] by its
 /// canonicalized filesystem path (the same key the module resolver
@@ -38,6 +38,8 @@ pub struct LastGood {
 /// Whole-server mutable state, owned by the single-threaded main loop.
 #[derive(Debug, Default)]
 pub struct ServerState {
+    /// Negotiated at initialize; every position on the wire uses it.
+    pub encoding: PositionEncoding,
     pub docs: HashMap<PathBuf, Document>,
     /// Result of the most recent [`keron_modules::resolve_with_loader`]
     /// run over all open documents. Feature handlers read the graph;

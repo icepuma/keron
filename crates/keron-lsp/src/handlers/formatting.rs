@@ -15,7 +15,7 @@ pub fn handle(state: &ServerState, params: &DocumentFormattingParams) -> Option<
     if formatted == doc.text {
         return Some(Vec::new());
     }
-    let end = doc.line_index.end_position(&doc.text);
+    let end = doc.line_index.end_position(&doc.text, state.encoding);
     Some(vec![TextEdit {
         range: Range::new(Position::new(0, 0), end),
         new_text: formatted,

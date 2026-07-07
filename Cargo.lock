@@ -660,6 +660,7 @@ name = "keron-lsp"
 version = "0.5.3"
 dependencies = [
  "anyhow",
+ "insta",
  "keron-lang",
  "keron-modules",
  "lsp-server",

@@ -245,6 +245,57 @@ pub fn module_for<'r>(resolution: &'r Resolution, path: &Path) -> Option<&'r Che
     resolution.graph.modules.get(&ModuleId(path.to_path_buf()))
 }
 
+/// Struct fields of the variable `name` as referenced at `offset`,
+/// resolvable without type inference: the var must be a `val` with a
+/// struct annotation, a struct-typed param, or an imported val.
+/// Powers `receiver.field` hover and `.`-triggered completion.
+#[must_use]
+pub fn var_struct_fields(
+    program: &Program,
+    name: &str,
+    offset: usize,
+    imported: &keron_lang::ImportedSymbols,
+) -> Option<Vec<(String, keron_lang::Type)>> {
+    let ty = match find_local_def(program, name, offset) {
+        Some(LocalDef::Val(v)) => v.ty.as_ref().map(|t| t.node.clone()),
+        Some(LocalDef::Param(p)) => Some(p.ty.node.clone()),
+        _ => None,
+    }
+    .or_else(|| imported.vals.get(name).cloned())?;
+    match ty {
+        keron_lang::Type::Struct { fields, .. } => Some(fields),
+        // A freshly parsed program (the last-good snapshot) has NOT
+        // been through the module loader's type-name resolution, so a
+        // user-struct annotation is still `Named` — resolve it against
+        // the module's own decls and the imported/builtin types.
+        keron_lang::Type::Named(type_name) => struct_fields_named(program, &type_name, imported),
+        _ => None,
+    }
+}
+
+fn struct_fields_named(
+    program: &Program,
+    type_name: &str,
+    imported: &keron_lang::ImportedSymbols,
+) -> Option<Vec<(String, keron_lang::Type)>> {
+    for item in &program.items {
+        if let Item::Struct(s) = item
+            && s.name.node == type_name
+        {
+            return Some(
+                s.fields
+                    .iter()
+                    .map(|f| (f.name.node.clone(), f.ty.node.clone()))
+                    .collect(),
+            );
+        }
+    }
+    match imported.types.get(type_name) {
+        Some(keron_lang::Type::Struct { fields, .. }) => Some(fields.clone()),
+        _ => None,
+    }
+}
+
 /// The span of top-level declaration `name` in `program` — where an
 /// import of that name should jump to.
 #[must_use]

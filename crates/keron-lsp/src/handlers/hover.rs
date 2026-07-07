@@ -5,7 +5,7 @@ use keron_lang::{ImportedSymbols, Program, Span, Type};
 use lsp_types::{Hover, HoverContents, HoverParams, MarkupContent, MarkupKind};
 
 use crate::analysis::node_at::{NodeRef, node_at};
-use crate::analysis::symbols::{LocalDef, find_local_def};
+use crate::analysis::symbols::{LocalDef, find_local_def, var_struct_fields};
 use crate::handlers::render;
 use crate::handlers::snapshot_at;
 use crate::state::ServerState;
@@ -13,16 +13,26 @@ use crate::state::ServerState;
 pub fn handle(state: &ServerState, params: &HoverParams) -> Option<Hover> {
     let pos = &params.text_document_position_params;
     let snap = snapshot_at(state, &pos.text_document.uri)?;
-    let offset = snap.index.offset(snap.text, pos.position)?;
+    let offset = snap.index.offset(snap.text, pos.position, snap.enc)?;
     let node = node_at(snap.program, offset)?;
     let imported = snap.imported_symbols();
     let (text, span) = describe(&node, snap.program, offset, &imported)?;
+    let mut value = format!("```keron\n{text}\n```");
+    // Builtins get their prose paragraph under the signature.
+    // (Imported names can never be builtins — the resolver rejects
+    // that — so only callees need the lookup.)
+    if let NodeRef::Callee(name) = &node
+        && let Some(doc) = keron_modules::builtin_doc(&name.node)
+    {
+        value.push_str("\n\n---\n\n");
+        value.push_str(doc);
+    }
     Some(Hover {
         contents: HoverContents::Markup(MarkupContent {
             kind: MarkupKind::Markdown,
-            value: format!("```keron\n{text}\n```"),
+            value,
         }),
-        range: span.map(|s| snap.index.range(snap.text, &s)),
+        range: span.map(|s| snap.index.range(snap.text, &s, snap.enc)),
     })
 }
 
@@ -154,15 +164,7 @@ fn field_access_text(
     let keron_lang::Expr::Var(var_name) = &receiver.node else {
         return None;
     };
-    let receiver_ty = match find_local_def(program, var_name, receiver.span.start) {
-        Some(LocalDef::Val(v)) => v.ty.as_ref().map(|t| t.node.clone()),
-        Some(LocalDef::Param(p)) => Some(p.ty.node.clone()),
-        _ => None,
-    }
-    .or_else(|| imported.vals.get(var_name).cloned())?;
-    let Type::Struct { fields, .. } = receiver_ty else {
-        return None;
-    };
+    let fields = var_struct_fields(program, var_name, receiver.span.start, imported)?;
     fields
         .iter()
         .find(|(f, _)| f == field)

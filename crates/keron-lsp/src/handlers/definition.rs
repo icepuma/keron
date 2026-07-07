@@ -19,7 +19,7 @@ pub fn handle(
 ) -> Option<GotoDefinitionResponse> {
     let pos = &params.text_document_position_params;
     let snap = snapshot_at(state, &pos.text_document.uri)?;
-    let offset = snap.index.offset(snap.text, pos.position)?;
+    let offset = snap.index.offset(snap.text, pos.position, snap.enc)?;
     let location = match node_at(snap.program, offset)? {
         NodeRef::Callee(name) => named_def(&snap, &name.node, offset),
         NodeRef::Var { name, .. } | NodeRef::TypeName { name, .. } => {
@@ -37,7 +37,7 @@ fn named_def(snap: &Snapshot<'_>, name: &str, offset: usize) -> Option<Location>
     if let Some(def) = find_local_def(snap.program, name, offset) {
         return Some(Location {
             uri: snap.doc.uri.clone(),
-            range: snap.index.range(snap.text, &def.name_span()),
+            range: snap.index.range(snap.text, &def.name_span(), snap.enc),
         });
     }
     imported_def(snap, name)
@@ -55,7 +55,7 @@ fn imported_def(snap: &Snapshot<'_>, name: &str) -> Option<Location> {
     let index = LineIndex::new(&origin.source);
     Some(Location {
         uri: path_to_uri(&origin_id.0)?,
-        range: index.range(&origin.source, &span),
+        range: index.range(&origin.source, &span, snap.enc),
     })
 }
 

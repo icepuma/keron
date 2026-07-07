@@ -75,7 +75,7 @@ pub fn handle(state: &ServerState, params: &SemanticTokensParams) -> Option<Sema
     }
     Some(SemanticTokens {
         result_id: None,
-        data: encode(text, &spans),
+        data: encode(text, &spans, state.encoding),
     })
 }
 
@@ -166,14 +166,18 @@ const fn span_key(span: &keron_lang::Span) -> (usize, usize) {
 /// Delta-encode into the LSP wire format. Tokens spanning multiple
 /// lines (multiline strings) are split per line, because not every
 /// client supports multiline tokens.
-fn encode(text: &str, spans: &[(usize, usize, u32)]) -> Vec<SemanticToken> {
+fn encode(
+    text: &str,
+    spans: &[(usize, usize, u32)],
+    enc: crate::line_index::PositionEncoding,
+) -> Vec<SemanticToken> {
     let index = crate::line_index::LineIndex::new(text);
     let mut data = Vec::new();
     let (mut prev_line, mut prev_char) = (0u32, 0u32);
     for &(start, end, token_type) in spans {
         for (seg_start, seg_end) in split_lines(text, start, end) {
-            let start_pos = index.position(text, seg_start);
-            let end_pos = index.position(text, seg_end);
+            let start_pos = index.position(text, seg_start, enc);
+            let end_pos = index.position(text, seg_end, enc);
             let length = end_pos.character.saturating_sub(start_pos.character);
             if length == 0 {
                 continue;
