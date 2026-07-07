@@ -137,6 +137,9 @@ mod tests {
         Uri::from_str(s).expect("valid test uri")
     }
 
+    // Unix path shapes: `/home/…` has no drive letter, so on Windows
+    // `Path::is_absolute` is false and conversion rightly refuses.
+    #[cfg(unix)]
     #[test]
     fn plain_unix_path_roundtrips() {
         let path = Path::new("/home/user/dots/main.keron");
@@ -145,6 +148,7 @@ mod tests {
         assert_eq!(uri_to_path(&u), Some(path.to_path_buf()));
     }
 
+    #[cfg(unix)]
     #[test]
     fn spaces_and_unicode_percent_encode() {
         let path = Path::new("/home/user/my dots/héllo.keron");
