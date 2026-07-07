@@ -5,7 +5,11 @@ members = [
     "crates/keron-modules",
     "crates/keron-apply",
     "crates/keron-cli",
+    "crates/keron-lsp",
 ]
+# The Zed extension is its own wasm32-wasip1 crate with a separate
+# toolchain and lockfile; it must not join the native workspace build.
+exclude = ["editors/zed"]
 
 [workspace.package]
 version = "0.5.3"
@@ -22,6 +26,7 @@ shared-version = true
 keron-lang = { path = "crates/keron-lang" }
 keron-modules = { path = "crates/keron-modules" }
 keron-apply = { path = "crates/keron-apply" }
+keron-lsp = { path = "crates/keron-lsp" }
 
 chumsky = "=0.13.0"
 thiserror = "=2.0.18"
@@ -81,6 +86,15 @@ which = "=8.0.4"
 # diffs (template `content` and shell `script`) under the
 # `--verbose-will-reveal-sensitive-content` flag.
 similar = "=3.1.1"
+# Synchronous LSP transport + protocol types (the rust-analyzer
+# stack). Chosen over `tower-lsp` to avoid pulling an async runtime
+# into a workspace that has none; keron modules are small enough
+# that fully synchronous per-change analysis is the honest
+# architecture. lsp-types 0.97 backs `Uri` with `fluent-uri` (no
+# `url`/`idna` tree); file-path conversion lives in
+# `keron-lsp::uri`.
+lsp-server = "=0.8.0"
+lsp-types = "=0.97.0"
 # Stack-overflow defense for the user-fn call dispatch. Each
 # `eval_expr` → user-fn → `eval_block_value` recursion eats a Rust
 # stack frame; the depth guard at `MAX_CALL_DEPTH` is fine on the

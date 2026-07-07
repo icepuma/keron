@@ -15,6 +15,7 @@ path = "src/main.rs"
 [dependencies]
 keron-lang.workspace = true
 keron-apply.workspace = true
+keron-lsp.workspace = true
 
 anyhow.workspace = true
 clap.workspace = true
