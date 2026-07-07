@@ -306,6 +306,58 @@ fn update_symlink_bails_when_live_state_changed_since_plan() {
 }
 
 #[test]
+fn update_template_bails_when_live_content_changed_since_plan() {
+    // The user approved replacing content "old"; another process
+    // rewrote the file to "surprise" before apply. The update must
+    // refuse and leave the live content untouched, mirroring the
+    // symlink re-verify.
+    let d = TempDir::new("reverify-template");
+    let path = d.path.join("app.conf");
+    fs::write(&path, "surprise").unwrap();
+    let before = ResourceState::Template {
+        path: path.clone(),
+        content: "old".into(),
+        sensitive: false,
+    };
+    let after = ResourceState::Template {
+        path: path.clone(),
+        content: "new".into(),
+        sensitive: false,
+    };
+    let err = apply_update(&before, &after, ApplyContext::Unprivileged, &mut Vec::new())
+        .expect_err("changed live content must bail");
+    assert!(
+        format!("{err:#}").contains("changed since the plan"),
+        "got: {err:#}"
+    );
+    assert_eq!(
+        fs::read_to_string(&path).unwrap(),
+        "surprise",
+        "live content must be left untouched"
+    );
+}
+
+#[test]
+fn update_template_writes_when_live_content_matches_plan() {
+    let d = TempDir::new("reverify-template-ok");
+    let path = d.path.join("app.conf");
+    fs::write(&path, "old").unwrap();
+    let before = ResourceState::Template {
+        path: path.clone(),
+        content: "old".into(),
+        sensitive: false,
+    };
+    let after = ResourceState::Template {
+        path: path.clone(),
+        content: "new".into(),
+        sensitive: false,
+    };
+    apply_update(&before, &after, ApplyContext::Unprivileged, &mut Vec::new())
+        .expect("matching before-content must apply");
+    assert_eq!(fs::read_to_string(&path).unwrap(), "new");
+}
+
+#[test]
 fn noop_change_does_nothing() {
     let d = TempDir::new("noop");
     let target = d.path.join("real");

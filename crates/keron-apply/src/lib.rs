@@ -255,7 +255,31 @@ where
     diff::render_plan(stdout, &plan, RenderOptions { color, verbose }).map_err(RunError::Io)?;
     render_precheck(stdout, &precheck).map_err(RunError::Io)?;
 
+    // Warn when an unprivileged shell hook is declared after an elevated
+    // resource: the elevation partition runs it before the elevated
+    // child, so declaration order is not honored and a hook depending on
+    // that earlier resource can never converge. Names are file paths /
+    // shell resource names, already sanitized by the plan.
+    for address in plan.elevation_ordering_hazards() {
+        writeln!(
+            stdout,
+            "warning: shell `{address}` is declared after an elevated resource but runs before it \
+             (unprivileged changes apply before the elevated phase); if it depends on that \
+             resource, reorder so the shell comes first or make the resource unprivileged."
+        )
+        .map_err(RunError::Io)?;
+    }
+
     if !execute {
+        return Ok(Outcome::Applied);
+    }
+
+    // Nothing to apply short-circuits *before* any prompt. When the plan
+    // is empty but a precheck failed (e.g. every winget package on this
+    // OS was filtered out), continuing would do nothing, so asking the
+    // operator to confirm-continue-past-the-precheck is pure noise — the
+    // precheck was already rendered above for information.
+    if plan.is_empty() {
         return Ok(Outcome::Applied);
     }
 
@@ -265,10 +289,6 @@ where
             writeln!(stdout, "Apply cancelled.").map_err(RunError::Io)?;
             return Ok(Outcome::Cancelled);
         }
-    }
-
-    if plan.is_empty() {
-        return Ok(Outcome::Applied);
     }
 
     let approved = confirm::prompt_yes_no(stdin, stdout).map_err(RunError::Io)?;
@@ -334,9 +354,19 @@ where
 
 /// Render collected apply warnings to the user, one indented line each.
 /// Empty input writes nothing so a clean run stays quiet.
+///
+/// A `Warning` may embed a package manager's captured `stderr` (e.g. a
+/// failed `brew trust`), which is subprocess-controlled and can carry
+/// `\r`/ESC sequences. Sanitize before printing so it can't redraw or
+/// forge the surrounding output — this is the one `run_with_io` sink
+/// that carries external bytes raw otherwise.
 fn spill_warnings<W: Write>(stdout: &mut W, warnings: &[execute::Warning]) -> io::Result<()> {
     for warning in warnings {
-        writeln!(stdout, "warning: {warning}")?;
+        writeln!(
+            stdout,
+            "warning: {}",
+            terminal_safe::sanitize_terminal_message(&warning.to_string())
+        )?;
     }
     Ok(())
 }

@@ -88,9 +88,10 @@ pub const SHELL_KIND_VARIANTS: &[&str] = &["sh", "bash", "zsh", "pwsh", "powersh
 /// `template(source, target, vars)` is the only file-producing form:
 /// `source` is a path to an external template file (resolved
 /// relative to the importing module's directory at apply time);
-/// `${name}` placeholders are substituted from `vars`, and the
-/// rendered text is written to `target`. A "plain" file with no
-/// substitutions is just a `template` whose `vars` map is empty.
+/// Tera `{{ name }}` placeholders are substituted from `vars` (a
+/// missing variable is a hard render error), and the rendered text is
+/// written to `target`. A "plain" file with no substitutions is just a
+/// `template` whose `vars` map is empty.
 fn build_fs() -> StdModule {
     let mut fns = BTreeMap::new();
     fns.insert(

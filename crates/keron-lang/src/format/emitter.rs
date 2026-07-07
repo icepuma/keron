@@ -159,6 +159,26 @@ impl<'src> Emitter<'src> {
         self.out.push_str(s);
     }
 
+    /// True when the just-emitted output ends with a multi-line string
+    /// close (`"""` for cooked, `"""#{n}` for raw). Such a close must be
+    /// followed by a newline or EOF, so a separator/delimiter cannot
+    /// sit on the same line after it.
+    fn out_ends_with_multiline_close(&self) -> bool {
+        self.out.trim_end_matches('#').ends_with("\"\"\"")
+    }
+
+    /// Emit a block-form separator (`,` / `;`) after an element. When
+    /// the element ended with a multi-line string close, the separator
+    /// goes on its own indented line — appending it directly would put
+    /// it on the close line, which the grammar rejects.
+    fn write_separator(&mut self, sep: &str) {
+        if self.out_ends_with_multiline_close() {
+            self.newline();
+            self.write_indent();
+        }
+        self.write(sep);
+    }
+
     // ============================================================
     // Comment handling
     // ============================================================
@@ -192,17 +212,35 @@ impl<'src> Emitter<'src> {
         }
     }
 
+    /// Flush every comment not already emitted while walking the
+    /// items. `ModuleTrailing` / `BlockInterior` comments belong here
+    /// by construction, but this is also the formatter's data-loss
+    /// safety net: a comment attached to a span the emitter never
+    /// queries (e.g. a match-arm body, or the interior of a
+    /// multi-line collection) would otherwise wedge the monotonic
+    /// `next_comment` cursor and — worse — get silently dropped,
+    /// which for an in-place formatter means permanently deleting
+    /// user comments (and, via the stuck cursor, every later comment
+    /// too). Emitting rather than skipping guarantees no comment is
+    /// ever destroyed; in the rare misattachment case it is relocated
+    /// to the end of the file instead of vanishing.
     fn emit_module_trailing_comments(&mut self) {
         while self.next_comment < self.comments.comments.len() {
-            let (c, attach) = &self.comments.comments[self.next_comment];
-            if !matches!(
-                attach,
-                CommentAttachment::ModuleTrailing | CommentAttachment::BlockInterior { .. }
-            ) {
-                self.next_comment += 1;
-                continue;
+            let (c, _attach) = &self.comments.comments[self.next_comment];
+            // Position at the start of a fresh line without inventing a
+            // blank one: only break when `out` isn't already at a line
+            // start. An empty `out` (comment-only file) needs no leading
+            // newline, and the item loop already ends each item with a
+            // newline — an unconditional break here produced a spurious
+            // blank line in both cases.
+            if !self.out.is_empty() && !self.out.ends_with('\n') {
+                self.newline();
             }
-            self.newline();
+            // Preserve an authored blank line before the comment, but
+            // never introduce one the source didn't have.
+            if !self.out.is_empty() && self.source_has_blank_line_before(c.span.start) {
+                self.newline();
+            }
             self.write_indent();
             self.write(&c.text);
             self.next_comment += 1;
@@ -259,7 +297,11 @@ impl<'src> Emitter<'src> {
 
     fn emit_use(&mut self, u: &UseDecl) {
         self.write("from \"");
-        self.write(&u.source.node);
+        // `u.source.node` is the *decoded* path (the parser accepts the
+        // same escapes as a string literal), so re-escape it through the
+        // canonical renderer — a path containing `"` or `\` would
+        // otherwise emit as an unparseable `from "a"b"`.
+        self.write(&render_cooked_inner(&u.source.node));
         self.write("\" use ");
         let names: Vec<&str> = u.names.iter().map(|n| n.node.as_str()).collect();
         let inline = names.join(", ");
@@ -304,7 +346,16 @@ impl<'src> Emitter<'src> {
 
     fn emit_params(&mut self, params: &[Param]) {
         let inline = render_params_inline(params);
-        if self.column() + inline.len() < LINE_BUDGET {
+        // A default that is an `if`/`for`/`match` with a statement body
+        // renders inline as `{ a; b }`, which the block grammar rejects
+        // (`;` is not a statement separator). Force the block form so
+        // each such default goes through `emit_expr` → `emit_block`.
+        let force_block = params.iter().any(|p| {
+            p.default
+                .as_ref()
+                .is_some_and(|d| expr_requires_block_context(d, self.src))
+        });
+        if !force_block && self.column() + inline.len() < LINE_BUDGET {
             self.write(&inline);
             return;
         }
@@ -320,7 +371,7 @@ impl<'src> Emitter<'src> {
                 self.emit_expr(default);
             }
             if i + 1 < params.len() {
-                self.write(",");
+                self.write_separator(",");
             }
         }
         self.indent -= 1;
@@ -337,7 +388,16 @@ impl<'src> Emitter<'src> {
             return;
         }
         let inline = render_struct_fields_inline(&s.fields);
-        if self.column() + 1 + inline.len() + 2 <= LINE_BUDGET {
+        // Same statement-block-in-default hazard as `emit_params`: the
+        // inline form would join a block's statements with `;`, which
+        // does not re-parse. Force block form when any field default
+        // needs it.
+        let force_block = s.fields.iter().any(|f| {
+            f.default
+                .as_ref()
+                .is_some_and(|d| expr_requires_block_context(d, self.src))
+        });
+        if !force_block && self.column() + 1 + inline.len() + 2 <= LINE_BUDGET {
             self.write(" ");
             self.write(&inline);
             self.write(" }");
@@ -349,7 +409,7 @@ impl<'src> Emitter<'src> {
             self.write_indent();
             self.emit_struct_field(field);
             if i + 1 < s.fields.len() {
-                self.write(",");
+                self.write_separator(",");
             }
         }
         self.indent -= 1;
@@ -401,27 +461,30 @@ impl<'src> Emitter<'src> {
         self.write("reconcile");
         let multi_chain = r.chains.iter().any(|c| c.len() > 1);
         let multi_top = r.chains.len() > 1;
-        if !multi_top && !multi_chain {
-            // `reconcile expr`
-            let expr = &r.chains[0][0];
-            self.write(" ");
-            self.emit_expr(expr);
-            return;
-        }
-        if multi_top {
-            // `reconcile { ... }`
+        // The inline forms (`reconcile <expr>` and `reconcile a -> b`)
+        // cannot be used when the first step is a map literal: a leading
+        // `{` commits the parser to the block form, which then fails on
+        // the map's `:`. Force the `reconcile { … }` wrapper for those.
+        if multi_top || reconcile_leads_with_map(r) {
             self.write(" {");
             self.indent += 1;
             for chain in &r.chains {
                 self.newline();
                 self.write_indent();
                 self.emit_chain(chain);
-                self.write(";");
+                self.write_separator(";");
             }
             self.indent -= 1;
             self.newline();
             self.write_indent();
             self.write("}");
+            return;
+        }
+        if !multi_chain {
+            // `reconcile expr`
+            let expr = &r.chains[0][0];
+            self.write(" ");
+            self.emit_expr(expr);
             return;
         }
         // single chain with multiple steps: `reconcile a -> b -> c`
@@ -441,6 +504,7 @@ impl<'src> Emitter<'src> {
     // ============================================================
     // Expressions
     // ============================================================
+    // (helper defined below the impl)
 
     fn emit_expr(&mut self, expr: &Spanned<Expr>) {
         match &expr.node {
@@ -558,7 +622,7 @@ impl<'src> Emitter<'src> {
             self.emit_call_arg(arg);
             // Trailing comma after every arg in block form, including
             // the last — matches rustfmt-style diff-friendliness.
-            self.write(",");
+            self.write_separator(",");
         }
         self.indent -= 1;
         self.newline();
@@ -595,7 +659,7 @@ impl<'src> Emitter<'src> {
             self.newline();
             self.write_indent();
             self.emit_expr(item);
-            self.write(",");
+            self.write_separator(",");
         }
         self.indent -= 1;
         self.newline();
@@ -627,7 +691,7 @@ impl<'src> Emitter<'src> {
             self.emit_expr(&entry.key);
             self.write(": ");
             self.emit_expr(&entry.value);
-            self.write(",");
+            self.write_separator(",");
         }
         self.indent -= 1;
         self.newline();
@@ -640,7 +704,13 @@ impl<'src> Emitter<'src> {
         self.emit_expr(cond);
         self.write(" ");
         self.emit_block(then_b);
-        if !block_is_empty(else_b) {
+        if let Some((ec, et, ee)) = else_if_parts(else_b) {
+            // `else if …` sugar: emit it flat instead of the parser's
+            // synthetic `else { if … }` block, which would add an
+            // indentation level per chain link.
+            self.write(" else ");
+            self.emit_if(ec, et, ee);
+        } else if !block_is_empty(else_b) {
             self.write(" else ");
             self.emit_block(else_b);
         }
@@ -671,6 +741,14 @@ impl<'src> Emitter<'src> {
         self.indent += 1;
         for arm in arms {
             self.newline();
+            // `collect_expr_spans` registers `arm.body.span` as a
+            // comment-attachment candidate, so a comment on an arm
+            // (leading, or trailing after the `,`) attaches there.
+            // Flush it in place — mirroring `emit_block` — instead of
+            // letting the monotonic cursor wedge on it, which used to
+            // strand the comment and every comment after it. No-op for
+            // comment-free arms.
+            self.emit_leading_comments_for(&arm.body.span);
             self.write_indent();
             self.emit_pattern(&arm.pattern);
             if let Some(g) = &arm.guard {
@@ -679,7 +757,8 @@ impl<'src> Emitter<'src> {
             }
             self.write(" => ");
             self.emit_expr(&arm.body);
-            self.write(",");
+            self.write_separator(",");
+            self.emit_trailing_comment_for(&arm.body.span);
         }
         self.indent -= 1;
         self.newline();
@@ -826,70 +905,79 @@ fn is_raw_multiline_literal(s: &str) -> bool {
         .is_some_and(|tail| tail.starts_with("\"\"\""))
 }
 
+/// Whether `expr` must be emitted in multi-line block form rather than
+/// an inline scratch string. Two things force it, checked over the
+/// *whole* subtree (not just the top node):
+///   - a statement-bearing block (`if`/`for`/`match` body with `val`/
+///     `reconcile` statements), whose inline `{ a; b }` rendering the
+///     block grammar rejects;
+///   - a multi-line string literal (`"""…"""` / `r#"""…"""#`), whose
+///     inline single-line rendering drops the authored style and — for
+///     interpolations — the load-bearing `indent` that the evaluator
+///     re-applies. This must recurse: a multiline string nested inside
+///     a call arg / list / map value (e.g. `f(g("""…"""))`) used to be
+///     collapsed to a single-line cooked string, changing the value.
 fn expr_requires_block_context(expr: &Spanned<Expr>, src: &str) -> bool {
     let raw = src
         .get(expr.span.clone())
         .map(str::trim)
         .unwrap_or_default();
-    raw.starts_with("\"\"\"")
-        || is_raw_multiline_literal(raw)
-        || expr_contains_statement_block(&expr.node)
-}
-
-fn expr_contains_statement_block(expr: &Expr) -> bool {
-    match expr {
+    if raw.starts_with("\"\"\"") || is_raw_multiline_literal(raw) {
+        return true;
+    }
+    match &expr.node {
         Expr::If {
             cond,
             then_branch,
             else_branch,
         } => {
-            expr_contains_statement_block(&cond.node)
-                || block_contains_statement(then_branch)
-                || block_contains_statement(else_branch)
+            expr_requires_block_context(cond, src)
+                || block_requires_block_context(then_branch, src)
+                || block_requires_block_context(else_branch, src)
         }
         Expr::For {
             iter_expr, body, ..
-        } => expr_contains_statement_block(&iter_expr.node) || block_contains_statement(body),
+        } => expr_requires_block_context(iter_expr, src) || block_requires_block_context(body, src),
         Expr::Match { scrutinee, arms } => {
-            expr_contains_statement_block(&scrutinee.node)
-                || arms
-                    .iter()
-                    .any(|a| {
-                        a.guard
-                            .as_ref()
-                            .is_some_and(|g| expr_contains_statement_block(&g.node))
-                            || expr_contains_statement_block(&a.body.node)
-                    })
+            expr_requires_block_context(scrutinee, src)
+                || arms.iter().any(|a| {
+                    a.guard
+                        .as_ref()
+                        .is_some_and(|g| expr_requires_block_context(g, src))
+                        || expr_requires_block_context(&a.body, src)
+                })
         }
         Expr::Binary { lhs, rhs, .. } => {
-            expr_contains_statement_block(&lhs.node) || expr_contains_statement_block(&rhs.node)
+            expr_requires_block_context(lhs, src) || expr_requires_block_context(rhs, src)
         }
         Expr::Unary { operand, .. } | Expr::Field { receiver: operand, .. } => {
-            expr_contains_statement_block(&operand.node)
+            expr_requires_block_context(operand, src)
         }
         Expr::Call { args, .. } => args
             .iter()
-            .any(|a| expr_contains_statement_block(&a.value.node)),
+            .any(|a| expr_requires_block_context(&a.value, src)),
         Expr::List(items) => items
             .iter()
-            .any(|item| expr_contains_statement_block(&item.node)),
+            .any(|item| expr_requires_block_context(item, src)),
         Expr::Map(entries) => entries.iter().any(|entry| {
-            expr_contains_statement_block(&entry.key.node)
-                || expr_contains_statement_block(&entry.value.node)
+            expr_requires_block_context(&entry.key, src)
+                || expr_requires_block_context(&entry.value, src)
         }),
         Expr::Interpolation(parts) => parts.iter().any(|part| {
-            matches!(part, StringPart::Expr { expr, .. } if expr_contains_statement_block(&expr.node))
+            matches!(part, StringPart::Expr { expr, .. } if expr_requires_block_context(expr, src))
         }),
         Expr::Literal(_) | Expr::Var(_) => false,
     }
 }
 
-fn block_contains_statement(block: &Block) -> bool {
+fn block_requires_block_context(block: &Block, src: &str) -> bool {
+    // Any statement forces block form outright; otherwise the decision
+    // rides on the trailing expression.
     !block.stmts.is_empty()
         || block
             .trailing
             .as_ref()
-            .is_some_and(|e| expr_contains_statement_block(&e.node))
+            .is_some_and(|e| expr_requires_block_context(e, src))
 }
 
 // =====================================================================
@@ -1077,17 +1165,47 @@ fn render_unary_inline(op: UnaryOp, operand: &Spanned<Expr>) -> String {
     }
 }
 
+/// True when a reconcile's first step is a map literal, so its inline
+/// form would begin with `{` — which the reconcile grammar parses as
+/// the block delimiter, not a map. Such a reconcile must keep the
+/// `reconcile { … }` block wrapper to stay re-parseable.
+fn reconcile_leads_with_map(r: &ReconcileDecl) -> bool {
+    matches!(
+        r.chains.first().and_then(|c| c.first()).map(|s| &s.node),
+        Some(Expr::Map(_))
+    )
+}
+
+/// If `block` is exactly the parser's desugaring of an `else if` — no
+/// statements, a single trailing `if` expression — return that inner
+/// `if`'s `(cond, then, else)`. A literal `else { if … }` parses to the
+/// identical shape and canonicalizes the same way.
+fn else_if_parts(block: &Block) -> Option<(&Spanned<Expr>, &Block, &Block)> {
+    if !block.stmts.is_empty() {
+        return None;
+    }
+    match &block.trailing.as_ref()?.node {
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => Some((cond, then_branch, else_branch)),
+        _ => None,
+    }
+}
+
 fn render_if_inline(cond: &Spanned<Expr>, then_branch: &Block, else_branch: &Block) -> String {
-    let then_s = render_block_inline(then_branch);
-    if block_is_empty(else_branch) {
-        format!("if {} {}", render_expr_inline(&cond.node), then_s)
+    let head = format!(
+        "if {} {}",
+        render_expr_inline(&cond.node),
+        render_block_inline(then_branch)
+    );
+    if let Some((ec, et, ee)) = else_if_parts(else_branch) {
+        format!("{head} else {}", render_if_inline(ec, et, ee))
+    } else if block_is_empty(else_branch) {
+        head
     } else {
-        format!(
-            "if {} {} else {}",
-            render_expr_inline(&cond.node),
-            then_s,
-            render_block_inline(else_branch)
-        )
+        format!("{head} else {}", render_block_inline(else_branch))
     }
 }
 

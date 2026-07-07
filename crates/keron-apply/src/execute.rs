@@ -610,7 +610,11 @@ fn apply_update(
             replace_symlink(at, source, ctx)
         }
         (
-            ResourceState::Template { path: bp, .. },
+            ResourceState::Template {
+                path: bp,
+                content: before_content,
+                ..
+            },
             ResourceState::Template {
                 path: ap,
                 content,
@@ -624,6 +628,12 @@ fn apply_update(
                     ap.display(),
                 );
             }
+            // Re-verify the live file still holds the content the user
+            // approved replacing at the force/confirm prompt, mirroring
+            // the symlink path — otherwise a file rewritten by another
+            // process between plan render and apply is silently
+            // destroyed.
+            reverify_template_before(ap, before_content)?;
             replace_template(ap, content, *sensitive, ctx)
         }
         // `keron apply` does not upgrade packages — the classifier
@@ -681,6 +691,30 @@ fn create_symlink(target: &Path, source: &Path, ctx: ApplyContext) -> Result<()>
     })
 }
 
+/// Confirm the live file at `target` still holds the content the plan's
+/// `before` snapshot recorded. The force/confirm prompt approved
+/// replacing *that* content; if another process rewrote the file
+/// between plan render and apply, bail rather than clobber content the
+/// user never saw in the diff — the symlink counterpart is
+/// [`reverify_symlink_before`]. A vanished / unreadable / no-longer-
+/// UTF-8 target also bails: re-running `keron apply` re-classifies it
+/// cleanly (a missing file becomes a `Create`).
+fn reverify_template_before(target: &Path, before_content: &str) -> Result<()> {
+    let live = fs::read_to_string(target).with_context(|| {
+        format!(
+            "re-reading `{}` before update (changed since the plan was rendered?)",
+            target.display()
+        )
+    })?;
+    if live != before_content {
+        bail!(
+            "`{}` changed since the plan was rendered; re-run `keron apply`",
+            target.display()
+        );
+    }
+    Ok(())
+}
+
 /// Confirm the live symlink at `target` still points where the plan's
 /// `before` snapshot recorded. The force prompt approved replacing
 /// *that* state; if the link changed (or is no longer a symlink) since
@@ -732,8 +766,13 @@ fn replace_symlink(target: &Path, source: &Path, ctx: ApplyContext) -> Result<()
                 target.display()
             )
         })?;
-        return crate::elevated::safe_write::rename_at(&parent, tmp_leaf, leaf)
-            .with_context(|| format!("atomically re-pointing `{}` (elevated)", target.display()));
+        // Clean the temp link up if the rename fails; disarm once it
+        // has been renamed into place.
+        let guard = crate::elevated::safe_write::TempLeafGuard::new(&parent, tmp_leaf);
+        crate::elevated::safe_write::rename_at(&parent, tmp_leaf, leaf)
+            .with_context(|| format!("atomically re-pointing `{}` (elevated)", target.display()))?;
+        guard.disarm();
+        return Ok(());
     }
     let _ = ctx;
     if let Some(parent) = target.parent()
@@ -817,6 +856,11 @@ fn replace_template(path: &Path, content: &str, sensitive: bool, ctx: ApplyConte
             .with_context(|| {
                 format!("creating temporary template `{}` (elevated)", tmp.display())
             })?;
+        // Arm cleanup now that the temp file exists: any failure in
+        // set_permissions / write / sync / rename below leaves no
+        // root-owned temp (with rendered, possibly sensitive content)
+        // behind in a directory the user can't clean up.
+        let guard = crate::elevated::safe_write::TempLeafGuard::new(&parent, tmp_leaf);
         file.set_permissions(fs::Permissions::from_mode(mode))
             .with_context(|| format!("setting mode on temporary template `{}`", tmp.display()))?;
         file.write_all(content.as_bytes())
@@ -824,8 +868,10 @@ fn replace_template(path: &Path, content: &str, sensitive: bool, ctx: ApplyConte
         file.sync_all()
             .with_context(|| format!("syncing temporary template `{}`", tmp.display()))?;
         drop(file);
-        return crate::elevated::safe_write::rename_at(&parent, tmp_leaf, leaf)
-            .with_context(|| format!("atomically replacing `{}` (elevated)", path.display()));
+        crate::elevated::safe_write::rename_at(&parent, tmp_leaf, leaf)
+            .with_context(|| format!("atomically replacing `{}` (elevated)", path.display()))?;
+        guard.disarm();
+        return Ok(());
     }
     let _ = ctx;
 
@@ -992,7 +1038,19 @@ fn create_gpg_key(fingerprint: &str, key: &str) -> Result<()> {
 /// the same class of hole the package-name / tap-URL validators close.
 /// Accepts the canonical 40-hex-char form, optional `0x` prefix, and
 /// space-grouped digits; nothing else.
-fn validate_gpg_fingerprint(fingerprint: &str) -> Result<()> {
+/// Reject any `gpg_key` fingerprint that is not plain hex (optionally
+/// `0x`-prefixed, whitespace allowed). Beyond catching typos this is a
+/// security check: the fingerprint is passed as a positional argv token
+/// to `gpg --list-secret-keys <fp>` at *plan* time (`probe_gpg_keyring`)
+/// and `gpg --import`/re-probe at execute time. A value like
+/// `--export-secret-keys` would otherwise be parsed by gpg as an
+/// option — argument injection. Enforced at the evaluator dispatch
+/// (`dispatch_gpg_key`) so the probe never sees an unchecked value;
+/// re-checked here as defense in depth.
+///
+/// # Errors
+/// Errors when `fingerprint` contains any non-hex, non-`0x` character.
+pub fn validate_gpg_fingerprint(fingerprint: &str) -> Result<()> {
     let body = fingerprint
         .strip_prefix("0x")
         .or_else(|| fingerprint.strip_prefix("0X"))

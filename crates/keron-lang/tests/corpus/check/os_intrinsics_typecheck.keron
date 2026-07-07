@@ -27,12 +27,10 @@ val is_mac: Boolean = host == "Macos"
 
 val tier: String = if arch == "aarch64" {
   "fast"
+} else if arch == "x86_64" {
+  "normal"
 } else {
-  if arch == "x86_64" {
-    "normal"
-  } else {
-    "exotic"
-  }
+  "exotic"
 }
 
 # A union variant is assignable to a `String` slot via concat /

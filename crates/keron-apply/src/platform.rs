@@ -21,19 +21,28 @@ pub const fn map_os_type(t: os_info::Type) -> OsFamily {
     use os_info::Type;
     match t {
         Type::Linux
+        | Type::AlmaLinux
+        | Type::Alpaquita
         | Type::Alpine
+        | Type::ALTLinux
         | Type::Amazon
         | Type::Android
+        | Type::AOSC
         | Type::Arch
         | Type::Artix
+        | Type::Bazzite
+        | Type::Bluefin
         | Type::CachyOS
         | Type::CentOS
         | Type::Debian
+        | Type::Elementary
         | Type::EndeavourOS
         | Type::Fedora
         | Type::Garuda
         | Type::Gentoo
+        | Type::InstantOS
         | Type::Kali
+        | Type::KDENeon
         | Type::Mabox
         | Type::Manjaro
         | Type::Mariner
@@ -44,6 +53,7 @@ pub const fn map_os_type(t: os_info::Type) -> OsFamily {
         | Type::openEuler
         | Type::openSUSE
         | Type::OracleLinux
+        | Type::PikaOS
         | Type::Pop
         | Type::Raspbian
         | Type::Redhat
@@ -54,7 +64,8 @@ pub const fn map_os_type(t: os_info::Type) -> OsFamily {
         | Type::Ubuntu
         | Type::Ultramarine
         | Type::Uos
-        | Type::Void => OsFamily::Linux,
+        | Type::Void
+        | Type::Zorin => OsFamily::Linux,
         Type::Macos => OsFamily::Macos,
         Type::Windows => OsFamily::Windows,
         _ => OsFamily::Unknown,
@@ -121,19 +132,28 @@ mod tests {
         use os_info::Type;
         for t in [
             Type::Linux,
+            Type::AlmaLinux,
+            Type::Alpaquita,
             Type::Alpine,
+            Type::ALTLinux,
             Type::Amazon,
             Type::Android,
+            Type::AOSC,
             Type::Arch,
             Type::Artix,
+            Type::Bazzite,
+            Type::Bluefin,
             Type::CachyOS,
             Type::CentOS,
             Type::Debian,
+            Type::Elementary,
             Type::EndeavourOS,
             Type::Fedora,
             Type::Garuda,
             Type::Gentoo,
+            Type::InstantOS,
             Type::Kali,
+            Type::KDENeon,
             Type::Mabox,
             Type::Manjaro,
             Type::Mariner,
@@ -144,6 +164,7 @@ mod tests {
             Type::openEuler,
             Type::openSUSE,
             Type::OracleLinux,
+            Type::PikaOS,
             Type::Pop,
             Type::Raspbian,
             Type::Redhat,
@@ -155,6 +176,7 @@ mod tests {
             Type::Ultramarine,
             Type::Uos,
             Type::Void,
+            Type::Zorin,
         ] {
             assert_eq!(
                 map_os_type(t),

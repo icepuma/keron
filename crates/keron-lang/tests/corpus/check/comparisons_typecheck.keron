@@ -12,12 +12,10 @@ val e: Boolean = true != false
 fn classify(n: Int): String {
   if n == 0 {
     "zero"
+  } else if n < 0 {
+    "negative"
   } else {
-    if n < 0 {
-      "negative"
-    } else {
-      "positive"
-    }
+    "positive"
   }
 }
 

@@ -90,10 +90,13 @@ impl Capability {
     fn hint(&self) -> String {
         match self {
             Self::Binary(name) if name == "gpg" => {
+                // Only reference package builtins the language actually
+                // has (brew / cargo / winget). There is no apt()/
+                // pacman() reconcile; on Linux, brew is Homebrew on
+                // Linux.
                 "add a Package reconcile that installs it before \
-                 this one, e.g.:\n        reconcile brew(\"gnupg\")       # macOS\n        \
-                 reconcile apt(\"gnupg\")         # Debian/Ubuntu\n        \
-                 reconcile pacman(\"gnupg\")      # Arch"
+                 this one, e.g.:\n        reconcile brew(\"gnupg\")               # macOS / Linux\n        \
+                 reconcile winget(\"GnuPG.GnuPG\")        # Windows"
                     .into()
             }
             Self::Binary(name) => format!(
@@ -284,6 +287,23 @@ impl Display for PrereqReport {
         writeln!(f, "prerequisites not met — apply cannot proceed")?;
         writeln!(f)?;
         for prereq in &self.failures {
+            // Special-case brew that is installed at the canonical
+            // linuxbrew location but not on `$PATH`: the actionable fix
+            // is `brew shellenv`, not installing brew. Detected here (a
+            // cheap fixed-path stat) so the pure `Prerequisite` methods
+            // stay filesystem-free.
+            if matches!(
+                prereq,
+                Prerequisite::PackageManager(PackageManager::Brew | PackageManager::BrewCask)
+            ) && linuxbrew_candidates().iter().any(|c| c.is_file())
+            {
+                writeln!(f, "  - `brew` is installed but not on your `PATH`")?;
+                writeln!(
+                    f,
+                    "      → run `eval \"$(brew shellenv)\"` (add it to your shell profile to make it permanent)"
+                )?;
+                continue;
+            }
             writeln!(f, "  - {}", prereq.label())?;
             if let Some(action) = prereq.action_line() {
                 writeln!(f, "      {action}")?;
@@ -317,23 +337,16 @@ pub trait PrereqProbe {
 
 impl PrereqProbe for LiveEnvProbe {
     fn package_manager_available(&self, pm: PackageManager) -> bool {
-        let bin = pm.label();
-        if which::which(bin).is_ok() {
-            return true;
-        }
-        // Linuxbrew commonly installs at /home/linuxbrew/.linuxbrew/bin/brew
-        // or ~/.linuxbrew/bin/brew, but the user often hasn't sourced
-        // `brew shellenv` so `which` misses it. Probe the canonical
-        // paths directly for Brew/BrewCask — without this, a Linux
-        // user who has brew gets told to install it.
-        if matches!(pm, PackageManager::Brew | PackageManager::BrewCask) {
-            for candidate in linuxbrew_candidates() {
-                if candidate.is_file() {
-                    return true;
-                }
-            }
-        }
-        false
+        // Availability is strictly "on `$PATH`", because every brew /
+        // cargo / winget invocation spawns the bare binary through a
+        // PATH lookup. A brew that exists only at the linuxbrew path
+        // (not sourced via `brew shellenv`) is NOT usable — returning
+        // `true` for it here made the prereq pass and then the first
+        // `brew` spawn fail with a raw "No such file or directory".
+        // The linuxbrew case is instead handled by the diagnostic (see
+        // `PrereqReport`'s `Display`), which points the user at
+        // `brew shellenv` rather than telling them to install brew.
+        which::which(pm.label()).is_ok()
     }
     fn session_state(&self, kind: SessionKind) -> SessionState {
         if which::which(kind.binary()).is_err() {
@@ -973,11 +986,16 @@ mod tests {
             .expect_err("missing provider must surface at plan time");
         let msg = format!("{err:#}");
         assert!(msg.contains("is not on PATH"), "phrase missing: {msg}");
-        assert!(msg.contains("brew(\"gnupg\")"), "macOS hint missing: {msg}");
-        assert!(msg.contains("apt(\"gnupg\")"), "linux hint missing: {msg}");
+        assert!(msg.contains("brew(\"gnupg\")"), "brew hint missing: {msg}");
         assert!(
-            msg.contains("pacman(\"gnupg\")"),
-            "arch hint missing: {msg}"
+            msg.contains("winget(\"GnuPG.GnuPG\")"),
+            "winget hint missing: {msg}"
+        );
+        // The hint must only reference package builtins the language
+        // actually has — never apt()/pacman().
+        assert!(
+            !msg.contains("apt(") && !msg.contains("pacman("),
+            "hint references a nonexistent package builtin: {msg}"
         );
     }
 
@@ -1255,24 +1273,27 @@ mod tests {
     }
 
     #[test]
-    fn capability_hint_routes_gpg_to_three_manager_recipe_and_others_to_generic() {
+    fn capability_hint_routes_gpg_to_package_recipe_and_others_to_generic() {
         // The `name == "gpg"` match guard exists specifically to hand
-        // out the three-package-manager recipe to gpg-needing
-        // resources. A mutation that flips the guard to `true` would
-        // route every Binary need through the gpg recipe; a mutation
-        // that flips it to `false` would route gpg through the generic
-        // line and lose the macOS/Debian/Arch breakdown.
+        // out the concrete package recipe to gpg-needing resources. A
+        // mutation that flips the guard to `true` would route every
+        // Binary need through the gpg recipe; a mutation that flips it
+        // to `false` would route gpg through the generic line and lose
+        // the per-OS breakdown. The recipe must only name package
+        // builtins the language actually has.
         let gpg_hint = Capability::Binary("gpg".into()).hint();
         assert!(
-            gpg_hint.contains("brew(\"gnupg\")")
-                && gpg_hint.contains("apt(\"gnupg\")")
-                && gpg_hint.contains("pacman(\"gnupg\")"),
-            "gpg hint must list all three package managers: {gpg_hint}",
+            gpg_hint.contains("brew(\"gnupg\")") && gpg_hint.contains("winget(\"GnuPG.GnuPG\")"),
+            "gpg hint must list the real package managers: {gpg_hint}",
+        );
+        assert!(
+            !gpg_hint.contains("apt(") && !gpg_hint.contains("pacman("),
+            "gpg hint must not name nonexistent builtins: {gpg_hint}",
         );
 
         let git_hint = Capability::Binary("git".into()).hint();
         assert!(
-            !git_hint.contains("apt(\"gnupg\")") && !git_hint.contains("pacman(\"gnupg\")"),
+            !git_hint.contains("brew(\"gnupg\")"),
             "non-gpg Binary hint must NOT inherit the gpg recipe: {git_hint}",
         );
         assert!(

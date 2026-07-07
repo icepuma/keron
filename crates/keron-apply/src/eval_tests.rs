@@ -587,6 +587,20 @@ fn void_match_at_top_level_executes_selected_arm_resources() {
 }
 
 #[test]
+fn for_in_void_fn_body_evaluates_instead_of_bailing() {
+    // A `for` in a `Void` fn body is admitted by the checker; the
+    // evaluator must run it for effect and return `Void` rather than
+    // bailing with "`for` is not a value expression". The loop body is
+    // value-context (no reconciles allowed), so it emits nothing — the
+    // reconcile that actually produces the resource is at top level.
+    let states = run("fn noop(): Void { for x in [1, 2, 3] { val y = x } }\n\
+             reconcile template(source = \"tmpl.tpl\", target = \"/x\", vars = {\"body\": \"ok\"})\n\
+             val _unused: Void = noop()\n");
+    assert_eq!(states.len(), 1, "top-level reconcile still emits");
+    assert_eq!(first_file_content(&states), "ok");
+}
+
+#[test]
 fn push_resources_unwraps_lists() {
     let states = run(
         "val xs: List<Template> = [template(source = \"tmpl.tpl\", target = \"/a\", vars = {\"body\": \"\"}), \

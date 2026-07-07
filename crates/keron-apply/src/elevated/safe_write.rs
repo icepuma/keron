@@ -116,6 +116,45 @@ pub fn rename_at(parent: &ParentDir, from_leaf: &OsStr, to_leaf: &OsStr) -> Resu
     })
 }
 
+/// Removes `leaf` inside `parent` on drop unless [`Self::disarm`] is
+/// called first — the fd-relative counterpart of the unprivileged
+/// `TmpFileGuard`. The elevated `replace_template` / `replace_symlink`
+/// paths build a temp leaf then `rename_at` it over the target; a
+/// failure between those two steps would otherwise leave a root-owned
+/// `.leaf-tmp-…` (holding the full rendered content, sensitive
+/// included) in a directory the unprivileged user can't clean up. This
+/// guard `unlinkat`s it relative to the same `O_NOFOLLOW` parent fd, so
+/// the cleanup can't be redirected by an ancestor swap either.
+pub struct TempLeafGuard<'p> {
+    parent: &'p ParentDir,
+    leaf: std::ffi::OsString,
+    armed: bool,
+}
+
+impl<'p> TempLeafGuard<'p> {
+    pub fn new(parent: &'p ParentDir, leaf: &OsStr) -> Self {
+        Self {
+            parent,
+            leaf: leaf.to_os_string(),
+            armed: true,
+        }
+    }
+
+    /// Disarm after the temp leaf has been consumed (renamed into
+    /// place), so the successful path doesn't fire a spurious unlink.
+    pub fn disarm(mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for TempLeafGuard<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = rustix::fs::unlinkat(&self.parent.fd, &self.leaf, AtFlags::empty());
+        }
+    }
+}
+
 /// Create a new regular file at `leaf` inside `parent` with the
 /// given mode. Uses `O_CREAT | O_EXCL | O_NOFOLLOW | O_WRONLY` so:
 ///
@@ -350,6 +389,44 @@ mod tests {
         let mode = std::fs::metadata(&path).unwrap().mode() & 0o777;
         assert_eq!(mode, 0o600, "mode: {mode:o}");
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "payload");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn temp_leaf_guard_unlinks_on_drop_when_armed() {
+        let root = fresh_dir("guard-armed");
+        let parent_path = root.join("p");
+        std::fs::create_dir_all(&parent_path).unwrap();
+        let parent = ParentDir::open(&parent_path).unwrap();
+        let mut file = create_file_at(&parent, OsStr::new(".tmp"), 0o600).unwrap();
+        file.write_all(b"secret").unwrap();
+        drop(file);
+        {
+            let _guard = TempLeafGuard::new(&parent, OsStr::new(".tmp"));
+            // guard drops here (armed) → temp is unlinked
+        }
+        assert!(
+            !parent_path.join(".tmp").exists(),
+            "armed guard must unlink the temp leaf on drop"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn temp_leaf_guard_keeps_leaf_after_disarm() {
+        let root = fresh_dir("guard-disarm");
+        let parent_path = root.join("p");
+        std::fs::create_dir_all(&parent_path).unwrap();
+        let parent = ParentDir::open(&parent_path).unwrap();
+        let mut file = create_file_at(&parent, OsStr::new(".tmp"), 0o600).unwrap();
+        file.write_all(b"kept").unwrap();
+        drop(file);
+        let guard = TempLeafGuard::new(&parent, OsStr::new(".tmp"));
+        guard.disarm();
+        assert!(
+            parent_path.join(".tmp").exists(),
+            "disarmed guard must leave the leaf in place"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 

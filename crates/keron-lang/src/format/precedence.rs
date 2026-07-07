@@ -86,12 +86,16 @@ pub const fn child_needs_parens(
             }
         }
         Expr::Unary { .. } if matches!(side, Side::Left) => {
-            // `-x ** 2` parses as `-(x ** 2)` because `**` accepts a
-            // unary on its RHS but not LHS. Wrapping a unary on the
-            // LHS of any binary is never strictly required — `-a + b`
-            // is `(-a) + b` already. So: no parens for unary on the
-            // left of a binary.
-            false
+            // A leading unary reaches only as far as an operator that
+            // binds *looser* than it. For `+`, `-`, `*`, … (all
+            // looser than unary), `-a + b` already parses as
+            // `(-a) + b`, so the unary needs no parens. `**` is the
+            // exception: it binds tighter than unary, so `-a ** b`
+            // parses as `-(a ** b)`. A unary that is genuinely the
+            // LHS of `**` — reachable via explicit parens like
+            // `(-a) ** b` — must keep them, or the emitted `-a ** b`
+            // silently re-parses to a different value.
+            parent_prec > UNARY_PREC
         }
         _ => false,
     }
@@ -172,6 +176,49 @@ mod tests {
         // -(a + b) — unary operand Add binds looser than unary.
         let child = bin(BinOp::Add, lit_int(1), lit_int(2));
         assert!(child_needs_parens(&child, UNARY_PREC, false, Side::Unary,));
+    }
+
+    fn unary_neg(inner: Spanned<Expr>) -> Spanned<Expr> {
+        Spanned {
+            node: Expr::Unary {
+                op: crate::ast::UnaryOp::Neg,
+                operand: Box::new(inner),
+            },
+            span: Span::default(),
+        }
+    }
+
+    #[test]
+    fn unary_on_left_of_pow_needs_parens() {
+        // `(-a) ** b` must keep its parens: emitting `-a ** b` would
+        // re-parse as `-(a ** b)`, a different value. `**` is the one
+        // operator that binds tighter than unary.
+        let child = unary_neg(lit_int(2));
+        assert!(child_needs_parens(
+            &child.node,
+            binop_prec(BinOp::Pow),
+            is_right_assoc(BinOp::Pow),
+            Side::Left,
+        ));
+    }
+
+    #[test]
+    fn unary_on_left_of_looser_binary_no_parens() {
+        // `-a + b` is already `(-a) + b`; no parens needed.
+        let child = unary_neg(lit_int(2));
+        assert!(!child_needs_parens(
+            &child.node,
+            binop_prec(BinOp::Add),
+            false,
+            Side::Left,
+        ));
+        // Same for multiplicative, which still binds looser than unary.
+        assert!(!child_needs_parens(
+            &child.node,
+            binop_prec(BinOp::Mul),
+            false,
+            Side::Left,
+        ));
     }
 
     #[test]

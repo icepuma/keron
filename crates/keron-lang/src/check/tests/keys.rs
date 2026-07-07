@@ -112,3 +112,18 @@ fn reconcile_accepts_ssh_key_and_gpg_key() {
         .is_ok()
     );
 }
+
+#[test]
+fn invalid_map_key_annotation_rejected_in_nested_block() {
+    // The strict block checker (if-branches in value position, for
+    // bodies) must validate local `val` annotations too — an invalid
+    // `Map<Boolean, _>` key type was accepted there while rejected at
+    // top level.
+    let src = "val outer: Int = if true { val m: Map<Boolean, Int> = {true: 1} 1 } else { 1 }";
+    let err = check_src(src).expect_err("invalid map key in nested block must be rejected");
+    assert!(
+        err.iter()
+            .any(|d| d.message.contains("Boolean") && d.message.contains("key")),
+        "got: {err:?}"
+    );
+}

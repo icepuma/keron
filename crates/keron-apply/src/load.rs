@@ -103,9 +103,18 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
         let ft = entry
             .file_type()
             .with_context(|| format!("stat `{}`", path.display()))?;
-        // `file_type()` does not follow symlinks: a symlink-to-dir
-        // reports `is_symlink()` and we skip it, bounding recursion
-        // without hand-rolled cycle detection.
+        // `file_type()` does not follow symlinks. This is deliberate on
+        // both arms and load-bearing for confinement — do NOT "fix" it
+        // to follow links:
+        //   - a symlink-to-dir reports `is_symlink()` (neither branch),
+        //     so recursion is bounded without hand-rolled cycle
+        //     detection;
+        //   - a symlinked `.keron` file is likewise skipped, because it
+        //     could resolve *outside* the keron root and following it
+        //     would read attacker-controlled source from a cloned
+        //     dotfiles repo as a manifest — the same escape the
+        //     eval-time `resolve_managed_path` confinement forbids. Real
+        //     files inside the tree are the only manifests we load.
         if ft.is_dir() {
             walk(&path, out)?;
         } else if ft.is_file() && path.extension().and_then(|e| e.to_str()) == Some("keron") {

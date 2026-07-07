@@ -71,3 +71,23 @@ fn refutable_struct_pattern_still_needs_wildcard() {
     assert!(err[0].message.contains("non-exhaustive"));
     assert!(err[0].message.contains("wildcard"));
 }
+
+#[test]
+fn null_scrutinee_is_exhaustive_with_null_arm() {
+    // `Null` is a single-inhabitant domain: an unguarded `null` arm
+    // covers every value, so no wildcard is required.
+    assert!(
+        check_src("val x = null\nval y: Int = match x { null => 1 }").is_ok(),
+        "a null arm exhausts a Null scrutinee"
+    );
+}
+
+#[test]
+fn null_scrutinee_without_null_arm_is_non_exhaustive() {
+    let err = check_src("val x = null\nval y: Int = match x { _ if false => 1 }")
+        .expect_err("guarded-only match on Null must be non-exhaustive");
+    assert!(
+        err.iter().any(|d| d.message.contains("non-exhaustive")),
+        "got: {err:?}"
+    );
+}

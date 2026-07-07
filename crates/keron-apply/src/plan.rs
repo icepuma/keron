@@ -362,6 +362,33 @@ impl Plan {
             .all(|c| matches!(c.action, Action::NoOp))
     }
 
+    /// Addresses of unprivileged shell (`Run`) changes declared *after*
+    /// an elevated change. [`crate::run`] executes the entire
+    /// unprivileged half before invoking the elevated child, so such a
+    /// hook runs before the elevated resource it follows in the manifest
+    /// exists — declaration order is not honored across the elevation
+    /// boundary. A hook that depends on an earlier-declared elevated
+    /// resource would fail on the first apply, block that resource from
+    /// ever being created, and fail identically on every re-run. Surface
+    /// it as a plan-time warning so the non-convergence is visible
+    /// instead of silent.
+    #[must_use]
+    pub fn elevation_ordering_hazards(&self) -> Vec<String> {
+        let mut seen_elevated = false;
+        let mut hazards = Vec::new();
+        for c in &self.changes {
+            if matches!(c.action, Action::NoOp) {
+                continue;
+            }
+            if c.requires_elevation {
+                seen_elevated = true;
+            } else if seen_elevated && matches!(c.action, Action::Run) {
+                hazards.push(c.address.clone());
+            }
+        }
+        hazards
+    }
+
     /// Split into `(unprivileged, elevated)` plans. Source order is
     /// preserved within each subset — `Vec::partition` is stable.
     /// `NoOp` changes never need elevation, so they always land in the
@@ -401,6 +428,18 @@ impl ResourceChange {
     /// keron cannot prove ownership of the existing destination.
     pub fn compute_requires_force(&self) -> bool {
         if !matches!(self.action, Action::Update) {
+            return false;
+        }
+        // A sensitive-template mode clamp — content byte-identical, only
+        // the file's permission bits differ — overwrites no content, so
+        // it needs no force override (the force framing "would overwrite
+        // a pre-existing object" is inaccurate for a permission repair).
+        if let (
+            Some(ResourceState::Template { content: bc, .. }),
+            Some(ResourceState::Template { content: ac, .. }),
+        ) = (self.before.as_ref(), self.after.as_ref())
+            && bc == ac
+        {
             return false;
         }
         matches!(
@@ -713,15 +752,25 @@ fn classify_tap(
     cache: &mut PackageCache,
 ) -> Result<ResourceChange> {
     let action = cache.classify_tap(spec)?;
+    let before = match action {
+        Action::Create => None,
+        // For a URL-drift Update the before-state must carry the
+        // *installed* remote, or the diff's `url = old -> new` line
+        // compares the desired state against itself and shows nothing.
+        // Only when the manifest declared a URL — with no declared URL
+        // the Update means trust drift, and substituting the live
+        // remote would fabricate a bogus `url = "<live>" -> "(none)"`.
+        Action::Update if spec.url.is_some() => Some(ResourceState::Tap(TapSpec {
+            user_tap: spec.user_tap.clone(),
+            url: cache.installed_tap_remote(&spec.user_tap)?,
+        })),
+        _ => Some(state.clone()),
+    };
     Ok(ResourceChange {
         address: address_for(state),
         kind: ResourceKind::Tap,
         action,
-        before: if matches!(action, Action::Create) {
-            None
-        } else {
-            Some(state.clone())
-        },
+        before,
         after: Some(state.clone()),
         requires_elevation: false,
         requires_force: false,
@@ -749,9 +798,15 @@ fn symlink_targets_equal(current: &Path, source: &Path) -> bool {
 fn normalize_link_path(p: &Path) -> std::path::PathBuf {
     #[cfg(target_os = "macos")]
     {
+        // The check after stripping `/private` must respect component
+        // boundaries: `/private/var/x` folds to `/var/x`, but
+        // `/private/varXYZ` is an unrelated path and must not be
+        // conflated with `/varXYZ`.
         let s = p.to_string_lossy();
         if let Some(rest) = s.strip_prefix("/private")
-            && (rest.starts_with("/var") || rest.starts_with("/tmp") || rest.starts_with("/etc"))
+            && ["/var", "/tmp", "/etc"]
+                .iter()
+                .any(|fl| rest == *fl || rest.strip_prefix(fl).is_some_and(|r| r.starts_with('/')))
         {
             return std::path::PathBuf::from(rest.to_string());
         }

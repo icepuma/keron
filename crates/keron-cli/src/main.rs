@@ -502,8 +502,22 @@ const fn color_enabled_from(no_color_set: bool, stdout_is_tty: bool) -> bool {
 /// so two concurrent `keron format` runs on the same dir can't
 /// collide, and a [`TmpFileGuard`] drop-removes the tempfile on
 /// every error path.
+///
+/// Two properties matter for keron's symlink-heavy audience:
+///   - `target` is first resolved through symlinks, so the rename
+///     lands on the real file and any symlink pointing at it survives
+///     — formatting `./main.keron` (a link into a dotfiles repo) must
+///     not replace the link with a regular file and orphan the repo
+///     copy.
+///   - the resolved file's existing permissions are copied onto the
+///     tempfile before the rename, so a `chmod 600` manifest is not
+///     silently widened to the umask default when it is reformatted.
 fn write_atomically(target: &std::path::Path, bytes: &[u8]) -> io::Result<()> {
     use std::io::Write;
+    // `format` always reads the file before writing, so it exists and
+    // canonicalizes; fall back to the literal path only defensively.
+    let target = fs::canonicalize(target).unwrap_or_else(|_| target.to_path_buf());
+    let target = target.as_path();
     let dir = target.parent().unwrap_or_else(|| std::path::Path::new("."));
     let file_name = target
         .file_name()
@@ -523,6 +537,13 @@ fn write_atomically(target: &std::path::Path, bytes: &[u8]) -> io::Result<()> {
             .open(&tmp)?;
         f.write_all(bytes)?;
         f.sync_all()?;
+    }
+    // Carry the original file's mode over to the replacement inode
+    // (rename swaps inodes, so the fresh tempfile's mode would win
+    // otherwise). Best-effort: a metadata/permission failure must not
+    // block the format write.
+    if let Ok(meta) = fs::metadata(target) {
+        let _ = fs::set_permissions(&tmp, meta.permissions());
     }
     fs::rename(&tmp, target)?;
     guard.disarm();
@@ -801,6 +822,52 @@ mod tests {
             msg.contains("neither a regular file nor a directory"),
             "got: {msg}",
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn format_through_symlink_keeps_link_and_formats_real_file() {
+        // A dotfiles symlink (`./link.keron` -> repo copy) must survive
+        // formatting; the real file gets reformatted and the link still
+        // points at it, rather than being replaced by a regular file.
+        let dir = TempDir::new("format-symlink");
+        let real = dir.path.join("real.keron");
+        let link = dir.path.join("link.keron");
+        fs::write(&real, "val x: Int = 1  ").unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        run_cli([
+            OsString::from("keron"),
+            OsString::from("format"),
+            link.clone().into_os_string(),
+        ])
+        .unwrap();
+        assert!(
+            fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "the symlink must be preserved, not replaced by a regular file",
+        );
+        assert_eq!(fs::read_to_string(&real).unwrap(), "val x: Int = 1\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn format_preserves_file_mode() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = TempDir::new("format-mode");
+        let file = dir.path.join("secret.keron");
+        fs::write(&file, "val x: Int = 1  ").unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).unwrap();
+        run_cli([
+            OsString::from("keron"),
+            OsString::from("format"),
+            file.clone().into_os_string(),
+        ])
+        .unwrap();
+        assert_eq!(fs::read_to_string(&file).unwrap(), "val x: Int = 1\n");
+        let mode = fs::metadata(&file).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "0o600 manifest must not be widened by format");
     }
 
     // -----------------------------------------------------------

@@ -28,12 +28,18 @@ const MAX_NESTING_DEPTH: usize = 256;
 /// toward the structural depth; `Interp` is tracked only so its `}` is
 /// matched back to the enclosing string; string frames suppress
 /// delimiter counting until the string closes.
+///
+/// `Delim` and `Interp` open a fresh code context: a parenthesized or
+/// bracketed sub-expression, or an interpolation body, is parsed by a
+/// *new* recursion of the grammar's `expr`, so the right-associative
+/// operator spines below re-count from zero. Each carries the enclosing
+/// frame's spine counts to restore on close.
 enum Frame {
     /// An open `(`, `[`, or `{`.
-    Delim,
+    Delim { saved: SpineRuns },
     /// An open `${` interpolation; its matching `}` resumes the string
     /// frame beneath it.
-    Interp,
+    Interp { saved: SpineRuns },
     /// A single-line cooked string `"…"` (interpolation + escapes).
     Str,
     /// A cooked multiline string `"""…"""` (interpolation + escapes).
@@ -41,6 +47,19 @@ enum Frame {
     /// A raw multiline string `r#*"""…"""#*` — opaque, no interpolation
     /// and no escapes; the `usize` is the hash count to close on.
     RawStr(usize),
+}
+
+/// Depth of the right-associative operator spines the recursive-descent
+/// grammar parses on the native stack *without* opening a delimiter:
+/// `??` (`coalesce_chain`) and `**` (`unary_chain`'s `power`). Both are
+/// `recursive(...)` combinators whose RHS recurses per operator, so a
+/// flat `a ?? a ?? … ?? a` chain — no brackets, so the delimiter guard
+/// never fires — recurses one frame per `??` and overflows the process
+/// stack. Counting them here rejects the bomb with a clean diagnostic.
+#[derive(Clone, Copy, Default)]
+struct SpineRuns {
+    coalesce: usize,
+    power: usize,
 }
 
 /// Reject source whose structural nesting or unary-prefix run exceeds
@@ -54,17 +73,47 @@ pub(super) fn enforce_nesting_limit(src: &str) -> Result<(), Vec<Diagnostic>> {
     let mut stack: Vec<Frame> = Vec::new();
     let mut depth: usize = 0;
     let mut unary_run: usize = 0;
+    let mut spine = SpineRuns::default();
     let mut i = 0;
 
     while i < bytes.len() {
+        // Multiline string closes match the parser only at line start
+        // (`consume_multiline_close`), so the scanner must know whether
+        // it is there. Recomputed each step from the previous byte, so
+        // it stays correct no matter how far a scan step advanced.
+        let at_line_start = i == 0 || bytes[i - 1] == b'\n';
         match stack.last() {
-            Some(Frame::Str) => i = scan_cooked(bytes, i, &mut stack, false),
-            Some(Frame::MultiStr) => i = scan_cooked(bytes, i, &mut stack, true),
-            Some(&Frame::RawStr(hashes)) => i = scan_raw(bytes, i, hashes, &mut stack),
+            Some(Frame::Str) => i = scan_single_line_cooked(bytes, i, &mut stack, &mut spine),
+            Some(Frame::MultiStr) => {
+                i = scan_multiline(bytes, i, at_line_start, None, &mut stack, &mut spine);
+            }
+            Some(&Frame::RawStr(hashes)) => {
+                i = scan_multiline(
+                    bytes,
+                    i,
+                    at_line_start,
+                    Some(hashes),
+                    &mut stack,
+                    &mut spine,
+                );
+            }
             // Code context: top is a delimiter, an interpolation, or the
             // stack is empty.
             _ => {
                 let c = bytes[i];
+                // Inter-token trivia the parser's `pad()` swallows —
+                // `#` line comments and *Unicode* whitespace — must not
+                // reset the unary-prefix run, or `-# c\n-# c\n…` and
+                // `-\u{00A0}-\u{00A0}…` (each a real `neg` recursion in
+                // the grammar) would never accumulate a count here.
+                if c == b'#' {
+                    i = skip_line_comment(bytes, i);
+                    continue;
+                }
+                if let Some(len) = leading_whitespace_len(src, i) {
+                    i += len;
+                    continue;
+                }
                 if c == b'-' || c == b'!' {
                     unary_run += 1;
                     if unary_run > MAX_NESTING_DEPTH {
@@ -73,35 +122,77 @@ pub(super) fn enforce_nesting_limit(src: &str) -> Result<(), Vec<Diagnostic>> {
                     i += 1;
                     continue;
                 }
-                // Whitespace does not reset a prefix-operator run
-                // (`! ! x` is still two prefixes); every other token does.
-                if !c.is_ascii_whitespace() {
+                // Right-associative operator spines (`??`, `**`) recurse
+                // on the parser stack once per operator with no enclosing
+                // delimiter, so they need their own bound.
+                if bytes[i..].starts_with(b"??") {
+                    spine.coalesce += 1;
+                    if spine.coalesce > MAX_NESTING_DEPTH {
+                        return Err(vec![too_deep(i, "`??` chain")]);
+                    }
                     unary_run = 0;
+                    i += 2;
+                    continue;
                 }
-                i = scan_code(bytes, i, &mut stack, &mut depth)?;
+                if bytes[i..].starts_with(b"**") {
+                    spine.power += 1;
+                    if spine.power > MAX_NESTING_DEPTH {
+                        return Err(vec![too_deep(i, "`**` chain")]);
+                    }
+                    unary_run = 0;
+                    i += 2;
+                    continue;
+                }
+                // Any other real token breaks the prefix-operator run.
+                unary_run = 0;
+                i = scan_code(bytes, i, &mut stack, &mut depth, &mut spine)?;
             }
         }
     }
     Ok(())
 }
 
-/// Scan one step of code context. Updates `stack`/`depth`; returns the
-/// next byte index.
+/// Length in bytes of the whitespace character starting at `i`, if any
+/// — using `char::is_whitespace` so it matches `pad()`'s Unicode
+/// whitespace rule (`\u{00A0}`, `\u{2028}`, …), not just ASCII.
+fn leading_whitespace_len(src: &str, i: usize) -> Option<usize> {
+    // `src.get(i..)` (not `src[i..]`) so a byte index that landed inside
+    // a multi-byte char — the byte scan advances one byte at a time
+    // through code context — yields `None` instead of panicking.
+    let c = src.get(i..)?.chars().next()?;
+    c.is_whitespace().then(|| c.len_utf8())
+}
+
+/// Advance past a `#` line comment to (but not including) the newline,
+/// mirroring `pad()`'s `# …` rule.
+fn skip_line_comment(bytes: &[u8], i: usize) -> usize {
+    let mut j = i + 1;
+    while j < bytes.len() && bytes[j] != b'\n' {
+        j += 1;
+    }
+    j
+}
+
+/// Top-level keywords that unambiguously begin a new item. When the
+/// delimiter stack is empty, encountering one of these ends the
+/// previous top-level expression, so its right-associative spine counts
+/// reset — a manifest with hundreds of `env(…) ?? "default"` statements
+/// must not accumulate toward the per-expression limit. These keywords
+/// never appear at frame-zero *inside* an expression (only `if`/`for`/
+/// `match`, which are not reset points, do), so resetting here can never
+/// hide a genuine single-expression bomb.
+const ITEM_KEYWORDS: [&[u8]; 6] = [b"val", b"fn", b"struct", b"type", b"reconcile", b"from"];
+
+/// Scan one step of code context. Updates `stack`/`depth`/`spine`;
+/// returns the next byte index.
 fn scan_code(
     bytes: &[u8],
     i: usize,
     stack: &mut Vec<Frame>,
     depth: &mut usize,
+    spine: &mut SpineRuns,
 ) -> Result<usize, Vec<Diagnostic>> {
     match bytes[i] {
-        b'#' => {
-            // Line comment to end of line.
-            let mut j = i + 1;
-            while j < bytes.len() && bytes[j] != b'\n' {
-                j += 1;
-            }
-            Ok(j)
-        }
         b'"' => {
             if bytes[i..].starts_with(b"\"\"\"") {
                 stack.push(Frame::MultiStr);
@@ -111,14 +202,21 @@ fn scan_code(
                 Ok(i + 1)
             }
         }
-        b'r' if raw_open_hashes(bytes, i).is_some() => {
+        // A raw-string opener only when the `r` doesn't continue an
+        // identifier: `bar#"""` lexes as the identifier `bar` plus the
+        // comment `#"""`, not a raw string — matching how the tokenizer
+        // reads it. Without the preceding-byte check the guard would
+        // flip into (phantom) raw-string mode and stop counting the
+        // delimiters after it.
+        b'r' if (i == 0 || !is_ident_byte(bytes[i - 1])) && raw_open_hashes(bytes, i).is_some() => {
             let hashes = raw_open_hashes(bytes, i).expect("checked by guard");
             stack.push(Frame::RawStr(hashes));
             // Advance past `r` + hashes + `"""`.
             Ok(i + 1 + hashes + 3)
         }
         b'(' | b'[' | b'{' => {
-            stack.push(Frame::Delim);
+            stack.push(Frame::Delim { saved: *spine });
+            *spine = SpineRuns::default();
             *depth += 1;
             if *depth > MAX_NESTING_DEPTH {
                 return Err(vec![too_deep(i, "nesting")]);
@@ -126,7 +224,8 @@ fn scan_code(
             Ok(i + 1)
         }
         b')' | b']' => {
-            if matches!(stack.last(), Some(Frame::Delim)) {
+            if let Some(Frame::Delim { saved }) = stack.last() {
+                *spine = *saved;
                 stack.pop();
                 *depth = depth.saturating_sub(1);
             }
@@ -134,66 +233,140 @@ fn scan_code(
         }
         b'}' => {
             match stack.last() {
-                Some(Frame::Delim) => {
-                    stack.pop();
+                // `Delim` was charged to `depth`; `Interp` never was.
+                Some(Frame::Delim { saved }) => {
+                    let saved = *saved;
                     *depth = depth.saturating_sub(1);
+                    *spine = saved;
+                    stack.pop();
                 }
-                // Closes a `${…}`; depth was never charged for `Interp`.
-                Some(Frame::Interp) => {
+                Some(Frame::Interp { saved }) => {
+                    *spine = *saved;
                     stack.pop();
                 }
                 _ => {}
             }
             Ok(i + 1)
         }
+        b if b.is_ascii_alphabetic() && stack.is_empty() => {
+            // At the top level, reset the spine counters when an item
+            // keyword starts a new statement. Read the whole word so a
+            // longer identifier that merely starts with `val…` (e.g.
+            // `valid`) is not mistaken for the `val` keyword.
+            let start = i;
+            let mut j = i;
+            while j < bytes.len() && is_ident_byte(bytes[j]) {
+                j += 1;
+            }
+            let word = &bytes[start..j];
+            if ITEM_KEYWORDS.contains(&word) {
+                *spine = SpineRuns::default();
+            }
+            Ok(j)
+        }
         _ => Ok(i + 1),
     }
 }
 
-/// Scan inside a cooked string (single- or multi-line). Handles
-/// escapes, `${` interpolation re-entry, and the closing quote(s).
-fn scan_cooked(bytes: &[u8], i: usize, stack: &mut Vec<Frame>, multiline: bool) -> usize {
+const fn is_ident_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
+}
+
+/// Scan one byte inside a single-line cooked string (`"…"`): honor `\`
+/// escapes, `${` interpolation re-entry, and the closing `"`.
+fn scan_single_line_cooked(
+    bytes: &[u8],
+    i: usize,
+    stack: &mut Vec<Frame>,
+    spine: &mut SpineRuns,
+) -> usize {
     let c = bytes[i];
     if c == b'\\' {
         // Escape: skip the next byte.
         return i + 2;
     }
     if c == b'$' && bytes.get(i + 1) == Some(&b'{') {
-        // Re-enter code mode for the interpolation body. Its own
-        // `(`/`[`/`{` are charged to `depth` in `scan_code`.
-        stack.push(Frame::Interp);
+        // Re-enter code mode for the interpolation body — a fresh `expr`
+        // recursion, so its right-associative spines re-count from zero.
+        // Its own `(`/`[`/`{` are charged to `depth` in `scan_code`.
+        stack.push(Frame::Interp { saved: *spine });
+        *spine = SpineRuns::default();
         return i + 2;
     }
-    if multiline {
-        if bytes[i..].starts_with(b"\"\"\"") {
-            stack.pop();
-            return i + 3;
-        }
-    } else if c == b'"' {
+    if c == b'"' {
         stack.pop();
         return i + 1;
     }
     i + 1
 }
 
-/// Scan inside a raw multiline string: opaque until `"""` followed by
-/// at least `hashes` `#` characters.
-fn scan_raw(bytes: &[u8], i: usize, hashes: usize, stack: &mut Vec<Frame>) -> usize {
-    if bytes[i..].starts_with(b"\"\"\"") {
-        let after = i + 3;
-        let closing = bytes[after..].iter().take_while(|&&b| b == b'#').count();
-        if closing >= hashes {
-            stack.pop();
-            return after + hashes;
+/// Scan one step inside a multiline string — cooked (`raw_hashes ==
+/// None`, honoring `\` escapes and `${` interpolation) or raw
+/// (`raw_hashes == Some(n)`, fully opaque). The close is recognized
+/// **only at line start** and only as `indent* """ #{n} (newline|EOF)`,
+/// exactly like the parser's `consume_multiline_close`; a mid-line
+/// `"""` (legal string content) no longer ends the string early, which
+/// used to desync the guard and hide every delimiter after it.
+fn scan_multiline(
+    bytes: &[u8],
+    i: usize,
+    at_line_start: bool,
+    raw_hashes: Option<usize>,
+    stack: &mut Vec<Frame>,
+    spine: &mut SpineRuns,
+) -> usize {
+    if at_line_start && let Some(after) = multiline_close_end(bytes, i, raw_hashes) {
+        stack.pop();
+        return after;
+    }
+    // Content byte. Raw strings are opaque (no escapes, no
+    // interpolation); cooked strings re-enter code mode on `${`.
+    if raw_hashes.is_none() {
+        let c = bytes[i];
+        if c == b'\\' {
+            return i + 2;
+        }
+        if c == b'$' && bytes.get(i + 1) == Some(&b'{') {
+            stack.push(Frame::Interp { saved: *spine });
+            *spine = SpineRuns::default();
+            return i + 2;
         }
     }
     i + 1
 }
 
+/// If a multiline-string close starts at `i` (assumed line start),
+/// return the byte index just past the closing `"""#{n}`; else `None`.
+/// Mirrors `consume_multiline_close`: optional leading indentation,
+/// `"""`, exactly `raw_hashes` `#`, then a newline or EOF.
+fn multiline_close_end(bytes: &[u8], i: usize, raw_hashes: Option<usize>) -> Option<usize> {
+    let mut j = i;
+    while matches!(bytes.get(j), Some(b' ' | b'\t')) {
+        j += 1;
+    }
+    if !bytes[j..].starts_with(b"\"\"\"") {
+        return None;
+    }
+    j += 3;
+    for _ in 0..raw_hashes.unwrap_or(0) {
+        if bytes.get(j) != Some(&b'#') {
+            return None;
+        }
+        j += 1;
+    }
+    // Exactly `raw_hashes` hashes: an extra `#` here means the next byte
+    // is not a line end, so this is not the close.
+    match bytes.get(j) {
+        None | Some(b'\n' | b'\r') => Some(j),
+        _ => None,
+    }
+}
+
 /// If `bytes[i..]` begins with a raw multiline opener `r` + `#`* +
-/// `"""`, return the hash count. The `r` of an ordinary identifier
-/// (`reconcile`, a `val r`) is never immediately followed by `"""`, so
-/// this is unambiguous.
+/// `"""`, return the hash count. Callers must additionally confirm the
+/// `r` does not continue an identifier (a `bar#"""` line is `bar` plus
+/// a comment, not a raw string) — that preceding-byte check lives at
+/// the call site in `scan_code`.
 fn raw_open_hashes(bytes: &[u8], i: usize) -> Option<usize> {
     if bytes.get(i) != Some(&b'r') {
         return None;
@@ -300,5 +473,103 @@ mod tests {
     fn raw_string_brackets_do_not_count() {
         let inner = "(".repeat(1000);
         ok(&format!("val s: String = r#\"\"\"\n{inner}\n\"\"\"#"));
+    }
+
+    #[test]
+    fn long_coalesce_chain_is_rejected() {
+        // `a ?? a ?? … ?? a` recurses one parser frame per `??` with no
+        // enclosing delimiter — the delimiter guard never sees it.
+        let chain = "a".to_string() + &" ?? a".repeat(300);
+        rejected(&format!("val x = {chain}"));
+    }
+
+    #[test]
+    fn long_power_chain_is_rejected() {
+        let chain = "2".to_string() + &" ** 2".repeat(300);
+        rejected(&format!("val x = {chain}"));
+    }
+
+    #[test]
+    fn many_statements_each_with_one_coalesce_are_accepted() {
+        // A realistic large manifest: hundreds of independent
+        // `env(…) ?? "default"` statements. Each ends the previous
+        // top-level expression, so the per-expression spine resets and
+        // the flat total never trips the limit.
+        use std::fmt::Write as _;
+        let mut src = String::new();
+        for n in 0..1000 {
+            let _ = writeln!(src, "val v{n} = env(\"X\") ?? \"default\"");
+        }
+        ok(&src);
+    }
+
+    #[test]
+    fn coalesce_run_resets_inside_parentheses() {
+        // `((a ?? b)) ?? … ?? c`: the parenthesized `??` is a separate
+        // recursion, so a modest chain that reuses parens must stay
+        // accepted rather than summing across frames.
+        let mut expr = "a".to_string();
+        for _ in 0..200 {
+            expr = format!("({expr} ?? a)");
+        }
+        ok(&format!("val x = {expr}"));
+    }
+
+    #[test]
+    fn identifier_prefixed_with_keyword_does_not_reset() {
+        // `valid` starts with `val` but is not the keyword; a spine that
+        // continues across such an identifier must still be counted.
+        // (Constructed so the only reset candidate is the bare word.)
+        let chain = "valid".to_string() + &" ?? a".repeat(300);
+        rejected(&format!("val x = {chain}"));
+    }
+
+    #[test]
+    fn mid_line_triple_quote_in_multiline_string_does_not_desync() {
+        // A cooked multiline string whose body contains a mid-line
+        // `"""` is legal content — the parser closes only at line
+        // start. The guard must stay in string mode, so the deep
+        // delimiter nest *after* the string is still counted.
+        let deep = format!("{}1{}", "(".repeat(300), ")".repeat(300));
+        let src = format!("val s = \"\"\"\nx \"\"\" y\n\"\"\"\nval deep = {deep}\n");
+        rejected(&src);
+    }
+
+    #[test]
+    fn identifier_ending_in_r_before_hash_comment_is_not_a_raw_string() {
+        // `bar#"""` is the identifier `bar` plus a comment `#"""`, not a
+        // raw-string opener. The guard must not enter raw-string mode
+        // and swallow the deeply-nested expression on the next line.
+        let deep = format!("{}1{}", "[".repeat(300), "]".repeat(300));
+        let src = format!("val x = [bar#\"\"\"\n]\nval deep = {deep}\n");
+        rejected(&src);
+    }
+
+    #[test]
+    fn unicode_whitespace_between_unary_operators_still_counts() {
+        // `pad()` accepts Unicode whitespace between prefix operators,
+        // so `-\u{00A0}-\u{00A0}…` is one deep `neg` chain in the
+        // grammar; the guard must not let the non-breaking space reset
+        // the run.
+        let chain = "-\u{00A0}".repeat(300);
+        rejected(&format!("val x = {chain}5"));
+    }
+
+    #[test]
+    fn comments_between_unary_operators_still_count() {
+        // `# comment` between prefix operators is trivia the parser
+        // skips; it must not reset the unary run either.
+        let chain = "-# c\n".repeat(300);
+        rejected(&format!("val x = {chain}5"));
+    }
+
+    #[test]
+    fn raw_string_with_mid_content_triple_quote_and_wrong_hashes_stays_open() {
+        // Inside `r#"""…"""#`, a `"""` with the wrong hash count (or not
+        // at line start) is content; the close needs line-start + exact
+        // hashes + line end. Delimiters after the real close are counted.
+        let deep = format!("{}1{}", "(".repeat(300), ")".repeat(300));
+        let src = format!("val s = r#\"\"\"\n\"\"\" not a close\n\"\"\"#\nval deep = {deep}\n");
+        rejected(&src);
     }
 }

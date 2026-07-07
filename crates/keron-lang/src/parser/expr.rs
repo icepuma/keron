@@ -89,7 +89,24 @@ pub(super) fn expr<'src>() -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<
                     .repeated()
                     .collect::<Vec<_>>(),
             )
-            .map(|(receiver, fields)| {
+            .validate(|(receiver, fields), e, emitter| {
+                // Same defense as `left_assoc`: a `.f` chain parses
+                // iteratively but folds into a left-deep `Box`-nested
+                // `Expr::Field` tree; a ~500k-long chain from an
+                // untrusted manifest would overflow the stack when that
+                // tree is *dropped* (recursive `Drop` glue), aborting
+                // the process. Bail with the same diagnostic and return
+                // the bare receiver instead of building the deep tree.
+                if fields.len() > MAX_OPERATOR_CHAIN {
+                    emitter.emit(Rich::custom(
+                        e.span(),
+                        format!(
+                            "field-access chain too long ({} accesses, limit {MAX_OPERATOR_CHAIN}); this is almost always a generated or malformed file",
+                            fields.len()
+                        ),
+                    ));
+                    return receiver;
+                }
                 fields.into_iter().fold(receiver, |acc, field| {
                     let span = acc.span.start..field.span.end;
                     Spanned {

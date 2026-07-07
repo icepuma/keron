@@ -1039,6 +1039,17 @@ fn check_local_val_strict(binding: &ValDecl, env: &mut Env, fns: &FnEnv) -> Resu
     if let Some(first) = sub.into_iter().next() {
         return Err(first);
     }
+    // Validate the annotation itself (invalid map key types, leaked
+    // Named/Generic) — the collecting variant does this, and skipping
+    // it here let an invalid annotation like `Map<Boolean, _>` slip
+    // through in expression-nested blocks (if-branches, for bodies).
+    if let Some(annot) = &binding.ty {
+        let mut annot_diags = Vec::new();
+        validate_type_annotation(annot, &mut annot_diags);
+        if let Some(first) = annot_diags.into_iter().next() {
+            return Err(first);
+        }
+    }
     let ty = match &binding.ty {
         Some(annot) => {
             check_expr(&binding.value, &annot.node, env, fns)?;
@@ -1052,8 +1063,68 @@ fn check_local_val_strict(binding: &ValDecl, env: &mut Env, fns: &FnEnv) -> Resu
 
 /// Top-level expression statement: must have type `Void`.
 fn check_top_expr_stmt(e: &Spanned<Expr>, env: &Env, fns: &FnEnv, diags: &mut Vec<Diagnostic>) {
+    // A top-level expression statement runs in *exec-void* context
+    // (`eval::exec_void_expr`): reconciles at statement level inside its
+    // `if`/`for`/`match` bodies are real (routed to the plan), but a
+    // reconcile in a *value* position — a condition, iterable,
+    // scrutinee, guard, or `val` initializer — is evaluated into a
+    // dropped sink and silently lost. Reject those. (Value contexts
+    // like a `val` initializer already run this walk over their whole
+    // expression; only the exec-void top level was unguarded.)
+    reject_reconcile_in_exec_void_expr(e, diags);
     if let Err(d) = check_expr(e, &Type::Void, env, fns) {
         diags.push(d);
+    }
+}
+
+/// Reconcile-placement walk for an expression executed in exec-void
+/// context (a top-level statement, or an `if`/`for`/`match` body reached
+/// from one). Mirrors [`crate::eval`]'s `exec_void_expr`: bodies recurse
+/// as exec-void (reconciles allowed), while conditions / iterables /
+/// scrutinees / guards are value positions (reconciles rejected).
+fn reject_reconcile_in_exec_void_expr(expr: &Spanned<Expr>, diags: &mut Vec<Diagnostic>) {
+    match &expr.node {
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
+            reject_reconcile_in_value_expr(cond, diags);
+            reject_reconcile_in_exec_void_block(then_branch, diags);
+            reject_reconcile_in_exec_void_block(else_branch, diags);
+        }
+        Expr::For {
+            iter_expr, body, ..
+        } => {
+            reject_reconcile_in_value_expr(iter_expr, diags);
+            reject_reconcile_in_exec_void_block(body, diags);
+        }
+        Expr::Match { scrutinee, arms } => {
+            reject_reconcile_in_value_expr(scrutinee, diags);
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    reject_reconcile_in_value_expr(guard, diags);
+                }
+                reject_reconcile_in_exec_void_expr(&arm.body, diags);
+            }
+        }
+        // Any other trailing expression is a value evaluated for effect
+        // (a `Void`-returning call, etc.) — a reconcile anywhere in it
+        // is in value position.
+        _ => reject_reconcile_in_value_expr(expr, diags),
+    }
+}
+
+fn reject_reconcile_in_exec_void_block(block: &Block, diags: &mut Vec<Diagnostic>) {
+    for stmt in &block.stmts {
+        match stmt {
+            // A statement-level reconcile in an exec-void block is real.
+            Stmt::Reconcile(_) => {}
+            Stmt::Val(v) => reject_reconcile_in_value_expr(&v.value, diags),
+        }
+    }
+    if let Some(trailing) = &block.trailing {
+        reject_reconcile_in_exec_void_expr(trailing, diags);
     }
 }
 
@@ -1064,6 +1135,20 @@ pub(super) fn check_expr(
     env: &Env,
     fns: &FnEnv,
 ) -> Result<(), Diagnostic> {
+    // Narrow through a single `Nullable` layer: a non-`null` expression
+    // that checks against the inner type `T` also satisfies `T?`. This
+    // restores literal-into-union narrowing (`val m: Mode? = "on"`) and
+    // empty-container admission (`val xs: List<Int>? = []`) at nullable
+    // slots — the exact-type checking arms below match only `T`, so
+    // without this they widen to `String` / reject the empty container.
+    // `null` itself is left to the normal path (it flows into `T?` by
+    // subtyping).
+    if let Type::Nullable(inner) = expected
+        && !matches!(e.node, Expr::Literal(Literal::Null))
+        && check_expr(e, inner, env, fns).is_ok()
+    {
+        return Ok(());
+    }
     // String literal targeted at a `StringUnion` slot: admit only
     // when the literal is in the variant set. The reverse — assigning
     // a `String`-typed variable to a union slot — is rejected by

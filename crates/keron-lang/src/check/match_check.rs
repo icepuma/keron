@@ -324,6 +324,13 @@ fn check_struct_pattern(
     scrut_ty: &Type,
     bindings: &mut HashMap<String, Type>,
 ) -> Result<(), Diagnostic> {
+    // Unwrap a nullable scrutinee, exactly like `check_lit_pattern`
+    // does: `match maybe_point { Point { x } => …, _ => … }` on a
+    // `Point?` is well-typed — the runtime simply falls through on
+    // `null` — and exhaustiveness still demands a `null`/catch-all arm.
+    if let Type::Nullable(inner) = scrut_ty {
+        return check_struct_pattern(name, fields, inner, bindings);
+    }
     let Type::Struct {
         name: ty_name,
         fields: ty_fields,
@@ -471,6 +478,17 @@ fn check_exhaustive(
                 || arms
                     .iter()
                     .any(|a| a.guard.is_none() && is_irrefutable_pattern(&a.pattern.node)) =>
+        {
+            Ok(())
+        }
+        // `Null` is a single-inhabitant domain: an unguarded `null` arm
+        // covers every value it can take, so it is exhaustive without a
+        // wildcard (like a fully-covered `Boolean` / `StringUnion`).
+        Type::Null
+            if has_catch_all
+                || arms.iter().any(|a| {
+                    a.guard.is_none() && matches!(&a.pattern.node, Pattern::Lit(Literal::Null))
+                }) =>
         {
             Ok(())
         }

@@ -25,6 +25,51 @@ fn summary_counts_each_action() {
 }
 
 #[test]
+fn elevation_ordering_hazard_flags_shell_after_elevated() {
+    let elevated_template = ResourceChange {
+        address: "/etc/myapp/config.toml".into(),
+        kind: ResourceKind::Template,
+        action: Action::Create,
+        before: None,
+        after: Some(ResourceState::Template {
+            path: PathBuf::from("/etc/myapp/config.toml"),
+            content: "x".into(),
+            sensitive: false,
+        }),
+        requires_elevation: true,
+        requires_force: false,
+    };
+    let shell_hook = ResourceChange {
+        address: "validate".into(),
+        kind: ResourceKind::Shell,
+        action: Action::Run,
+        before: None,
+        after: Some(ResourceState::Shell {
+            kind: ShellKind::Sh,
+            name: "validate".into(),
+            cwd: PathBuf::from("/tmp"),
+            script: "myapp validate /etc/myapp/config.toml".into(),
+            sensitive: false,
+        }),
+        requires_elevation: false,
+        requires_force: false,
+    };
+    // Shell declared AFTER the elevated resource → hazard.
+    let plan = Plan {
+        changes: vec![elevated_template.clone(), shell_hook.clone()],
+    };
+    assert_eq!(
+        plan.elevation_ordering_hazards(),
+        vec!["validate".to_string()]
+    );
+    // Shell declared BEFORE the elevated resource → no hazard.
+    let ok = Plan {
+        changes: vec![shell_hook, elevated_template],
+    };
+    assert!(ok.elevation_ordering_hazards().is_empty());
+}
+
+#[test]
 fn summary_counts_force_changes() {
     let mut plan = Plan::sample();
     plan.changes[1].requires_force = true;
@@ -1016,6 +1061,53 @@ fn pkg_with_tap(name: &str, user_tap: &str, url: Option<&str>) -> ResourceState 
             url: url.map(str::to_string),
         }),
     }
+}
+
+#[test]
+fn classify_tap_url_drift_update_carries_installed_remote_as_before() {
+    // The diff renders `url = "<before>" -> "<after>"` only when the
+    // two differ; a before-state cloned from the desired spec would
+    // compare the declaration against itself and show an Update with
+    // no visible drift. The before URL must be the *installed* remote.
+    let _g = crate::packages::lock_env();
+    #[allow(unsafe_code)]
+    unsafe {
+        std::env::set_var("KERON_ALLOW_TEST_OVERRIDES", "1");
+        std::env::set_var("KERON_TEST_BREW_TAPS", "icepuma/keron");
+        std::env::set_var(
+            "KERON_TEST_BREW_TAP_REMOTES",
+            "icepuma/keron=https://github.com/old/url",
+        );
+    }
+    let spec = TapSpec {
+        user_tap: "icepuma/keron".into(),
+        url: Some("https://github.com/icepuma/keron".into()),
+    };
+    let state = ResourceState::Tap(spec.clone());
+    let mut cache = PackageCache::for_tests();
+    let change = classify_tap(&spec, &state, &mut cache).unwrap();
+    #[allow(unsafe_code)]
+    unsafe {
+        std::env::remove_var("KERON_TEST_BREW_TAPS");
+        std::env::remove_var("KERON_TEST_BREW_TAP_REMOTES");
+        std::env::remove_var("KERON_ALLOW_TEST_OVERRIDES");
+    }
+    assert_eq!(change.action, Action::Update);
+    let Some(ResourceState::Tap(before)) = change.before else {
+        panic!("URL-drift Update must carry a Tap before-state");
+    };
+    assert_eq!(
+        before.url.as_deref(),
+        Some("https://github.com/old/url"),
+        "before must be the installed remote, not the declared one"
+    );
+    let Some(ResourceState::Tap(after)) = change.after else {
+        panic!("after must be the declared Tap state");
+    };
+    assert_eq!(
+        after.url.as_deref(),
+        Some("https://github.com/icepuma/keron")
+    );
 }
 
 #[test]

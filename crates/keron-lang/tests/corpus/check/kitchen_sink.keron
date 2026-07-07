@@ -185,43 +185,35 @@ val shellrc: Symlink = if use_zsh {
 # Chained else-if folds right; the final `else` is mandatory.
 val ratio_label: String = if released {
   "stable"
+} else if warm {
+  "rc"
 } else {
-  if warm {
-    "rc"
-  } else {
-    "wip"
-  }
+  "wip"
 }
 
 # --- comparisons + if ---
 val verdict: String = if seed > 100 {
   "many"
+} else if seed == 0 {
+  "none"
 } else {
-  if seed == 0 {
-    "none"
-  } else {
-    "few"
-  }
+  "few"
 }
 
 val tier: String = if version_major >= 1 {
   "v1+"
+} else if version_minor < 5 {
+  "early"
 } else {
-  if version_minor < 5 {
-    "early"
-  } else {
-    "rc"
-  }
+  "rc"
 }
 
 val rounded: String = if ratio < 1.5 {
   "small"
+} else if ratio == 1.618 {
+  "phi"
 } else {
-  if ratio == 1.618 {
-    "phi"
-  } else {
-    "large"
-  }
+  "large"
 }
 
 # `!=` and `<=` round out the comparison surface. Equality works on

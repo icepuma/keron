@@ -31,8 +31,35 @@ fn check(program: &Program) -> Result<(), Vec<Diagnostic>> {
 
 fn ident_strategy() -> impl Strategy<Value = String> {
     "[a-zA-Z_][a-zA-Z0-9_]{0,16}".prop_filter("must not be a keyword", |s| {
-        !stdlib::RESERVED_OR_BUILTIN_NAMES.contains(&s.as_str())
+        !stdlib::RESERVED_OR_BUILTIN_NAMES.contains(s.as_str())
     })
+}
+
+/// Guard the stdlib mirror against the specific drifts that had already
+/// crept in (missing `cask`/`starts_with`/`ends_with`/`str_len`, and a
+/// `brew`/`cask` without the optional `tap_url`). The mirror is
+/// hand-maintained (keron-lang can't depend on keron-modules), so this
+/// pins the signatures that matter.
+#[test]
+fn stdlib_mirror_covers_drift_prone_builtins() {
+    let imp = stdlib::imports();
+    for name in ["cask", "starts_with", "ends_with", "str_len"] {
+        assert!(imp.fns.contains_key(name), "mirror is missing `{name}`");
+    }
+    for name in ["brew", "cask"] {
+        let sig = imp.fns.get(name).expect("present");
+        assert_eq!(sig.params.len(), 2, "`{name}` must take (name, tap_url)");
+        assert_eq!(sig.params[1].name, "tap_url");
+        assert!(sig.params[1].has_default, "`{name}` tap_url must default");
+    }
+    // The reserved-identifier set is derived from the mirror, so every
+    // builtin the harness knows is automatically a reserved name.
+    for b in &imp.builtins {
+        assert!(
+            stdlib::RESERVED_OR_BUILTIN_NAMES.contains(b.as_str()),
+            "builtin `{b}` is not a reserved identifier"
+        );
+    }
 }
 
 fn ty_strategy() -> impl Strategy<Value = Type> {
