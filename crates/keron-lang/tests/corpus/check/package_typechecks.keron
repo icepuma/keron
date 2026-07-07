@@ -34,9 +34,9 @@ reconcile ripgrep
 reconcile just_bin -> pwsh
 
 reconcile {
-  starship;
-  brew_tools;
-  mixed;
+  starship
+  brew_tools
+  mixed
 }
 
 # `for` over packages: a list iteration with a `reconcile` body.

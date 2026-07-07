@@ -16,11 +16,11 @@ fn check_with_list_intrinsics(src: &str) -> Result<(), Vec<crate::diagnostic::Di
     let mut imp = ImportedSymbols::default();
     let t = Type::Generic("T".into());
     imp.fns.insert(
-        "list_contains".into(),
+        "contains".into(),
         fn_sig(
             vec![
-                param("xs", Type::List(Box::new(t.clone()))),
-                param("x", t.clone()),
+                param("x", Type::Generic("C".into())),
+                param("item", t.clone()),
             ],
             Type::Boolean,
         ),
@@ -81,10 +81,17 @@ fn heterogeneous_list_errors() {
 }
 
 #[test]
-fn list_does_not_promote_int_to_double() {
-    let err = check_src("val xs = [1, 2.5]").expect_err("should fail");
-    assert!(err[0].message.contains("Int"));
-    assert!(err[0].message.contains("Double"));
+fn list_promotes_int_and_double_to_double() {
+    // Mixed numerics join to Double, mirroring arithmetic promotion.
+    assert!(check_src("val xs: List<Double> = [1, 2.5]").is_ok());
+}
+
+#[test]
+fn nested_list_does_not_promote() {
+    // The join is top-level only — no recursion into containers.
+    let err = check_src("val xs = [[1], [2.5]]").expect_err("should fail");
+    assert!(err[0].message.contains("List<Int>"));
+    assert!(err[0].message.contains("List<Double>"));
 }
 
 #[test]
@@ -147,10 +154,9 @@ fn list_concat_with_non_list_errors() {
 }
 
 #[test]
-fn list_concat_does_not_promote_int_to_double() {
-    let err = check_src("val xs = [1] ++ [2.5]").expect_err("should fail");
-    assert!(err[0].message.contains("List<Int>"));
-    assert!(err[0].message.contains("List<Double>"));
+fn list_concat_promotes_int_and_double_to_double() {
+    // `++` uses the same element join as the literal `[1, 2.5]`.
+    assert!(check_src("val xs: List<Double> = [1] ++ [2.5]").is_ok());
 }
 
 #[test]
@@ -219,7 +225,7 @@ fn check_mode_concat_against_non_list_falls_back_to_synth() {
 
 #[test]
 fn equality_list_intrinsics_accept_scalar_element_types() {
-    let src = r#"val has: Boolean = list_contains([1, 2], 2)
+    let src = r#"val has: Boolean = contains([1, 2], 2)
                  val dedup: List<String> = unique(["a", "a"])
                  val idx: Int = index_of([true], true) ?? -1
     "#;
@@ -229,8 +235,8 @@ fn equality_list_intrinsics_accept_scalar_element_types() {
 #[test]
 fn equality_list_intrinsics_reject_struct_elements() {
     let src = r"struct Point { x: Int }
-                 val p: Point = Point(1)
-                 val has: Boolean = list_contains([p], p)
+                 val p: Point = Point { x: 1 }
+                 val has: Boolean = contains([p], p)
     ";
     let err = check_with_list_intrinsics(src).expect_err("struct equality should fail");
     assert!(

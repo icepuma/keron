@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `sort` requires an orderable list element type (`String`, `Int`, `Double`, or a string union), found `Boolean`
+  --> 4:25
+  |
+4 | val xs: List<Boolean> = sort([true, false])
+  |                         ^^^^^^^^^^^^^^^^^^^^

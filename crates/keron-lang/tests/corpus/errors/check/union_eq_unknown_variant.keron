@@ -1,0 +1,4 @@
+# Comparing a closed string union against a literal that names no
+# variant is statically always-false, so it gets the same "not a
+# variant of" error as assignment and `match` arms.
+val impossible: Boolean = os_type() == "Banana"

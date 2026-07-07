@@ -129,7 +129,7 @@ mod tests {
         let src = concat!(
             "struct Point { x: Int }\n",
             "val maybe: Point? = null\n",
-            "val fallback: Point = Point(1)\n",
+            "val fallback: Point = Point { x: 1 }\n",
             "val n: Int = (maybe ?? fallback).x\n",
         );
         assert_eq!(fmt(src), src);

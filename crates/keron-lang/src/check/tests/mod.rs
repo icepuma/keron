@@ -80,6 +80,7 @@ fn param(name: &str, ty: Type) -> ParamSig {
 
 fn fn_sig(params: Vec<ParamSig>, return_type: Type) -> FnSig {
     FnSig {
+        struct_name: None,
         params,
         return_type,
     }

@@ -1,0 +1,4 @@
+# A near-miss variant gets a nearest-name suggestion.
+val current: OsType = os_type()
+
+val is_mac: Boolean = current == "MacOS"

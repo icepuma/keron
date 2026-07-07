@@ -36,15 +36,20 @@ fn ident_strategy() -> impl Strategy<Value = String> {
 }
 
 /// Guard the stdlib mirror against the specific drifts that had already
-/// crept in (missing `cask`/`starts_with`/`ends_with`/`str_len`, and a
+/// crept in (missing `cask`/`starts_with`/`ends_with`, and a
 /// `brew`/`cask` without the optional `tap_url`). The mirror is
 /// hand-maintained (keron-lang can't depend on keron-modules), so this
 /// pins the signatures that matter.
 #[test]
 fn stdlib_mirror_covers_drift_prone_builtins() {
     let imp = stdlib::imports();
-    for name in ["cask", "starts_with", "ends_with", "str_len"] {
+    for name in ["cask", "starts_with", "ends_with", "len", "contains"] {
         assert!(imp.fns.contains_key(name), "mirror is missing `{name}`");
+    }
+    // The prefixed variants were consolidated into type-directed
+    // `len` / `contains`; their reappearance would be drift.
+    for gone in ["str_len", "list_contains", "map_contains"] {
+        assert!(!imp.fns.contains_key(gone), "`{gone}` should be gone");
     }
     for name in ["brew", "cask"] {
         let sig = imp.fns.get(name).expect("present");
@@ -73,6 +78,13 @@ fn ty_strategy() -> impl Strategy<Value = Type> {
 
 fn numeric_ty_strategy() -> impl Strategy<Value = Type> {
     prop_oneof![Just(Type::Int), Just(Type::Double)]
+}
+
+/// Whether a literal of `lit_ty` is admitted into an `annot` slot:
+/// exact match, plus the Int-literal-into-Double admission (the
+/// checker records a promotion span and the evaluator coerces).
+fn literal_fits(annot: &Type, lit_ty: &Type) -> bool {
+    lit_ty == annot || (matches!(annot, Type::Double) && matches!(lit_ty, Type::Int))
 }
 
 /// Generate a literal source + the `Type` it will yield. Note: the type
@@ -153,6 +165,7 @@ fn eval_simple(e: &Expr) -> Literal {
         | Expr::Map(_)
         | Expr::Var(_)
         | Expr::Call { .. }
+        | Expr::StructLiteral { .. }
         | Expr::If { .. }
         | Expr::For { .. }
         | Expr::Field { .. }
@@ -248,7 +261,7 @@ proptest! {
         lit_pair in ty_strategy().prop_flat_map(|ty| literal_source_for(&ty)),
     ) {
         let (lit_src, lit_ty) = lit_pair;
-        prop_assume!(lit_ty != annot);
+        prop_assume!(!literal_fits(&annot, &lit_ty));
         let src = format!("val {name}: {annot} = {lit_src}");
         let prog = parse(&src).expect("parse should succeed");
         let errs = check(&prog).expect_err("expected mismatch");
@@ -272,7 +285,7 @@ proptest! {
             // Suffix the index to dodge duplicate-`val` errors when the
             // strategy happens to draw the same name twice.
             writeln!(src, "val {name}_{idx}: {annot} = {lit_src}").expect("write to String");
-            if lit_ty != annot {
+            if !literal_fits(annot, lit_ty) {
                 expected_errs += 1;
             }
         }
@@ -648,7 +661,7 @@ proptest! {
                 .iter()
                 .map(|n| format!("  {n}"))
                 .collect::<Vec<_>>()
-                .join(";\n"),
+                .join("\n"),
         );
         let mut separate_src = decls.clone();
         for n in &dedup {
@@ -844,19 +857,18 @@ proptest! {
         n_fields in 1usize..=6,
     ) {
         // Generate `struct Name { f0: Int, f1: Int, ... }` plus a
-        // construction val. The constructor should typecheck cleanly
-        // when the right number of `Int`-typed positional args is
-        // supplied.
+        // brace-literal construction val. The literal should
+        // typecheck cleanly when every field is supplied.
         let fields = (0..n_fields)
             .map(|i| format!("f{i}: Int"))
             .collect::<Vec<_>>()
             .join(", ");
         let args = (0..n_fields)
-            .map(|i| format!("{i}"))
+            .map(|i| format!("f{i}: {i}"))
             .collect::<Vec<_>>()
             .join(", ");
         let src = format!(
-            "struct {name} {{ {fields} }}\nval v: {name} = {name}({args})"
+            "struct {name} {{ {fields} }}\nval v: {name} = {name} {{ {args} }}"
         );
         let prog = parse(&src).expect("parse should succeed");
         prop_assert!(check(&prog).is_ok(), "check failed for: {src}");

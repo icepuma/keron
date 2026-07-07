@@ -2,6 +2,6 @@ struct Inner { v: Int }
 
 struct Outer { inner: Inner }
 
-val o: Outer = Outer(Inner(7))
+val o: Outer = Outer { inner: Inner { v: 7 } }
 
 val n: Int = o.inner.v

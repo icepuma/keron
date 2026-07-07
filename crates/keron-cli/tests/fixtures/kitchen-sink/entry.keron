@@ -66,11 +66,11 @@ val platform: String = "${host_os}/${host_arch}"
 
 # Struct construction (positional + named) + struct-destructure match
 # imported from the helpers module.
-val origin: Host = Host(name = "alpha.local", port = 22, tls = true)
+val origin: Host = Host { name: "alpha.local", port: 22, tls: true }
 
-val mirror: Host = Host("beta.local", 443, tls = true)
+val mirror: Host = Host { name: "beta.local", port: 443, tls: true }
 
-val backup: Host = Host(name = "delta", port = 9000, tls = false)
+val backup: Host = Host { name: "delta", port: 9000, tls: false }
 
 val hosts: List<Host> = [origin, mirror, backup]
 
@@ -100,9 +100,9 @@ val sorted_keys: String = join(sort(keys(merged)), ",")
 
 # Path intrinsics on a known-good path (keron_root is canonical and
 # always exists; `path_exists` returns Boolean we can stringify).
-val seed_basename: String = path_basename("./data/seed.txt")
+val seed_basename: String = path_basename("./data/seed.txt") ?? "none"
 
-val seed_ext: String = path_extension("./data/seed.txt")
+val seed_ext: String = path_extension("./data/seed.txt") ?? "none"
 
 val root_present: Boolean = path_exists(keron_root())
 

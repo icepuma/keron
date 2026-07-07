@@ -1,0 +1,9 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: unknown function `splt`
+  --> 2:27
+  |
+2 | val parts: List<String> = splt("a:b", ":")
+  |                           ^^^^
+  = help: did you mean `split`?

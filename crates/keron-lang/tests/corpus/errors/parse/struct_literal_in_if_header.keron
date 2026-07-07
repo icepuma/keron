@@ -1,0 +1,6 @@
+# A struct literal is not allowed at the top level of an if-condition
+# (it would swallow the branch block as construct fields with field
+# shorthand); parenthesize to opt in.
+struct Flags { on: Boolean }
+
+val x: String = if Flags { on: true }.on { "y" } else { "n" }

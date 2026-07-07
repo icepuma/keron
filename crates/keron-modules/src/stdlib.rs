@@ -60,6 +60,7 @@ fn build_registry() -> BTreeMap<&'static str, StdModule> {
     reg.insert("keys", build_keys());
     reg.insert("string", build_string());
     reg.insert("list", build_list());
+    reg.insert("collection", build_collection());
     reg.insert("map", build_map());
     reg.insert("path", build_path());
     reg.insert("file", build_file());
@@ -105,18 +106,25 @@ fn build_fs() -> StdModule {
     );
     fns.insert(
         "template".into(),
-        intrinsic_fn(
-            "template",
-            &[
-                ("source", Type::String),
-                ("target", Type::String),
-                (
-                    "vars",
-                    Type::Map(Box::new(Type::String), Box::new(Type::String)),
-                ),
-            ],
-            Type::Template,
-            IntrinsicId::Template,
+        // `vars` defaults to `{}`: the doc above calls the plain file
+        // (no substitutions) the canonical degenerate case, so the
+        // common form shouldn't force `vars = {}` boilerplate.
+        with_default(
+            intrinsic_fn(
+                "template",
+                &[
+                    ("source", Type::String),
+                    ("target", Type::String),
+                    (
+                        "vars",
+                        Type::Map(Box::new(Type::String), Box::new(Type::String)),
+                    ),
+                ],
+                Type::Template,
+                IntrinsicId::Template,
+            ),
+            "vars",
+            Expr::Map(Vec::new()),
         ),
     );
     let mut types = BTreeMap::new();
@@ -247,35 +255,36 @@ fn build_packages() -> StdModule {
 }
 
 /// Build the two-arg `(name, tap_url? = null)` signature shared by
-/// `brew` and `cask`. Inline rather than threaded through
-/// [`intrinsic_fn`] because no other intrinsic needs a default value
-/// today and an extra helper signature would be dead weight.
+/// `brew` and `cask`.
 fn build_brewish_fn(name: &str, intrinsic: IntrinsicId) -> FnDecl {
-    FnDecl {
-        name: spanned(name.to_string()),
-        params: vec![
-            Param {
-                name: spanned("name".to_string()),
-                ty: spanned(Type::String),
-                default: None,
-                span: 0..0,
-            },
-            Param {
-                name: spanned("tap_url".to_string()),
-                ty: spanned(Type::Nullable(Box::new(Type::String))),
-                default: Some(spanned(Expr::Literal(Literal::Null))),
-                span: 0..0,
-            },
-        ],
-        return_type: spanned(Type::Package),
-        body: Block {
-            stmts: Vec::new(),
-            trailing: None,
-            span: 0..0,
-        },
-        span: 0..0,
-        intrinsic: Some(intrinsic),
-    }
+    with_default(
+        intrinsic_fn(
+            name,
+            &[
+                ("name", Type::String),
+                ("tap_url", Type::Nullable(Box::new(Type::String))),
+            ],
+            Type::Package,
+            intrinsic,
+        ),
+        "tap_url",
+        Expr::Literal(Literal::Null),
+    )
+}
+
+/// Attach a default expression to one parameter of an intrinsic
+/// signature. The checker reads it as `has_default` (the argument may
+/// be omitted at the call site); the evaluator materializes it via
+/// `with_intrinsic_defaults` before dispatch — the same contract as a
+/// user-fn default, so intrinsic and user signatures behave alike.
+fn with_default(mut decl: FnDecl, param: &str, default: Expr) -> FnDecl {
+    let p = decl
+        .params
+        .iter_mut()
+        .find(|p| p.name.node == param)
+        .expect("with_default: parameter must exist on the signature");
+    p.default = Some(spanned(default));
+    decl
 }
 
 /// `std:shell` builtins — explicit, always-run shell resources.
@@ -418,8 +427,6 @@ fn build_host() -> StdModule {
 ///
 ///   - `split(s, sep)` / `join(xs, sep)` — build and unbuild paths
 ///     and PATH-like strings.
-///   - `contains(s, needle)` — substring predicate, e.g. for branching
-///     on whether `env("PATH")` already mentions a directory.
 ///   - `replace(s, from, to)` — fixed-string rewrite (not a regex; we
 ///     don't want a regex engine in the dotfile DSL).
 ///   - `trim(s)` — strip surrounding whitespace, useful after reading
@@ -445,15 +452,6 @@ fn build_string() -> StdModule {
             ],
             Type::String,
             IntrinsicId::Join,
-        ),
-    );
-    fns.insert(
-        "contains".into(),
-        intrinsic_fn(
-            "contains",
-            &[("haystack", Type::String), ("needle", Type::String)],
-            Type::Boolean,
-            IntrinsicId::Contains,
         ),
     );
     fns.insert(
@@ -496,15 +494,6 @@ fn build_string() -> StdModule {
             IntrinsicId::EndsWith,
         ),
     );
-    fns.insert(
-        "str_len".into(),
-        intrinsic_fn(
-            "str_len",
-            &[("s", Type::String)],
-            Type::Int,
-            IntrinsicId::StrLen,
-        ),
-    );
     StdModule {
         fns,
         types: BTreeMap::new(),
@@ -520,24 +509,6 @@ fn build_string() -> StdModule {
 fn build_list() -> StdModule {
     let t = Type::Generic("T".into());
     let mut fns = BTreeMap::new();
-    fns.insert(
-        "len".into(),
-        intrinsic_fn(
-            "len",
-            &[("xs", Type::List(Box::new(t.clone())))],
-            Type::Int,
-            IntrinsicId::ListLen,
-        ),
-    );
-    fns.insert(
-        "list_contains".into(),
-        intrinsic_fn(
-            "list_contains",
-            &[("xs", Type::List(Box::new(t.clone()))), ("x", t.clone())],
-            Type::Boolean,
-            IntrinsicId::ListContains,
-        ),
-    );
     fns.insert(
         "first".into(),
         intrinsic_fn(
@@ -556,15 +527,16 @@ fn build_list() -> StdModule {
             IntrinsicId::ListLast,
         ),
     );
-    // `sort` is intentionally non-generic: real callers want String
-    // ordering (PATH segments, package lists). See `IntrinsicId::Sort`
-    // for the rationale on staying String-only here.
+    // `sort` is generic like its siblings (`unique`, `first`, `last`);
+    // the checker gates `T` to orderable element types (`String`,
+    // `Int`, `Double`, string unions) the same way `unique` /
+    // `index_of` equality ops are gated.
     fns.insert(
         "sort".into(),
         intrinsic_fn(
             "sort",
-            &[("xs", Type::List(Box::new(Type::String)))],
-            Type::List(Box::new(Type::String)),
+            &[("xs", Type::List(Box::new(t.clone())))],
+            Type::List(Box::new(t.clone())),
             IntrinsicId::Sort,
         ),
     );
@@ -584,6 +556,43 @@ fn build_list() -> StdModule {
             &[("xs", Type::List(Box::new(t.clone()))), ("x", t)],
             Type::Nullable(Box::new(Type::Int)),
             IntrinsicId::IndexOf,
+        ),
+    );
+    StdModule {
+        fns,
+        types: BTreeMap::new(),
+    }
+}
+
+/// Kind-uniform collection ops, resolved by first-argument type.
+///
+/// `len` and `contains` are the two operations whose meaning is the
+/// same across `String`, `List`, and `Map` ("how big?", "is this in
+/// that?"). The registry carries one representative generic
+/// signature per name; `keron-lang::check::check_call` intercepts the
+/// names and selects the concrete overload from the first argument's
+/// type, and the evaluator dispatches on the runtime `Value` shape.
+fn build_collection() -> StdModule {
+    let mut fns = BTreeMap::new();
+    fns.insert(
+        "len".into(),
+        intrinsic_fn(
+            "len",
+            &[("x", Type::Generic("C".into()))],
+            Type::Int,
+            IntrinsicId::Len,
+        ),
+    );
+    fns.insert(
+        "contains".into(),
+        intrinsic_fn(
+            "contains",
+            &[
+                ("x", Type::Generic("C".into())),
+                ("item", Type::Generic("T".into())),
+            ],
+            Type::Boolean,
+            IntrinsicId::Contains,
         ),
     );
     StdModule {
@@ -634,15 +643,6 @@ fn build_map() -> StdModule {
         ),
     );
     fns.insert(
-        "map_contains".into(),
-        intrinsic_fn(
-            "map_contains",
-            &[("m", map_kv.clone()), ("k", k.clone())],
-            Type::Boolean,
-            IntrinsicId::MapContains,
-        ),
-    );
-    fns.insert(
         "merge".into(),
         intrinsic_fn(
             "merge",
@@ -686,7 +686,9 @@ fn build_map() -> StdModule {
 /// exfiltrate host files via this intrinsic. Anything outside the
 /// keron root, missing, unreadable, or not valid UTF-8 collapses to
 /// `null` — matching the failure-to-null convention shared with
-/// `path_exists` and `env`.
+/// `env`, `path_parent`, `path_basename`, `path_extension`, and the
+/// `parse_*` family. (`path_exists` is the odd one out: it answers a
+/// Boolean question, so failure *is* `false`.)
 fn build_file() -> StdModule {
     let mut fns = BTreeMap::new();
     fns.insert(
@@ -765,12 +767,15 @@ fn build_path() -> StdModule {
             IntrinsicId::PathParent,
         ),
     );
+    // Absence is `null` across the whole component family
+    // (`path_parent`, `path_basename`, `path_extension`) — one
+    // encoding, so callers always branch with `??`/`match`.
     fns.insert(
         "path_basename".into(),
         intrinsic_fn(
             "path_basename",
             &[("p", Type::String)],
-            Type::String,
+            Type::Nullable(Box::new(Type::String)),
             IntrinsicId::PathBasename,
         ),
     );
@@ -779,7 +784,7 @@ fn build_path() -> StdModule {
         intrinsic_fn(
             "path_extension",
             &[("p", Type::String)],
-            Type::String,
+            Type::Nullable(Box::new(Type::String)),
             IntrinsicId::PathExtension,
         ),
     );
@@ -1162,6 +1167,7 @@ mod tests {
             Type::Nullable(Box::new(Type::String)),
         );
 
+        // The whole component family encodes absence as `null`.
         for (name, intrinsic) in [
             ("path_basename", IntrinsicId::PathBasename),
             ("path_extension", IntrinsicId::PathExtension),
@@ -1171,7 +1177,11 @@ mod tests {
                 .get(name)
                 .unwrap_or_else(|| panic!("{name} fn present"));
             assert_eq!(f.intrinsic, Some(intrinsic));
-            assert_eq!(f.return_type.node, Type::String);
+            assert_eq!(
+                f.return_type.node,
+                Type::Nullable(Box::new(Type::String)),
+                "{name} returns String?",
+            );
         }
 
         for (name, intrinsic) in [
@@ -1194,25 +1204,6 @@ mod tests {
         let reg = registry();
         let list_mod = reg.get("list").expect("list module present");
         let t = Type::Generic("T".into());
-
-        let len = list_mod.fns.get("len").expect("len fn present");
-        assert_eq!(len.intrinsic, Some(IntrinsicId::ListLen));
-        assert_eq!(len.params[0].ty.node, Type::List(Box::new(t.clone())));
-        assert_eq!(len.return_type.node, Type::Int);
-
-        let list_contains = list_mod
-            .fns
-            .get("list_contains")
-            .expect("list_contains fn present");
-        assert_eq!(list_contains.intrinsic, Some(IntrinsicId::ListContains));
-        assert_eq!(
-            list_contains.params[0].ty.node,
-            Type::List(Box::new(t.clone()))
-        );
-        // `assert_eq!` borrows both sides, so the literal `t` here
-        // doesn't consume it — later assertions can still reference it.
-        assert_eq!(list_contains.params[1].ty.node, t);
-        assert_eq!(list_contains.return_type.node, Type::Boolean);
 
         let first = list_mod.fns.get("first").expect("first fn present");
         assert_eq!(first.intrinsic, Some(IntrinsicId::ListFirst));
@@ -1248,18 +1239,10 @@ mod tests {
         // `get` returns the bound `V` — the caller supplies a default
         // so the result type stays non-nullable.
         assert_eq!(get.return_type.node, v);
-
-        let map_contains = map
-            .fns
-            .get("map_contains")
-            .expect("map_contains fn present");
-        assert_eq!(map_contains.intrinsic, Some(IntrinsicId::MapContains));
-        assert_eq!(map_contains.params[1].ty.node, k);
-        assert_eq!(map_contains.return_type.node, Type::Boolean);
     }
 
     #[test]
-    fn string_module_registers_split_join_contains_replace_trim() {
+    fn string_module_registers_split_join_replace_trim() {
         let reg = registry();
         let s = reg.get("string").expect("string module present");
 
@@ -1281,11 +1264,6 @@ mod tests {
         assert_eq!(join.params[1].ty.node, Type::String);
         assert_eq!(join.return_type.node, Type::String);
 
-        let contains = s.fns.get("contains").expect("contains fn present");
-        assert_eq!(contains.intrinsic, Some(IntrinsicId::Contains));
-        assert_eq!(contains.params.len(), 2);
-        assert_eq!(contains.return_type.node, Type::Boolean);
-
         let replace = s.fns.get("replace").expect("replace fn present");
         assert_eq!(replace.intrinsic, Some(IntrinsicId::Replace));
         assert_eq!(replace.params.len(), 3);
@@ -1298,7 +1276,7 @@ mod tests {
     }
 
     #[test]
-    fn string_module_registers_starts_ends_with_and_str_len() {
+    fn string_module_registers_starts_and_ends_with() {
         let reg = registry();
         let s = reg.get("string").expect("string module present");
 
@@ -1311,10 +1289,34 @@ mod tests {
         assert_eq!(ends.intrinsic, Some(IntrinsicId::EndsWith));
         assert_eq!(ends.params.len(), 2);
         assert_eq!(ends.return_type.node, Type::Boolean);
+    }
 
-        let len = s.fns.get("str_len").expect("str_len present");
-        assert_eq!(len.intrinsic, Some(IntrinsicId::StrLen));
+    #[test]
+    fn collection_module_registers_type_directed_len_and_contains() {
+        let reg = registry();
+        let coll = reg.get("collection").expect("collection module present");
+
+        // Representative generic signatures: the checker intercepts
+        // both names and resolves the concrete overload from the
+        // first argument's type, so `Generic("C")` is never bound.
+        let len = coll.fns.get("len").expect("len present");
+        assert_eq!(len.intrinsic, Some(IntrinsicId::Len));
         assert_eq!(len.params.len(), 1);
+        assert_eq!(len.params[0].name.node, "x");
         assert_eq!(len.return_type.node, Type::Int);
+
+        let contains = coll.fns.get("contains").expect("contains present");
+        assert_eq!(contains.intrinsic, Some(IntrinsicId::Contains));
+        assert_eq!(contains.params.len(), 2);
+        assert_eq!(contains.params[0].name.node, "x");
+        assert_eq!(contains.params[1].name.node, "item");
+        assert_eq!(contains.return_type.node, Type::Boolean);
+
+        // The removed prefixed variants must not resurface.
+        for module in reg.values() {
+            for gone in ["str_len", "list_contains", "map_contains"] {
+                assert!(!module.fns.contains_key(gone), "`{gone}` should be gone");
+            }
+        }
     }
 }

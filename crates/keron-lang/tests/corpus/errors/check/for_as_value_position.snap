@@ -1,8 +1,9 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
 ---
-error: `for` has type `Void` and does not produce a value; use it at statement position rather than in a value position (match scrutinee, val initializer, argument)
+error: `for` has type `Void` and does not produce a value
   --> 1:27
   |
 1 | val label: String = match for k in [1, 2] {} {
   |                           ^^^^^^^^^^^^^^^^^^^
+  = help: use `for` at statement position rather than in a value position (match scrutinee, val initializer, argument)

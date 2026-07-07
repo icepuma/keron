@@ -6,7 +6,7 @@ val bashrc: Symlink = symlink(source = "~/.bashrc", target = "df/bashrc")
 
 if use_zsh {
   reconcile {
-    zshrc;
-    bashrc -> zshrc;
+    zshrc
+    bashrc -> zshrc
   }
 }

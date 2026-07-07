@@ -20,8 +20,8 @@ specific resource needs it, and only for that step.
 val home: String = env("HOME") ?? keron_root()
 
 reconcile {
-  symlink(source = "./zshrc",     target = "${home}/.zshrc");
-  symlink(source = "./gitconfig", target = "${home}/.gitconfig");
+  symlink(source = "./zshrc", target = "${home}/.zshrc")
+  symlink(source = "./gitconfig", target = "${home}/.gitconfig")
 }
 ```
 
@@ -43,6 +43,7 @@ published.
 ```sh
 keron apply ./manifest.keron              # show the plan
 keron apply ./manifest.keron --execute    # apply after confirmation
+keron check ./manifest.keron              # validate only: parse, resolve imports, type-check
 keron format ./manifest.keron             # normalize a file in place
 keron format . --check                    # verify formatting in CI
 ```
@@ -50,24 +51,38 @@ keron format . --check                    # verify formatting in CI
 `<PATH>` may be a single `.keron` file or a directory of them (loaded in sorted
 order).
 
+`keron check` is the cheap CI/editor path: it never resolves secrets or probes
+package managers. `keron format` writes in place (like `cargo fmt`) — pass
+`--check` for a dry-run diff; `apply` is the reverse, plan-first by default.
+
 ## The language at a glance
 
 - Static types: `String`, `Int`, `Double`, `Boolean`, nullable (`?`), lists,
-  maps, structs, closed string unions.
+  maps, structs, closed string unions. Structs are built with brace literals
+  (`Host { name: "a", port: 22 }`), mirroring how `match` destructures them.
 - Control flow: `if`/`else`, `match`, `for` over lists and maps.
 - Imports: `from "./other.keron" use a, b` — user files only; the stdlib is
   implicit.
-- Resources: `symlink`, `template`, `shell`, package constructors (`brew`,
-  `cask`, `cargo`, `winget`). `brew`/`cask` accept an optional tap URL
+- Resources: `symlink`, `template` (`vars` optional for plain files), `shell`,
+  package constructors (`brew`, `cask`, `cargo`, `winget`). `brew`/`cask`
+  accept an optional tap URL
   (`brew("icepuma/keron/keron", "https://github.com/icepuma/keron")`)
   and a slash-qualified name (`brew("user/tap/formula")`) auto-derives
   the conventional `homebrew-<tap>` URL.
-- `reconcile { ... }` blocks emit the resources to apply. `->` and source
-  order group resources for readability, but are **not** a hard ordering
-  guarantee: the executor batches package installs and runs every step that
-  needs elevation after the unprivileged ones, so don't rely on `->` to
-  sequence a privileged write before an unprivileged step that reads it.
-- Eval-time file IO is confined to the keron root.
+- Secrets and keys: `secret("op://vault/item/field")` resolves from 1Password
+  (`op://`), Infisical (`infisical://`), or Bitwarden (`bw://`) and returns an
+  un-interpolatable `Secret` — only `unwrap_secret(...)` turns it into a
+  `String`. `ssh_key(...)` and `gpg_key(...)` write key material as resources.
+- `reconcile { ... }` blocks emit the resources to apply, one chain per line.
+  `->` and source order group resources for readability, but are **not** a
+  hard ordering guarantee: the executor batches package installs and runs
+  every step that needs elevation after the unprivileged ones, so don't rely
+  on `->` to sequence a privileged write before an unprivileged step that
+  reads it.
+- Eval-time file *reads* are confined to the keron root. The path probes
+  (`path_exists`, `path_is_dir`, `path_is_file`) are the deliberate exception:
+  they observe live host state (metadata only, never contents) so manifests
+  can branch on it.
 
 ## License
 

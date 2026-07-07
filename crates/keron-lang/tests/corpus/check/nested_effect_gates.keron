@@ -1,0 +1,13 @@
+# Exec-void blocks (top-level if/for/match bodies) hold multiple
+# gated reconciles; every gate's resources reach the real sink.
+val on_mac: Boolean = os_type() == "Macos"
+
+if on_mac {
+  if env("WANT_CASKS") != null {
+    reconcile cask("kitty")
+  }
+  for pkg in ["ripgrep", "fd"] {
+    reconcile brew(pkg)
+  }
+  reconcile brew("git")
+}

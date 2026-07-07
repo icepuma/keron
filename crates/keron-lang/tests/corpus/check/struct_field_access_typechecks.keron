@@ -1,6 +1,6 @@
 struct Host { name: String, port: Int }
 
-val h: Host = Host(name = "alpha", port = 22)
+val h: Host = Host { name: "alpha", port: 22 }
 
 val n: String = h.name
 

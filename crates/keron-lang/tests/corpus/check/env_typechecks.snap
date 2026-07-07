@@ -14,7 +14,7 @@ Program {
                         node: Nullable(
                             String,
                         ),
-                        span: 148..156,
+                        span: 148..155,
                     },
                 ),
                 value: Spanned {
@@ -54,7 +54,7 @@ Program {
                         node: Nullable(
                             String,
                         ),
-                        span: 190..198,
+                        span: 190..197,
                     },
                 ),
                 value: Spanned {
@@ -83,21 +83,21 @@ Program {
                             },
                         ],
                     },
-                    span: 200..343,
+                    span: 200..342,
                 },
-                span: 171..343,
+                span: 171..342,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "home_set",
-                    span: 347..355,
+                    span: 346..354,
                 },
                 ty: Some(
                     Spanned {
                         node: Boolean,
-                        span: 357..364,
+                        span: 356..363,
                     },
                 ),
                 value: Spanned {
@@ -107,30 +107,30 @@ Program {
                             node: Var(
                                 "raw_home",
                             ),
-                            span: 367..375,
+                            span: 366..374,
                         },
                         rhs: Spanned {
                             node: Literal(
                                 Null,
                             ),
-                            span: 379..383,
+                            span: 378..382,
                         },
                     },
-                    span: 367..383,
+                    span: 366..382,
                 },
-                span: 343..385,
+                span: 342..384,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "editor_unset",
-                    span: 389..401,
+                    span: 388..400,
                 },
                 ty: Some(
                     Spanned {
                         node: Boolean,
-                        span: 403..410,
+                        span: 402..409,
                     },
                 ),
                 value: Spanned {
@@ -140,30 +140,30 @@ Program {
                             node: Literal(
                                 Null,
                             ),
-                            span: 413..417,
+                            span: 412..416,
                         },
                         rhs: Spanned {
                             node: Var(
                                 "raw_via_named",
                             ),
-                            span: 421..434,
+                            span: 420..433,
                         },
                     },
-                    span: 413..434,
+                    span: 412..433,
                 },
-                span: 385..608,
+                span: 384..607,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "home",
-                    span: 612..616,
+                    span: 611..615,
                 },
                 ty: Some(
                     Spanned {
                         node: String,
-                        span: 618..624,
+                        span: 617..623,
                     },
                 ),
                 value: Spanned {
@@ -172,7 +172,7 @@ Program {
                             node: Var(
                                 "raw_home",
                             ),
-                            span: 633..641,
+                            span: 632..640,
                         },
                         arms: [
                             MatchArm {
@@ -180,7 +180,7 @@ Program {
                                     node: Lit(
                                         Null,
                                     ),
-                                    span: 646..650,
+                                    span: 645..649,
                                 },
                                 guard: None,
                                 body: Spanned {
@@ -189,43 +189,43 @@ Program {
                                             "/tmp",
                                         ),
                                     ),
-                                    span: 654..660,
+                                    span: 653..659,
                                 },
-                                span: 646..660,
+                                span: 645..659,
                             },
                             MatchArm {
                                 pattern: Spanned {
                                     node: Bind(
                                         "value",
                                     ),
-                                    span: 664..670,
+                                    span: 663..669,
                                 },
                                 guard: None,
                                 body: Spanned {
                                     node: Var(
                                         "value",
                                     ),
-                                    span: 673..678,
+                                    span: 672..677,
                                 },
-                                span: 664..678,
+                                span: 663..677,
                             },
                         ],
                     },
-                    span: 627..752,
+                    span: 626..751,
                 },
-                span: 608..752,
+                span: 607..751,
             },
         ),
         Fn(
             FnDecl {
                 name: Spanned {
                     node: "editor_label",
-                    span: 755..767,
+                    span: 754..766,
                 },
                 params: [],
                 return_type: Spanned {
                     node: String,
-                    span: 771..777,
+                    span: 770..776,
                 },
                 body: Block {
                     stmts: [],
@@ -236,7 +236,7 @@ Program {
                                     node: Call {
                                         callee: Spanned {
                                             node: "env",
-                                            span: 788..791,
+                                            span: 787..790,
                                         },
                                         args: [
                                             CallArg {
@@ -247,13 +247,13 @@ Program {
                                                             "EDITOR",
                                                         ),
                                                     ),
-                                                    span: 792..800,
+                                                    span: 791..799,
                                                 },
-                                                span: 792..800,
+                                                span: 791..799,
                                             },
                                         ],
                                     },
-                                    span: 788..802,
+                                    span: 787..801,
                                 },
                                 arms: [
                                     MatchArm {
@@ -261,7 +261,7 @@ Program {
                                             node: Lit(
                                                 Null,
                                             ),
-                                            span: 808..812,
+                                            span: 807..811,
                                         },
                                         guard: None,
                                         body: Spanned {
@@ -270,16 +270,16 @@ Program {
                                                     "(unset)",
                                                 ),
                                             ),
-                                            span: 816..825,
+                                            span: 815..824,
                                         },
-                                        span: 808..825,
+                                        span: 807..824,
                                     },
                                     MatchArm {
                                         pattern: Spanned {
                                             node: Bind(
                                                 "name",
                                             ),
-                                            span: 831..836,
+                                            span: 830..835,
                                         },
                                         guard: None,
                                         body: Spanned {
@@ -293,24 +293,24 @@ Program {
                                                             node: Var(
                                                                 "name",
                                                             ),
-                                                            span: 849..853,
+                                                            span: 848..852,
                                                         },
                                                         indent: None,
                                                     },
                                                 ],
                                             ),
-                                            span: 839..855,
+                                            span: 838..854,
                                         },
-                                        span: 831..855,
+                                        span: 830..854,
                                     },
                                 ],
                             },
-                            span: 782..861,
+                            span: 781..860,
                         },
                     ),
-                    span: 778..864,
+                    span: 777..863,
                 },
-                span: 752..864,
+                span: 751..863,
                 intrinsic: None,
             },
         ),
@@ -318,25 +318,25 @@ Program {
             ValDecl {
                 name: Spanned {
                     node: "editor",
-                    span: 868..874,
+                    span: 867..873,
                 },
                 ty: Some(
                     Spanned {
                         node: String,
-                        span: 876..882,
+                        span: 875..881,
                     },
                 ),
                 value: Spanned {
                     node: Call {
                         callee: Spanned {
                             node: "editor_label",
-                            span: 885..897,
+                            span: 884..896,
                         },
                         args: [],
                     },
-                    span: 885..900,
+                    span: 884..899,
                 },
-                span: 864..900,
+                span: 863..899,
             },
         ),
     ],

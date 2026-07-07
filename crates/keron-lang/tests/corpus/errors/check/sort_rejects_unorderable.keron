@@ -1,0 +1,4 @@
+# `sort` is generic in `T`, but `T` must be orderable — Booleans have
+# no defined order, so this is a type error rather than a silent
+# identity sort.
+val xs: List<Boolean> = sort([true, false])

@@ -1,9 +1,8 @@
 ---
 source: crates/keron-lang/tests/harness/mod.rs
-assertion_line: 75
 ---
 error: type mismatch: expected `String`, found `Int`
-  --> 4:30
+  --> 4:31
   |
-4 | val xs: List<String> = sort([3, 1, 2])
-  |                              ^
+4 | val n: Boolean = contains(xs, 42)
+  |                               ^^

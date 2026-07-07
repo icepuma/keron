@@ -1,0 +1,4 @@
+# `contains` on a list binds the membership probe to the element
+# type; an `Int` can never be an element of `List<String>`.
+val xs: List<String> = ["a", "b"]
+val n: Boolean = contains(xs, 42)

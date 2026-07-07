@@ -63,48 +63,58 @@ Program {
                     },
                 ),
                 value: Spanned {
-                    node: Call {
-                        callee: Spanned {
+                    node: StructLiteral {
+                        name: Spanned {
                             node: "Point",
                             span: 53..58,
                         },
-                        args: [
-                            CallArg {
-                                name: None,
-                                value: Spanned {
-                                    node: Literal(
-                                        Int(
-                                            0,
-                                        ),
-                                    ),
-                                    span: 59..60,
+                        fields: [
+                            StructLiteralField {
+                                name: Spanned {
+                                    node: "x",
+                                    span: 61..62,
                                 },
-                                span: 59..60,
+                                value: Some(
+                                    Spanned {
+                                        node: Literal(
+                                            Int(
+                                                0,
+                                            ),
+                                        ),
+                                        span: 64..65,
+                                    },
+                                ),
+                                span: 61..65,
                             },
-                            CallArg {
-                                name: None,
-                                value: Spanned {
-                                    node: Literal(
-                                        Int(
-                                            0,
-                                        ),
-                                    ),
-                                    span: 62..63,
+                            StructLiteralField {
+                                name: Spanned {
+                                    node: "y",
+                                    span: 67..68,
                                 },
-                                span: 62..63,
+                                value: Some(
+                                    Spanned {
+                                        node: Literal(
+                                            Int(
+                                                0,
+                                            ),
+                                        ),
+                                        span: 70..71,
+                                    },
+                                ),
+                                span: 67..72,
                             },
                         ],
                     },
-                    span: 53..66,
+                    span: 53..75,
                 },
-                span: 33..66,
+                span: 33..75,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "labeled",
-                    span: 70..77,
+                    span: 79..86,
                 },
                 ty: Some(
                     Spanned {
@@ -121,62 +131,85 @@ Program {
                                 ),
                             ],
                         },
-                        span: 79..84,
+                        span: 88..93,
                     },
                 ),
                 value: Spanned {
-                    node: Call {
-                        callee: Spanned {
+                    node: StructLiteral {
+                        name: Spanned {
                             node: "Point",
-                            span: 87..92,
+                            span: 96..101,
                         },
-                        args: [
-                            CallArg {
-                                name: Some(
-                                    Spanned {
-                                        node: "x",
-                                        span: 93..94,
-                                    },
-                                ),
-                                value: Spanned {
-                                    node: Literal(
-                                        Int(
-                                            3,
-                                        ),
-                                    ),
-                                    span: 97..98,
-                                },
-                                span: 93..98,
-                            },
-                            CallArg {
-                                name: Some(
-                                    Spanned {
-                                        node: "y",
-                                        span: 100..101,
-                                    },
-                                ),
-                                value: Spanned {
-                                    node: Literal(
-                                        Int(
-                                            4,
-                                        ),
-                                    ),
+                        fields: [
+                            StructLiteralField {
+                                name: Spanned {
+                                    node: "x",
                                     span: 104..105,
                                 },
-                                span: 100..105,
+                                value: Some(
+                                    Spanned {
+                                        node: Literal(
+                                            Int(
+                                                3,
+                                            ),
+                                        ),
+                                        span: 107..108,
+                                    },
+                                ),
+                                span: 104..108,
+                            },
+                            StructLiteralField {
+                                name: Spanned {
+                                    node: "y",
+                                    span: 110..111,
+                                },
+                                value: Some(
+                                    Spanned {
+                                        node: Literal(
+                                            Int(
+                                                4,
+                                            ),
+                                        ),
+                                        span: 113..114,
+                                    },
+                                ),
+                                span: 110..115,
                             },
                         ],
                     },
-                    span: 87..108,
+                    span: 96..118,
                 },
-                span: 66..108,
+                span: 75..118,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
-                    node: "mixed",
-                    span: 112..117,
+                    node: "y",
+                    span: 122..123,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Int,
+                        span: 125..128,
+                    },
+                ),
+                value: Spanned {
+                    node: Literal(
+                        Int(
+                            8,
+                        ),
+                    ),
+                    span: 131..132,
+                },
+                span: 118..134,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "shorthand",
+                    span: 138..147,
                 },
                 ty: Some(
                     Spanned {
@@ -193,50 +226,46 @@ Program {
                                 ),
                             ],
                         },
-                        span: 119..124,
+                        span: 149..154,
                     },
                 ),
                 value: Spanned {
-                    node: Call {
-                        callee: Spanned {
+                    node: StructLiteral {
+                        name: Spanned {
                             node: "Point",
-                            span: 127..132,
+                            span: 157..162,
                         },
-                        args: [
-                            CallArg {
-                                name: None,
-                                value: Spanned {
-                                    node: Literal(
-                                        Int(
-                                            7,
-                                        ),
-                                    ),
-                                    span: 133..134,
+                        fields: [
+                            StructLiteralField {
+                                name: Spanned {
+                                    node: "x",
+                                    span: 165..166,
                                 },
-                                span: 133..134,
-                            },
-                            CallArg {
-                                name: Some(
+                                value: Some(
                                     Spanned {
-                                        node: "y",
-                                        span: 136..137,
+                                        node: Literal(
+                                            Int(
+                                                7,
+                                            ),
+                                        ),
+                                        span: 168..169,
                                     },
                                 ),
-                                value: Spanned {
-                                    node: Literal(
-                                        Int(
-                                            8,
-                                        ),
-                                    ),
-                                    span: 140..141,
+                                span: 165..169,
+                            },
+                            StructLiteralField {
+                                name: Spanned {
+                                    node: "y",
+                                    span: 171..172,
                                 },
-                                span: 136..141,
+                                value: None,
+                                span: 171..172,
                             },
                         ],
                     },
-                    span: 127..143,
+                    span: 157..175,
                 },
-                span: 108..143,
+                span: 134..175,
             },
         ),
     ],

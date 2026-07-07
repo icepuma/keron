@@ -10,7 +10,10 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::{BindingKind, Env, FnEnv, check_expr, expr_type, format_variants, is_subtype};
+use super::{
+    BindingKind, Env, FnEnv, check_expr, expr_type, is_subtype, join_types, literal_variant_check,
+    wrap_nullable,
+};
 use crate::ast::{Expr, Literal, MatchArm, Pattern, Span, Spanned, StructPatternField, Type};
 use crate::diagnostic::Diagnostic;
 
@@ -32,6 +35,7 @@ use crate::diagnostic::Diagnostic;
 /// the bind arm first, it catches null too (as any catch-all does), so
 /// the bind sees `T?` and a trailing `null` arm becomes a type error.
 pub(super) fn match_type(
+    match_span: &Span,
     scrutinee: &Spanned<Expr>,
     arms: &[MatchArm],
     env: &Env,
@@ -48,9 +52,11 @@ pub(super) fn match_type(
 
     let mut body_ty: Option<Type> = None;
     let mut null_handled = false;
+    let mut saw_int_arm = false;
     for arm in arms {
         let arm_env = build_arm_env(arm, &scrut_ty, null_handled, env, fns)?;
         let this = expr_type(&arm.body, &arm_env, fns)?;
+        saw_int_arm |= matches!(peel_nullable(&this), Type::Int);
         body_ty = Some(match body_ty.take() {
             None => this,
             Some(prev) => unify_arm_types(&prev, &this, arm)?,
@@ -62,7 +68,23 @@ pub(super) fn match_type(
 
     check_exhaustive(&scrut_ty, arms, scrutinee.span.clone())?;
 
-    Ok(body_ty.expect("arms is non-empty so body_ty must be set"))
+    let body_ty = body_ty.expect("arms is non-empty so body_ty must be set");
+    // An Int-typed arm joined into a Double(-nullable) result: record
+    // the whole match so the evaluator coerces whichever arm ran.
+    if saw_int_arm && matches!(peel_nullable(&body_ty), Type::Double) {
+        env.record_promotion(match_span);
+    }
+    Ok(body_ty)
+}
+
+/// Look through a single `Nullable` wrapper — the arm-join can wrap a
+/// numeric join in `?` (`match n { null => null, 1 => 1, _ => 2.5 }`),
+/// and the promotion detection needs the numeric core.
+const fn peel_nullable(ty: &Type) -> &Type {
+    match ty {
+        Type::Nullable(inner) => inner,
+        other => other,
+    }
 }
 
 /// Bidirectional companion to [`match_type`]: same scrutinee /
@@ -207,8 +229,11 @@ fn join_arm_types(a: &Type, b: &Type) -> Option<Type> {
     if is_subtype(a, b) {
         return Some(b.clone());
     }
-    if is_resource_singleton(a) && is_resource_singleton(b) {
-        return Some(Type::Resource);
+    // Delegate the slot-sharing rules (resource-singleton lift, and —
+    // via the shared helper — any future joins) so `match` arms stay
+    // in agreement with list elements and `if` branches.
+    if let Some(joined) = join_types(a, b) {
+        return Some(joined);
     }
     // `Null` joined with `T` becomes `T?`. The reverse direction is
     // already caught by `is_subtype(Null, Nullable(_))` above.
@@ -236,26 +261,6 @@ fn join_arm_types(a: &Type, b: &Type) -> Option<Type> {
         return Some(wrap_nullable(inner));
     }
     None
-}
-
-fn wrap_nullable(inner: Type) -> Type {
-    match inner {
-        already @ Type::Nullable(_) => already,
-        other => Type::Nullable(Box::new(other)),
-    }
-}
-
-const fn is_resource_singleton(ty: &Type) -> bool {
-    matches!(
-        ty,
-        Type::Symlink
-            | Type::Template
-            | Type::Package
-            | Type::Shell
-            | Type::SshKey
-            | Type::GpgKey
-            | Type::Resource
-    )
 }
 
 /// Check `pat` against `scrut_ty` and accumulate bindings the pattern
@@ -291,17 +296,7 @@ fn check_lit_pattern(lit: &Literal, scrut_ty: &Type, span: &Span) -> Result<(), 
         | (Literal::String(_), Type::String)
         | (Literal::Null, Type::Null | Type::Nullable(_)) => Ok(()),
         (Literal::String(s), Type::StringUnion { name, variants }) => {
-            if variants.iter().any(|v| v == s) {
-                Ok(())
-            } else {
-                Err(Diagnostic::new(
-                    span.clone(),
-                    format!(
-                        "`\"{s}\"` is not a variant of `{name}` (expected one of {})",
-                        format_variants(variants)
-                    ),
-                ))
-            }
+            literal_variant_check(s, name, variants, span)
         }
         // A non-`null` literal still has to match the inhabitant of a
         // `T?`: e.g. `match maybe_x { 7 -> ... }` is fine if `x: Int?`.
@@ -434,7 +429,8 @@ fn check_exhaustive(
                     "non-exhaustive `match` on `{name}`: missing {}",
                     names.join(", ")
                 ),
-            ))
+            )
+            .with_help("add arms for the missing variants, or a wildcard `_` arm"))
         }
         Type::Nullable(inner) => {
             if has_catch_all {

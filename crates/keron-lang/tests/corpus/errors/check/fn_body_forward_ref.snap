@@ -12,3 +12,4 @@ error: unknown variable `a`
   |
 4 |   a
   |   ^
+  = help: did you mean `b`?

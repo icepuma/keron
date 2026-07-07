@@ -1,0 +1,17 @@
+# `Name {}` is legal (all-defaults struct); literals nest like any
+# other expression, and parens opt a literal into header position.
+struct Flags { verbose: Boolean = false }
+
+struct Inner { v: Int = 0 }
+
+struct Outer { inner: Inner, flags: Flags }
+
+val defaults: Flags = Flags {}
+
+val nested: Outer = Outer { inner: Inner { v: 7 }, flags: Flags {} }
+
+val gated: String = if (Outer { inner: Inner {}, flags: Flags {} }.inner.v == 0) {
+  "zeroed"
+} else {
+  "set"
+}

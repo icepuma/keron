@@ -1,0 +1,9 @@
+# `;` was the pre-0.6 chain separator; it now gets a targeted
+# diagnostic per occurrence instead of a generic parse error.
+val a: Symlink = symlink(source = "to-a", target = "from-a")
+val b: Symlink = symlink(source = "to-b", target = "from-b")
+
+reconcile {
+  a;
+  b;
+}

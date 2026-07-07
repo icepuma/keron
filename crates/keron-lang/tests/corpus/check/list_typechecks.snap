@@ -218,17 +218,11 @@ Program {
                                 span: 159..164,
                             },
                             Spanned {
-                                node: Unary {
-                                    op: Neg,
-                                    operand: Spanned {
-                                        node: Literal(
-                                            Int(
-                                                5,
-                                            ),
-                                        ),
-                                        span: 167..168,
-                                    },
-                                },
+                                node: Literal(
+                                    Int(
+                                        -5,
+                                    ),
+                                ),
                                 span: 166..168,
                             },
                         ],

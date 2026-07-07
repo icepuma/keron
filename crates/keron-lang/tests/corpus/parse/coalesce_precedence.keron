@@ -1,0 +1,9 @@
+# `??` is the loosest binary operator (right-assoc). Everything on its
+# right groups under it; a fallback that feeds a comparison needs
+# explicit parens.
+val a: Int? = null
+val b: Boolean = a ?? 1 == 1
+val flag: Boolean? = null
+val or_chain: Boolean = flag ?? true || false
+val compared: Boolean = (env("X") ?? "d") == "m"
+val fallback_concat: String = env("X") ?? "etc" + "/sub"

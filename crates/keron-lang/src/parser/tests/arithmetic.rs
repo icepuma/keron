@@ -76,35 +76,28 @@ fn power_binds_tighter_than_unary_minus() {
 }
 
 #[test]
-fn power_rhs_can_be_unary() {
+fn power_rhs_negative_literal_folds() {
+    // `-` on a bare numeric literal folds into a negative literal,
+    // matching the pattern grammar's shape for `-3`.
     let e = expr_of("val a = 2 ** -3");
     let (op, _, rhs) = binop(&e.node);
     assert_eq!(op, BinOp::Pow);
-    let Expr::Unary { .. } = rhs.node else {
-        panic!("expected unary on RHS");
-    };
+    assert_eq!(rhs.node, Expr::Literal(Literal::Int(-3)));
 }
 
 #[test]
-fn parens_unary_then_pow() {
+fn parens_negative_literal_then_pow() {
     let e = expr_of("val a = (-2) ** 3");
     let (op, lhs, _) = binop(&e.node);
     assert_eq!(op, BinOp::Pow);
-    let Expr::Unary { .. } = lhs.node else {
-        panic!("expected unary inside parens");
-    };
+    assert_eq!(lhs.node, Expr::Literal(Literal::Int(-2)));
 }
 
 #[test]
-fn double_negation() {
+fn double_negation_folds_to_positive_literal() {
+    // Each `-` folds into the literal: `--5` is `-(-5)` = `5`.
     let e = expr_of("val a = --5");
-    let Expr::Unary { op, operand } = e.node else {
-        panic!("outer unary");
-    };
-    assert_eq!(op, UnaryOp::Neg);
-    let Expr::Unary { .. } = operand.node else {
-        panic!("inner unary");
-    };
+    assert_eq!(e.node, Expr::Literal(Literal::Int(5)));
 }
 
 #[test]

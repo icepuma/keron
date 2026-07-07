@@ -7,29 +7,29 @@ Program {
             StructDecl {
                 name: Spanned {
                     node: "Server",
-                    span: 287..293,
+                    span: 291..297,
                 },
                 fields: [
                     StructField {
                         name: Spanned {
                             node: "host",
-                            span: 296..300,
+                            span: 300..304,
                         },
                         ty: Spanned {
                             node: String,
-                            span: 302..308,
+                            span: 306..312,
                         },
                         default: None,
-                        span: 296..308,
+                        span: 300..312,
                     },
                     StructField {
                         name: Spanned {
                             node: "port",
-                            span: 310..314,
+                            span: 314..318,
                         },
                         ty: Spanned {
                             node: Int,
-                            span: 316..319,
+                            span: 320..323,
                         },
                         default: Some(
                             Spanned {
@@ -38,19 +38,19 @@ Program {
                                         8080,
                                     ),
                                 ),
-                                span: 322..326,
+                                span: 326..330,
                             },
                         ),
-                        span: 310..326,
+                        span: 314..330,
                     },
                     StructField {
                         name: Spanned {
                             node: "tls",
-                            span: 328..331,
+                            span: 332..335,
                         },
                         ty: Spanned {
                             node: Boolean,
-                            span: 333..340,
+                            span: 337..344,
                         },
                         default: Some(
                             Spanned {
@@ -59,20 +59,20 @@ Program {
                                         false,
                                     ),
                                 ),
-                                span: 343..348,
+                                span: 347..352,
                             },
                         ),
-                        span: 328..349,
+                        span: 332..353,
                     },
                 ],
-                span: 280..352,
+                span: 284..356,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "explicit",
-                    span: 356..364,
+                    span: 360..368,
                 },
                 ty: Some(
                     Spanned {
@@ -93,64 +93,79 @@ Program {
                                 ),
                             ],
                         },
-                        span: 366..372,
+                        span: 370..376,
                     },
                 ),
                 value: Spanned {
-                    node: Call {
-                        callee: Spanned {
+                    node: StructLiteral {
+                        name: Spanned {
                             node: "Server",
-                            span: 375..381,
+                            span: 379..385,
                         },
-                        args: [
-                            CallArg {
-                                name: None,
-                                value: Spanned {
-                                    node: Literal(
-                                        String(
-                                            "api",
-                                        ),
-                                    ),
-                                    span: 382..387,
+                        fields: [
+                            StructLiteralField {
+                                name: Spanned {
+                                    node: "host",
+                                    span: 388..392,
                                 },
-                                span: 382..387,
+                                value: Some(
+                                    Spanned {
+                                        node: Literal(
+                                            String(
+                                                "api",
+                                            ),
+                                        ),
+                                        span: 394..399,
+                                    },
+                                ),
+                                span: 388..399,
                             },
-                            CallArg {
-                                name: None,
-                                value: Spanned {
-                                    node: Literal(
-                                        Int(
-                                            443,
-                                        ),
-                                    ),
-                                    span: 389..392,
+                            StructLiteralField {
+                                name: Spanned {
+                                    node: "port",
+                                    span: 401..405,
                                 },
-                                span: 389..392,
+                                value: Some(
+                                    Spanned {
+                                        node: Literal(
+                                            Int(
+                                                443,
+                                            ),
+                                        ),
+                                        span: 407..410,
+                                    },
+                                ),
+                                span: 401..410,
                             },
-                            CallArg {
-                                name: None,
-                                value: Spanned {
-                                    node: Literal(
-                                        Boolean(
-                                            true,
-                                        ),
-                                    ),
-                                    span: 394..398,
+                            StructLiteralField {
+                                name: Spanned {
+                                    node: "tls",
+                                    span: 412..415,
                                 },
-                                span: 394..398,
+                                value: Some(
+                                    Spanned {
+                                        node: Literal(
+                                            Boolean(
+                                                true,
+                                            ),
+                                        ),
+                                        span: 417..421,
+                                    },
+                                ),
+                                span: 412..422,
                             },
                         ],
                     },
-                    span: 375..401,
+                    span: 379..425,
                 },
-                span: 352..401,
+                span: 356..425,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "with_default_port",
-                    span: 405..422,
+                    span: 429..446,
                 },
                 ty: Some(
                     Spanned {
@@ -171,40 +186,45 @@ Program {
                                 ),
                             ],
                         },
-                        span: 424..430,
+                        span: 448..454,
                     },
                 ),
                 value: Spanned {
-                    node: Call {
-                        callee: Spanned {
+                    node: StructLiteral {
+                        name: Spanned {
                             node: "Server",
-                            span: 433..439,
+                            span: 457..463,
                         },
-                        args: [
-                            CallArg {
-                                name: None,
-                                value: Spanned {
-                                    node: Literal(
-                                        String(
-                                            "api",
-                                        ),
-                                    ),
-                                    span: 440..445,
+                        fields: [
+                            StructLiteralField {
+                                name: Spanned {
+                                    node: "host",
+                                    span: 466..470,
                                 },
-                                span: 440..445,
+                                value: Some(
+                                    Spanned {
+                                        node: Literal(
+                                            String(
+                                                "api",
+                                            ),
+                                        ),
+                                        span: 472..477,
+                                    },
+                                ),
+                                span: 466..478,
                             },
                         ],
                     },
-                    span: 433..448,
+                    span: 457..481,
                 },
-                span: 401..448,
+                span: 425..481,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "partial_named",
-                    span: 452..465,
+                    span: 485..498,
                 },
                 ty: Some(
                     Spanned {
@@ -225,55 +245,55 @@ Program {
                                 ),
                             ],
                         },
-                        span: 467..473,
+                        span: 500..506,
                     },
                 ),
                 value: Spanned {
-                    node: Call {
-                        callee: Spanned {
+                    node: StructLiteral {
+                        name: Spanned {
                             node: "Server",
-                            span: 476..482,
+                            span: 509..515,
                         },
-                        args: [
-                            CallArg {
-                                name: Some(
+                        fields: [
+                            StructLiteralField {
+                                name: Spanned {
+                                    node: "host",
+                                    span: 518..522,
+                                },
+                                value: Some(
                                     Spanned {
-                                        node: "host",
-                                        span: 483..487,
+                                        node: Literal(
+                                            String(
+                                                "api",
+                                            ),
+                                        ),
+                                        span: 524..529,
                                     },
                                 ),
-                                value: Spanned {
-                                    node: Literal(
-                                        String(
-                                            "api",
-                                        ),
-                                    ),
-                                    span: 490..495,
-                                },
-                                span: 483..495,
+                                span: 518..529,
                             },
-                            CallArg {
-                                name: Some(
+                            StructLiteralField {
+                                name: Spanned {
+                                    node: "tls",
+                                    span: 531..534,
+                                },
+                                value: Some(
                                     Spanned {
-                                        node: "tls",
-                                        span: 497..500,
+                                        node: Literal(
+                                            Boolean(
+                                                true,
+                                            ),
+                                        ),
+                                        span: 536..540,
                                     },
                                 ),
-                                value: Spanned {
-                                    node: Literal(
-                                        Boolean(
-                                            true,
-                                        ),
-                                    ),
-                                    span: 503..507,
-                                },
-                                span: 497..507,
+                                span: 531..541,
                             },
                         ],
                     },
-                    span: 476..509,
+                    span: 509..543,
                 },
-                span: 448..509,
+                span: 481..543,
             },
         ),
     ],

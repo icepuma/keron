@@ -5,8 +5,8 @@
 val home: String = env("HOME") ?? keron_root()
 
 reconcile {
-  symlink(source = "./zshrc", target = "${home}/.testrc");
-  symlink(source = "./gitconfig", target = "${home}/.testgitconfig");
-  symlink(source = "./vimrc", target = "${home}/.testvimrc");
-  symlink(source = "./config/nvim/init.lua", target = "${home}/.config/keron-e2e/nvim/init.lua");
+  symlink(source = "./zshrc", target = "${home}/.testrc")
+  symlink(source = "./gitconfig", target = "${home}/.testgitconfig")
+  symlink(source = "./vimrc", target = "${home}/.testvimrc")
+  symlink(source = "./config/nvim/init.lua", target = "${home}/.config/keron-e2e/nvim/init.lua")
 }

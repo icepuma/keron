@@ -1,0 +1,9 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: type mismatch: expected `OsType`, found `String`
+  --> 3:20
+  |
+3 | val fake: OsType = hostname()
+  |                    ^^^^^^^^^^^
+  = help: expected one of `"Linux"`, `"Macos"`, `"Windows"`, `"Unknown"`

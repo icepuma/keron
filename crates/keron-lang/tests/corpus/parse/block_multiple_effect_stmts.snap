@@ -1,0 +1,243 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "want_editor",
+                    span: 168..179,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Boolean,
+                        span: 181..188,
+                    },
+                ),
+                value: Spanned {
+                    node: Binary {
+                        op: Neq,
+                        lhs: Spanned {
+                            node: Call {
+                                callee: Spanned {
+                                    node: "env",
+                                    span: 191..194,
+                                },
+                                args: [
+                                    CallArg {
+                                        name: None,
+                                        value: Spanned {
+                                            node: Literal(
+                                                String(
+                                                    "EDITOR",
+                                                ),
+                                            ),
+                                            span: 195..203,
+                                        },
+                                        span: 195..203,
+                                    },
+                                ],
+                            },
+                            span: 191..205,
+                        },
+                        rhs: Spanned {
+                            node: Literal(
+                                Null,
+                            ),
+                            span: 208..212,
+                        },
+                    },
+                    span: 191..212,
+                },
+                span: 164..214,
+            },
+        ),
+        ExprStmt(
+            Spanned {
+                node: If {
+                    cond: Spanned {
+                        node: Literal(
+                            Boolean(
+                                true,
+                            ),
+                        ),
+                        span: 217..221,
+                    },
+                    then_branch: Block {
+                        stmts: [
+                            Expr(
+                                Spanned {
+                                    node: If {
+                                        cond: Spanned {
+                                            node: Var(
+                                                "want_editor",
+                                            ),
+                                            span: 229..240,
+                                        },
+                                        then_branch: Block {
+                                            stmts: [
+                                                Reconcile(
+                                                    ReconcileDecl {
+                                                        chains: [
+                                                            [
+                                                                Spanned {
+                                                                    node: Call {
+                                                                        callee: Spanned {
+                                                                            node: "brew",
+                                                                            span: 257..261,
+                                                                        },
+                                                                        args: [
+                                                                            CallArg {
+                                                                                name: None,
+                                                                                value: Spanned {
+                                                                                    node: Literal(
+                                                                                        String(
+                                                                                            "neovim",
+                                                                                        ),
+                                                                                    ),
+                                                                                    span: 262..270,
+                                                                                },
+                                                                                span: 262..270,
+                                                                            },
+                                                                        ],
+                                                                    },
+                                                                    span: 257..274,
+                                                                },
+                                                            ],
+                                                        ],
+                                                        span: 247..274,
+                                                    },
+                                                ),
+                                            ],
+                                            trailing: None,
+                                            span: 241..278,
+                                        },
+                                        else_branch: Block {
+                                            stmts: [],
+                                            trailing: None,
+                                            span: 278..278,
+                                        },
+                                    },
+                                    span: 226..278,
+                                },
+                            ),
+                            Expr(
+                                Spanned {
+                                    node: For {
+                                        pattern: Elem(
+                                            Spanned {
+                                                node: "pkg",
+                                                span: 282..285,
+                                            },
+                                        ),
+                                        iter_expr: Spanned {
+                                            node: List(
+                                                [
+                                                    Spanned {
+                                                        node: Literal(
+                                                            String(
+                                                                "ripgrep",
+                                                            ),
+                                                        ),
+                                                        span: 290..299,
+                                                    },
+                                                    Spanned {
+                                                        node: Literal(
+                                                            String(
+                                                                "fd",
+                                                            ),
+                                                        ),
+                                                        span: 301..305,
+                                                    },
+                                                ],
+                                            ),
+                                            span: 289..307,
+                                        },
+                                        body: Block {
+                                            stmts: [
+                                                Reconcile(
+                                                    ReconcileDecl {
+                                                        chains: [
+                                                            [
+                                                                Spanned {
+                                                                    node: Call {
+                                                                        callee: Spanned {
+                                                                            node: "brew",
+                                                                            span: 323..327,
+                                                                        },
+                                                                        args: [
+                                                                            CallArg {
+                                                                                name: None,
+                                                                                value: Spanned {
+                                                                                    node: Var(
+                                                                                        "pkg",
+                                                                                    ),
+                                                                                    span: 328..331,
+                                                                                },
+                                                                                span: 328..331,
+                                                                            },
+                                                                        ],
+                                                                    },
+                                                                    span: 323..335,
+                                                                },
+                                                            ],
+                                                        ],
+                                                        span: 313..335,
+                                                    },
+                                                ),
+                                            ],
+                                            trailing: None,
+                                            span: 307..339,
+                                        },
+                                    },
+                                    span: 278..339,
+                                },
+                            ),
+                            Reconcile(
+                                ReconcileDecl {
+                                    chains: [
+                                        [
+                                            Spanned {
+                                                node: Call {
+                                                    callee: Spanned {
+                                                        node: "brew",
+                                                        span: 349..353,
+                                                    },
+                                                    args: [
+                                                        CallArg {
+                                                            name: None,
+                                                            value: Spanned {
+                                                                node: Literal(
+                                                                    String(
+                                                                        "git",
+                                                                    ),
+                                                                ),
+                                                                span: 354..359,
+                                                            },
+                                                            span: 354..359,
+                                                        },
+                                                    ],
+                                                },
+                                                span: 349..361,
+                                            },
+                                        ],
+                                    ],
+                                    span: 339..361,
+                                },
+                            ),
+                        ],
+                        trailing: None,
+                        span: 222..363,
+                    },
+                    else_branch: Block {
+                        stmts: [],
+                        trailing: None,
+                        span: 363..363,
+                    },
+                },
+                span: 214..363,
+            },
+        ),
+    ],
+}

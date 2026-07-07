@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `reconcile` is not allowed inside a value expression; resources emitted here would be silently dropped — move it to a top-level `reconcile` or to a top-level `for` / `if` statement
+  --> 6:5
+  |
+6 |     reconcile brew("git")
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^

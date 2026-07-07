@@ -1,0 +1,8 @@
+# A top-level match statement must be Void: a value-producing arm has
+# nowhere to go.
+match os_type() {
+  "Macos" => for pkg in ["ripgrep"] {
+    reconcile brew(pkg)
+  },
+  _ => 42,
+}

@@ -3,12 +3,12 @@
 //! Grammar (lowest to highest precedence):
 //!
 //! ```text
-//! expr           := disjunction
+//! expr           := coalesce
+//! coalesce       := disjunction ('??' coalesce)?                  -- right-assoc
 //! disjunction    := conjunction ('||' conjunction)*               -- left-assoc
 //! conjunction    := comparison ('&&' comparison)*                 -- left-assoc
-//! comparison     := coalesce (cmp_op coalesce)*                   -- left-assoc
+//! comparison     := additive (cmp_op additive)*                   -- left-assoc
 //! cmp_op         := '==' | '!=' | '<=' | '>=' | '<' | '>'
-//! coalesce       := additive ('??' coalesce)?                     -- right-assoc
 //! additive       := multiplicative (('+' | '-' | '++') mul)*      -- left-assoc
 //! multiplicative := unary (('*' | '/') unary)*                    -- left-assoc
 //! unary          := '-' unary | power
@@ -18,27 +18,30 @@
 //! ```
 //!
 //! `**` binds tighter than unary `-` (matching Python/math), so
-//! `-2 ** 2` parses as `-(2 ** 2)`. Negative literals are not part of
-//! the literal grammar; `-7` is `Unary(Neg, Int(7))`. This means
-//! `-9223372036854775808` is unrepresentable (the positive form
-//! overflows `i64`), an accepted edge case.
+//! `-2 ** 2` parses as `-(2 ** 2)`. A `-` directly on a numeric
+//! literal folds into a negative literal (matching the pattern
+//! grammar), so `-7` is `Literal::Int(-7)`; `-9223372036854775808`
+//! remains unrepresentable (the positive form overflows `i64` before
+//! the fold), an accepted edge case.
 //!
 //! Field access is *postfix* — tighter than unary, so `-p.x` parses
 //! as `-(p.x)`. Chains fold left-associatively into nested
 //! [`Expr::Field`] nodes (e.g. `a.b.c` → `Field(Field(a, b), c)`).
 //!
-//! `??` is right-associative and sits between additive and
-//! comparison (matching Swift/Kotlin Elvis). This makes the common
-//! "fallback then compare" pattern parens-free:
+//! `??` is right-associative and is the *loosest* binary operator
+//! (C#-style). The type system motivates the slot: `??` requires a
+//! nullable LHS, while every comparison/logical operator produces a
+//! non-nullable `Boolean` — so `(a == b) ?? c` and `(a || b) ?? c`
+//! can never type-check. Binding `??` loosest means an
+//! unparenthesized mix always groups the only possibly-well-typed
+//! way, `a ?? (…)`:
 //!
 //! ```text
-//! env("X") ?? "default" == "match"   // (env("X") ?? "default") == "match"
+//! env("X") ?? "default" == "match"   // env("X") ?? ("default" == "match") — type error;
+//!                                    // write (env("X") ?? "default") == "match"
+//! env("X") ?? home + "/etc"          // env("X") ?? (home + "/etc")
+//! flag ?? a || b                     // flag ?? (a || b)
 //! ```
-//!
-//! Mixing `??` with `+` requires parens because `+` is tighter — so
-//! `env("X") ?? home + "/etc"` parses as `env("X") ?? (home + "/etc")`
-//! (the fallback includes `/etc`, the success path does not). Concat
-//! around a fallback should be written `(env("X") ?? home) + "/etc"`.
 //!
 //! `&&` and `||` are short-circuit; both `Boolean`-only. `&&` binds
 //! tighter than `||` (so `a || b && c` is `a || (b && c)`); both bind
@@ -47,7 +50,8 @@
 use chumsky::prelude::*;
 
 use crate::ast::{
-    BinOp, Block, CallArg, Expr, ForPattern, Literal, MapEntry, Span, Spanned, UnaryOp,
+    BinOp, Block, CallArg, Expr, ForPattern, Literal, MapEntry, Span, Spanned, StructLiteralField,
+    UnaryOp,
 };
 
 use super::{
@@ -58,75 +62,159 @@ use super::{
 };
 
 pub(super) fn expr<'src>() -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone {
-    recursive(|expr| {
-        // `atom` is also labelled (in addition to the outer expression
-        // chain below) so that secondary errors logged from inside
-        // `additive.repeated()` — e.g. after `1 +` when the next
-        // multiplicand fails to start — collapse to "expected
-        // expression" too. chumsky's `Parser::labelled` only relabels
-        // alt errors whose position equals the labelled parser's start
-        // position, so a label on the *outermost* parser doesn't reach
-        // nested-position failures recovered by `.repeated()`.
-        let atom = choice((
-            string_expr(expr.clone()).padded_by(pad()),
-            non_string_literal_expr(),
-            list_atom(expr.clone()),
-            map_atom(expr.clone()),
-            if_atom(expr.clone()),
-            for_atom(expr.clone()),
-            match_expr(expr.clone()).padded_by(pad()),
-            var_or_call(expr.clone()),
-            expr.clone()
-                .delimited_by(just('(').padded_by(pad()), just(')').padded_by(pad())),
-        ))
-        .labelled("expression");
+    exprs().0
+}
 
-        let postfix = atom
-            .then(
-                just('.')
-                    .padded_by(pad())
-                    .ignore_then(spanned_ident())
-                    .repeated()
-                    .collect::<Vec<_>>(),
-            )
-            .validate(|(receiver, fields), e, emitter| {
-                // Same defense as `left_assoc`: a `.f` chain parses
-                // iteratively but folds into a left-deep `Box`-nested
-                // `Expr::Field` tree; a ~500k-long chain from an
-                // untrusted manifest would overflow the stack when that
-                // tree is *dropped* (recursive `Drop` glue), aborting
-                // the process. Bail with the same diagnostic and return
-                // the bare receiver instead of building the deep tree.
-                if fields.len() > MAX_OPERATOR_CHAIN {
-                    emitter.emit(Rich::custom(
-                        e.span(),
-                        format!(
-                            "field-access chain too long ({} accesses, limit {MAX_OPERATOR_CHAIN}); this is almost always a generated or malformed file",
-                            fields.len()
-                        ),
-                    ));
-                    return receiver;
+/// Build the two mutually recursive expression grammars: `(full,
+/// header)`. `header` is `full` minus the struct-literal atom; it
+/// parses the block-taking constructs' head positions (`if`
+/// condition, `for` iterable, `match` scrutinee), where a top-level
+/// `Name { … }` would be genuinely ambiguous with the construct's own
+/// block once field shorthand exists (`if Host { enabled }`). This is
+/// Rust's restriction; parentheses re-enable struct literals in
+/// headers because the parenthesized atom delegates to `full`.
+type BoxedExpr<'src> = Boxed<'src, 'src, &'src str, Spanned<Expr>, Extra<'src>>;
+
+fn exprs<'src>() -> (BoxedExpr<'src>, BoxedExpr<'src>) {
+    let mut full = Recursive::declare();
+    let mut header = Recursive::declare();
+
+    // `base_atoms` is also labelled (in addition to the outer tower
+    // below) so that secondary errors logged from inside
+    // `additive.repeated()` — e.g. after `1 +` when the next
+    // multiplicand fails to start — collapse to "expected expression"
+    // too. chumsky's `Parser::labelled` only relabels alt errors
+    // whose position equals the labelled parser's start position, so
+    // a label on the *outermost* parser doesn't reach nested-position
+    // failures recovered by `.repeated()`.
+    let base_atoms = choice((
+        string_expr(full.clone()).padded_by(pad()),
+        non_string_literal_expr(),
+        list_atom(full.clone()),
+        map_atom(full.clone()),
+        if_atom(full.clone(), header.clone()),
+        for_atom(full.clone(), header.clone()),
+        match_expr(full.clone(), header.clone()).padded_by(pad()),
+        var_or_call(full.clone()),
+        full.clone()
+            .delimited_by(just('(').padded_by(pad()), just(')').padded_by(pad())),
+    ))
+    .boxed();
+
+    let full_atoms =
+        choice((struct_literal(full.clone()), base_atoms.clone())).labelled("expression");
+    let header_atoms = base_atoms.labelled("expression");
+
+    full.define(tower(full_atoms));
+    header.define(tower(header_atoms));
+    (full.boxed(), header.boxed())
+}
+
+/// The operator tower applied on top of an atom tier: postfix field
+/// access, then unary/arithmetic/comparison/logical/coalesce.
+/// Factored out so the `full` and `header` grammars share one
+/// definition and can never drift.
+fn tower<'src, A>(atom: A) -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone
+where
+    A: Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone + 'src,
+{
+    let postfix = atom
+        .then(
+            just('.')
+                .padded_by(pad())
+                .ignore_then(spanned_ident())
+                .repeated()
+                .collect::<Vec<_>>(),
+        )
+        .validate(|(receiver, fields), e, emitter| {
+            // Same defense as `left_assoc`: a `.f` chain parses
+            // iteratively but folds into a left-deep `Box`-nested
+            // `Expr::Field` tree; a ~500k-long chain from an
+            // untrusted manifest would overflow the stack when that
+            // tree is *dropped* (recursive `Drop` glue), aborting
+            // the process. Bail with the same diagnostic and return
+            // the bare receiver instead of building the deep tree.
+            if fields.len() > MAX_OPERATOR_CHAIN {
+                emitter.emit(Rich::custom(
+                    e.span(),
+                    format!(
+                        "field-access chain too long ({} accesses, limit {MAX_OPERATOR_CHAIN}); this is almost always a generated or malformed file",
+                        fields.len()
+                    ),
+                ));
+                return receiver;
+            }
+            fields.into_iter().fold(receiver, |acc, field| {
+                let span = acc.span.start..field.span.end;
+                Spanned {
+                    node: Expr::Field {
+                        receiver: Box::new(acc),
+                        field,
+                    },
+                    span,
                 }
-                fields.into_iter().fold(receiver, |acc, field| {
-                    let span = acc.span.start..field.span.end;
-                    Spanned {
-                        node: Expr::Field {
-                            receiver: Box::new(acc),
-                            field,
-                        },
-                        span,
-                    }
-                })
-            });
+            })
+        });
 
-        let unary = unary_chain(postfix);
-        let multiplicative = left_assoc(unary, mul_op());
-        let additive = left_assoc(multiplicative, add_op());
-        let coalesce = coalesce_chain(additive);
-        let comparison = left_assoc(coalesce, cmp_op());
-        let conjunction = left_assoc(comparison, and_op());
-        left_assoc(conjunction, or_op()).labelled("expression")
-    })
+    let unary = unary_chain(postfix);
+    let multiplicative = left_assoc(unary, mul_op());
+    // `.boxed()` erases the combinator type here: the full tower's
+    // nested generic type otherwise mangles into a symbol name
+    // long enough to trip the Apple linker's per-symbol length
+    // assert (`SymbolString.cpp: name.size() <= maxLength`).
+    let additive = left_assoc(multiplicative, add_op()).boxed();
+    let comparison = left_assoc(additive, cmp_op());
+    let conjunction = left_assoc(comparison, and_op());
+    let disjunction = left_assoc(conjunction, or_op());
+    coalesce_chain(disjunction).labelled("expression")
+}
+
+/// `Name { field: value, shorthand, … }` — struct construction,
+/// mirroring the struct pattern. The name must be uppercase-initial
+/// (struct names always are; a lowercase ident never enters this
+/// branch, so `if enabled { … }` headers stay unambiguous even where
+/// struct literals are allowed). An uppercase ident *not* followed by
+/// `{` backtracks to `var_or_call`.
+fn struct_literal<'src, P>(
+    expr: P,
+) -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone
+where
+    P: Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone + 'src,
+{
+    let field = spanned_ident()
+        .then(just(':').padded_by(pad()).ignore_then(expr).or_not())
+        .map_with(|(name, value), e| StructLiteralField {
+            name,
+            value,
+            span: span_to_range(e.span()),
+        });
+
+    // `Name {}` is legal: an all-defaults struct.
+    let fields = field
+        .separated_by(just(',').padded_by(pad()))
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .delimited_by(just('{').padded_by(pad()), just('}').padded_by(pad()));
+
+    spanned_ident()
+        .try_map(|name, span| {
+            if name
+                .node
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_uppercase())
+            {
+                Ok(name)
+            } else {
+                Err(Rich::custom(span, "expected a struct name"))
+            }
+        })
+        .padded_by(pad())
+        .then(fields)
+        .map_with(|(name, fields), e| Spanned {
+            node: Expr::StructLiteral { name, fields },
+            span: span_to_range(e.span()),
+        })
 }
 
 /// `unary := '-' unary | power`, where `power := postfix ('**' unary)?`.
@@ -159,15 +247,34 @@ where
                 Some(rhs) => merge_binary(BinOp::Pow, lhs, rhs),
             });
 
+        // `-` on a bare numeric literal folds into a negative literal,
+        // matching the pattern grammar (which lexes `-5` as
+        // `Literal::Int(-5)`) — so `-5` has one AST shape everywhere
+        // and literal-driven rules (Int-literal-into-Double admission,
+        // match-literal comparison) treat both signs alike. `-2 ** 2`
+        // is unaffected: power binds tighter, so the operand there is
+        // a `Binary`, not a literal. `-9223372036854775808` remains
+        // unrepresentable — the positive form overflows in
+        // `number_literal` before the fold sees it.
         let neg = just('-')
             .padded_by(pad())
             .ignore_then(unary.clone())
-            .map_with(|operand, e| Spanned {
-                node: Expr::Unary {
-                    op: UnaryOp::Neg,
-                    operand: Box::new(operand),
-                },
-                span: span_to_range(e.span()),
+            .map_with(|operand, e| {
+                let node = match operand.node {
+                    Expr::Literal(Literal::Int(n)) => Expr::Literal(Literal::Int(-n)),
+                    Expr::Literal(Literal::Double(d)) => Expr::Literal(Literal::Double(-d)),
+                    other => Expr::Unary {
+                        op: UnaryOp::Neg,
+                        operand: Box::new(Spanned {
+                            node: other,
+                            span: operand.span,
+                        }),
+                    },
+                };
+                Spanned {
+                    node,
+                    span: span_to_range(e.span()),
+                }
             });
 
         // `!` is logical negation. The `and_is(!= not)` lookahead keeps
@@ -347,11 +454,15 @@ where
 /// `else if` is parsed right-associatively: the else branch may be
 /// either another `if`-expression (wrapped in a synthetic block whose
 /// trailing is that if-expr) or a literal `{ … }` block.
-fn if_atom<'src, P>(expr: P) -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone
+fn if_atom<'src, P, H>(
+    expr: P,
+    header: H,
+) -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone
 where
     P: Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone + 'src,
+    H: Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone + 'src,
 {
-    let block_parser = block(expr.clone());
+    let block_parser = block(expr);
 
     recursive(|if_chain| {
         let else_block = block_parser.clone();
@@ -363,7 +474,10 @@ where
 
         text::keyword("if")
             .padded_by(pad())
-            .ignore_then(expr.clone())
+            // Condition parses at `header` tier: no top-level struct
+            // literal, so `if Host { … }` can't swallow the branch
+            // block as construct fields.
+            .ignore_then(header.clone())
             .then(block_parser.clone())
             .then(else_branch.or_not())
             .map_with(|((cond, then_branch), else_branch), e| {
@@ -407,11 +521,15 @@ const fn empty_block_at(span: Span) -> Block {
 /// `,`. Both forms then expect the `in` keyword, an iterable
 /// expression, and a brace-delimited block. The body's trailing
 /// expression must be `Void` (enforced at type-check time, not here).
-fn for_atom<'src, P>(expr: P) -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone
+fn for_atom<'src, P, H>(
+    expr: P,
+    header: H,
+) -> impl Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone
 where
     P: Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone + 'src,
+    H: Parser<'src, &'src str, Spanned<Expr>, Extra<'src>> + Clone + 'src,
 {
-    let block_parser = block(expr.clone());
+    let block_parser = block(expr);
 
     let pair = spanned_ident()
         .then_ignore(just(',').padded_by(pad()))
@@ -425,7 +543,8 @@ where
         .padded_by(pad())
         .ignore_then(choice((pair, single)))
         .then_ignore(text::keyword("in").padded_by(pad()))
-        .then(expr)
+        // Iterable parses at `header` tier (see `exprs`).
+        .then(header)
         .then(block_parser)
         .map_with(|((pattern, iter_expr), body), e| Spanned {
             node: Expr::For {

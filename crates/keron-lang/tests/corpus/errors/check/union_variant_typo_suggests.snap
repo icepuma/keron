@@ -1,0 +1,9 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `"MacOS"` is not a variant of `OsType` (expected one of `"Linux"`, `"Macos"`, `"Windows"`, `"Unknown"`)
+  --> 4:34
+  |
+4 | val is_mac: Boolean = current == "MacOS"
+  |                                  ^^^^^^^
+  = help: did you mean `"Macos"`?

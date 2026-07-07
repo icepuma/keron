@@ -1,0 +1,2 @@
+# A typo'd builtin call suggests the nearest known function.
+val parts: List<String> = splt("a:b", ":")

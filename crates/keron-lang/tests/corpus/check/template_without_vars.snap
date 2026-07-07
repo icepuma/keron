@@ -1,0 +1,162 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "plain",
+                    span: 122..127,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Template,
+                        span: 129..137,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "template",
+                            span: 140..148,
+                        },
+                        args: [
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "source",
+                                        span: 149..155,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "./motd.txt",
+                                        ),
+                                    ),
+                                    span: 158..170,
+                                },
+                                span: 149..170,
+                            },
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "target",
+                                        span: 172..178,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "/tmp/motd",
+                                        ),
+                                    ),
+                                    span: 181..192,
+                                },
+                                span: 172..192,
+                            },
+                        ],
+                    },
+                    span: 140..257,
+                },
+                span: 118..257,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "filled",
+                    span: 261..267,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Template,
+                        span: 269..277,
+                    },
+                ),
+                value: Spanned {
+                    node: Call {
+                        callee: Spanned {
+                            node: "template",
+                            span: 280..288,
+                        },
+                        args: [
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "source",
+                                        span: 292..298,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "./motd.tpl",
+                                        ),
+                                    ),
+                                    span: 301..313,
+                                },
+                                span: 292..313,
+                            },
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "target",
+                                        span: 317..323,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Literal(
+                                        String(
+                                            "/tmp/motd",
+                                        ),
+                                    ),
+                                    span: 326..337,
+                                },
+                                span: 317..337,
+                            },
+                            CallArg {
+                                name: Some(
+                                    Spanned {
+                                        node: "vars",
+                                        span: 341..345,
+                                    },
+                                ),
+                                value: Spanned {
+                                    node: Map(
+                                        [
+                                            MapEntry {
+                                                key: Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "user",
+                                                        ),
+                                                    ),
+                                                    span: 349..355,
+                                                },
+                                                value: Spanned {
+                                                    node: Literal(
+                                                        String(
+                                                            "ada",
+                                                        ),
+                                                    ),
+                                                    span: 357..362,
+                                                },
+                                                span: 349..362,
+                                            },
+                                        ],
+                                    ),
+                                    span: 348..363,
+                                },
+                                span: 341..363,
+                            },
+                        ],
+                    },
+                    span: 280..367,
+                },
+                span: 257..367,
+            },
+        ),
+    ],
+}

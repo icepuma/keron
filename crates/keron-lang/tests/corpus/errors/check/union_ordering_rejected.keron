@@ -1,0 +1,3 @@
+# Union variants are categories, not points on a scale — ordering is
+# rejected. Widen through an explicit `String` annotation to opt in.
+val nonsense: Boolean = os_type() < "Macos"

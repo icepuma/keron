@@ -299,7 +299,7 @@ fn duplicate_packages_in_one_plan_install_once() {
     let proj = TempProject::new("dupe");
     let entry = proj.write(
         "entry.keron",
-        "reconcile {\n  brew(\"ripgrep\");\n  brew(\"ripgrep\");\n}\n",
+        "reconcile {\n  brew(\"ripgrep\")\n  brew(\"ripgrep\")\n}\n",
     );
     let keron = keron_binary_path();
     let output = Command::new(&keron)

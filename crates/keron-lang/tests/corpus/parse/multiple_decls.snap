@@ -85,17 +85,11 @@ Program {
                     },
                 ),
                 value: Spanned {
-                    node: Unary {
-                        op: Neg,
-                        operand: Spanned {
-                            node: Literal(
-                                Double(
-                                    0.5,
-                                ),
-                            ),
-                            span: 111..114,
-                        },
-                    },
+                    node: Literal(
+                        Double(
+                            -0.5,
+                        ),
+                    ),
                     span: 110..115,
                 },
                 span: 94..115,

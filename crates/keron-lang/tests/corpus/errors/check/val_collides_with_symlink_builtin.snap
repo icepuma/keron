@@ -6,3 +6,5 @@ error: `symlink` is a builtin and cannot be redefined
   |
 1 | val symlink = 1
   |     ^^^^^^^
+  = note: builtins are implicitly in scope in every module
+  = help: rename the declaration — e.g. `my_symlink`

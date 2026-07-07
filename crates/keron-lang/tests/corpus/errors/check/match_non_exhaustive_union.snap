@@ -6,3 +6,4 @@ error: non-exhaustive `match` on `Color`: missing `"blue"`
   |
 4 |   match c {
   |         ^
+  = help: add arms for the missing variants, or a wildcard `_` arm

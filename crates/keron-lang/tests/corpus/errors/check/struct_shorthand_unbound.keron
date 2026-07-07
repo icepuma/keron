@@ -1,0 +1,4 @@
+# Shorthand binds a same-named variable; here no `port` is in scope.
+struct Host { name: String, port: Int }
+
+val h: Host = Host { name: "a", port }

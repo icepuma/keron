@@ -1,0 +1,8 @@
+# A union compared against a *dynamic* String stays legal — only
+# literals are variant-checked, because a runtime string (env var,
+# file content) is exactly what the union/String comparison is for.
+val pretend_os: String = env("KERON_FAKE_OS") ?? "Linux"
+val matches_host: Boolean = os_type() == pretend_os
+
+# Same-union comparison also stays legal.
+val self_equal: Boolean = os_type() == os_type()

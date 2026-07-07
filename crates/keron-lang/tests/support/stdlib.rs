@@ -84,6 +84,7 @@ pub fn imports() -> ImportedSymbols {
     insert_string(&mut imp);
     insert_list(&mut imp);
     insert_map(&mut imp);
+    insert_collection(&mut imp);
     insert_path(&mut imp);
     insert_file(&mut imp);
     insert_numeric(&mut imp);
@@ -98,19 +99,33 @@ fn insert_fs(imp: &mut ImportedSymbols) {
         &[("source", Type::String), ("target", Type::String)],
         Type::Symlink,
     );
-    insert_fn(
-        imp,
-        "template",
-        &[
-            ("source", Type::String),
-            ("target", Type::String),
-            (
-                "vars",
-                Type::Map(Box::new(Type::String), Box::new(Type::String)),
-            ),
-        ],
-        Type::Template,
+    // `vars` has a `{}` default (mirrors `build_fs` in the real
+    // registry), so plain-file templates omit it.
+    imp.fns.insert(
+        "template".into(),
+        FnSig {
+            struct_name: None,
+            params: vec![
+                ParamSig {
+                    name: "source".into(),
+                    ty: Type::String,
+                    has_default: false,
+                },
+                ParamSig {
+                    name: "target".into(),
+                    ty: Type::String,
+                    has_default: false,
+                },
+                ParamSig {
+                    name: "vars".into(),
+                    ty: Type::Map(Box::new(Type::String), Box::new(Type::String)),
+                    has_default: true,
+                },
+            ],
+            return_type: Type::Template,
+        },
     );
+    imp.builtins.insert("template".into());
 }
 
 fn insert_keron(imp: &mut ImportedSymbols) {
@@ -138,6 +153,7 @@ fn insert_packages(imp: &mut ImportedSymbols) {
         imp.fns.insert(
             name.into(),
             FnSig {
+                struct_name: None,
                 params: vec![
                     ParamSig {
                         name: "name".into(),
@@ -250,13 +266,6 @@ fn insert_string(imp: &mut ImportedSymbols) {
         &[("s", Type::String), ("suffix", Type::String)],
         Type::Boolean,
     );
-    insert_fn(imp, "str_len", &[("s", Type::String)], Type::Int);
-    insert_fn(
-        imp,
-        "contains",
-        &[("haystack", Type::String), ("needle", Type::String)],
-        Type::Boolean,
-    );
     insert_fn(
         imp,
         "replace",
@@ -270,22 +279,25 @@ fn insert_string(imp: &mut ImportedSymbols) {
     insert_fn(imp, "trim", &[("s", Type::String)], Type::String);
 }
 
+/// `std:collection` — type-directed `len` / `contains` (mirrors
+/// `build_collection` in the real registry). The checker intercepts
+/// both names and resolves the overload from the first argument's
+/// type, so the generic placeholder here is never bound.
+fn insert_collection(imp: &mut ImportedSymbols) {
+    let c = Type::Generic("C".into());
+    insert_fn(imp, "len", &[("x", c.clone())], Type::Int);
+    insert_fn(
+        imp,
+        "contains",
+        &[("x", c), ("item", Type::Generic("T".into()))],
+        Type::Boolean,
+    );
+}
+
 /// `std:list` — generic over `T`. Signatures use `Type::Generic("T")`
 /// which `check_call` binds at every call site.
 fn insert_list(imp: &mut ImportedSymbols) {
     let t = Type::Generic("T".into());
-    insert_fn(
-        imp,
-        "len",
-        &[("xs", Type::List(Box::new(t.clone())))],
-        Type::Int,
-    );
-    insert_fn(
-        imp,
-        "list_contains",
-        &[("xs", Type::List(Box::new(t.clone()))), ("x", t.clone())],
-        Type::Boolean,
-    );
     insert_fn(
         imp,
         "first",
@@ -301,8 +313,8 @@ fn insert_list(imp: &mut ImportedSymbols) {
     insert_fn(
         imp,
         "sort",
-        &[("xs", Type::List(Box::new(Type::String)))],
-        Type::List(Box::new(Type::String)),
+        &[("xs", Type::List(Box::new(t.clone())))],
+        Type::List(Box::new(t.clone())),
     );
     insert_fn(
         imp,
@@ -347,12 +359,6 @@ fn insert_map(imp: &mut ImportedSymbols) {
     );
     insert_fn(
         imp,
-        "map_contains",
-        &[("m", map_kv.clone()), ("k", k.clone())],
-        Type::Boolean,
-    );
-    insert_fn(
-        imp,
         "merge",
         &[("a", map_kv.clone()), ("b", map_kv.clone())],
         map_kv.clone(),
@@ -386,7 +392,12 @@ fn insert_path(imp: &mut ImportedSymbols) {
         Type::Nullable(Box::new(Type::String)),
     );
     for name in ["path_basename", "path_extension"] {
-        insert_fn(imp, name, &[("p", Type::String)], Type::String);
+        insert_fn(
+            imp,
+            name,
+            &[("p", Type::String)],
+            Type::Nullable(Box::new(Type::String)),
+        );
     }
     for name in [
         "path_is_absolute",
@@ -447,6 +458,7 @@ fn insert_fn(imp: &mut ImportedSymbols, name: &str, params: &[(&str, Type)], ret
     imp.fns.insert(
         name.into(),
         FnSig {
+            struct_name: None,
             params: params
                 .iter()
                 .map(|(name, ty)| ParamSig {

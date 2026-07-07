@@ -6,9 +6,13 @@ error: `Resource` is a builtin and cannot be redefined
   |
 1 | struct Resource { path: String }
   |        ^^^^^^^^
+  = note: builtins are implicitly in scope in every module
+  = help: rename the declaration — e.g. `my_Resource`
 
 error: `Secret` is a builtin and cannot be redefined
   --> 3:6
   |
 3 | type Secret = "plain"
   |      ^^^^^^
+  = note: builtins are implicitly in scope in every module
+  = help: rename the declaration — e.g. `my_Secret`

@@ -342,17 +342,11 @@ Program {
                             CallArg {
                                 name: None,
                                 value: Spanned {
-                                    node: Unary {
-                                        op: Neg,
-                                        operand: Spanned {
-                                            node: Literal(
-                                                Int(
-                                                    3,
-                                                ),
-                                            ),
-                                            span: 334..335,
-                                        },
-                                    },
+                                    node: Literal(
+                                        Int(
+                                            -3,
+                                        ),
+                                    ),
                                     span: 333..335,
                                 },
                                 span: 333..335,

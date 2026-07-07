@@ -1,12 +1,12 @@
 # Struct field defaults: when a field has `= expr`, the caller may
-# omit it and the constructor fills in the default. Defaults are
+# omit it and the literal fills in the default. Defaults are
 # type-checked against the field's annotation at decl time, so a
-# call site can rely on the standard struct typing rules without
-# extra ceremony.
+# construction site can rely on the standard struct typing rules
+# without extra ceremony.
 struct Server { host: String, port: Int = 8080, tls: Boolean = false }
 
-val explicit: Server = Server("api", 443, true)
+val explicit: Server = Server { host: "api", port: 443, tls: true }
 
-val with_default_port: Server = Server("api")
+val with_default_port: Server = Server { host: "api" }
 
-val partial_named: Server = Server(host = "api", tls = true)
+val partial_named: Server = Server { host: "api", tls: true }

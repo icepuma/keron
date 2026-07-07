@@ -68,58 +68,68 @@ Program {
                         receiver: Spanned {
                             node: Field {
                                 receiver: Spanned {
-                                    node: Call {
-                                        callee: Spanned {
+                                    node: StructLiteral {
+                                        name: Spanned {
                                             node: "Outer",
                                             span: 71..76,
                                         },
-                                        args: [
-                                            CallArg {
-                                                name: None,
-                                                value: Spanned {
-                                                    node: Call {
-                                                        callee: Spanned {
-                                                            node: "Inner",
-                                                            span: 77..82,
-                                                        },
-                                                        args: [
-                                                            CallArg {
-                                                                name: None,
-                                                                value: Spanned {
-                                                                    node: Literal(
-                                                                        Int(
-                                                                            7,
-                                                                        ),
-                                                                    ),
-                                                                    span: 83..84,
-                                                                },
-                                                                span: 83..84,
-                                                            },
-                                                        ],
-                                                    },
-                                                    span: 77..85,
+                                        fields: [
+                                            StructLiteralField {
+                                                name: Spanned {
+                                                    node: "inner",
+                                                    span: 79..84,
                                                 },
-                                                span: 77..85,
+                                                value: Some(
+                                                    Spanned {
+                                                        node: StructLiteral {
+                                                            name: Spanned {
+                                                                node: "Inner",
+                                                                span: 86..91,
+                                                            },
+                                                            fields: [
+                                                                StructLiteralField {
+                                                                    name: Spanned {
+                                                                        node: "v",
+                                                                        span: 94..95,
+                                                                    },
+                                                                    value: Some(
+                                                                        Spanned {
+                                                                            node: Literal(
+                                                                                Int(
+                                                                                    7,
+                                                                                ),
+                                                                            ),
+                                                                            span: 97..98,
+                                                                        },
+                                                                    ),
+                                                                    span: 94..99,
+                                                                },
+                                                            ],
+                                                        },
+                                                        span: 86..101,
+                                                    },
+                                                ),
+                                                span: 79..101,
                                             },
                                         ],
                                     },
-                                    span: 71..86,
+                                    span: 71..102,
                                 },
                                 field: Spanned {
                                     node: "inner",
-                                    span: 87..92,
+                                    span: 103..108,
                                 },
                             },
-                            span: 71..92,
+                            span: 71..108,
                         },
                         field: Spanned {
                             node: "v",
-                            span: 93..94,
+                            span: 109..110,
                         },
                     },
-                    span: 71..94,
+                    span: 71..110,
                 },
-                span: 56..94,
+                span: 56..110,
             },
         ),
     ],

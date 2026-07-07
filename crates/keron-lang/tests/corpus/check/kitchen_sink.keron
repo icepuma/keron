@@ -264,7 +264,7 @@ if use_zsh {
 #
 # A `for` is pure control flow: the body must have type `Void`, and
 # the loop expression itself has type `Void` too — so it is allowed at
-# the top level alongside `if`. The single-bind form is list-only;
+# the top level alongside `if`. The single-bind form is list-only
 # the pair form is map-only.
 # Iterate the list of pre-built links and reconcile each one.
 for one_link in all_links {
@@ -287,19 +287,20 @@ for f in flags {
   }
 }
 
-# --- ordered reconciliations: `->` chains and `reconcile { ... }` blocks ---
+# --- grouped reconciliations: `->` chains and `reconcile { ... }` blocks ---
 #
-# `->` orders steps within a single `reconcile`. The operator only
-# appears in this context — using it in a `val` RHS or in arithmetic
-# is a parse error. A block groups multiple chains, separated by `;`
-# (a trailing `;` is permitted). Both forms collapse to the same flat
-# ordered sequence at apply time.
+# `->` groups steps within a single `reconcile` for readability. The
+# operator only appears in this context — using it in a `val` RHS or
+# in arithmetic is a parse error. A block holds multiple chains, one
+# per line with no separator. Neither form is a hard ordering
+# guarantee: the executor batches package installs and runs
+# elevation-requiring steps after the unprivileged ones.
 reconcile zshrc -> gitcfg -> xdgcfg
 
 reconcile {
-  zshrc;
-  gitcfg -> xdgcfg;
-  all_links;
+  zshrc
+  gitcfg -> xdgcfg
+  all_links
 }
 
 # --- `Resource` supertype ---
@@ -347,10 +348,10 @@ reconcile any_resource -> zshrc -> mixed_resources
 # A block can hold any combination of single steps, `->` chains, and
 # lists.
 reconcile {
-  chosen;
-  combined_resources;
-  auto_mix;
-  any_resource -> zshrc;
+  chosen
+  combined_resources
+  auto_mix
+  any_resource -> zshrc
 }
 
 # Iterate any `List<Resource>` and reconcile each element.
@@ -360,16 +361,16 @@ for r in mixed_resources {
 
 # --- structs ---
 #
-# `struct Name { ... }` declares a nominal record. The implicit
-# constructor accepts positional args (declared order), named args, or
-# a mix (positional first, then named).
+# `struct Name { ... }` declares a nominal record. Construction uses
+# the brace-literal form (fields in any order, shorthand `field` for
+# `field: field`), mirroring the struct pattern in `match`.
 struct Host { name: String, port: Int, tls: Boolean }
 
-val origin_host: Host = Host(name = "alpha.local", port = 22, tls = true)
+val origin_host: Host = Host { name: "alpha.local", port: 22, tls: true }
 
-val mirror_host: Host = Host("beta.local", 22, tls = false)
+val mirror_host: Host = Host { name: "beta.local", port: 22, tls: false }
 
-val tagged_host: Host = Host("gamma.local", port = 443, tls = true)
+val tagged_host: Host = Host { name: "gamma.local", port: 443, tls: true }
 
 # Field access via postfix `.field`. Tighter than unary, so `-p.x`
 # is `-(p.x)`. Chains fold left (`a.b.c` is `(a.b).c`).
@@ -380,7 +381,7 @@ val origin_label: String = "${origin_host.name}:${origin_host.port}"
 # Structs nest like any other type and flow through interpolations.
 struct Endpoint { host: Host, path: String }
 
-val ep: Endpoint = Endpoint(origin_host, "/healthz")
+val ep: Endpoint = Endpoint { host: origin_host, path: "/healthz" }
 
 val ep_url: String = "https://${ep.host.name}:${ep.host.port}${ep.path}"
 
@@ -566,9 +567,9 @@ reconcile ripgrep
 reconcile just_bin -> pwsh
 
 reconcile {
-  starship;
-  brew_tools;
-  all_managers;
+  starship
+  brew_tools
+  all_managers
 }
 
 for p in brew_tools {

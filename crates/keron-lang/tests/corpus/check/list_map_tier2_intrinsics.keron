@@ -1,13 +1,18 @@
-# Tier 2 list / map ops: `sort` (String-only), `unique` / `index_of`
-# (generic in `T`), `merge` / `without` / `with` (generic in `K`, `V`).
+# Tier 2 list / map ops: `sort` / `unique` / `index_of` (generic in
+# `T`), `merge` / `without` / `with` (generic in `K`, `V`).
 # Pins the type rules:
-#   - `sort` rejects non-String lists (negative cases live under
-#     `errors/check/`); accepts `List<String>` straight through.
+#   - `sort` binds `T` from the element type, gated to orderables
+#     (String, Int, Double, string unions); non-orderable elements
+#     are negative cases under `errors/check/`.
 #   - `unique` and `index_of` bind `T` from the list element type, so
 #     repeat uses must match. `index_of` returns `Int?`.
 #   - `merge` / `without` / `with` thread `K`, `V` through both args
 #     and the return.
 val sorted: List<String> = sort(["c", "a", "b"])
+
+val sorted_ints: List<Int> = sort([3, 1, 2])
+
+val sorted_doubles: List<Double> = sort([2.5, 1.5])
 
 val dedup: List<String> = unique(["a", "b", "a"])
 

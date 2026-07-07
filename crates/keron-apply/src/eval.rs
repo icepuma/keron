@@ -2,6 +2,15 @@
 //! ordered list of concrete `ResourceState`s — what `reconcile` would
 //! actually act on.
 //!
+//! **Error-message style**: eval errors are `anyhow` strings at the
+//! plan boundary (no spans — span-carrying eval diagnostics are
+//! future work). One convention: lowercase-initial, identifiers and
+//! type names in backticks, argument mismatches phrased
+//! `` `fn` expected `Type` for `arg`, found `Type` `` and general
+//! mismatches `` expected `X`, found `Y` `` — matching the checker's
+//! phrasing so the same class of problem reads the same across
+//! phases.
+//!
 //! Top-level `val`s are evaluated lazily: a binding is only computed
 //! when something reachable from a `reconcile` (or top-level
 //! `if`/`for`) refers to it. This keeps fixtures like `kitchen_sink`,
@@ -22,6 +31,7 @@
 //! kept as `bail!` rather than `unreachable!` to fail loudly if AST
 //! invariants ever drift.
 
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -29,7 +39,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail};
 use keron_lang::{
     BinOp, Block, CallArg, Expr, FnDecl, ForPattern, IntrinsicId, Item, Literal, MapEntry,
-    MatchArm, Pattern, Spanned, Stmt, StringPart, StructDecl, StructPatternField, UnaryOp,
+    MatchArm, Pattern, Spanned, Stmt, StringPart, StructDecl, StructLiteralField,
+    StructPatternField, UnaryOp,
 };
 use keron_modules::{ModuleGraph, ModuleId, stdlib};
 
@@ -146,6 +157,12 @@ struct ModuleTop<'p> {
     in_progress: RefCell<HashSet<String>>,
     /// `local_name` → (`origin_module`, `original_name`).
     imports: HashMap<String, (ModuleId, String)>,
+    /// Spans the checker promoted from `Int` into a `Double` slot
+    /// (`CheckedModule::double_promotions`). `eval_expr` coerces the
+    /// value at exactly these spans — the evaluator has no type
+    /// environment, so this table is how "static `Double`, runtime
+    /// `Int`" (e.g. `[1, 2.5]`) stays sound through `/`.
+    double_promotions: &'p HashSet<(usize, usize)>,
 }
 
 /// Cross-module top-level state. Owns one [`ModuleTop`] per module
@@ -335,6 +352,7 @@ pub fn eval_graph_with_prereq_probe(
             cache: RefCell::new(HashMap::new()),
             in_progress: RefCell::new(HashSet::new()),
             imports: module.imports.clone(),
+            double_promotions: &module.double_promotions,
         };
         for item in &module.program.items {
             match item {
@@ -418,7 +436,10 @@ fn exec_void_expr(
         } => {
             let c = eval_expr(cond, env)?;
             let Value::Bool(b) = c else {
-                bail!("`if` condition was {} (expected Boolean)", c.type_name());
+                bail!(
+                    "`if` condition: expected `Boolean`, found `{}`",
+                    c.type_name()
+                );
             };
             let block: &Block = if b { then_branch } else { else_branch };
             exec_void_block(block, env, out)
@@ -472,7 +493,7 @@ fn exec_void_match(
                 Value::Bool(true) => {}
                 Value::Bool(false) => continue,
                 other => bail!(
-                    "`match` arm guard was {} (expected Boolean)",
+                    "`match` arm guard: expected `Boolean`, found `{}`",
                     other.type_name()
                 ),
             }
@@ -498,6 +519,11 @@ fn exec_void_block(block: &Block, env: &Env<'_, '_>, out: &mut Vec<ResourceState
                     }
                 }
             }
+            // Effect statements route to the *real* sink, exactly like
+            // the trailing expression — keep this arm in lockstep with
+            // the checker's `reject_reconcile_in_exec_void_block`,
+            // which promises users that reconciles gated here are real.
+            Stmt::Expr(x) => exec_void_expr(x, &local, out)?,
         }
     }
     if let Some(trailing) = &block.trailing {
@@ -540,9 +566,44 @@ fn eval_expr(expr: &Spanned<Expr>, env: &Env<'_, '_>) -> Result<Value> {
     // `eval_expr` and would otherwise overflow the stack and SIGABRT
     // on a manifest that passed the checker. Cheap when the stack is
     // healthy. (`eval_call` body recursion is already guarded.)
-    stacker::maybe_grow(STACK_RED_ZONE, STACK_GROW_SLAB, || {
+    let v = stacker::maybe_grow(STACK_RED_ZONE, STACK_GROW_SLAB, || {
         eval_expr_inner(expr, env)
-    })
+    })?;
+    // Apply the checker's Int→Double promotions. Spans are per-module
+    // source offsets; `env.current` always names the module whose
+    // source this expression came from (`eval_call` switches to the
+    // callee's origin module before evaluating its body).
+    if env
+        .current_module()
+        .double_promotions
+        .contains(&(expr.span.start, expr.span.end))
+    {
+        return Ok(promote_to_double(v));
+    }
+    Ok(v)
+}
+
+/// Coerce the checker-promoted positions of `v` from `Int` to
+/// `Double`. Top-level scalar, list elements, or map values — exactly
+/// the shapes the checker's `join_types` can promote (it never
+/// recurses into containers). `i64 → f64` above 2^53 loses precision,
+/// identically to the arithmetic promotion in `eval_binop_inner`.
+fn promote_to_double(v: Value) -> Value {
+    fn scalar(v: Value) -> Value {
+        match v {
+            Value::Int(n) =>
+            {
+                #[allow(clippy::cast_precision_loss)]
+                Value::Double(n as f64)
+            }
+            other => other,
+        }
+    }
+    match v {
+        Value::List(items) => Value::List(items.into_iter().map(scalar).collect()),
+        Value::Map(pairs) => Value::Map(pairs.into_iter().map(|(k, v)| (k, scalar(v))).collect()),
+        other => scalar(other),
+    }
 }
 
 fn eval_expr_inner(expr: &Spanned<Expr>, env: &Env<'_, '_>) -> Result<Value> {
@@ -592,6 +653,28 @@ fn eval_expr_inner(expr: &Spanned<Expr>, env: &Env<'_, '_>) -> Result<Value> {
         }
         Expr::Var(name) => env.lookup(name),
         Expr::Call { callee, args } => eval_call(&callee.node, args, env),
+        Expr::StructLiteral { name, fields } => {
+            // Resolve the struct decl: imported name first (construct
+            // in its origin module so defaults see the right scope),
+            // then the current module's own structs.
+            let module = env.current_module();
+            if let Some((origin, original)) = module.imports.get(&name.node)
+                && let Some(origin_mod) = env.graph.modules.get(origin)
+                && let Some(decl) = origin_mod.structs.get(original)
+            {
+                let default_env = Env::new(env.graph, origin.clone());
+                return construct_struct_from_literal(decl, fields, env, &default_env);
+            }
+            let Some(decl) = module.structs.get(&name.node) else {
+                bail!("unknown struct `{}`", name.node);
+            };
+            // Field defaults must see module scope only — never the
+            // literal's locals (params/block vals/match binds), which
+            // the checker forbids them from referencing. Build a fresh
+            // module-scope env, exactly as the imported path does.
+            let default_env = Env::new(env.graph, env.current.clone());
+            construct_struct_from_literal(decl, fields, env, &default_env)
+        }
         Expr::If {
             cond,
             then_branch,
@@ -599,7 +682,10 @@ fn eval_expr_inner(expr: &Spanned<Expr>, env: &Env<'_, '_>) -> Result<Value> {
         } => {
             let c = eval_expr(cond, env)?;
             let Value::Bool(b) = c else {
-                bail!("`if` condition was {} (expected Boolean)", c.type_name());
+                bail!(
+                    "`if` condition: expected `Boolean`, found `{}`",
+                    c.type_name()
+                );
             };
             let block: &Block = if b { then_branch } else { else_branch };
             let mut sink = Vec::new();
@@ -666,7 +752,7 @@ fn eval_match(scrutinee: &Spanned<Expr>, arms: &[MatchArm], env: &Env<'_, '_>) -
                 Value::Bool(true) => {}
                 Value::Bool(false) => continue,
                 other => bail!(
-                    "`match` arm guard was {} (expected Boolean)",
+                    "`match` arm guard: expected `Boolean`, found `{}`",
                     other.type_name()
                 ),
             }
@@ -750,6 +836,12 @@ fn eval_block_value(
                     }
                 }
             }
+            // Value context: the checker guarantees the statement is
+            // Void and reconcile-free; evaluate for completeness and
+            // drop the (Void) result.
+            Stmt::Expr(x) => {
+                eval_expr(x, &local)?;
+            }
         }
     }
     let Some(trailing) = &block.trailing else {
@@ -796,7 +888,7 @@ fn eval_short_circuit(
             let l = eval_expr(lhs, env)?;
             let Value::Bool(b) = l else {
                 bail!(
-                    "`{}` LHS was {} (expected Boolean)",
+                    "`{}` left operand: expected `Boolean`, found `{}`",
                     op.symbol(),
                     l.type_name()
                 );
@@ -809,7 +901,7 @@ fn eval_short_circuit(
             let r = eval_expr(rhs, env)?;
             let Value::Bool(rb) = r else {
                 bail!(
-                    "`{}` RHS was {} (expected Boolean)",
+                    "`{}` right operand: expected `Boolean`, found `{}`",
                     op.symbol(),
                     r.type_name()
                 );
@@ -828,7 +920,11 @@ fn eval_unary(op: UnaryOp, v: Value) -> Result<Value> {
             .ok_or_else(|| anyhow!("integer overflow in `-{n}` (negating i64::MIN)")),
         (UnaryOp::Neg, Value::Double(d)) => Ok(Value::Double(-d)),
         (UnaryOp::Not, Value::Bool(b)) => Ok(Value::Bool(!b)),
-        (op, v) => bail!("unary `{}` on {}", op.symbol(), v.type_name()),
+        (op, v) => bail!(
+            "unary `{}` requires a matching operand type, found `{}`",
+            op.symbol(),
+            v.type_name()
+        ),
     }
 }
 
@@ -939,7 +1035,7 @@ fn eval_binop_inner(op: BinOp, l: Value, r: Value) -> Result<Value> {
         (Ge, a, b) => Ok(Value::Bool(value_cmp(&a, &b)? != std::cmp::Ordering::Less)),
 
         (op, l, r) => bail!(
-            "binary `{}` on {} / {}",
+            "binary `{}` requires matching operand types, found `{}` and `{}`",
             op.symbol(),
             l.type_name(),
             r.type_name()
@@ -1011,19 +1107,23 @@ fn value_eq(a: &Value, b: &Value) -> bool {
 fn value_cmp(a: &Value, b: &Value) -> Result<std::cmp::Ordering> {
     match (a, b) {
         (Value::Int(x), Value::Int(y)) => Ok(x.cmp(y)),
-        (Value::Double(x), Value::Double(y)) => {
-            x.partial_cmp(y).ok_or_else(|| anyhow!("NaN comparison"))
-        }
+        (Value::Double(x), Value::Double(y)) => x
+            .partial_cmp(y)
+            .ok_or_else(|| anyhow!("ordering on NaN is undefined")),
         // Compared exactly via `cmp_int_double` (no `i64 → f64`
         // promotion) so ordering stays correct past 2^53.
         (Value::Int(x), Value::Double(y)) => {
-            cmp_int_double(*x, *y).ok_or_else(|| anyhow!("NaN comparison"))
+            cmp_int_double(*x, *y).ok_or_else(|| anyhow!("ordering on NaN is undefined"))
         }
         (Value::Double(x), Value::Int(y)) => cmp_int_double(*y, *x)
             .map(std::cmp::Ordering::reverse)
-            .ok_or_else(|| anyhow!("NaN comparison")),
+            .ok_or_else(|| anyhow!("ordering on NaN is undefined")),
         (Value::String { text: x, .. }, Value::String { text: y, .. }) => Ok(x.cmp(y)),
-        (a, b) => bail!("ordering on {} / {}", a.type_name(), b.type_name()),
+        (a, b) => bail!(
+            "ordering requires comparable types, found `{}` and `{}`",
+            a.type_name(),
+            b.type_name()
+        ),
     }
 }
 
@@ -1100,26 +1200,6 @@ fn stringify(v: &Value, out: &mut String) -> Result<bool> {
 /// bypass body evaluation.
 fn eval_call(name: &str, args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     let module = env.current_module();
-    // Cross-module struct construction: an imported `Point` resolves
-    // to a struct in its origin module.
-    if let Some((origin, original)) = module.imports.get(name)
-        && let Some(origin_mod) = env.graph.modules.get(origin)
-        && let Some(decl) = origin_mod.structs.get(original)
-    {
-        let default_env = Env::new(env.graph, origin.clone());
-        return construct_struct(decl, args, env, &default_env);
-    }
-    if let Some(decl) = module.structs.get(name) {
-        // Field defaults must see module scope only — never the
-        // caller's locals (params/block vals/match binds), which the
-        // checker forbids them from referencing. Passing `env` as the
-        // default env would dynamically scope a default that names a
-        // module `val` to a same-named caller local, breaking type
-        // soundness when their types differ. Build a fresh module-scope
-        // env, exactly as the imported-struct path above does.
-        let default_env = Env::new(env.graph, env.current.clone());
-        return construct_struct(decl, args, env, &default_env);
-    }
     let (origin_id, fn_decl): (ModuleId, &FnDecl) =
         if let Some((origin, original)) = module.imports.get(name) {
             let origin_mod = env
@@ -1148,7 +1228,8 @@ fn eval_call(name: &str, args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
         };
 
     if let Some(intrinsic) = fn_decl.intrinsic {
-        return dispatch_intrinsic(intrinsic, args, env);
+        let args = with_intrinsic_defaults(fn_decl, args);
+        return dispatch_intrinsic(intrinsic, &args, env);
     }
 
     let mut call_env = Env::new(env.graph, origin_id);
@@ -1168,6 +1249,44 @@ fn eval_call(name: &str, args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
         eval_block_value(&fn_decl.body, &call_env, &mut sink)
     })?;
     Ok(v)
+}
+
+/// Materialize declared parameter defaults for an intrinsic call.
+///
+/// User-fn calls route through `bind_params`, which evaluates
+/// defaults into the call scope — but intrinsics receive the raw
+/// `CallArg` slice, so a default declared on an intrinsic signature
+/// (`template`'s `vars = {}`, `brew`'s `tap_url = null`) would
+/// otherwise be silently inert. Uncovered defaulted params are
+/// appended as *named* args, so positional indexing inside
+/// `eval_call_arg` is unaffected; the checker guarantees defaults are
+/// literal-safe module-scope expressions.
+fn with_intrinsic_defaults<'a>(fn_decl: &FnDecl, args: &'a [CallArg]) -> Cow<'a, [CallArg]> {
+    // Positional-before-named is checker-enforced, so the positional
+    // prefix length tells us which leading params are already covered.
+    let positional = args.iter().take_while(|a| a.name.is_none()).count();
+    let missing: Vec<CallArg> = fn_decl
+        .params
+        .iter()
+        .enumerate()
+        .skip(positional)
+        .filter(|(_, p)| {
+            p.default.is_some()
+                && !args
+                    .iter()
+                    .any(|a| a.name.as_ref().is_some_and(|n| n.node == p.name.node))
+        })
+        .map(|(_, p)| CallArg {
+            name: Some(p.name.clone()),
+            value: p.default.clone().expect("filtered on is_some"),
+            span: p.span.clone(),
+        })
+        .collect();
+    if missing.is_empty() {
+        Cow::Borrowed(args)
+    } else {
+        Cow::Owned([args, &missing].concat())
+    }
 }
 
 /// Red zone for `stacker::maybe_grow` in `eval_call`. Tuned by hand to
@@ -1215,55 +1334,63 @@ impl Drop for CallDepthGuard<'_, '_> {
 
 /// Construct a struct value: bind each declared field by name (named
 /// arg) or by position (positional arg), then assemble a
-/// [`Value::Struct`]. Argument resolution mirrors [`bind_params`] —
-/// the type checker has already validated counts and types so a hit
-/// here is well-typed by construction.
+/// [`Value::Struct`] from a `Name { field: value, shorthand }`
+/// literal. The type checker has already validated field names and
+/// types, so a hit here is well-typed by construction.
 ///
-/// Explicit arguments are evaluated in the caller's env. Defaults are
-/// evaluated in the declaring module's env, matching the checker's
-/// `check_struct_decl` scope and keeping imported constructors from
-/// accidentally depending on importer-local names.
-fn construct_struct(
+/// Field values (and shorthand lookups) are evaluated in the
+/// literal's env. Defaults are evaluated in the declaring module's
+/// env, matching the checker's `check_struct_decl` scope and keeping
+/// imported constructors from accidentally depending on
+/// importer-local names.
+fn construct_struct_from_literal(
     decl: &StructDecl,
-    args: &[CallArg],
-    arg_env: &Env<'_, '_>,
+    fields: &[StructLiteralField],
+    literal_env: &Env<'_, '_>,
     default_env: &Env<'_, '_>,
 ) -> Result<Value> {
     // Struct construction recurses whenever a field default constructs
-    // another struct (`struct A { b: B = B() }` / `struct B { a: A =
-    // A() }`), so it needs the same recursion bound as user-fn calls —
+    // another struct (`struct A { b: B = B {} }` / `struct B { a: A =
+    // A {} }`), so it needs the same recursion bound as user-fn calls —
     // without it a self-referential default overflows the Rust stack
     // (SIGABRT) instead of surfacing the clean depth diagnostic. Share
     // the fn-call counter and stack-growth so either kind of runaway
     // recursion is capped at `MAX_CALL_DEPTH`.
-    let _depth = CallDepthGuard::enter(arg_env.graph)?;
+    let _depth = CallDepthGuard::enter(literal_env.graph)?;
     stacker::maybe_grow(STACK_RED_ZONE, STACK_GROW_SLAB, || {
-        let mut fields: Vec<(String, Value)> = Vec::with_capacity(decl.fields.len());
-        let mut positional = args.iter().filter(|a| a.name.is_none());
+        let mut out: Vec<(String, Value)> = Vec::with_capacity(decl.fields.len());
         for field in &decl.fields {
-            let named = args
-                .iter()
-                .find(|a| a.name.as_ref().is_some_and(|n| n.node == field.name.node));
-            let value = if let Some(arg) = named {
-                eval_expr(&arg.value, arg_env)?
-            } else if let Some(arg) = positional.next() {
-                eval_expr(&arg.value, arg_env)?
-            } else if let Some(default) = &field.default {
-                eval_expr(default, default_env)?
+            let supplied = fields.iter().find(|f| f.name.node == field.name.node);
+            let value = if let Some(f) = supplied {
+                if let Some(value) = &f.value {
+                    eval_expr(value, literal_env)?
+                } else {
+                    // Shorthand: bind from the same-named variable.
+                    lookup_var(&f.name.node, literal_env)?
+                }
             } else {
-                bail!(
-                    "missing argument for field `{}` of struct `{}`",
-                    field.name.node,
-                    decl.name.node
-                );
+                let Some(default) = &field.default else {
+                    bail!(
+                        "missing field `{}` for struct `{}`",
+                        field.name.node,
+                        decl.name.node
+                    );
+                };
+                eval_expr(default, default_env)?
             };
-            fields.push((field.name.node.clone(), value));
+            out.push((field.name.node.clone(), value));
         }
         Ok(Value::Struct {
             name: decl.name.node.clone(),
-            fields,
+            fields: out,
         })
     })
+}
+
+/// Shorthand-field lookup for struct literals: same resolution as
+/// `Expr::Var`.
+fn lookup_var(name: &str, env: &Env<'_, '_>) -> Result<Value> {
+    env.lookup(name)
 }
 
 fn builtin_fn(name: &str) -> Option<&'static FnDecl> {
@@ -1330,13 +1457,11 @@ fn dispatch_intrinsic(id: IntrinsicId, args: &[CallArg], env: &Env<'_, '_>) -> R
         IntrinsicId::Split => dispatch_split(args, env),
         IntrinsicId::Join => dispatch_join(args, env),
         IntrinsicId::Contains => dispatch_contains(args, env),
+        IntrinsicId::Len => dispatch_len(args, env),
         IntrinsicId::Replace => dispatch_replace(args, env),
         IntrinsicId::Trim => dispatch_trim(args, env),
         IntrinsicId::StartsWith => dispatch_starts_with(args, env),
         IntrinsicId::EndsWith => dispatch_ends_with(args, env),
-        IntrinsicId::StrLen => dispatch_str_len(args, env),
-        IntrinsicId::ListLen => dispatch_list_len(args, env),
-        IntrinsicId::ListContains => dispatch_list_contains(args, env),
         IntrinsicId::ListFirst => dispatch_list_endpoint(args, env, ListEndpoint::First),
         IntrinsicId::ListLast => dispatch_list_endpoint(args, env, ListEndpoint::Last),
         IntrinsicId::Sort => dispatch_sort(args, env),
@@ -1345,7 +1470,6 @@ fn dispatch_intrinsic(id: IntrinsicId, args: &[CallArg], env: &Env<'_, '_>) -> R
         IntrinsicId::MapKeys => dispatch_map_projection(args, env, MapProjection::Keys),
         IntrinsicId::MapValues => dispatch_map_projection(args, env, MapProjection::Values),
         IntrinsicId::MapGet => dispatch_map_get(args, env),
-        IntrinsicId::MapContains => dispatch_map_contains(args, env),
         IntrinsicId::MapMerge => dispatch_map_merge(args, env),
         IntrinsicId::MapWithout => dispatch_map_without(args, env),
         IntrinsicId::MapWith => dispatch_map_with(args, env),
@@ -1465,18 +1589,23 @@ fn dispatch_path_parent(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
 
 fn dispatch_path_basename(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     let p = call_string(args, env, "p", 0)?;
-    let name = std::path::Path::new(&p)
+    // Absence is `null`, matching `path_parent`: the whole `path_*`
+    // family encodes "no component here" the same way, so callers
+    // branch with `??`/`match` instead of comparing against `""`.
+    Ok(std::path::Path::new(&p)
         .file_name()
-        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-    Ok(Value::plain_string(name))
+        .map_or(Value::Null, |n| {
+            Value::plain_string(n.to_string_lossy().into_owned())
+        }))
 }
 
 fn dispatch_path_extension(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     let p = call_string(args, env, "p", 0)?;
-    let ext = std::path::Path::new(&p)
+    Ok(std::path::Path::new(&p)
         .extension()
-        .map_or_else(String::new, |e| e.to_string_lossy().into_owned());
-    Ok(Value::plain_string(ext))
+        .map_or(Value::Null, |e| {
+            Value::plain_string(e.to_string_lossy().into_owned())
+        }))
 }
 
 fn dispatch_path_is_absolute(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
@@ -1521,32 +1650,6 @@ enum MapProjection {
     Values,
 }
 
-fn dispatch_list_len(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
-    let xs = eval_call_arg(args, env, "xs", 0)?;
-    let Value::List(items) = xs else {
-        bail!("len(xs): `xs` was {} (expected List)", xs.type_name());
-    };
-    let n: i64 = items
-        .len()
-        .try_into()
-        .map_err(|_| anyhow!("len(xs): list size exceeds Int range"))?;
-    Ok(Value::Int(n))
-}
-
-fn dispatch_list_contains(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
-    let xs = eval_call_arg(args, env, "xs", 0)?;
-    let needle = eval_call_arg(args, env, "x", 1)?;
-    let Value::List(items) = xs else {
-        bail!(
-            "contains(xs, x): `xs` was {} (expected List)",
-            xs.type_name()
-        );
-    };
-    Ok(Value::Bool(
-        items.iter().any(|item| value_eq(item, &needle)),
-    ))
-}
-
 /// `first(xs)` / `last(xs)` share an inspection shape — pull the head
 /// or tail of a `Value::List`, returning `Value::Null` for an empty
 /// list (matching the `T?` signature). The element is cloned because
@@ -1555,7 +1658,7 @@ fn dispatch_list_endpoint(args: &[CallArg], env: &Env<'_, '_>, end: ListEndpoint
     let xs = eval_call_arg(args, env, "xs", 0)?;
     let Value::List(items) = xs else {
         bail!(
-            "{}(xs): `xs` was {} (expected List)",
+            "`{}` expected `List` for `xs`, found `{}`",
             match end {
                 ListEndpoint::First => "first",
                 ListEndpoint::Last => "last",
@@ -1577,7 +1680,7 @@ fn dispatch_map_projection(
     let m = eval_call_arg(args, env, "m", 0)?;
     let Value::Map(pairs) = m else {
         bail!(
-            "{}(m): `m` was {} (expected Map)",
+            "`{}` expected `Map` for `m`, found `{}`",
             match proj {
                 MapProjection::Keys => "keys",
                 MapProjection::Values => "values",
@@ -1600,10 +1703,7 @@ fn dispatch_map_get(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     let key = eval_call_arg(args, env, "k", 1)?;
     let default = eval_call_arg(args, env, "default", 2)?;
     let Value::Map(pairs) = m else {
-        bail!(
-            "get(m, k, default): `m` was {} (expected Map)",
-            m.type_name()
-        );
+        bail!("`get` expected `Map` for `m`, found `{}`", m.type_name());
     };
     Ok(pairs
         .into_iter()
@@ -1611,31 +1711,33 @@ fn dispatch_map_get(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
         .unwrap_or(default))
 }
 
-fn dispatch_map_contains(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
-    let m = eval_call_arg(args, env, "m", 0)?;
-    let key = eval_call_arg(args, env, "k", 1)?;
-    let Value::Map(pairs) = m else {
-        bail!(
-            "map_contains(m, k): `m` was {} (expected Map)",
-            m.type_name()
-        );
-    };
-    Ok(Value::Bool(pairs.iter().any(|(k, _)| value_eq(k, &key))))
-}
-
-/// `sort(xs)` — ascending lex order on `String`. The signature
-/// constrains `xs` to `List<String>`; any other element type is a
-/// type error before dispatch, so destructuring failures here mean
-/// AST drift (loud `bail!`, not a silent miss).
+/// `sort(xs)` — ascending order via [`value_cmp`]. The checker gates
+/// the element type to orderables (`String`, `Int`, `Double`, string
+/// unions), so a comparison failure here means AST drift; it is
+/// captured and surfaced as a loud error rather than silently
+/// treating the pair as equal. Mixed `Int`/`Double` lists order
+/// exactly through `cmp_int_double`.
 fn dispatch_sort(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     let xs = eval_call_arg(args, env, "xs", 0)?;
     let Value::List(mut items) = xs else {
-        bail!("sort(xs): `xs` was {} (expected List)", xs.type_name());
+        bail!(
+            "`sort` expected `List` for `xs`, found `{}`",
+            xs.type_name()
+        );
     };
-    items.sort_by(|a, b| match (a, b) {
-        (Value::String { text: x, .. }, Value::String { text: y, .. }) => x.cmp(y),
-        _ => std::cmp::Ordering::Equal,
+    // `sort_by` needs a total order and can't early-return, so stash
+    // the first comparison error and re-raise after the sort.
+    let mut cmp_err: Option<anyhow::Error> = None;
+    items.sort_by(|a, b| match value_cmp(a, b) {
+        Ok(ordering) => ordering,
+        Err(e) => {
+            cmp_err.get_or_insert(e);
+            std::cmp::Ordering::Equal
+        }
     });
+    if let Some(e) = cmp_err {
+        return Err(e);
+    }
     Ok(Value::List(items))
 }
 
@@ -1646,7 +1748,10 @@ fn dispatch_sort(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
 fn dispatch_unique(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     let xs = eval_call_arg(args, env, "xs", 0)?;
     let Value::List(items) = xs else {
-        bail!("unique(xs): `xs` was {} (expected List)", xs.type_name());
+        bail!(
+            "`unique` expected `List` for `xs`, found `{}`",
+            xs.type_name()
+        );
     };
     let mut out: Vec<Value> = Vec::with_capacity(items.len());
     for item in items {
@@ -1666,7 +1771,7 @@ fn dispatch_index_of(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     let needle = eval_call_arg(args, env, "x", 1)?;
     let Value::List(items) = xs else {
         bail!(
-            "index_of(xs, x): `xs` was {} (expected List)",
+            "`index_of` expected `List` for `xs`, found `{}`",
             xs.type_name()
         );
     };
@@ -1687,10 +1792,10 @@ fn dispatch_map_merge(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     let a = eval_call_arg(args, env, "a", 0)?;
     let b = eval_call_arg(args, env, "b", 1)?;
     let Value::Map(left) = a else {
-        bail!("merge(a, b): `a` was {} (expected Map)", a.type_name());
+        bail!("`merge` expected `Map` for `a`, found `{}`", a.type_name());
     };
     let Value::Map(right) = b else {
-        bail!("merge(a, b): `b` was {} (expected Map)", b.type_name());
+        bail!("`merge` expected `Map` for `b`, found `{}`", b.type_name());
     };
     let mut out: Vec<(Value, Value)> = Vec::with_capacity(left.len() + right.len());
     for (k, v) in left {
@@ -1717,7 +1822,10 @@ fn dispatch_map_without(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     let m = eval_call_arg(args, env, "m", 0)?;
     let key = eval_call_arg(args, env, "k", 1)?;
     let Value::Map(pairs) = m else {
-        bail!("without(m, k): `m` was {} (expected Map)", m.type_name());
+        bail!(
+            "`without` expected `Map` for `m`, found `{}`",
+            m.type_name()
+        );
     };
     let out: Vec<(Value, Value)> = pairs
         .into_iter()
@@ -1734,7 +1842,7 @@ fn dispatch_map_with(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     let key = eval_call_arg(args, env, "k", 1)?;
     let value = eval_call_arg(args, env, "v", 2)?;
     let Value::Map(pairs) = m else {
-        bail!("with(m, k, v): `m` was {} (expected Map)", m.type_name());
+        bail!("`with` expected `Map` for `m`, found `{}`", m.type_name());
     };
     let mut out: Vec<(Value, Value)> = Vec::with_capacity(pairs.len() + 1);
     let mut replaced = false;
@@ -1851,7 +1959,7 @@ fn dispatch_join(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     let sep = call_string(args, env, "sep", 1)?;
     let Value::List(items) = xs else {
         bail!(
-            "join(xs, sep): `xs` was {} (expected List<String>)",
+            "`join` expected `List<String>` for `xs`, found `{}`",
             xs.type_name()
         );
     };
@@ -1864,7 +1972,7 @@ fn dispatch_join(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
         } = item
         else {
             bail!(
-                "join(xs, sep): element {i} was {} (expected String)",
+                "`join` expected `String` for element {i}, found `{}`",
                 item.type_name()
             );
         };
@@ -1881,10 +1989,68 @@ fn dispatch_join(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     })
 }
 
+/// `contains(x, item)` — membership by the kind of `x`: substring on
+/// `String`, element on `List` (same equality rule as `==`), key on
+/// `Map`. Sensitive strings are refused on both sides of the string
+/// form, matching every other string intrinsic — a secret must go
+/// through `unwrap_secret` before it can be probed.
 fn dispatch_contains(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
-    let haystack = call_string(args, env, "haystack", 0)?;
-    let needle = call_string(args, env, "needle", 1)?;
-    Ok(Value::Bool(haystack.contains(&needle)))
+    let x = eval_call_arg(args, env, "x", 0)?;
+    let item = eval_call_arg(args, env, "item", 1)?;
+    let found = match &x {
+        Value::String { text, sensitive } => {
+            if *sensitive {
+                bail!("sensitive String cannot be used for `x`");
+            }
+            let Value::String {
+                text: needle,
+                sensitive: needle_sensitive,
+            } = &item
+            else {
+                bail!(
+                    "`contains` expected `String` for `item`, found `{}`",
+                    item.type_name()
+                );
+            };
+            if *needle_sensitive {
+                bail!("sensitive String cannot be used for `item`");
+            }
+            text.contains(needle.as_str())
+        }
+        Value::List(items) => items.iter().any(|element| value_eq(element, &item)),
+        Value::Map(pairs) => pairs.iter().any(|(key, _)| value_eq(key, &item)),
+        other => bail!(
+            "`contains` expected `String`, `List`, or `Map` for `x`, found `{}`",
+            other.type_name()
+        ),
+    };
+    Ok(Value::Bool(found))
+}
+
+/// `len(x)` — size by the kind of `x`: Unicode scalar values (chars,
+/// not bytes) for `String`, element count for `List`, entry count for
+/// `Map`. Sensitive strings are refused like every string intrinsic —
+/// a length is a (weak) oracle.
+fn dispatch_len(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
+    let x = eval_call_arg(args, env, "x", 0)?;
+    let n = match &x {
+        Value::String { text, sensitive } => {
+            if *sensitive {
+                bail!("sensitive String cannot be used for `x`");
+            }
+            i64::try_from(text.chars().count()).context("len: string too long")?
+        }
+        Value::List(items) => i64::try_from(items.len())
+            .map_err(|_| anyhow!("len(x): list size exceeds Int range"))?,
+        Value::Map(pairs) => {
+            i64::try_from(pairs.len()).map_err(|_| anyhow!("len(x): map size exceeds Int range"))?
+        }
+        other => bail!(
+            "`len` expected `String`, `List`, or `Map` for `x`, found `{}`",
+            other.type_name()
+        ),
+    };
+    Ok(Value::Int(n))
 }
 
 fn dispatch_replace(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
@@ -1922,14 +2088,6 @@ fn dispatch_ends_with(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
     let s = call_string(args, env, "s", 0)?;
     let suffix = call_string(args, env, "suffix", 1)?;
     Ok(Value::Bool(s.ends_with(&suffix)))
-}
-
-fn dispatch_str_len(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
-    let s = call_string(args, env, "s", 0)?;
-    // Count Unicode scalar values, not bytes. The conversion only fails
-    // for a string longer than `i64::MAX` chars, which cannot exist.
-    let n = i64::try_from(s.chars().count()).context("str_len: string too long")?;
-    Ok(Value::Int(n))
 }
 
 fn dispatch_shell(args: &[CallArg], env: &Env<'_, '_>) -> Result<Value> {
@@ -2591,10 +2749,10 @@ fn call_string(
 }
 
 /// Like [`call_string`] but tolerates the arg being omitted *or*
-/// supplied as `null`. Intrinsics receive their args slice raw — they
-/// don't go through [`bind_params`] — so defaults declared on the
-/// stdlib signature aren't substituted; this helper papers over that
-/// for `String? = null` intrinsic params.
+/// supplied as `null`. `with_intrinsic_defaults` materializes a
+/// declared `= null` default before dispatch, so the omitted case is
+/// normally already filled in — the omission tolerance here is a
+/// second line of defense for intrinsics without a declared default.
 fn call_optional_string(
     args: &[CallArg],
     env: &Env<'_, '_>,

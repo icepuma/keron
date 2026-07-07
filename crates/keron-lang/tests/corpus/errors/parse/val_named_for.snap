@@ -6,3 +6,4 @@ error: `for` is a reserved keyword
   |
 1 | val for: Int = 1
   |     ^
+  = help: rename the binding to a non-keyword identifier.

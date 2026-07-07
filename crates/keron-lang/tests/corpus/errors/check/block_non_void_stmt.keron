@@ -1,0 +1,6 @@
+# A non-final expression statement must be Void: a produced value has
+# nowhere to go.
+if true {
+  1 + 2
+  reconcile brew("git")
+}

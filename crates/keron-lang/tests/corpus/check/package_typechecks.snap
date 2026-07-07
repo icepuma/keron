@@ -460,7 +460,7 @@ Program {
                             node: Var(
                                 "brew_tools",
                             ),
-                            span: 1155..1165,
+                            span: 1154..1164,
                         },
                     ],
                     [
@@ -468,11 +468,11 @@ Program {
                             node: Var(
                                 "mixed",
                             ),
-                            span: 1169..1174,
+                            span: 1167..1172,
                         },
                     ],
                 ],
-                span: 1129..1244,
+                span: 1129..1241,
             },
         ),
         ExprStmt(
@@ -481,14 +481,14 @@ Program {
                     pattern: Elem(
                         Spanned {
                             node: "p",
-                            span: 1248..1249,
+                            span: 1245..1246,
                         },
                     ),
                     iter_expr: Spanned {
                         node: Var(
                             "brew_tools",
                         ),
-                        span: 1253..1263,
+                        span: 1250..1260,
                     },
                     body: Block {
                         stmts: [
@@ -500,19 +500,19 @@ Program {
                                                 node: Var(
                                                     "p",
                                                 ),
-                                                span: 1278..1279,
+                                                span: 1275..1276,
                                             },
                                         ],
                                     ],
-                                    span: 1268..1280,
+                                    span: 1265..1277,
                                 },
                             ),
                         ],
                         trailing: None,
-                        span: 1264..1282,
+                        span: 1261..1279,
                     },
                 },
-                span: 1244..1282,
+                span: 1241..1279,
             },
         ),
     ],

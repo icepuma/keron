@@ -1,0 +1,14 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: `;` chain separators were removed; put each chain on its own line
+  --> 7:4
+  |
+7 |   a;
+  |    ^^^^
+
+error: `;` chain separators were removed; put each chain on its own line
+  --> 8:4
+  |
+8 |   b;
+  |    ^^

@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: unexpected `:`, expected `!`, `&`, `(`, `*`, `+`, `-`, `.`, `/`, `<`, `=`, `>`, `?`, `reconcile`, `val`, `|`, `}`, or expression
+  --> 6:30
+  |
+6 | val x: String = if Flags { on: true }.on { "y" } else { "n" }
+  |                              ^

@@ -393,8 +393,8 @@ fn build_prechecked_plan_skips_unsupported_packages_before_classification() {
     let entry = dir.join("entry.keron");
     fs::write(dir.join("tmpl.tpl"), "{{ body }}").unwrap();
     let src = "reconcile {\n\
-                   winget(\"Microsoft.PowerShell\");\n\
-                   template(source = \"tmpl.tpl\", target = \"/a\", vars = {\"body\": \"\"});\n\
+                   winget(\"Microsoft.PowerShell\")\n\
+                   template(source = \"tmpl.tpl\", target = \"/a\", vars = {\"body\": \"\"})\n\
                    }\n";
     fs::write(&entry, src).unwrap();
     let canonical = fs::canonicalize(&entry).unwrap();
@@ -450,7 +450,7 @@ fn build_prechecked_plan_runs_prereq_check_before_classify_probes() {
         std::env::temp_dir().join(format!("keron-prereq-ordering-{}-{n}", std::process::id()));
     fs::create_dir_all(&dir).unwrap();
     let entry = dir.join("entry.keron");
-    let src = "reconcile { brew(\"ripgrep\"); }\n";
+    let src = "reconcile { brew(\"ripgrep\") }\n";
     fs::write(&entry, src).unwrap();
     let canonical = fs::canonicalize(&entry).unwrap();
     let keron_root = canonical.parent().unwrap().to_path_buf();

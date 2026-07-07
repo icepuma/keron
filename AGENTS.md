@@ -35,8 +35,9 @@ services, no root, no kernel.
 
 ```
 crates/
-  keron-lang/         lexer, parser, types, eval, embedded stdlib  (lib)
-  keron-apply/        plan, execute, sentinels, providers, Tera     (lib)
+  keron-lang/         lexer, parser, type checker, formatter        (lib)
+  keron-modules/      module graph, `use` resolution, embedded stdlib (lib)
+  keron-apply/        eval, plan, execute, elevation, providers, Tera (lib)
   keron-cli/          thin orchestrator binary                      (bin)
 ```
 
@@ -112,11 +113,18 @@ Don't add local recipes for mutation testing; keep it in the workflow.
 - **No `unsafe`.** Forbidden by lint.
 - **Stdlib namespace growth**: builtins share the single flat namespace
   that user `fn`s live in, and builtins are unshadowable (a user `fn`
-  colliding with one is a hard error). So every new builtin is a
-  potential source-breaking change for existing manifests. Prefer a
-  domain prefix for new additions (`path_*`, `str_*`, `list_*`,
-  `map_*`) over squatting a maximally generic bare name (`get`, `with`,
-  `len`); bare names are grandfathered, not a pattern to extend.
+  or import colliding with one is a hard error). So every new builtin
+  is a potential source-breaking change for existing manifests. The
+  rules:
+  - Kind-uniform collection ops (`len`, `contains`) are type-directed
+    overloads over `String`/`List`/`Map`, resolved by the checker from
+    the first argument's type (`check/overload.rs`). Extend that set
+    only for an op whose meaning is identical across all three kinds.
+  - Everything domain-specific gets a domain prefix (`path_*`,
+    `parse_*`, …).
+  - Do not squat new maximally generic bare names (`get`, `with`,
+    `size`); the remaining bare names are grandfathered, not a pattern
+    to extend.
 
 ### Comments
 

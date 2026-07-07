@@ -1,0 +1,350 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+Program {
+    items: [
+        Struct(
+            StructDecl {
+                name: Spanned {
+                    node: "Flags",
+                    span: 141..146,
+                },
+                fields: [
+                    StructField {
+                        name: Spanned {
+                            node: "verbose",
+                            span: 149..156,
+                        },
+                        ty: Spanned {
+                            node: Boolean,
+                            span: 158..165,
+                        },
+                        default: Some(
+                            Spanned {
+                                node: Literal(
+                                    Boolean(
+                                        false,
+                                    ),
+                                ),
+                                span: 168..173,
+                            },
+                        ),
+                        span: 149..174,
+                    },
+                ],
+                span: 134..177,
+            },
+        ),
+        Struct(
+            StructDecl {
+                name: Spanned {
+                    node: "Inner",
+                    span: 184..189,
+                },
+                fields: [
+                    StructField {
+                        name: Spanned {
+                            node: "v",
+                            span: 192..193,
+                        },
+                        ty: Spanned {
+                            node: Int,
+                            span: 195..198,
+                        },
+                        default: Some(
+                            Spanned {
+                                node: Literal(
+                                    Int(
+                                        0,
+                                    ),
+                                ),
+                                span: 201..202,
+                            },
+                        ),
+                        span: 192..203,
+                    },
+                ],
+                span: 177..206,
+            },
+        ),
+        Struct(
+            StructDecl {
+                name: Spanned {
+                    node: "Outer",
+                    span: 213..218,
+                },
+                fields: [
+                    StructField {
+                        name: Spanned {
+                            node: "inner",
+                            span: 221..226,
+                        },
+                        ty: Spanned {
+                            node: Named(
+                                "Inner",
+                            ),
+                            span: 228..233,
+                        },
+                        default: None,
+                        span: 221..233,
+                    },
+                    StructField {
+                        name: Spanned {
+                            node: "flags",
+                            span: 235..240,
+                        },
+                        ty: Spanned {
+                            node: Named(
+                                "Flags",
+                            ),
+                            span: 242..247,
+                        },
+                        default: None,
+                        span: 235..248,
+                    },
+                ],
+                span: 206..251,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "defaults",
+                    span: 255..263,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Named(
+                            "Flags",
+                        ),
+                        span: 265..270,
+                    },
+                ),
+                value: Spanned {
+                    node: StructLiteral {
+                        name: Spanned {
+                            node: "Flags",
+                            span: 273..278,
+                        },
+                        fields: [],
+                    },
+                    span: 273..283,
+                },
+                span: 251..283,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "nested",
+                    span: 287..293,
+                },
+                ty: Some(
+                    Spanned {
+                        node: Named(
+                            "Outer",
+                        ),
+                        span: 295..300,
+                    },
+                ),
+                value: Spanned {
+                    node: StructLiteral {
+                        name: Spanned {
+                            node: "Outer",
+                            span: 303..308,
+                        },
+                        fields: [
+                            StructLiteralField {
+                                name: Spanned {
+                                    node: "inner",
+                                    span: 311..316,
+                                },
+                                value: Some(
+                                    Spanned {
+                                        node: StructLiteral {
+                                            name: Spanned {
+                                                node: "Inner",
+                                                span: 318..323,
+                                            },
+                                            fields: [
+                                                StructLiteralField {
+                                                    name: Spanned {
+                                                        node: "v",
+                                                        span: 326..327,
+                                                    },
+                                                    value: Some(
+                                                        Spanned {
+                                                            node: Literal(
+                                                                Int(
+                                                                    7,
+                                                                ),
+                                                            ),
+                                                            span: 329..330,
+                                                        },
+                                                    ),
+                                                    span: 326..331,
+                                                },
+                                            ],
+                                        },
+                                        span: 318..332,
+                                    },
+                                ),
+                                span: 311..332,
+                            },
+                            StructLiteralField {
+                                name: Spanned {
+                                    node: "flags",
+                                    span: 334..339,
+                                },
+                                value: Some(
+                                    Spanned {
+                                        node: StructLiteral {
+                                            name: Spanned {
+                                                node: "Flags",
+                                                span: 341..346,
+                                            },
+                                            fields: [],
+                                        },
+                                        span: 341..350,
+                                    },
+                                ),
+                                span: 334..350,
+                            },
+                        ],
+                    },
+                    span: 303..353,
+                },
+                span: 283..353,
+            },
+        ),
+        Val(
+            ValDecl {
+                name: Spanned {
+                    node: "gated",
+                    span: 357..362,
+                },
+                ty: Some(
+                    Spanned {
+                        node: String,
+                        span: 364..370,
+                    },
+                ),
+                value: Spanned {
+                    node: If {
+                        cond: Spanned {
+                            node: Binary {
+                                op: Eq,
+                                lhs: Spanned {
+                                    node: Field {
+                                        receiver: Spanned {
+                                            node: Field {
+                                                receiver: Spanned {
+                                                    node: StructLiteral {
+                                                        name: Spanned {
+                                                            node: "Outer",
+                                                            span: 377..382,
+                                                        },
+                                                        fields: [
+                                                            StructLiteralField {
+                                                                name: Spanned {
+                                                                    node: "inner",
+                                                                    span: 385..390,
+                                                                },
+                                                                value: Some(
+                                                                    Spanned {
+                                                                        node: StructLiteral {
+                                                                            name: Spanned {
+                                                                                node: "Inner",
+                                                                                span: 392..397,
+                                                                            },
+                                                                            fields: [],
+                                                                        },
+                                                                        span: 392..400,
+                                                                    },
+                                                                ),
+                                                                span: 385..400,
+                                                            },
+                                                            StructLiteralField {
+                                                                name: Spanned {
+                                                                    node: "flags",
+                                                                    span: 402..407,
+                                                                },
+                                                                value: Some(
+                                                                    Spanned {
+                                                                        node: StructLiteral {
+                                                                            name: Spanned {
+                                                                                node: "Flags",
+                                                                                span: 409..414,
+                                                                            },
+                                                                            fields: [],
+                                                                        },
+                                                                        span: 409..418,
+                                                                    },
+                                                                ),
+                                                                span: 402..418,
+                                                            },
+                                                        ],
+                                                    },
+                                                    span: 377..419,
+                                                },
+                                                field: Spanned {
+                                                    node: "inner",
+                                                    span: 420..425,
+                                                },
+                                            },
+                                            span: 377..425,
+                                        },
+                                        field: Spanned {
+                                            node: "v",
+                                            span: 426..427,
+                                        },
+                                    },
+                                    span: 377..427,
+                                },
+                                rhs: Spanned {
+                                    node: Literal(
+                                        Int(
+                                            0,
+                                        ),
+                                    ),
+                                    span: 431..432,
+                                },
+                            },
+                            span: 377..432,
+                        },
+                        then_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: Literal(
+                                        String(
+                                            "zeroed",
+                                        ),
+                                    ),
+                                    span: 438..446,
+                                },
+                            ),
+                            span: 434..449,
+                        },
+                        else_branch: Block {
+                            stmts: [],
+                            trailing: Some(
+                                Spanned {
+                                    node: Literal(
+                                        String(
+                                            "set",
+                                        ),
+                                    ),
+                                    span: 458..463,
+                                },
+                            ),
+                            span: 454..466,
+                        },
+                    },
+                    span: 373..466,
+                },
+                span: 353..466,
+            },
+        ),
+    ],
+}

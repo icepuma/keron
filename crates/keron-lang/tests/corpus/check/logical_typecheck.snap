@@ -138,19 +138,19 @@ Program {
                     },
                     span: 226..270,
                 },
-                span: 202..352,
+                span: 202..468,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "on_ci",
-                    span: 356..361,
+                    span: 472..477,
                 },
                 ty: Some(
                     Spanned {
                         node: Boolean,
-                        span: 363..370,
+                        span: 479..486,
                     },
                 ),
                 value: Spanned {
@@ -163,7 +163,7 @@ Program {
                                     node: Call {
                                         callee: Spanned {
                                             node: "env",
-                                            span: 373..376,
+                                            span: 490..493,
                                         },
                                         args: [
                                             CallArg {
@@ -174,13 +174,13 @@ Program {
                                                             "CI",
                                                         ),
                                                     ),
-                                                    span: 377..381,
+                                                    span: 494..498,
                                                 },
-                                                span: 377..381,
+                                                span: 494..498,
                                             },
                                         ],
                                     },
-                                    span: 373..383,
+                                    span: 490..500,
                                 },
                                 rhs: Spanned {
                                     node: Literal(
@@ -188,10 +188,10 @@ Program {
                                             "false",
                                         ),
                                     ),
-                                    span: 386..393,
+                                    span: 503..510,
                                 },
                             },
-                            span: 373..393,
+                            span: 490..510,
                         },
                         rhs: Spanned {
                             node: Literal(
@@ -199,24 +199,24 @@ Program {
                                     "true",
                                 ),
                             ),
-                            span: 397..403,
+                            span: 515..521,
                         },
                     },
-                    span: 373..403,
+                    span: 490..521,
                 },
-                span: 352..441,
+                span: 468..559,
             },
         ),
         Val(
             ValDecl {
                 name: Spanned {
                     node: "ready",
-                    span: 445..450,
+                    span: 563..568,
                 },
                 ty: Some(
                     Spanned {
                         node: Boolean,
-                        span: 452..459,
+                        span: 570..577,
                     },
                 ),
                 value: Spanned {
@@ -229,27 +229,27 @@ Program {
                                     node: Var(
                                         "on_arm_mac",
                                     ),
-                                    span: 462..472,
+                                    span: 580..590,
                                 },
                                 rhs: Spanned {
                                     node: Var(
                                         "any_unix",
                                     ),
-                                    span: 476..484,
+                                    span: 594..602,
                                 },
                             },
-                            span: 462..484,
+                            span: 580..602,
                         },
                         rhs: Spanned {
                             node: Var(
                                 "on_ci",
                             ),
-                            span: 488..493,
+                            span: 606..611,
                         },
                     },
-                    span: 462..493,
+                    span: 580..611,
                 },
-                span: 441..494,
+                span: 559..612,
             },
         ),
     ],

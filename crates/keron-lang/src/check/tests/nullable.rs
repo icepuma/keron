@@ -338,7 +338,7 @@ fn struct_pattern_matches_nullable_scrutinee() {
     assert!(
         check_src(
             "struct Point { x: Int }\n\
-             val maybe: Point? = Point(1)\n\
+             val maybe: Point? = Point { x: 1 }\n\
              val r: Int = match maybe { Point { x } => x, _ => 0 }",
         )
         .is_ok(),

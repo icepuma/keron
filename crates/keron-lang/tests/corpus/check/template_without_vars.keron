@@ -1,0 +1,10 @@
+# `vars` defaults to `{}`, so a plain file — a template with no
+# substitutions — needs no boilerplate empty map.
+val plain: Template = template(source = "./motd.txt", target = "/tmp/motd")
+
+# Passing vars explicitly still works, positionally or named.
+val filled: Template = template(
+  source = "./motd.tpl",
+  target = "/tmp/motd",
+  vars = {"user": "ada"},
+)

@@ -1,0 +1,8 @@
+---
+source: crates/keron-lang/tests/harness/mod.rs
+---
+error: field `x` is already supplied
+  --> 3:30
+  |
+3 | val p: Point = Point { x: 1, x: 2, y: 3 }
+  |                              ^

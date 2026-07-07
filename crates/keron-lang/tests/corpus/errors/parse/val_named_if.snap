@@ -6,3 +6,4 @@ error: `if` is a reserved keyword
   |
 1 | val if = 1
   |     ^
+  = help: rename the binding to a non-keyword identifier.
