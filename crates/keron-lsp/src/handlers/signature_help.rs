@@ -26,6 +26,12 @@ pub fn handle(state: &ServerState, params: &SignatureHelpParams) -> Option<Signa
     )?;
 
     let label = render::fn_sig_signature(&ctx.callee.node, &sig);
+    let documentation = keron_modules::builtin_doc(&ctx.callee.node).map(|doc| {
+        Documentation::MarkupContent(lsp_types::MarkupContent {
+            kind: lsp_types::MarkupKind::Markdown,
+            value: doc.to_string(),
+        })
+    });
     let parameters: Vec<ParameterInformation> = sig
         .params
         .iter()
@@ -38,7 +44,7 @@ pub fn handle(state: &ServerState, params: &SignatureHelpParams) -> Option<Signa
     Some(SignatureHelp {
         signatures: vec![SignatureInformation {
             label,
-            documentation: None::<Documentation>,
+            documentation,
             parameters: Some(parameters),
             active_parameter,
         }],

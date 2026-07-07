@@ -16,7 +16,10 @@ pub fn handle(state: &ServerState, params: &HoverParams) -> Option<Hover> {
     let offset = snap.index.offset(snap.text, pos.position, snap.enc)?;
     let node = node_at(snap.program, offset)?;
     let imported = snap.imported_symbols();
-    let (text, span) = describe(&node, snap.program, offset, &imported)?;
+    let (mut text, span) = describe(&node, snap.program, offset, &imported)?;
+    if let Some(inferred) = inferred_val_signature(&snap, &node, offset) {
+        text = inferred;
+    }
     let mut value = format!("```keron\n{text}\n```");
     // Builtins get their prose paragraph under the signature.
     // (Imported names can never be builtins — the resolver rejects
@@ -34,6 +37,32 @@ pub fn handle(state: &ServerState, params: &HoverParams) -> Option<Hover> {
         }),
         range: span.map(|s| snap.index.range(snap.text, &s, snap.enc)),
     })
+}
+
+/// Unannotated vals render as bare `val name` from the AST; when the
+/// checked module (built from this exact text) recorded an inferred
+/// type, upgrade the hover to `val name: T`.
+fn inferred_val_signature(
+    snap: &crate::handlers::Snapshot<'_>,
+    node: &NodeRef<'_>,
+    offset: usize,
+) -> Option<String> {
+    let decl = match node {
+        NodeRef::ValName(v) => *v,
+        NodeRef::Var { name, .. } => match find_local_def(snap.program, name, offset)? {
+            LocalDef::Val(v) => v,
+            _ => return None,
+        },
+        _ => return None,
+    };
+    if decl.ty.is_some() {
+        return None;
+    }
+    let module = snap.module().filter(|m| m.source == snap.text)?;
+    let ty = module
+        .val_types
+        .get(&(decl.name.span.start, decl.name.span.end))?;
+    Some(format!("val {}: {ty}", decl.name.node))
 }
 
 fn describe(
