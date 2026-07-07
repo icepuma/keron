@@ -46,6 +46,7 @@ keron apply ./manifest.keron --execute    # apply after confirmation
 keron check ./manifest.keron              # validate only: parse, resolve imports, type-check
 keron format ./manifest.keron             # normalize a file in place
 keron format . --check                    # verify formatting in CI
+keron lsp                                 # language server over stdio (spawned by editors)
 ```
 
 `<PATH>` may be a single `.keron` file or a directory of them (loaded in sorted
@@ -54,6 +55,14 @@ order).
 `keron check` is the cheap CI/editor path: it never resolves secrets or probes
 package managers. `keron format` writes in place (like `cargo fmt`) — pass
 `--check` for a dry-run diff; `apply` is the reverse, plan-first by default.
+
+## Editor support
+
+`keron lsp` is a built-in language server: diagnostics as you type,
+hover, completion, go-to-definition, formatting, and semantic
+highlighting in any LSP-capable editor. Setup snippets for Neovim,
+Helix, VS Code, Zed, Emacs, and Kakoune live in
+[docs/editors.md](docs/editors.md).
 
 ## The language at a glance
 

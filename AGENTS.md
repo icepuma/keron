@@ -38,10 +38,16 @@ crates/
   keron-lang/         lexer, parser, type checker, formatter        (lib)
   keron-modules/      module graph, `use` resolution, embedded stdlib (lib)
   keron-apply/        eval, plan, execute, elevation, providers, Tera (lib)
+  keron-lsp/          language server (`keron lsp`, lsp-server stdio) (lib)
   keron-cli/          thin orchestrator binary                      (bin)
+editors/
+  vscode/             VS Code extension (TS, spawns `keron lsp`)
+  zed/                Zed extension (wasm32-wasip1, outside the workspace)
 ```
 
 Add new crates under `crates/`. Keep each crate single-responsibility.
+`editors/zed` is `workspace.exclude`d — it has its own toolchain and
+lockfile and is compiled by Zed itself; never add it as a member.
 
 ## File size & modularization
 

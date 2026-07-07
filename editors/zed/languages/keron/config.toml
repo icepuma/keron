@@ -1,0 +1,15 @@
+# Language registration only — keron has no tree-sitter grammar yet,
+# so Zed shows plain text (Zed does not render LSP semantic tokens).
+# All LSP features (diagnostics, hover, completion, go-to-definition,
+# formatting) work through `keron lsp`.
+name = "keron"
+code_fence_block_name = "keron"
+path_suffixes = ["keron"]
+line_comments = ["# "]
+autoclose_before = ")]}"
+brackets = [
+    { start = "{", end = "}", close = true, newline = true },
+    { start = "[", end = "]", close = true, newline = true },
+    { start = "(", end = ")", close = true, newline = false },
+    { start = "\"", end = "\"", close = true, newline = false, not_in = ["string"] },
+]

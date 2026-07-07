@@ -1,0 +1,11 @@
+id = "keron"
+name = "keron"
+description = "keron language support (diagnostics, hover, completion, formatting via keron lsp)"
+version = "0.1.0"
+schema_version = 1
+authors = ["Stefan Ruzitschka <stefan@icepuma.dev>"]
+repository = "https://github.com/icepuma/keron"
+
+[language_servers.keron-lsp]
+name = "keron LSP"
+languages = ["keron"]
