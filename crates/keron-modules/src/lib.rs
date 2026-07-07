@@ -129,6 +129,47 @@ pub struct EntrySource {
     pub id: ModuleId,
 }
 
+/// Source of module text during dependency resolution. [`resolve`]
+/// reads from disk via [`DiskLoader`]; editor tooling passes an
+/// overlay that prefers open (possibly unsaved) buffers.
+///
+/// Only the *reading* of `use`-imported files goes through this trait.
+/// Path resolution (`fs::canonicalize`, regular-file checks) always
+/// consults the real filesystem, so an import can only target a file
+/// that exists on disk — an overlay changes its *content*, not its
+/// existence.
+pub trait FileLoader {
+    /// Read a module's source text. `path` is already canonical.
+    ///
+    /// # Errors
+    /// A human-readable message; it is rendered verbatim into the
+    /// `could not read …` import diagnostic.
+    fn read_to_string(&self, path: &Path) -> Result<String, String>;
+}
+
+/// [`FileLoader`] backed by the real filesystem.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DiskLoader;
+
+impl FileLoader for DiskLoader {
+    fn read_to_string(&self, path: &Path) -> Result<String, String> {
+        fs::read_to_string(path).map_err(|e| e.to_string())
+    }
+}
+
+/// Best-effort outcome of [`resolve_with_loader`].
+///
+/// Carries the graph built so far *together with* every error
+/// encountered, instead of one or the other. `graph.modules` is empty
+/// only when a module cycle prevents topological ordering.
+#[derive(Debug)]
+pub struct Resolution {
+    pub graph: ModuleGraph,
+    pub errors: Vec<ResolveError>,
+    /// Source text of every loaded module, for diagnostic rendering.
+    pub sources: HashMap<ModuleId, String>,
+}
+
 /// Load + parse + check every supplied root and their transitive
 /// dependencies into a single graph.
 ///
@@ -142,7 +183,26 @@ pub struct EntrySource {
 /// type-check errors all funnel through the same shape — plus a
 /// `sources` map suitable for ariadne-style rendering.
 pub fn resolve(roots: Vec<EntrySource>) -> Result<ModuleGraph, ResolveErrors> {
-    let mut state = ResolveState::default();
+    let resolution = resolve_with_loader(roots, &DiskLoader);
+    if resolution.errors.is_empty() {
+        Ok(resolution.graph)
+    } else {
+        Err(ResolveErrors {
+            errors: resolution.errors,
+            sources: resolution.sources,
+        })
+    }
+}
+
+/// Like [`resolve`], but with pluggable file reading and a partial result.
+///
+/// Reads imported files through `loader` and always returns the graph
+/// built so far alongside the errors — the shape editor tooling needs
+/// to keep serving hover/completion for the modules that *did* check
+/// while diagnostics report the ones that didn't.
+#[must_use]
+pub fn resolve_with_loader(roots: Vec<EntrySource>, loader: &dyn FileLoader) -> Resolution {
+    let mut state = ResolveState::new(loader);
     let mut entries: Vec<ModuleId> = Vec::with_capacity(roots.len());
     let mut seen: HashSet<ModuleId> = HashSet::new();
     for root in roots {
@@ -154,8 +214,24 @@ pub fn resolve(roots: Vec<EntrySource>) -> Result<ModuleGraph, ResolveErrors> {
     state.into_graph(entries)
 }
 
-#[derive(Default)]
-struct ResolveState {
+/// Everything in scope for `module`: stdlib builtins plus its resolved
+/// imports. This is the exact symbol set the checker ran with; editor
+/// tooling uses it for hover and completion.
+#[must_use]
+pub fn imported_symbols(module: &CheckedModule, graph: &ModuleGraph) -> ImportedSymbols {
+    build_imported_symbols(&module.imports, &graph.modules)
+}
+
+/// The implicit stdlib scope on its own — what a module sees before
+/// any `use` import resolves. Editor fallback for buffers that have no
+/// checked module yet.
+#[must_use]
+pub fn stdlib_symbols() -> ImportedSymbols {
+    build_imported_symbols(&HashMap::new(), &HashMap::new())
+}
+
+struct ResolveState<'a> {
+    loader: &'a dyn FileLoader,
     raw: HashMap<ModuleId, RawModule>,
     /// Queue of module IDs whose `use` items still need resolving.
     pending: Vec<ModuleId>,
@@ -169,7 +245,16 @@ struct RawModule {
     base_dir: PathBuf,
 }
 
-impl ResolveState {
+impl<'a> ResolveState<'a> {
+    fn new(loader: &'a dyn FileLoader) -> Self {
+        Self {
+            loader,
+            raw: HashMap::new(),
+            pending: Vec::new(),
+            errors: Vec::new(),
+        }
+    }
+
     fn load_module(&mut self, id: ModuleId, source: String, base_dir: &Path) {
         if self.raw.contains_key(&id) {
             return;
@@ -213,7 +298,7 @@ impl ResolveState {
                 if self.raw.contains_key(&id) {
                     return;
                 }
-                let text = match fs::read_to_string(&path) {
+                let text = match self.loader.read_to_string(&path) {
                     Ok(t) => t,
                     Err(e) => {
                         self.errors.push(ResolveError {
@@ -238,7 +323,7 @@ impl ResolveState {
         }
     }
 
-    fn into_graph(mut self, entries: Vec<ModuleId>) -> Result<ModuleGraph, ResolveErrors> {
+    fn into_graph(mut self, entries: Vec<ModuleId>) -> Resolution {
         // `raw` is drained below as modules become `CheckedModule`s,
         // so snapshot every loaded module's source up front for the
         // failure-path renderer.
@@ -264,10 +349,15 @@ impl ResolveState {
                         ),
                     )],
                 });
-                return Err(ResolveErrors {
+                return Resolution {
+                    graph: ModuleGraph {
+                        modules: HashMap::new(),
+                        entries,
+                        topo_order: Vec::new(),
+                    },
                     errors: self.errors,
                     sources,
-                });
+                };
             }
         };
 
@@ -318,17 +408,14 @@ impl ResolveState {
             );
         }
 
-        if self.errors.is_empty() {
-            Ok(ModuleGraph {
+        Resolution {
+            graph: ModuleGraph {
                 modules,
                 entries,
                 topo_order: topo,
-            })
-        } else {
-            Err(ResolveErrors {
-                errors: self.errors,
-                sources,
-            })
+            },
+            errors: self.errors,
+            sources,
         }
     }
 

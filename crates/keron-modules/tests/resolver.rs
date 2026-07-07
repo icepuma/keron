@@ -9,7 +9,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use keron_modules::{EntrySource, ModuleId, resolve};
+use std::collections::HashMap;
+
+use keron_modules::{
+    DiskLoader, EntrySource, FileLoader, ModuleId, imported_symbols, resolve, resolve_with_loader,
+};
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -479,4 +483,124 @@ fn multi_root_loads_every_root_into_the_graph() {
     assert!(graph.modules.contains_key(&b_id), "b missing from modules");
     assert_eq!(graph.entries.len(), 2);
     assert!(graph.entries.contains(&a_id) && graph.entries.contains(&b_id));
+}
+
+/// [`FileLoader`] over an in-memory map, falling back to disk —
+/// the same shape an editor overlay uses for open buffers.
+struct OverlayLoader {
+    overlay: HashMap<PathBuf, String>,
+}
+
+impl FileLoader for OverlayLoader {
+    fn read_to_string(&self, path: &Path) -> Result<String, String> {
+        if let Some(text) = self.overlay.get(path) {
+            return Ok(text.clone());
+        }
+        DiskLoader.read_to_string(path)
+    }
+}
+
+#[test]
+fn loader_overlay_wins_over_disk_content() {
+    // Disk says lib.keron exports nothing; the overlay says it
+    // exports `greet`. The overlay must win: resolution succeeds.
+    let proj = TempProject::new("overlay-wins");
+    let lib_path = proj.write("lib.keron", "val unrelated: Int = 1\n");
+    let main_path = proj.write(
+        "main.keron",
+        "from \"./lib.keron\" use greet\nval g: String = greet()\n",
+    );
+    let main_src = fs::read_to_string(&main_path).unwrap();
+    let overlay = HashMap::from([(
+        fs::canonicalize(&lib_path).unwrap(),
+        "fn greet(): String { \"hi\" }\n".to_string(),
+    )]);
+    let resolution = resolve_with_loader(
+        TempProject::roots(&[(&main_path, &main_src)]),
+        &OverlayLoader { overlay },
+    );
+    assert!(
+        resolution.errors.is_empty(),
+        "overlay content should satisfy the import, got: {:?}",
+        resolution.errors,
+    );
+    let lib_id = ModuleId(fs::canonicalize(&lib_path).unwrap());
+    let lib = resolution.graph.modules.get(&lib_id).expect("lib in graph");
+    assert!(lib.exported_fns.contains("greet"));
+}
+
+#[test]
+fn loader_falls_back_to_disk_for_unopened_deps() {
+    let proj = TempProject::new("overlay-disk-fallback");
+    proj.write("lib.keron", "fn greet(): String { \"hi\" }\n");
+    let main_path = proj.write(
+        "main.keron",
+        "from \"./lib.keron\" use greet\nval g: String = greet()\n",
+    );
+    let main_src = fs::read_to_string(&main_path).unwrap();
+    let resolution = resolve_with_loader(
+        TempProject::roots(&[(&main_path, &main_src)]),
+        &OverlayLoader {
+            overlay: HashMap::new(),
+        },
+    );
+    assert!(
+        resolution.errors.is_empty(),
+        "disk fallback should satisfy the import, got: {:?}",
+        resolution.errors,
+    );
+}
+
+#[test]
+fn resolution_keeps_partial_graph_alongside_errors() {
+    // One healthy module, one with a type error. The failing module
+    // must produce an error AND both modules must still be present in
+    // the graph so editor features keep working.
+    let proj = TempProject::new("partial-graph");
+    let good_path = proj.write("good.keron", "fn greet(): String { \"hi\" }\n");
+    let bad_path = proj.write("bad.keron", "val n: Int = \"not an int\"\n");
+    let good_src = fs::read_to_string(&good_path).unwrap();
+    let bad_src = fs::read_to_string(&bad_path).unwrap();
+    let resolution = resolve_with_loader(
+        TempProject::roots(&[(&good_path, &good_src), (&bad_path, &bad_src)]),
+        &DiskLoader,
+    );
+    let bad_id = ModuleId(fs::canonicalize(&bad_path).unwrap());
+    let good_id = ModuleId(fs::canonicalize(&good_path).unwrap());
+    assert!(
+        resolution.errors.iter().any(|e| e.module == bad_id),
+        "expected an error for bad.keron, got: {:?}",
+        resolution.errors,
+    );
+    assert!(
+        resolution.graph.modules.contains_key(&good_id),
+        "good module must survive in the partial graph",
+    );
+    assert!(
+        resolution.graph.modules.contains_key(&bad_id),
+        "failing module still parses, so it must stay in the graph",
+    );
+    assert!(resolution.sources.contains_key(&bad_id));
+}
+
+#[test]
+fn imported_symbols_exposes_builtins_and_imports() {
+    let proj = TempProject::new("imported-symbols");
+    proj.write("lib.keron", "fn greet(): String { \"hi\" }\n");
+    let main_path = proj.write(
+        "main.keron",
+        "from \"./lib.keron\" use greet\nval g: String = greet()\n",
+    );
+    let main_src = fs::read_to_string(&main_path).unwrap();
+    let resolution =
+        resolve_with_loader(TempProject::roots(&[(&main_path, &main_src)]), &DiskLoader);
+    assert!(resolution.errors.is_empty(), "{:?}", resolution.errors);
+    let main_id = ModuleId(fs::canonicalize(&main_path).unwrap());
+    let module = resolution.graph.modules.get(&main_id).expect("main module");
+    let symbols = imported_symbols(module, &resolution.graph);
+    assert!(symbols.fns.contains_key("greet"), "import must be in scope");
+    assert!(
+        symbols.builtins.contains("symlink"),
+        "stdlib builtins must be seeded",
+    );
 }
