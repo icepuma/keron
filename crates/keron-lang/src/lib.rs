@@ -6,6 +6,7 @@ pub mod diagnostic;
 pub mod format;
 pub mod lex;
 pub mod parser;
+pub mod tokens;
 pub mod trivia;
 
 pub use ast::{
@@ -22,6 +23,7 @@ pub use diagnostic::Diagnostic;
 pub use format::format;
 pub use lex::{MultilineClose, is_multiline_close, multiline_open, raw_multiline_open_at};
 pub use parser::parse;
+pub use tokens::{LexToken, LexTokenKind, lex_tokens};
 pub use trivia::extract_comments;
 
 /// Parse `src` and additionally extract every comment, attached to
