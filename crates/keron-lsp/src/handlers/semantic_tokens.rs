@@ -47,7 +47,7 @@ pub fn handle(state: &ServerState, params: &SemanticTokensParams) -> Option<Sema
     let (_, doc) = state.doc_by_uri(&params.text_document.uri)?;
     let text = &doc.text;
     let overlay = doc
-        .last_good
+        .parsed
         .as_ref()
         // AST spans are only valid against the exact text they were
         // parsed from; skip the overlay mid-edit.

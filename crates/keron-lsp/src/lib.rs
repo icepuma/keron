@@ -8,7 +8,7 @@
 //! needs no debounce, no snapshots, no cancellation.
 //!
 //! Layering:
-//! - [`state`]: open documents + last-good parse snapshots + the most
+//! - [`state`]: open documents + recovered parse snapshots + the most
 //!   recent module-graph resolution.
 //! - [`analysis`]: overlay file loader + `resolve_with_loader` +
 //!   publish-delta computation.

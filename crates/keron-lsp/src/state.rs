@@ -19,17 +19,17 @@ pub struct Document {
     pub version: i32,
     pub text: String,
     pub line_index: LineIndex,
-    /// The most recent snapshot whose parse succeeded. Feature
-    /// requests (hover, completion, symbols) fall back to this while
-    /// the live text is mid-edit and unparseable; spans in
-    /// `last_good.program` are only valid against `last_good.text`.
-    pub last_good: Option<LastGood>,
+    /// The latest parse of this document — with parser recovery, a
+    /// broken buffer still yields a partial AST whose spans are valid
+    /// against the *current* text (broken items are simply absent).
+    /// `None` only before the first didOpen refresh.
+    pub parsed: Option<Parsed>,
 }
 
-/// A parseable snapshot of a document, kept alongside the exact text
-/// and line index its spans refer to.
+/// A (possibly partial) parse of a document, kept alongside the exact
+/// text and line index its spans refer to.
 #[derive(Debug)]
-pub struct LastGood {
+pub struct Parsed {
     pub program: Program,
     pub text: String,
     pub line_index: LineIndex,

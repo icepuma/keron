@@ -369,8 +369,8 @@ fn semantic_tokens_cover_keywords_and_functions() {
 }
 
 #[test]
-fn unparseable_buffer_still_serves_hover_from_last_good() {
-    let proj = TempProject::new("stale");
+fn partially_broken_buffer_serves_hover_for_intact_items() {
+    let proj = TempProject::new("partial");
     let path = proj.write("main.keron", "");
     let uri = file_uri(&path);
     let src = "val s: Symlink = symlink(source = \"a\", target = \"b\")\nreconcile s\n";
@@ -379,31 +379,30 @@ fn unparseable_buffer_still_serves_hover_from_last_good() {
     // don't wait for diagnostics here.
     client.open(&uri, src);
 
-    // Break the buffer; diagnostics reflect the broken text.
-    client.change(
-        &uri,
-        2,
-        "val s: Symlink = symlink(source = \nthis is not keron",
-    );
+    // Break the FIRST item; parser recovery re-syncs at the next
+    // top-level keyword, so the later items survive in the partial
+    // AST while diagnostics report the broken one.
+    let broken_src = format!("fn broken(: Int {{ 1 }}\n{src}");
+    client.change(&uri, 2, &broken_src);
     let broken = client.diagnostics();
     assert!(
         !broken.diagnostics.is_empty(),
         "broken buffer must produce parse diagnostics"
     );
 
-    // Hover still answers, served from the last-good snapshot.
+    // Hover on the intact item answers against the *live* text.
     let result = client.request(
         HoverRequest::METHOD,
         HoverParams {
             text_document_position_params: Client::position_params(
                 &uri,
-                pos_of(src, "symlink(", 2),
+                pos_of(&broken_src, "symlink(", 2),
             ),
             work_done_progress_params: WorkDoneProgressParams::default(),
         },
     );
     let hover: Option<Hover> = serde_json::from_value(result).expect("hover result");
-    let hover = hover.expect("hover from last-good snapshot");
+    let hover = hover.expect("hover from the partial AST");
     let HoverContents::Markup(markup) = hover.contents else {
         panic!("expected markup hover");
     };

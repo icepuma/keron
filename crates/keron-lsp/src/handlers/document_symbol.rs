@@ -155,8 +155,8 @@ mod tests {
         let p = &symbols[2];
         assert_eq!(p.children.as_ref().unwrap()[0].name, "x");
         assert!(
-            p.selection_range.start.line < p.range.end.line
-                || p.range.start.line == p.selection_range.start.line
+            p.range.start <= p.selection_range.start && p.selection_range.end <= p.range.end,
+            "selection_range must sit inside range"
         );
     }
 }
