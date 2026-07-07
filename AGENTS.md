@@ -43,6 +43,7 @@ crates/
 editors/
   vscode/             VS Code extension (TS, spawns `keron lsp`)
   zed/                Zed extension (wasm32-wasip1, outside the workspace)
+tree-sitter-keron/    tree-sitter grammar (highlighting for Zed/Helix)
 ```
 
 Add new crates under `crates/`. Keep each crate single-responsibility.
