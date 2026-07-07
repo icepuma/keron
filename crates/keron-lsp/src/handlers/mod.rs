@@ -1,15 +1,22 @@
 //! Request/notification dispatch. Every handler is a pure function
 //! over [`ServerState`]; the main loop owns all channel IO.
 
+pub mod code_action;
 pub mod completion;
 pub mod definition;
 pub mod diagnostics;
+pub mod document_highlight;
 pub mod document_symbol;
+pub mod folding_range;
 pub mod formatting;
 pub mod hover;
+pub mod inlay_hint;
+pub mod references;
 pub mod render;
+pub mod selection_range;
 pub mod semantic_tokens;
 pub mod signature_help;
+pub mod workspace_symbol;
 
 use std::fs;
 use std::path::PathBuf;
@@ -22,8 +29,10 @@ use lsp_types::notification::{
     PublishDiagnostics,
 };
 use lsp_types::request::{
-    Completion, DocumentSymbolRequest, Formatting, GotoDefinition, HoverRequest, Request as _,
-    SemanticTokensFullRequest, SignatureHelpRequest,
+    CodeActionRequest, Completion, DocumentHighlightRequest, DocumentSymbolRequest,
+    FoldingRangeRequest, Formatting, GotoDefinition, HoverRequest, InlayHintRequest,
+    PrepareRenameRequest, References, Rename, Request as _, SelectionRangeRequest,
+    SemanticTokensFullRequest, SignatureHelpRequest, WorkspaceSymbolRequest,
 };
 use lsp_types::{
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
@@ -47,6 +56,8 @@ pub struct Snapshot<'s> {
     pub path: &'s PathBuf,
     pub resolution: Option<&'s Resolution>,
     pub enc: PositionEncoding,
+    /// Client renders `$1` snippet placeholders in completions.
+    pub snippets: bool,
 }
 
 impl Snapshot<'_> {
@@ -82,6 +93,7 @@ pub fn snapshot_at<'s>(state: &'s ServerState, uri: &Uri) -> Option<Snapshot<'s>
         path,
         resolution: state.resolution.as_ref(),
         enc: state.encoding,
+        snippets: state.snippet_support,
     })
 }
 
@@ -99,6 +111,29 @@ pub fn handle_request(state: &ServerState, req: Request) -> Response {
         Formatting::METHOD => respond(req.id, req.params, |p| formatting::handle(state, &p)),
         SemanticTokensFullRequest::METHOD => {
             respond(req.id, req.params, |p| semantic_tokens::handle(state, &p))
+        }
+        References::METHOD => respond(req.id, req.params, |p| {
+            references::handle_references(state, &p)
+        }),
+        Rename::METHOD => respond(req.id, req.params, |p| references::handle_rename(state, &p)),
+        PrepareRenameRequest::METHOD => respond(req.id, req.params, |p| {
+            references::handle_prepare_rename(state, &p)
+        }),
+        DocumentHighlightRequest::METHOD => respond(req.id, req.params, |p| {
+            document_highlight::handle(state, &p)
+        }),
+        CodeActionRequest::METHOD => {
+            respond(req.id, req.params, |p| Some(code_action::handle(state, &p)))
+        }
+        InlayHintRequest::METHOD => respond(req.id, req.params, |p| inlay_hint::handle(state, &p)),
+        WorkspaceSymbolRequest::METHOD => {
+            respond(req.id, req.params, |p| workspace_symbol::handle(state, &p))
+        }
+        FoldingRangeRequest::METHOD => {
+            respond(req.id, req.params, |p| folding_range::handle(state, &p))
+        }
+        SelectionRangeRequest::METHOD => {
+            respond(req.id, req.params, |p| selection_range::handle(state, &p))
         }
         _ => Response::new_err(
             req.id,

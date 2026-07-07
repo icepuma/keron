@@ -57,14 +57,25 @@ pub fn run_stdio_server() -> Result<()> {
 /// Same contract as [`run_stdio_server`].
 pub fn run_with_connection(connection: &Connection) -> Result<()> {
     let (id, init_params) = connection.initialize_start()?;
-    let encoding = serde_json::from_value::<lsp_types::InitializeParams>(init_params)
-        .map_or(PositionEncoding::Utf16, |p| negotiate_encoding(&p));
+    let init = serde_json::from_value::<lsp_types::InitializeParams>(init_params).ok();
+    let encoding = init
+        .as_ref()
+        .map_or(PositionEncoding::Utf16, negotiate_encoding);
+    let snippet_support = init.as_ref().is_some_and(|p| {
+        p.capabilities
+            .text_document
+            .as_ref()
+            .and_then(|t| t.completion.as_ref())
+            .and_then(|c| c.completion_item.as_ref())
+            .and_then(|i| i.snippet_support)
+            .unwrap_or(false)
+    });
     let result = lsp_types::InitializeResult {
         capabilities: server_capabilities(encoding),
         server_info: None,
     };
     connection.initialize_finish(id, serde_json::to_value(result)?)?;
-    main_loop(connection, encoding)
+    main_loop(connection, encoding, snippet_support)
 }
 
 /// Prefer UTF-8 columns (byte offsets — free for us) when the client
@@ -103,6 +114,17 @@ fn server_capabilities(encoding: PositionEncoding) -> ServerCapabilities {
             retrigger_characters: None,
             work_done_progress_options: lsp_types::WorkDoneProgressOptions::default(),
         }),
+        references_provider: Some(OneOf::Left(true)),
+        rename_provider: Some(OneOf::Right(lsp_types::RenameOptions {
+            prepare_provider: Some(true),
+            work_done_progress_options: lsp_types::WorkDoneProgressOptions::default(),
+        })),
+        document_highlight_provider: Some(OneOf::Left(true)),
+        code_action_provider: Some(lsp_types::CodeActionProviderCapability::Simple(true)),
+        inlay_hint_provider: Some(OneOf::Left(true)),
+        workspace_symbol_provider: Some(OneOf::Left(true)),
+        folding_range_provider: Some(lsp_types::FoldingRangeProviderCapability::Simple(true)),
+        selection_range_provider: Some(lsp_types::SelectionRangeProviderCapability::Simple(true)),
         semantic_tokens_provider: Some(SemanticTokensServerCapabilities::SemanticTokensOptions(
             SemanticTokensOptions {
                 legend: SemanticTokensLegend {
@@ -118,9 +140,14 @@ fn server_capabilities(encoding: PositionEncoding) -> ServerCapabilities {
     }
 }
 
-fn main_loop(connection: &Connection, encoding: PositionEncoding) -> Result<()> {
+fn main_loop(
+    connection: &Connection,
+    encoding: PositionEncoding,
+    snippet_support: bool,
+) -> Result<()> {
     let mut state = ServerState {
         encoding,
+        snippet_support,
         ..Default::default()
     };
     for msg in &connection.receiver {

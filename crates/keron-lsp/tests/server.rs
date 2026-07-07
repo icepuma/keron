@@ -458,3 +458,213 @@ fn utf8_position_encoding_is_negotiated() {
     );
     client.shutdown();
 }
+
+#[test]
+fn rename_rewrites_definition_and_importers() {
+    let proj = TempProject::new("rename");
+    let lib = proj.write(
+        "lib.keron",
+        "fn greet(who: String): String { \"hi \" + who }\n",
+    );
+    let main = proj.write("main.keron", "");
+    let main_uri = file_uri(&main);
+    let lib_uri = file_uri(&fs::canonicalize(&lib).expect("lib exists"));
+    let src = "from \"./lib.keron\" use greet\nval g: String = greet(\"you\")\n";
+    let mut client = Client::start();
+    client.open(&main_uri, src);
+
+    let result = client.request(
+        "textDocument/rename",
+        serde_json::json!({
+            "textDocument": {"uri": main_uri.as_str()},
+            "position": pos_of(src, "greet(\"you\")", 2),
+            "newName": "welcome",
+        }),
+    );
+    let edit: lsp_types::WorkspaceEdit = serde_json::from_value(result).expect("workspace edit");
+    // Uri's interior cell trips clippy's mutable-key-type; the map is
+    // read-only here.
+    #[allow(clippy::mutable_key_type)]
+    let changes = edit.changes.expect("changes map");
+    let main_edits = changes.get(&main_uri).expect("edits in main");
+    // use-name + callee reference.
+    assert_eq!(main_edits.len(), 2, "main edits: {main_edits:?}");
+    assert!(main_edits.iter().all(|e| e.new_text == "welcome"));
+    let lib_edits = changes.get(&lib_uri).expect("edits in lib");
+    assert_eq!(lib_edits.len(), 1, "lib edits: {lib_edits:?}");
+    assert_eq!(lib_edits[0].range.start, Position::new(0, 3));
+    client.shutdown();
+}
+
+#[test]
+fn references_cross_module_and_respect_shadowing() {
+    let proj = TempProject::new("refs");
+    let path = proj.write("main.keron", "");
+    let uri = file_uri(&path);
+    let src = "val x: Int = 1\nfn f(x: Int): Int { x }\nval y: Int = x\n";
+    let mut client = Client::start();
+    client.open(&uri, src);
+
+    let result = client.request(
+        "textDocument/references",
+        serde_json::json!({
+            "textDocument": {"uri": uri.as_str()},
+            "position": pos_of(src, "x: Int = 1", 0),
+            "context": {"includeDeclaration": true},
+        }),
+    );
+    let locations: Vec<lsp_types::Location> = serde_json::from_value(result).expect("locations");
+    // The decl and the `val y` reference — NOT the param-shadowed
+    // body occurrence.
+    assert_eq!(locations.len(), 2, "got: {locations:?}");
+    assert!(locations.iter().all(|l| l.uri == uri));
+    client.shutdown();
+}
+
+#[test]
+fn inlay_hints_show_inferred_types_and_param_names() {
+    let proj = TempProject::new("hints");
+    let path = proj.write("main.keron", "");
+    let uri = file_uri(&path);
+    let src = "val greeting = \"hello\"\nval s: Symlink = symlink(\"a\", \"b\")\nreconcile s\n";
+    let mut client = Client::start();
+    client.open(&uri, src);
+
+    let result = client.request(
+        "textDocument/inlayHint",
+        serde_json::json!({
+            "textDocument": {"uri": uri.as_str()},
+            "range": {"start": {"line": 0, "character": 0}, "end": {"line": 3, "character": 0}},
+        }),
+    );
+    let hints: Vec<lsp_types::InlayHint> = serde_json::from_value(result).expect("hints");
+    let labels: Vec<String> = hints
+        .iter()
+        .map(|h| match &h.label {
+            lsp_types::InlayHintLabel::String(s) => s.clone(),
+            other @ lsp_types::InlayHintLabel::LabelParts(_) => {
+                panic!("unexpected label {other:?}")
+            }
+        })
+        .collect();
+    assert!(
+        labels.contains(&": String".to_string()),
+        "inferred val type hint missing: {labels:?}"
+    );
+    assert!(
+        labels.contains(&"source = ".to_string()) && labels.contains(&"target = ".to_string()),
+        "param name hints missing: {labels:?}"
+    );
+    client.shutdown();
+}
+
+#[test]
+fn code_action_offers_did_you_mean_quickfix() {
+    let proj = TempProject::new("quickfix");
+    let path = proj.write("main.keron", "");
+    let uri = file_uri(&path);
+    let src = "val name: String = \"x\"\nval a: String = nane\n";
+    let mut client = Client::start();
+    client.open(&uri, src);
+    let published = client.diagnostics();
+    let diag = published
+        .diagnostics
+        .iter()
+        .find(|d| d.message.contains("did you mean"))
+        .expect("suggestion diagnostic")
+        .clone();
+
+    let result = client.request(
+        "textDocument/codeAction",
+        serde_json::json!({
+            "textDocument": {"uri": uri.as_str()},
+            "range": diag.range,
+            "context": {"diagnostics": [diag]},
+        }),
+    );
+    let actions: Vec<lsp_types::CodeActionOrCommand> =
+        serde_json::from_value(result).expect("actions");
+    let lsp_types::CodeActionOrCommand::CodeAction(action) = &actions[0] else {
+        panic!("expected code action");
+    };
+    assert_eq!(action.title, "Replace with `name`");
+    #[allow(clippy::mutable_key_type)] // read-only Uri-keyed map
+    let edit = action
+        .edit
+        .as_ref()
+        .and_then(|e| e.changes.as_ref())
+        .expect("edit");
+    assert_eq!(edit[&uri][0].new_text, "name");
+    client.shutdown();
+}
+
+#[test]
+fn workspace_symbols_folding_and_selection_ranges_answer() {
+    let proj = TempProject::new("navigation");
+    let path = proj.write("main.keron", "");
+    let uri = file_uri(&path);
+    let src = "fn helper(a: Int): Int {\n  a + 1\n}\nval answer: Int = helper(41)\n";
+    let mut client = Client::start();
+    client.open(&uri, src);
+
+    let symbols: Vec<lsp_types::SymbolInformation> = serde_json::from_value(
+        client.request("workspace/symbol", serde_json::json!({"query": "help"})),
+    )
+    .expect("symbols");
+    assert_eq!(symbols.len(), 1);
+    assert_eq!(symbols[0].name, "helper");
+
+    let folds: Vec<lsp_types::FoldingRange> = serde_json::from_value(client.request(
+        "textDocument/foldingRange",
+        serde_json::json!({"textDocument": {"uri": uri.as_str()}}),
+    ))
+    .expect("folding ranges");
+    assert!(
+        folds.iter().any(|f| f.start_line == 0 && f.end_line == 2),
+        "fn body fold missing: {folds:?}"
+    );
+
+    let chains: Vec<lsp_types::SelectionRange> = serde_json::from_value(client.request(
+        "textDocument/selectionRange",
+        serde_json::json!({
+            "textDocument": {"uri": uri.as_str()},
+            "positions": [pos_of(src, "a + 1", 0)],
+        }),
+    ))
+    .expect("selection ranges");
+    // Innermost `a` → `a + 1` → block → fn item: at least 3 levels.
+    let mut depth = 0;
+    let mut cur = Some(&chains[0]);
+    while let Some(c) = cur {
+        depth += 1;
+        cur = c.parent.as_deref();
+    }
+    assert!(depth >= 3, "selection chain too shallow: {depth}");
+    client.shutdown();
+}
+
+#[test]
+fn document_highlight_marks_decl_and_reads() {
+    let proj = TempProject::new("highlight");
+    let path = proj.write("main.keron", "");
+    let uri = file_uri(&path);
+    let src = "val count: Int = 1\nval more: Int = count + count\n";
+    let mut client = Client::start();
+    client.open(&uri, src);
+
+    let highlights: Vec<lsp_types::DocumentHighlight> = serde_json::from_value(client.request(
+        "textDocument/documentHighlight",
+        serde_json::json!({
+            "textDocument": {"uri": uri.as_str()},
+            "position": pos_of(src, "count + count", 1),
+        }),
+    ))
+    .expect("highlights");
+    assert_eq!(highlights.len(), 3, "got: {highlights:?}");
+    let writes = highlights
+        .iter()
+        .filter(|h| h.kind == Some(lsp_types::DocumentHighlightKind::WRITE))
+        .count();
+    assert_eq!(writes, 1, "exactly the decl is a write");
+    client.shutdown();
+}

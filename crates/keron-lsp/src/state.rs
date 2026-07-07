@@ -40,6 +40,8 @@ pub struct Parsed {
 pub struct ServerState {
     /// Negotiated at initialize; every position on the wire uses it.
     pub encoding: PositionEncoding,
+    /// Whether the client renders `$1`-style snippet completions.
+    pub snippet_support: bool,
     pub docs: HashMap<PathBuf, Document>,
     /// Result of the most recent [`keron_modules::resolve_with_loader`]
     /// run over all open documents. Feature handlers read the graph;

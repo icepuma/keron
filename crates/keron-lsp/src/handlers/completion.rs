@@ -11,7 +11,7 @@ use std::fs;
 use keron_lang::{Item, Type};
 use lsp_types::{
     CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, Documentation,
-    MarkupContent, MarkupKind,
+    InsertTextFormat, MarkupContent, MarkupKind,
 };
 
 use crate::analysis::node_at::enclosing_struct_literal;
@@ -186,6 +186,10 @@ fn scope_completion(snap: &Snapshot<'_>) -> Vec<CompletionItem> {
                 kind: MarkupKind::Markdown,
                 value: doc.to_string(),
             }));
+        }
+        if snap.snippets && !sig.params.is_empty() {
+            ci.insert_text = Some(render::call_snippet(name, sig));
+            ci.insert_text_format = Some(InsertTextFormat::SNIPPET);
         }
         items.push(ci);
     }

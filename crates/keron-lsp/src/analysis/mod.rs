@@ -3,6 +3,7 @@
 //! per-module errors into `publishDiagnostics` payloads.
 
 pub mod node_at;
+pub mod refs;
 pub mod symbols;
 
 use std::collections::HashMap;
