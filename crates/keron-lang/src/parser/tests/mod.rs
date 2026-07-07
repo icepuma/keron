@@ -8,6 +8,7 @@ mod decl;
 mod fn_decl;
 mod maps;
 mod reconcile;
+mod recovery;
 mod string;
 
 use crate::{
