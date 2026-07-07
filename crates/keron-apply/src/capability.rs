@@ -280,6 +280,12 @@ impl Prerequisite {
 #[derive(Debug)]
 pub struct PrereqReport {
     pub failures: Vec<Prerequisite>,
+    /// Whether a brew failure is really "installed at the linuxbrew
+    /// path but not on `$PATH`". Captured from the [`PrereqProbe`] at
+    /// build time so [`Display`] renders without touching the
+    /// filesystem — keeping the diagnostic hermetic in tests (a CI
+    /// image with linuxbrew pre-installed must not change the output).
+    pub brew_installed_off_path: bool,
 }
 
 impl Display for PrereqReport {
@@ -289,13 +295,15 @@ impl Display for PrereqReport {
         for prereq in &self.failures {
             // Special-case brew that is installed at the canonical
             // linuxbrew location but not on `$PATH`: the actionable fix
-            // is `brew shellenv`, not installing brew. Detected here (a
-            // cheap fixed-path stat) so the pure `Prerequisite` methods
-            // stay filesystem-free.
-            if matches!(
-                prereq,
-                Prerequisite::PackageManager(PackageManager::Brew | PackageManager::BrewCask)
-            ) && linuxbrew_candidates().iter().any(|c| c.is_file())
+            // is `brew shellenv`, not installing brew. The signal was
+            // captured from the probe at build time (below), so the
+            // renderer — and every `Prerequisite` method — stays
+            // filesystem-free and deterministic.
+            if self.brew_installed_off_path
+                && matches!(
+                    prereq,
+                    Prerequisite::PackageManager(PackageManager::Brew | PackageManager::BrewCask)
+                )
             {
                 writeln!(f, "  - `brew` is installed but not on your `PATH`")?;
                 writeln!(
@@ -333,6 +341,14 @@ pub trait PrereqProbe {
     /// always return within a bounded time — a stuck CLI should
     /// surface as `NoSession` rather than blocking the caller.
     fn session_state(&self, kind: SessionKind) -> SessionState;
+    /// True when brew exists at the canonical linuxbrew location but is
+    /// not on `$PATH`, so the actionable fix is `brew shellenv` rather
+    /// than installing brew. Defaults to `false` — this keeps mock
+    /// probes (and therefore the rendered diagnostic) hermetic; only
+    /// [`LiveEnvProbe`] reads the real linuxbrew paths.
+    fn brew_installed_off_path(&self) -> bool {
+        false
+    }
 }
 
 impl PrereqProbe for LiveEnvProbe {
@@ -346,6 +362,15 @@ impl PrereqProbe for LiveEnvProbe {
         // The linuxbrew case is instead handled by the diagnostic (see
         // `PrereqReport`'s `Display`), which points the user at
         // `brew shellenv` rather than telling them to install brew.
+        //
+        // Honor the test binary override first, so the prereq matches
+        // what the invocations will actually spawn: the e2e suite
+        // provides brew via `KERON_TEST_PACKAGE_BIN_<MGR>` (gated behind
+        // `KERON_ALLOW_TEST_OVERRIDES`) rather than on `$PATH`. In
+        // production that env gate is unset, so this is a no-op.
+        if crate::packages::test_binary_override(pm).is_some() {
+            return true;
+        }
         which::which(pm.label()).is_ok()
     }
     fn session_state(&self, kind: SessionKind) -> SessionState {
@@ -353,6 +378,10 @@ impl PrereqProbe for LiveEnvProbe {
             return SessionState::NotInstalled;
         }
         probe_session_state(kind)
+    }
+    fn brew_installed_off_path(&self) -> bool {
+        which::which(PackageManager::Brew.label()).is_err()
+            && linuxbrew_candidates().iter().any(|c| c.is_file())
     }
 }
 
@@ -495,7 +524,18 @@ pub fn validate_prerequisites(
         Ok(())
     } else {
         failures.sort_by_key(Prerequisite::priority);
-        Err(PrereqReport { failures })
+        // Capture the linuxbrew-off-path signal here (where the probe is
+        // in hand) rather than in `Display`, so rendering stays pure.
+        let brew_installed_off_path = failures.iter().any(|p| {
+            matches!(
+                p,
+                Prerequisite::PackageManager(PackageManager::Brew | PackageManager::BrewCask)
+            )
+        }) && probe.brew_installed_off_path();
+        Err(PrereqReport {
+            failures,
+            brew_installed_off_path,
+        })
     }
 }
 
@@ -523,6 +563,9 @@ fn prereq_satisfied(prereq: &Prerequisite, probe: &dyn PrereqProbe) -> bool {
 pub fn prereq_report(prereq: Prerequisite) -> PrereqReport {
     PrereqReport {
         failures: vec![prereq],
+        // Single-prereq reports are used for the secret CLI/session
+        // cases; there is no linuxbrew story to tell here.
+        brew_installed_off_path: false,
     }
 }
 
@@ -1150,6 +1193,34 @@ mod tests {
             !msg.contains("→ install:"),
             "narrow prereqs render without an install line: {msg}"
         );
+    }
+
+    #[test]
+    fn brew_off_path_renders_shellenv_hint_not_install() {
+        // brew installed at the linuxbrew location but not on `$PATH`:
+        // the report must point at `brew shellenv`, not tell the user to
+        // install brew. Driven by a mock so it's deterministic on CI
+        // images that ship linuxbrew.
+        struct OffPathProbe;
+        impl PrereqProbe for OffPathProbe {
+            fn package_manager_available(&self, _pm: PackageManager) -> bool {
+                false
+            }
+            fn session_state(&self, _kind: SessionKind) -> SessionState {
+                SessionState::NotInstalled
+            }
+            fn brew_installed_off_path(&self) -> bool {
+                true
+            }
+        }
+        let states = vec![brew_pkg_state("ripgrep")];
+        let report =
+            validate_prerequisites(&states, &OffPathProbe).expect_err("off-path brew must fail");
+        let msg = format!("{report}");
+        assert!(msg.contains("not on your `PATH`"), "got: {msg}");
+        assert!(msg.contains("brew shellenv"), "got: {msg}");
+        assert!(!msg.contains("is not installed"), "got: {msg}");
+        assert!(!msg.contains("https://brew.sh"), "got: {msg}");
     }
 
     #[test]
