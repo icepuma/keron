@@ -829,7 +829,8 @@ fn install_many_invocation(
     Some((binary, args))
 }
 
-fn test_binary_override(manager: PackageManager) -> Option<String> {
+#[allow(clippy::redundant_pub_crate)]
+pub(crate) fn test_binary_override(manager: PackageManager) -> Option<String> {
     if !test_overrides_allowed() {
         return None;
     }
