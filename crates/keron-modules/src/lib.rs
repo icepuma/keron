@@ -74,6 +74,10 @@ pub struct CheckedModule {
     /// slot. The evaluator coerces the runtime value at these spans —
     /// see `CheckOutput::double_promotions`.
     pub double_promotions: HashSet<(usize, usize)>,
+    /// Inferred types of unannotated top-level `val`s, keyed by the
+    /// name's byte span — see `CheckOutput::val_types`. Editor
+    /// tooling reads this for inlay hints and hover.
+    pub val_types: HashMap<(usize, usize), Type>,
 }
 
 /// All modules reachable from the entry roots, indexed for evaluation.
@@ -229,6 +233,13 @@ pub fn imported_symbols(module: &CheckedModule, graph: &ModuleGraph) -> Imported
 #[must_use]
 pub fn stdlib_symbols() -> ImportedSymbols {
     build_imported_symbols(&HashMap::new(), &HashMap::new())
+}
+
+/// True when `name` is a stdlib builtin (fn or type) — unshadowable
+/// and therefore also un-renameable from user code.
+#[must_use]
+pub fn is_builtin_name(name: &str) -> bool {
+    stdlib_builtin_names().contains(name)
 }
 
 /// Prose documentation (markdown) for the builtin fn named `name`, or
@@ -399,9 +410,13 @@ impl<'a> ResolveState<'a> {
             // "expected `X`, found `X`" mismatches where one side is
             // the unresolved name and the other the canonical variant.
             let mut double_promotions = HashSet::new();
+            let mut val_types = HashMap::new();
             match resolve_type_names(&mut program, &imported) {
                 Ok(()) => match check_module_full(&program, &imported) {
-                    Ok(output) => double_promotions = output.double_promotions,
+                    Ok(output) => {
+                        double_promotions = output.double_promotions;
+                        val_types = output.val_types;
+                    }
                     Err(diags) => {
                         self.errors.push(ResolveError {
                             module: id.clone(),
@@ -428,6 +443,7 @@ impl<'a> ResolveState<'a> {
                     exported_vals,
                     exported_types,
                     double_promotions,
+                    val_types,
                 },
             );
         }
@@ -1062,6 +1078,7 @@ mod tests {
             exported_vals: vals,
             exported_types: HashMap::new(),
             double_promotions: HashSet::new(),
+            val_types: HashMap::new(),
         };
         assert_eq!(val_type_for(&module, "s"), Some(Type::String));
         assert_eq!(val_type_for(&module, "n"), Some(Type::Int));
@@ -1081,6 +1098,7 @@ mod tests {
             exported_vals: vals,
             exported_types: HashMap::new(),
             double_promotions: HashSet::new(),
+            val_types: HashMap::new(),
         };
         assert_eq!(val_type_for(&module, "v"), None);
     }
@@ -1137,6 +1155,7 @@ mod tests {
             exported_vals: vals,
             exported_types: types,
             double_promotions: HashSet::new(),
+            val_types: HashMap::new(),
         };
         let sig = sig_for(&module, "only").expect("`only` is exported");
         assert_eq!(sig.return_type, Type::String);

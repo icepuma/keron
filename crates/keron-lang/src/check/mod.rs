@@ -546,6 +546,11 @@ pub struct CheckOutput {
     /// the table, an Int inhabiting a static `Double` (e.g. from
     /// `[1, 2.5]`) would silently take the integer-division path.
     pub double_promotions: HashSet<(usize, usize)>,
+    /// Inferred type of every *unannotated* top-level `val`, keyed by
+    /// the `(start, end)` byte span of its name. Editor tooling reads
+    /// this for inlay hints and hover; annotated vals are absent
+    /// (their annotation is already in the source).
+    pub val_types: HashMap<(usize, usize), Type>,
 }
 
 /// [`check_module`] plus the [`CheckOutput`] byproducts. Split so the
@@ -650,10 +655,28 @@ pub fn check_module_full(
             .iter()
             .map(|span| (span.start, span.end))
             .collect();
-        Ok(CheckOutput { double_promotions })
+        Ok(CheckOutput {
+            double_promotions,
+            val_types: collect_val_types(program, &val_env),
+        })
     } else {
         Err(diags)
     }
+}
+
+/// Inferred types of unannotated top-level vals, keyed by name span —
+/// see [`CheckOutput::val_types`].
+fn collect_val_types(program: &Program, val_env: &Env) -> HashMap<(usize, usize), Type> {
+    program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Val(v) if v.ty.is_none() => val_env
+                .lookup(&v.name.node)
+                .map(|t| ((v.name.span.start, v.name.span.end), t.clone())),
+            _ => None,
+        })
+        .collect()
 }
 
 fn redefine_diagnostic(span: Span, name: &str, imported: &ImportedSymbols) -> Diagnostic {
