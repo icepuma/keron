@@ -13,6 +13,7 @@
 //! no import line required.
 
 pub mod stdlib;
+pub mod stdlib_docs;
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -228,6 +229,29 @@ pub fn imported_symbols(module: &CheckedModule, graph: &ModuleGraph) -> Imported
 #[must_use]
 pub fn stdlib_symbols() -> ImportedSymbols {
     build_imported_symbols(&HashMap::new(), &HashMap::new())
+}
+
+/// Prose documentation (markdown) for the builtin fn named `name`, or
+/// `None` when the name isn't a builtin or its intrinsic carries no
+/// doc paragraph.
+#[must_use]
+pub fn builtin_doc(name: &str) -> Option<&'static str> {
+    static DOCS: OnceLock<HashMap<String, &'static str>> = OnceLock::new();
+    let docs = DOCS.get_or_init(|| {
+        let mut map = HashMap::new();
+        for stdmod in stdlib::registry().values() {
+            for (fn_name, decl) in &stdmod.fns {
+                if let Some(id) = decl.intrinsic {
+                    let doc = stdlib_docs::intrinsic_doc(id);
+                    if !doc.is_empty() {
+                        map.insert(fn_name.clone(), doc);
+                    }
+                }
+            }
+        }
+        map
+    });
+    docs.get(name).copied()
 }
 
 struct ResolveState<'a> {
