@@ -160,6 +160,9 @@ pub struct TypeAliasDecl {
 /// bar` (when added later) keeps working without further changes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntrinsicId {
+    /// `symlink(source, target)` — declare a symbolic-link resource:
+    /// apply creates the link at `target` pointing to `source`
+    /// (resolved inside the keron root).
     Symlink,
     /// `shell(kind, name, script)` — declare an explicit shell script
     /// resource. Planning verifies the named shell exists; execution
