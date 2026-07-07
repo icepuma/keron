@@ -33,3 +33,25 @@ open a `.keron` file.
 - `languages/keron/highlights.scm` — highlight queries (a copy of
   `tree-sitter-keron/queries/highlights.scm`; keep them in sync).
 - `src/lib.rs` — spawns `keron lsp` from PATH.
+
+## Publishing to the Zed registry (maintainer)
+
+Zed extensions are distributed through
+[zed-industries/extensions](https://github.com/zed-industries/extensions):
+
+1. Pin `rev` in `extension.toml`'s `[grammars.keron]` to the merged
+   commit SHA (branch refs are not reproducible).
+2. Fork `zed-industries/extensions` and add this repo as a submodule:
+   `git submodule add https://github.com/icepuma/keron.git extensions/keron`.
+3. Add an entry to its `extensions.toml`:
+
+   ```toml
+   [keron]
+   submodule = "extensions/keron"
+   path = "editors/zed"
+   version = "0.1.0"
+   ```
+
+4. Run `pnpm sort-extensions` in that repo and open the PR. Once it
+   merges, the extension appears in `zed: extensions` and installs
+   without the dev-extension flow.
