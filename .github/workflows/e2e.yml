@@ -21,6 +21,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   gate:
     name: just (${{ matrix.os }})
@@ -35,6 +38,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1
@@ -51,12 +56,14 @@ jobs:
       - name: Install just
         uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2
         with:
-          tool: just
+          tool: just@1.51.0
+          fallback: none
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2
         with:
-          tool: nextest
+          tool: nextest@0.9.136
+          fallback: none
 
       - name: Run repo gate
         # `shell: bash` for cross-platform consistency — the Windows
@@ -78,11 +85,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
-        # Honours `rust-toolchain.toml` — the version pin (1.95.0)
-        # lives in the repo, so any bump applies to CI without a
-        # workflow edit.
+        # Honours `rust-toolchain.toml`, so a toolchain bump applies to
+        # CI without a workflow edit.
         uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1
         with:
           components: rustfmt, clippy
@@ -97,7 +105,8 @@ jobs:
       - name: Install cargo-nextest
         uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2
         with:
-          tool: nextest
+          tool: nextest@0.9.136
+          fallback: none
 
       - name: Build keron
         run: cargo build --bin keron --locked
@@ -118,3 +127,49 @@ jobs:
         run: |
           cargo nextest run -p keron-cli --locked \
             --no-fail-fast --success-output=immediate-final
+
+  editors:
+    name: editor extensions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1
+        with:
+          target: wasm32-wasip1
+
+      - name: Check Zed extension
+        run: cargo check --manifest-path editors/zed/Cargo.toml --target wasm32-wasip1 --locked
+
+      - name: Install locked VS Code dependencies
+        working-directory: editors/vscode
+        run: npm ci --ignore-scripts
+
+      - name: Compile VS Code extension
+        working-directory: editors/vscode
+        run: npm run compile
+
+      - name: Package VS Code extension
+        working-directory: editors/vscode
+        run: npm run package -- --out "${RUNNER_TEMP}/keron.vsix"
+
+      - name: Install locked tree-sitter tooling
+        working-directory: tree-sitter-keron
+        run: npm ci
+
+      - name: Verify tree-sitter generated sources and corpus
+        working-directory: tree-sitter-keron
+        run: |
+          npm run generate
+          git diff --exit-code -- src
+          npm test

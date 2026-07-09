@@ -28,6 +28,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1
@@ -42,12 +44,14 @@ jobs:
       - name: Install cargo-nextest
         uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2
         with:
-          tool: nextest
+          tool: nextest@0.9.136
+          fallback: none
 
       - name: Install cargo-mutants
         uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2
         with:
-          tool: cargo-mutants
+          tool: cargo-mutants@27.1.0
+          fallback: none
 
       - name: Run full mutation suite
         # Git Bash on Windows runners ships `env -u`, so the same script
