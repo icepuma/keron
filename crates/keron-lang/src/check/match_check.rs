@@ -348,6 +348,10 @@ fn check_struct_pattern(
             ),
         ));
     }
+    let ty_fields_by_name: HashMap<&str, &Type> = ty_fields
+        .iter()
+        .map(|(field_name, field_ty)| (field_name.as_str(), field_ty))
+        .collect();
     let mut seen: HashSet<String> = HashSet::new();
     for f in fields {
         if !seen.insert(f.name.node.clone()) {
@@ -356,7 +360,7 @@ fn check_struct_pattern(
                 format!("duplicate field `{}` in struct pattern", f.name.node),
             ));
         }
-        let Some((_, fty)) = ty_fields.iter().find(|(n, _)| n == &f.name.node) else {
+        let Some(fty) = ty_fields_by_name.get(f.name.node.as_str()).copied() else {
             return Err(Diagnostic::new(
                 f.name.span.clone(),
                 format!("unknown field `{}` on struct `{ty_name}`", f.name.node),
@@ -407,7 +411,7 @@ fn check_exhaustive(
             if has_catch_all {
                 return Ok(());
             }
-            let covered: Vec<&str> = arms
+            let covered: HashSet<&str> = arms
                 .iter()
                 .filter(|a| a.guard.is_none())
                 .filter_map(|a| match &a.pattern.node {
@@ -417,7 +421,7 @@ fn check_exhaustive(
                 .collect();
             let missing: Vec<&String> = variants
                 .iter()
-                .filter(|v| !covered.iter().any(|c| c == &v.as_str()))
+                .filter(|v| !covered.contains(v.as_str()))
                 .collect();
             if missing.is_empty() {
                 return Ok(());

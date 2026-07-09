@@ -1969,6 +1969,10 @@ fn check_call(
     }
 
     let mut matched: Vec<Option<&CallArg>> = std::iter::repeat_n(None, sig.params.len()).collect();
+    let mut param_positions: HashMap<&str, usize> = HashMap::with_capacity(sig.params.len());
+    for (i, param) in sig.params.iter().enumerate() {
+        param_positions.entry(param.name.as_str()).or_insert(i);
+    }
     let mut pos_idx = 0usize;
     for arg in args {
         match &arg.name {
@@ -1987,13 +1991,15 @@ fn check_call(
                 pos_idx += 1;
             }
             Some(name) => {
-                let pos = sig.params.iter().position(|p| p.name == name.node);
-                let pos = pos.ok_or_else(|| {
-                    Diagnostic::new(
-                        name.span.clone(),
-                        format!("`{}` has no parameter `{}`", callee.node, name.node),
-                    )
-                })?;
+                let pos = param_positions
+                    .get(name.node.as_str())
+                    .copied()
+                    .ok_or_else(|| {
+                        Diagnostic::new(
+                            name.span.clone(),
+                            format!("`{}` has no parameter `{}`", callee.node, name.node),
+                        )
+                    })?;
                 if matched[pos].is_some() {
                     return Err(Diagnostic::new(
                         arg.span.clone(),
@@ -2071,15 +2077,24 @@ fn check_struct_literal(
             ),
         ));
     }
-    let mut seen: HashSet<&str> = HashSet::new();
+    let params_by_name: HashMap<&str, &ParamSig> = sig
+        .params
+        .iter()
+        .map(|param| (param.name.as_str(), param))
+        .collect();
+    let mut fields_by_name: HashMap<&str, &StructLiteralField> =
+        HashMap::with_capacity(fields.len());
     for field in fields {
-        if !seen.insert(field.name.node.as_str()) {
+        if fields_by_name
+            .insert(field.name.node.as_str(), field)
+            .is_some()
+        {
             return Err(Diagnostic::new(
                 field.name.span.clone(),
                 format!("field `{}` is already supplied", field.name.node),
             ));
         }
-        if !sig.params.iter().any(|p| p.name == field.name.node) {
+        if !params_by_name.contains_key(field.name.node.as_str()) {
             return Err(Diagnostic::new(
                 field.name.span.clone(),
                 format!("struct `{}` has no field `{}`", name.node, field.name.node),
@@ -2087,7 +2102,7 @@ fn check_struct_literal(
         }
     }
     for param in &sig.params {
-        match fields.iter().find(|f| f.name.node == param.name) {
+        match fields_by_name.get(param.name.as_str()).copied() {
             Some(field) => {
                 if let Some(value) = &field.value {
                     check_expr(value, &param.ty, env, fns)?;

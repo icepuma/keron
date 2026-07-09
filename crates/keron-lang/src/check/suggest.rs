@@ -1,11 +1,15 @@
 //! Nearest-name suggestions for "unknown X" diagnostics.
 //!
-//! A hand-rolled bounded Levenshtein — no crate: the dependency policy
-//! makes a new crate expensive and the inputs here are short
-//! identifiers. The distance bound follows rustc's heuristic: a
+//! A hand-rolled bounded Levenshtein. The distance bound follows
+//! rustc's heuristic: a
 //! suggestion is only offered when the edit distance is at most a
 //! third of the queried name's length (minimum 1), which keeps
 //! `spilt` → `split` while suppressing noise like `x` → `os`.
+
+/// Suggestions are optional diagnostic polish, so hostile identifiers
+/// or namespaces must not turn them into an allocation/CPU amplifier.
+const MAX_SUGGEST_CHARS: usize = 64;
+const MAX_SUGGEST_CANDIDATES: usize = 1024;
 
 /// The closest candidate to `name` within the acceptance bound, or
 /// `None` when nothing is plausibly a typo of it. Ties resolve to the
@@ -15,9 +19,23 @@ pub(super) fn nearest<'a, I>(candidates: I, name: &str) -> Option<String>
 where
     I: IntoIterator<Item = &'a str>,
 {
-    let max_dist = (name.chars().count() / 3).max(1);
+    let name_len = bounded_char_count(name)?;
+    let max_dist = (name_len / 3).max(1);
+    let candidates: Vec<&str> = candidates
+        .into_iter()
+        .take(MAX_SUGGEST_CANDIDATES + 1)
+        .collect();
+    if candidates.len() > MAX_SUGGEST_CANDIDATES {
+        return None;
+    }
     let mut best: Option<(usize, &str)> = None;
     for candidate in candidates {
+        let Some(candidate_len) = bounded_char_count(candidate) else {
+            continue;
+        };
+        if name_len.abs_diff(candidate_len) > max_dist {
+            continue;
+        }
         if candidate == name {
             continue;
         }
@@ -32,6 +50,11 @@ where
         }
     }
     best.map(|(_, c)| c.to_string())
+}
+
+fn bounded_char_count(s: &str) -> Option<usize> {
+    let len = s.chars().take(MAX_SUGGEST_CHARS + 1).count();
+    (len <= MAX_SUGGEST_CHARS).then_some(len)
 }
 
 /// Optimal-string-alignment distance: Levenshtein plus adjacent
@@ -103,5 +126,23 @@ mod tests {
     #[test]
     fn exact_match_is_not_a_suggestion() {
         assert_eq!(nearest(["split"], "split"), None);
+    }
+
+    #[test]
+    fn hostile_identifier_length_skips_suggestion_work() {
+        let long = "é".repeat(MAX_SUGGEST_CHARS + 1);
+        assert_eq!(nearest(["split"], &long), None);
+        assert_eq!(nearest([long.as_str()], "spilt"), None);
+    }
+
+    #[test]
+    fn hostile_namespace_size_skips_suggestion_work() {
+        let candidates: Vec<String> = (0..=MAX_SUGGEST_CANDIDATES)
+            .map(|i| format!("name_{i}"))
+            .collect();
+        assert_eq!(
+            nearest(candidates.iter().map(String::as_str), "name_1"),
+            None
+        );
     }
 }

@@ -84,14 +84,17 @@ pub fn multiline_open(line: &str) -> Option<MultilineClose> {
 }
 
 /// True when the character immediately before byte offset `i` in `line`
-/// is an identifier character (`[A-Za-z0-9_]`) — i.e. a leading `r` at
-/// `i` continues an identifier rather than opening a raw string.
+/// can continue an identifier.
+///
+/// A leading `r` at `i` then continues an identifier rather than opening
+/// a raw string. This uses Chumsky's Unicode XID continuation rule.
 #[must_use]
 pub fn prev_char_is_ident(line: &str, i: usize) -> bool {
-    line[..i]
+    line.get(..i)
+        .unwrap_or_default()
         .chars()
         .next_back()
-        .is_some_and(|p| p.is_alphanumeric() || p == '_')
+        .is_some_and(unicode_ident::is_xid_continue)
 }
 
 /// If `line[start..]` begins with `r#*"""` and nothing follows after
@@ -226,5 +229,24 @@ mod tests {
     #[test]
     fn raw_open_at_rejects_content_after_quotes() {
         assert_eq!(raw_multiline_open_at("r#\"\"\"hello", 0), None);
+    }
+
+    #[test]
+    fn unicode_xid_before_r_is_an_identifier_continuation() {
+        let accented = "ér#\"\"\"";
+        let r = accented.find('r').expect("contains r");
+        assert!(prev_char_is_ident(accented, r));
+
+        let combining = "e\u{301}r#\"\"\"";
+        let r = combining.find('r').expect("contains r");
+        assert!(prev_char_is_ident(combining, r));
+    }
+
+    #[test]
+    fn unicode_whitespace_before_r_is_not_an_identifier_continuation() {
+        for src in ["\u{00a0}r#\"\"\"", "\u{2003}r#\"\"\""] {
+            let r = src.find('r').expect("contains r");
+            assert!(!prev_char_is_ident(src, r));
+        }
     }
 }

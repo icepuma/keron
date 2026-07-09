@@ -653,6 +653,7 @@ dependencies = [
  "proptest",
  "stacker",
  "thiserror",
+ "unicode-ident",
 ]
 
 [[package]]

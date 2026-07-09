@@ -135,7 +135,8 @@ impl Scanner<'_> {
     fn scan_token(&mut self, c: char) {
         match c {
             '#' => self.comment(),
-            '"' => self.cooked_string(self.starts_with("\"\"\"")),
+            '"' => self
+                .cooked_string(self.starts_with("\"\"\"") && self.opener_has_newline(self.pos + 3)),
             'r' => {
                 if let Some(hashes) = self.raw_open_hashes() {
                     self.raw_string(hashes);
@@ -144,7 +145,7 @@ impl Scanner<'_> {
                 }
             }
             _ if c.is_ascii_digit() => self.number(),
-            _ if c.is_alphabetic() || c == '_' => self.ident(),
+            _ if unicode_ident::is_xid_start(c) || c == '_' => self.ident(),
             _ => self.operator_or_punct(c),
         }
     }
@@ -168,8 +169,8 @@ impl Scanner<'_> {
         self.pos += if multiline { 3 } else { 1 };
         while let Some(c) = self.peek() {
             if multiline {
-                if self.starts_with("\"\"\"") {
-                    self.pos += 3;
+                if let Some(end) = self.multiline_close_end(0) {
+                    self.pos = end;
                     break;
                 }
             } else if c == '"' {
@@ -183,6 +184,9 @@ impl Scanner<'_> {
             if c == '\\' {
                 self.bump(c);
                 if let Some(escaped) = self.peek() {
+                    if !multiline && matches!(escaped, '\n' | '\r') {
+                        break;
+                    }
                     self.bump(escaped);
                 }
                 continue;
@@ -231,23 +235,55 @@ impl Scanner<'_> {
 
     /// `Some(n)` when the scanner sits on a raw-string opener
     /// `r#…#"""` with `n` hashes. Unlike `lex::raw_multiline_open_at`
-    /// this accepts same-line raw strings too — the scanner does not
-    /// care whether the close is on the same line.
+    /// this accepts a half-typed opener before its required newline;
+    /// an absent line-oriented close simply makes the token run to EOF.
     fn raw_open_hashes(&self) -> Option<usize> {
         let rest = self.src[self.pos..].strip_prefix('r')?;
         let hashes = rest.bytes().take_while(|b| *b == b'#').count();
-        rest[hashes..].starts_with("\"\"\"").then_some(hashes)
+        let after = self.pos + 1 + hashes + 3;
+        (rest[hashes..].starts_with("\"\"\"") && self.opener_has_newline(after)).then_some(hashes)
+    }
+
+    fn opener_has_newline(&self, after: usize) -> bool {
+        matches!(self.src.as_bytes().get(after), Some(b'\n' | b'\r'))
     }
 
     fn raw_string(&mut self, hashes: usize) {
         let start = self.pos;
         self.pos += 1 + hashes + 3;
-        let close = format!("\"\"\"{}", "#".repeat(hashes));
-        match self.src[self.pos..].find(&close) {
-            Some(i) => self.pos += i + close.len(),
-            None => self.pos = self.src.len(),
+        while let Some(c) = self.peek() {
+            if let Some(end) = self.multiline_close_end(hashes) {
+                self.pos = end;
+                break;
+            }
+            self.bump(c);
         }
         self.push(LexTokenKind::Str, start);
+    }
+
+    /// End offset of a parser-valid multiline close at the current
+    /// position: line start, optional indentation, `"""`, exactly
+    /// `hashes` `#` characters, then newline or EOF.
+    fn multiline_close_end(&self, hashes: usize) -> Option<usize> {
+        if self.pos != 0 && !matches!(self.src.as_bytes().get(self.pos - 1), Some(b'\n' | b'\r')) {
+            return None;
+        }
+        let bytes = self.src.as_bytes();
+        let mut end = self.pos;
+        while matches!(bytes.get(end), Some(b' ' | b'\t')) {
+            end += 1;
+        }
+        if !bytes[end..].starts_with(b"\"\"\"") {
+            return None;
+        }
+        end += 3;
+        for _ in 0..hashes {
+            if bytes.get(end) != Some(&b'#') {
+                return None;
+            }
+            end += 1;
+        }
+        matches!(bytes.get(end), None | Some(b'\n' | b'\r')).then_some(end)
     }
 
     fn number(&mut self) {
@@ -276,7 +312,7 @@ impl Scanner<'_> {
     fn ident(&mut self) {
         let start = self.pos;
         while let Some(c) = self.peek() {
-            if !(c.is_alphanumeric() || c == '_') {
+            if !unicode_ident::is_xid_continue(c) {
                 break;
             }
             self.bump(c);
@@ -409,6 +445,13 @@ mod tests {
     }
 
     #[test]
+    fn escaped_line_break_does_not_hide_later_tokens() {
+        let tokens = kinds("\"open\\\nval later");
+        assert!(tokens.contains(&(LexTokenKind::Keyword, "val")));
+        assert!(tokens.contains(&(LexTokenKind::Ident, "later")));
+    }
+
+    #[test]
     fn interpolation_yields_inner_tokens() {
         use LexTokenKind::{Ident, Punct, Str};
         assert_eq!(
@@ -459,14 +502,40 @@ mod tests {
 
     #[test]
     fn raw_string_close_requires_matching_hashes() {
-        let src = "r#\"\"\"body \"\"\" still body\"\"\"#";
+        let src = "r#\"\"\"\nbody\n\"\"\"\nstill body\n\"\"\"#";
+        assert_eq!(kinds(src), vec![(LexTokenKind::Str, src)]);
+    }
+
+    #[test]
+    fn cooked_multiline_close_must_be_on_its_own_line() {
+        let src = "\"\"\"\nbody \"\"\" is content\n\"\"\"";
+        assert_eq!(kinds(src), vec![(LexTokenKind::Str, src)]);
+    }
+
+    #[test]
+    fn raw_multiline_close_must_be_on_its_own_line() {
+        let src = "r#\"\"\"\nbody \"\"\"# is content\n  \"\"\"#";
         assert_eq!(kinds(src), vec![(LexTokenKind::Str, src)]);
     }
 
     #[test]
     fn unterminated_raw_string_runs_to_eof_without_panic() {
-        let src = "r##\"\"\"never closed";
+        let src = "r##\"\"\"\nnever closed";
         assert_eq!(kinds(src), vec![(LexTokenKind::Str, src)]);
+    }
+
+    #[test]
+    fn malformed_multiline_openers_do_not_hide_later_tokens() {
+        for src in [
+            "\"\"\"not an opener\nval later = 1",
+            "r#\"\"\"not an opener\nval later = 1",
+        ] {
+            let tokens = kinds(src);
+            assert!(
+                tokens.contains(&(LexTokenKind::Keyword, "val")),
+                "later declaration was hidden: {tokens:?}"
+            );
+        }
     }
 
     #[test]
@@ -475,6 +544,29 @@ mod tests {
             kinds("reconciler"),
             vec![(LexTokenKind::Ident, "reconciler")]
         );
+    }
+
+    #[test]
+    fn unicode_xid_identifier_matches_parser_boundaries() {
+        let src = "é e\u{301}lan";
+        assert_eq!(
+            kinds(src),
+            vec![
+                (LexTokenKind::Ident, "é"),
+                (LexTokenKind::Ident, "e\u{301}lan"),
+            ]
+        );
+    }
+
+    #[test]
+    fn unicode_whitespace_does_not_block_raw_string_detection() {
+        for ws in ['\u{00a0}', '\u{2003}'] {
+            let src = format!("{ws}r#\"\"\"\nbody\n\"\"\"#");
+            let tokens = lex_tokens(&src);
+            assert_eq!(tokens.len(), 1);
+            assert_eq!(tokens[0].kind, LexTokenKind::Str);
+            assert_eq!(&src[tokens[0].span.clone()], &src[ws.len_utf8()..]);
+        }
     }
 
     #[test]

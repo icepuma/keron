@@ -39,22 +39,31 @@ fn ast_shape(program: &Program) -> String {
     // Debug-format prints spans; rewrite them to a constant marker.
     let raw = format!("{program:#?}");
     let mut out = String::with_capacity(raw.len());
-    let bytes = raw.as_bytes();
     let mut i = 0;
-    while i < bytes.len() {
+    while i < raw.len() {
         // Match `span: <num>..<num>` and elide the numbers.
         if raw[i..].starts_with("span: ") {
             out.push_str("span: <elided>");
             i += "span: ".len();
+            let bytes = raw.as_bytes();
             while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.') {
                 i += 1;
             }
             continue;
         }
-        out.push(bytes[i] as char);
-        i += 1;
+        let c = raw[i..].chars().next().expect("i is before string end");
+        out.push(c);
+        i += c.len_utf8();
     }
     out
+}
+
+#[test]
+fn ast_shape_walk_is_unicode_safe() {
+    let program = parse("val café = \"naïve ☕\"").expect("source parses");
+    let shape = ast_shape(&program);
+    assert!(shape.contains("café"));
+    assert!(shape.contains("naïve ☕"));
 }
 
 #[test]

@@ -79,3 +79,33 @@ fn depth_limit_still_rejects_before_recovery_runs() {
     assert!(program.items.is_empty());
     assert_eq!(diagnostics.len(), 1);
 }
+
+#[test]
+fn recovery_does_not_resync_inside_multiline_string_content() {
+    let deep = format!("{}1{}", "(".repeat(300), ")".repeat(300));
+    let src = format!("val broken = @\"\"\"\nval phantom = {deep}\n\"\"\"\nval after = 2\n");
+    let (program, diagnostics) = parse_recovering(&src);
+    assert_eq!(diagnostics.len(), 1, "got: {diagnostics:#?}");
+    assert_eq!(program.items.len(), 1, "string content is not an item");
+    let Item::Val(v) = &program.items[0] else {
+        panic!("expected `val after` to survive");
+    };
+    assert_eq!(v.name.node, "after");
+}
+
+#[test]
+fn recovery_does_not_resync_inside_raw_multiline_string_content() {
+    let src = concat!(
+        "val broken = @r#\"\"\"\n",
+        "val phantom = 1\n",
+        "\"\"\"#\n",
+        "val after = 2\n",
+    );
+    let (program, diagnostics) = parse_recovering(src);
+    assert_eq!(diagnostics.len(), 1, "got: {diagnostics:#?}");
+    assert_eq!(program.items.len(), 1, "raw string content is not an item");
+    let Item::Val(v) = &program.items[0] else {
+        panic!("expected `val after` to survive");
+    };
+    assert_eq!(v.name.node, "after");
+}

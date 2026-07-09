@@ -45,7 +45,10 @@ fn render_one(out: &mut String, src: &str, d: &Diagnostic) {
 }
 
 fn locate(src: &str, byte: usize) -> (usize, usize, &str) {
-    let clamped = byte.min(src.len());
+    let mut clamped = byte.min(src.len());
+    while !src.is_char_boundary(clamped) {
+        clamped -= 1;
+    }
     let prefix = &src[..clamped];
     let line = prefix.bytes().filter(|b| *b == b'\n').count() + 1;
     let line_start = prefix.rfind('\n').map_or(0, |i| i + 1);

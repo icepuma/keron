@@ -145,7 +145,7 @@ pub(super) fn enforce_nesting_limit(src: &str) -> Result<(), Vec<Diagnostic>> {
                 }
                 // Any other real token breaks the prefix-operator run.
                 unary_run = 0;
-                i = scan_code(bytes, i, &mut stack, &mut depth, &mut spine)?;
+                i = scan_code(src, bytes, i, &mut stack, &mut depth, &mut spine)?;
             }
         }
     }
@@ -181,11 +181,12 @@ fn skip_line_comment(bytes: &[u8], i: usize) -> usize {
 /// never appear at frame-zero *inside* an expression (only `if`/`for`/
 /// `match`, which are not reset points, do), so resetting here can never
 /// hide a genuine single-expression bomb.
-const ITEM_KEYWORDS: [&[u8]; 6] = [b"val", b"fn", b"struct", b"type", b"reconcile", b"from"];
+const ITEM_KEYWORDS: [&[u8]; 5] = [b"val", b"fn", b"struct", b"type", b"reconcile"];
 
 /// Scan one step of code context. Updates `stack`/`depth`/`spine`;
 /// returns the next byte index.
 fn scan_code(
+    src: &str,
     bytes: &[u8],
     i: usize,
     stack: &mut Vec<Frame>,
@@ -194,7 +195,7 @@ fn scan_code(
 ) -> Result<usize, Vec<Diagnostic>> {
     match bytes[i] {
         b'"' => {
-            if bytes[i..].starts_with(b"\"\"\"") {
+            if bytes[i..].starts_with(b"\"\"\"") && opener_has_newline(bytes, i + 3) {
                 stack.push(Frame::MultiStr);
                 Ok(i + 3)
             } else {
@@ -208,7 +209,10 @@ fn scan_code(
         // reads it. Without the preceding-byte check the guard would
         // flip into (phantom) raw-string mode and stop counting the
         // delimiters after it.
-        b'r' if (i == 0 || !is_ident_byte(bytes[i - 1])) && raw_open_hashes(bytes, i).is_some() => {
+        b'r' if !crate::lex::prev_char_is_ident(src, i)
+            && raw_open_hashes(bytes, i)
+                .is_some_and(|hashes| opener_has_newline(bytes, i + 1 + hashes + 3)) =>
+        {
             let hashes = raw_open_hashes(bytes, i).expect("checked by guard");
             stack.push(Frame::RawStr(hashes));
             // Advance past `r` + hashes + `"""`.
@@ -248,15 +252,21 @@ fn scan_code(
             }
             Ok(i + 1)
         }
-        b if b.is_ascii_alphabetic() && stack.is_empty() => {
+        b if b.is_ascii_alphabetic()
+            && stack.is_empty()
+            && !crate::lex::prev_char_is_ident(src, i) =>
+        {
             // At the top level, reset the spine counters when an item
             // keyword starts a new statement. Read the whole word so a
             // longer identifier that merely starts with `val…` (e.g.
             // `valid`) is not mistaken for the `val` keyword.
             let start = i;
             let mut j = i;
-            while j < bytes.len() && is_ident_byte(bytes[j]) {
-                j += 1;
+            while let Some(c) = src.get(j..).and_then(|rest| rest.chars().next()) {
+                if !unicode_ident::is_xid_continue(c) {
+                    break;
+                }
+                j += c.len_utf8();
             }
             let word = &bytes[start..j];
             if ITEM_KEYWORDS.contains(&word) {
@@ -268,8 +278,8 @@ fn scan_code(
     }
 }
 
-const fn is_ident_byte(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'_'
+fn opener_has_newline(bytes: &[u8], after: usize) -> bool {
+    matches!(bytes.get(after), Some(b'\n' | b'\r'))
 }
 
 /// Scan one byte inside a single-line cooked string (`"…"`): honor `\`
@@ -281,9 +291,22 @@ fn scan_single_line_cooked(
     spine: &mut SpineRuns,
 ) -> usize {
     let c = bytes[i];
+    if c == b'\n' || c == b'\r' {
+        stack.pop();
+        return i + 1;
+    }
     if c == b'\\' {
-        // Escape: skip the next byte.
-        return i + 2;
+        return match bytes.get(i + 1) {
+            Some(b'\n' | b'\r') => {
+                stack.pop();
+                i + 2
+            }
+            Some(_) => i + 2,
+            None => {
+                stack.pop();
+                i + 1
+            }
+        };
     }
     if c == b'$' && bytes.get(i + 1) == Some(&b'{') {
         // Re-enter code mode for the interpolation body — a fresh `expr`
@@ -543,6 +566,64 @@ mod tests {
         let deep = format!("{}1{}", "[".repeat(300), "]".repeat(300));
         let src = format!("val x = [bar#\"\"\"\n]\nval deep = {deep}\n");
         rejected(&src);
+    }
+
+    #[test]
+    fn unicode_identifier_suffix_does_not_reset_recursive_chain() {
+        let chain = "éval".to_string() + &" ?? éval".repeat(300);
+        rejected(&format!("val x = {chain}"));
+    }
+
+    #[test]
+    fn keyword_prefix_of_unicode_identifier_does_not_reset_recursive_chain() {
+        let chain = "valé".to_string() + &" ?? valé".repeat(300);
+        rejected(&format!("val x = {chain}"));
+    }
+
+    #[test]
+    fn contextual_from_identifier_does_not_reset_recursive_chain() {
+        let chain = "from".to_string() + &" ?? from".repeat(300);
+        rejected(&format!("val x = {chain}"));
+    }
+
+    #[test]
+    fn unicode_identifier_ending_in_r_before_comment_is_not_a_raw_string() {
+        let deep = format!("{}1{}", "(".repeat(300), ")".repeat(300));
+        let src = format!("val x = ér#\"\"\"\nval deep = {deep}\n");
+        rejected(&src);
+    }
+
+    #[test]
+    fn unicode_whitespace_before_raw_opener_still_enters_raw_string() {
+        let content = "(".repeat(1000);
+        for ws in ['\u{00a0}', '\u{2003}'] {
+            ok(&format!("val x = {ws}r#\"\"\"\n{content}\n\"\"\"#\n"));
+        }
+    }
+
+    #[test]
+    fn unterminated_single_line_string_does_not_hide_later_nesting() {
+        let deep = format!("{}1{}", "(".repeat(300), ")".repeat(300));
+        let src = format!("val x = \"unterminated\nval deep = {deep}\n");
+        rejected(&src);
+    }
+
+    #[test]
+    fn newline_escape_error_does_not_hide_later_nesting() {
+        let deep = format!("{}1{}", "(".repeat(300), ")".repeat(300));
+        let src = format!("val x = \"bad\\\nval deep = {deep}\n");
+        rejected(&src);
+    }
+
+    #[test]
+    fn malformed_multiline_openers_do_not_hide_later_nesting() {
+        let deep = format!("{}1{}", "(".repeat(300), ")".repeat(300));
+        rejected(&format!(
+            "val x = \"\"\"not a multiline opener\nval deep = {deep}\n"
+        ));
+        rejected(&format!(
+            "val x = r#\"\"\"not a raw opener\nval deep = {deep}\n"
+        ));
     }
 
     #[test]

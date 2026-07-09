@@ -17,6 +17,7 @@ mod use_decl;
 mod util;
 
 use chumsky::error::{RichPattern, RichReason};
+use chumsky::input::InputRef;
 use chumsky::prelude::*;
 
 use crate::{
@@ -34,6 +35,7 @@ use self::{
     use_decl::use_decl,
     util::{Extra, ident, pad, span_to_range, spanned},
 };
+use crate::lex::{MultilineClose, is_multiline_close, multiline_open};
 
 /// Parse keron source into a [`Program`].
 ///
@@ -238,31 +240,75 @@ fn program<'src>() -> impl Parser<'src, &'src str, Program, Extra<'src>> {
 /// it still parse.
 ///
 /// The synchronization point is a top-level keyword at column zero —
-/// i.e. immediately after a newline. Requiring column zero avoids
-/// re-syncing on a `val`/`if`/… inside the (indented) body of the
-/// broken item, which would turn one typo into a cascade of bogus
-/// follow-on errors. The mandatory leading `any()` consumes at least
-/// one character, so recovery always makes progress and can never
-/// loop on adversarial input; at end of input it fails, which simply
-/// ends the item loop.
+/// i.e. immediately after a newline. The scanner tracks multiline
+/// strings so source-looking examples inside string bodies do not
+/// become phantom recovered items. Requiring column zero avoids
+/// re-syncing on an indented declaration inside a broken block.
 fn item_recovery<'src>() -> impl Parser<'src, &'src str, Option<Item>, Extra<'src>> {
-    let sync_keyword = choice((
-        text::keyword("val"),
-        text::keyword("fn"),
-        text::keyword("struct"),
-        text::keyword("type"),
-        text::keyword("reconcile"),
-        text::keyword("from"),
-        text::keyword("if"),
-        text::keyword("for"),
-        text::keyword("match"),
-    ))
-    .ignored();
-    let sync_point = just('\n').ignore_then(sync_keyword);
-    any()
-        .ignored()
-        .then_ignore(any().and_is(sync_point.not()).ignored().repeated())
-        .to(None)
+    custom(recover_item)
+}
+
+fn recover_item<'src>(
+    inp: &mut InputRef<'src, '_, &'src str, Extra<'src>>,
+) -> Result<Option<Item>, Rich<'src, char>> {
+    let start = inp.cursor();
+    let mut consumed = false;
+    let mut line = String::new();
+    let mut multiline: Option<MultilineClose> = None;
+
+    loop {
+        let before = inp.save();
+        let Some(c) = inp.next() else {
+            if consumed {
+                return Ok(None);
+            }
+            return Err(Rich::custom(
+                inp.span_since(&start),
+                "unable to recover at end of input",
+            ));
+        };
+        consumed = true;
+        if c != '\n' {
+            line.push(c);
+            continue;
+        }
+
+        multiline = match multiline {
+            Some(close) if is_multiline_close(&line, close) => None,
+            Some(close) => Some(close),
+            None => multiline_open(&line),
+        };
+        line.clear();
+
+        if multiline.is_none() && next_is_sync_keyword(inp) {
+            inp.rewind(before);
+            return Ok(None);
+        }
+    }
+}
+
+fn next_is_sync_keyword<'src>(inp: &mut InputRef<'src, '_, &'src str, Extra<'src>>) -> bool {
+    const LONGEST_KEYWORD: usize = "reconcile".len();
+
+    let checkpoint = inp.save();
+    let mut word = String::with_capacity(LONGEST_KEYWORD);
+    let mut chars = 0usize;
+    while let Some(c) = inp.next() {
+        if !unicode_ident::is_xid_continue(c) {
+            break;
+        }
+        chars += 1;
+        if chars > LONGEST_KEYWORD {
+            inp.rewind(checkpoint);
+            return false;
+        }
+        word.push(c);
+    }
+    inp.rewind(checkpoint);
+    matches!(
+        word.as_str(),
+        "val" | "fn" | "struct" | "type" | "reconcile" | "from" | "if" | "for" | "match"
+    )
 }
 
 fn item<'src>() -> impl Parser<'src, &'src str, Item, Extra<'src>> {
