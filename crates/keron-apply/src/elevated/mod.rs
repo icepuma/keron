@@ -519,43 +519,11 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn check_binary_tamper_resistance_accepts_locked_down_path() {
-        use std::os::unix::fs::PermissionsExt;
-        // A directory the running user owns with no group-or-world
-        // write bits should pass on a unix host. Pins the
-        // `0o002`/`0o020` masks (mutations that flip the masks
-        // to `0` would still pass this test but mutations that
-        // invert the comparison would fail).
-        let parent = std::env::temp_dir().join(format!(
-            "keron-elev-locked-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.subsec_nanos()),
-        ));
-        let _ = std::fs::remove_dir_all(&parent);
-        std::fs::create_dir_all(&parent).unwrap();
-        let bin = parent.join("fake-keron");
-        std::fs::write(&bin, "#!/bin/sh\nexit 0\n").unwrap();
-        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o555)).unwrap();
-        std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o555)).unwrap();
-
-        // Note: the walk goes all the way to `/`. Some hosts may
-        // have unusual mode bits on system dirs (e.g., sticky `/tmp`).
-        // We don't require the walk to succeed; we just require
-        // that the bin-itself check doesn't trip on a non-writable mode.
+    fn check_binary_tamper_resistance_accepts_current_test_binary() {
+        let bin = std::fs::canonicalize(std::env::current_exe().unwrap()).unwrap();
         let invoking_uid = rustix::process::geteuid().as_raw();
-        let result = check_binary_tamper_resistance(&bin, Some(invoking_uid), false);
-        if let Err(e) = &result {
-            let msg = format!("{e:#}");
-            assert!(
-                !msg.contains("is group- or world-writable")
-                    && !msg.contains("writable by non-root owner"),
-                "binary mode 0o555 must not trip the binary-self check: {msg}"
-            );
-        }
-
-        let _ = std::fs::remove_dir_all(&parent);
+        check_binary_tamper_resistance(&bin, Some(invoking_uid), false)
+            .expect("the current test binary must satisfy the production elevation policy");
     }
 
     #[cfg(unix)]
