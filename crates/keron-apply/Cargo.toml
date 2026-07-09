@@ -31,9 +31,6 @@ which.workspace = true
 libc.workspace = true
 rustix.workspace = true
 
-[target.'cfg(windows)'.dependencies]
-windows.workspace = true
-
 [dev-dependencies]
 mutants.workspace = true
 proptest.workspace = true

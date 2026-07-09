@@ -6,10 +6,7 @@
 //! __apply-elevated <payload>` — and `exec`s `argv[1..]`. The
 //! library exposes `KERON_TEST_ELEVATOR` (in `elevated::mod.rs`)
 //! that short-circuits the real PATH probe, so the spy script gets
-//! used in place of `sudo` / `doas` / `pkexec`. The chown-back is
-//! exercised by aiming at the calling user's own uid/gid — the
-//! syscall executes but the value doesn't change, which is enough to
-//! pin the wiring without requiring root.
+//! used in place of `sudo` / `doas` / `pkexec`.
 
 #![cfg(unix)]
 
@@ -89,8 +86,8 @@ fn keron_binary_path() -> PathBuf {
 }
 
 #[test]
-fn elevated_subset_runs_under_spy_and_chowns_back() {
-    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+fn elevated_subset_runs_under_spy() {
+    use std::os::unix::fs::PermissionsExt;
 
     let proj = TempProject::new("e2e");
 
@@ -118,9 +115,6 @@ fn elevated_subset_runs_under_spy_and_chowns_back() {
 
     let spy = write_spy_elevator(&proj);
     let keron = keron_binary_path();
-
-    let my_uid = fs::metadata(&proj.root).unwrap().uid();
-    let my_group = fs::metadata(&proj.root).unwrap().gid();
 
     // SUDO_UID/SUDO_GID must be unset: if the surrounding shell ran
     // under sudo, leftovers would trip the direct-elevation refusal.
@@ -170,14 +164,6 @@ fn elevated_subset_runs_under_spy_and_chowns_back() {
         protected_link.is_symlink(),
         "elevated symlink should be created: stdout=\n{stdout}",
     );
-    let elev_meta = fs::symlink_metadata(&protected_link).unwrap();
-    assert_eq!(
-        elev_meta.uid(),
-        my_uid,
-        "elevated symlink should be owned by the calling user, not root"
-    );
-    assert_eq!(elev_meta.gid(), my_group);
-
     assert!(
         stdout.contains("Apply complete"),
         "missing unprivileged summary: {stdout}",

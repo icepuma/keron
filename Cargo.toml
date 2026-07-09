@@ -48,15 +48,10 @@ serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.150"
 sha2 = "=0.11.0"
 libc = "=0.2.186"
-# Typed wrappers around POSIX/Linux syscalls (`openat`, `symlinkat`,
-# `mkdirat`, `statat`, `fchownat`, …). The elevated apply path
-# (`crates/keron-apply/src/elevated/safe_write.rs` and
-# `chown.rs::set_owner_posix`) used to invoke these through raw
-# `libc` FFI, which forced ~30 per-call-site `#[allow(unsafe_code)]`
-# exemptions under the workspace `unsafe_code = "deny"` policy.
-# `rustix` returns `OwnedFd` directly and accepts `&Path` arguments,
-# letting us write the same syscall sequences without any `unsafe`
-# in caller code.
+# Typed wrappers around the `openat`/`mkdirat`/`symlinkat`/`renameat`
+# family used by the Unix elevated filesystem walker. `rustix` returns
+# `OwnedFd` directly and accepts `&Path`, keeping the privileged path
+# fd-anchored without caller-side `unsafe`.
 rustix = { version = "=1.1.4", features = ["fs", "process"] }
 # Cross-platform symlink creation. On Unix this forwards to
 # `std::os::unix::fs::symlink`; on Windows it probes the target type
@@ -106,29 +101,6 @@ lsp-types = "=0.97.0"
 # remaining red-zone gets thin, decoupling the runtime guard from
 # the host thread stack size.
 stacker = "=0.1.24"
-# Pinned platform binding for the elevated-rights flow on Windows:
-# parent-side SID capture (`OpenProcessToken` + `GetTokenInformation` +
-# `ConvertSidToStringSidW`), child-side ownership transfer
-# (`SetSecurityInfo` on a `CreateFileW` handle opened with
-# `FILE_FLAG_OPEN_REPARSE_POINT` so symlinks get the link's owner, not
-# the target's), and the `ShellExecuteExW` re-exec with the `runas`
-# verb that triggers UAC. The typed `windows` crate (vs the lower-
-# level `windows-sys`) gives us `HSTRING`/`PCWSTR` for wide-string
-# marshalling — that lets us drop the per-call `to_wide` helper and
-# group `unsafe` per logical operation instead of per syscall. Used
-# only behind `#[cfg(windows)]`.
-windows = { version = "=0.62.2", default-features = false, features = [
-    "std",
-    "Win32_Foundation",
-    "Win32_Security",
-    "Win32_Security_Authorization",
-    "Win32_System_Threading",
-    "Win32_System_Memory",
-    "Win32_Storage_FileSystem",
-    "Win32_System_Registry",
-    "Win32_UI_Shell",
-] }
-
 insta = "=1.48.0"
 libtest-mimic = "=0.8.2"
 bolero = "=0.13.4"

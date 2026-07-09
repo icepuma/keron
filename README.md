@@ -11,8 +11,10 @@ You write `.keron` files describing the state you want — symlinks, templated
 files, packages, shell scripts. `keron apply` shows you an OpenTofu-style diff.
 Add `--execute` and it applies after confirmation.
 
-It runs entirely at the user level. Elevation (sudo / UAC) only happens when a
-specific resource needs it, and only for that step.
+It runs at the user level by default. On Unix, sudo/doas/pkexec elevation only
+happens when a specific filesystem resource needs it, and only for that step.
+Objects created by that step remain owned by the elevated principal. Elevated
+filesystem writes currently fail closed on Windows.
 
 ## Example
 

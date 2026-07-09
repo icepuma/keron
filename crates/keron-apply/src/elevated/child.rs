@@ -1,32 +1,30 @@
 //! Entry point for the elevated keron subprocess.
 //!
 //! Invoked as `keron __apply-elevated <payload-path>` by the
-//! unprivileged parent through sudo / `ShellExecuteExW`. Reads the
-//! JSON payload, applies each [`crate::plan::ResourceChange`] via the
-//! shared [`crate::execute::apply_change_one_in`], then `chown`s every
-//! affected filesystem path back to the calling user.
+//! unprivileged parent through a Unix elevator. Reads the JSON payload,
+//! validates that every change is an action the planner is allowed to
+//! elevate, then applies each change via the shared
+//! [`crate::execute::apply_change_one_in`].
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-use crate::elevated::chown;
-use crate::elevated::payload::{ElevatedPayload, OwnerId, PAYLOAD_VERSION, PayloadExpectation};
+use crate::elevated::payload::{ElevatedPayload, PAYLOAD_VERSION, PayloadExpectation};
 use crate::execute::{ApplyContext, apply_change_one_in};
-use crate::plan::{ResourceChange, ResourceState};
-use crate::terminal_safe::show_path;
+use crate::plan::{Action, ResourceChange, ResourceKind, ResourceState};
 
-/// Read `payload`, apply its changes, and chown-back.
+/// Read `payload`, validate its privileged action set, and apply it.
 ///
 /// Called by `keron-cli`'s hidden `__apply-elevated` subcommand.
 /// Writes a one-line summary to `stdout` for the unprivileged
 /// parent's user to see (stdio is inherited through the elevator).
 ///
 /// # Errors
-/// Errors on payload parse failure, version mismatch, apply failure,
-/// or chown-back failure. The error is intentionally propagated so
-/// the elevator (sudo / `ShellExecuteExW`) sees a non-zero exit.
+/// Errors on payload parse failure, version mismatch, contract
+/// validation failure, or apply failure. The error is intentionally
+/// propagated so the Unix elevator sees a non-zero exit.
 pub fn run(payload_path: &Path, expected: &PayloadExpectation) -> Result<()> {
     let bytes = crate::elevated::payload::read_verified(payload_path, expected)?;
     let payload: ElevatedPayload = serde_json::from_slice(&bytes)
@@ -37,12 +35,11 @@ pub fn run(payload_path: &Path, expected: &PayloadExpectation) -> Result<()> {
             payload.version
         );
     }
+    validate_payload(&payload)?;
 
     let mut stdout = std::io::stdout().lock();
-    let mut stderr = std::io::stderr().lock();
     let total = payload.changes.len();
     let mut applied = 0usize;
-    let mut ownership_failures: Vec<PathBuf> = Vec::new();
 
     for change in &payload.changes {
         if let Some(leaf) = leaf_path(change) {
@@ -60,67 +57,156 @@ pub fn run(payload_path: &Path, expected: &PayloadExpectation) -> Result<()> {
             )
         })?;
         applied += 1;
-        if let Some(path) = leaf_path(change) {
-            if should_chown_back(&path) {
-                if let Err(e) = chown::set_owner(&path, &payload.owner) {
-                    // Write succeeded, chown failed: don't abort the
-                    // loop — finish the rest and surface a complete list
-                    // of broken ownerships at the end. Per-resource
-                    // warnings go to stderr so a closed stdout pipe
-                    // can't swallow them.
-                    let _ = writeln!(
-                        stderr,
-                        "warning: failed to set owner on `{}`: {e:#}",
-                        show_path(&path),
-                    );
-                    ownership_failures.push(path);
-                }
-            } else {
-                // Deliberately left root-owned — see `should_chown_back`.
-                let _ = writeln!(
-                    stderr,
-                    "note: left `{}` root-owned (system config directory)",
-                    show_path(&path),
-                );
-            }
-        }
     }
 
     let _ = writeln!(
         stdout,
         "elevated apply complete: {applied}/{total} resources processed",
     );
-    if !ownership_failures.is_empty() {
-        // The repair list is load-bearing: without it the user has
-        // no way to know which paths still need chown-back. Write to
-        // stderr (less likely to be redirected) and propagate the
-        // write error — losing this list would leave the cluster of
-        // root-owned files invisible.
-        let example = describe_owner(&payload.owner);
-        writeln!(
-            stderr,
-            "warning: {} resource(s) had ownership-fixup failures. Re-run \
-             `chown {example} <path>` (or `chown -h …` for symlinks) to repair:",
-            ownership_failures.len(),
-        )
-        .context("emitting ownership-fixup repair list to stderr")?;
-        for p in &ownership_failures {
-            writeln!(stderr, "  - {}", show_path(p))
-                .context("emitting ownership-fixup repair list to stderr")?;
-        }
+    Ok(())
+}
+
+/// Treat the serialized payload as hostile input. The digest and inode
+/// expectation protect a parent-created payload from replacement while
+/// sudo is starting, but they do not prove that the bytes came from the
+/// planner: a caller can invoke the hidden subcommand directly and supply
+/// a matching digest. Re-establish the planner's elevation contract before
+/// the first side effect so the privileged entry point cannot become a
+/// generic root shell/package/GPG runner.
+fn validate_payload(payload: &ElevatedPayload) -> Result<()> {
+    #[cfg(windows)]
+    if !payload.changes.is_empty() {
         bail!(
-            "elevated apply finished but {} resource(s) ended up owned by root; see \
-             warnings above for the repair command",
-            ownership_failures.len(),
+            "elevated filesystem writes are disabled on Windows until the apply path has a reparse-point-safe handle walker"
+        );
+    }
+    for (index, change) in payload.changes.iter().enumerate() {
+        validate_change(change).with_context(|| {
+            format!(
+                "invalid elevated payload change {} of {}",
+                index + 1,
+                payload.changes.len(),
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn validate_change(change: &ResourceChange) -> Result<()> {
+    if !change.requires_elevation {
+        bail!(
+            "change `{}` is not marked as requiring elevation",
+            change.address
+        );
+    }
+    if change.requires_force != change.compute_requires_force() {
+        bail!(
+            "change `{}` has an incoherent force-approval flag",
+            change.address
+        );
+    }
+
+    match change.action {
+        Action::Create => {
+            if change.before.is_some() {
+                bail!(
+                    "create change `{}` unexpectedly has prior state",
+                    change.address
+                );
+            }
+            let after = change.after.as_ref().with_context(|| {
+                format!("create change `{}` has no desired state", change.address)
+            })?;
+            validate_filesystem_state(change, after)?;
+        }
+        Action::Update => {
+            let before = change.before.as_ref().with_context(|| {
+                format!("update change `{}` has no prior state", change.address)
+            })?;
+            let after = change.after.as_ref().with_context(|| {
+                format!("update change `{}` has no desired state", change.address)
+            })?;
+            validate_filesystem_state(change, before)?;
+            validate_filesystem_state(change, after)?;
+            match (before, after) {
+                (
+                    ResourceState::Template { path: before, .. },
+                    ResourceState::Template { path: after, .. },
+                )
+                | (
+                    ResourceState::Symlink { from: before, .. },
+                    ResourceState::Symlink { from: after, .. },
+                ) if before == after => {}
+                _ => bail!(
+                    "update change `{}` changes resource kind or destination",
+                    change.address
+                ),
+            }
+        }
+        Action::Run | Action::NoOp => bail!(
+            "change `{}` has action {:?}, which is never elevated",
+            change.address,
+            change.action,
+        ),
+    }
+    Ok(())
+}
+
+fn validate_filesystem_state(change: &ResourceChange, state: &ResourceState) -> Result<()> {
+    let (kind, destination) = match state {
+        ResourceState::Template { path, .. } => (ResourceKind::Template, path.as_path()),
+        ResourceState::Symlink { from, .. } => (ResourceKind::Symlink, from.as_path()),
+        ResourceState::Package { .. }
+        | ResourceState::Tap(_)
+        | ResourceState::Shell { .. }
+        | ResourceState::SshKey { .. }
+        | ResourceState::GpgKey { .. } => {
+            bail!(
+                "resource kind {:?} is not allowed in an elevated payload",
+                change.kind
+            )
+        }
+    };
+    if change.kind != kind {
+        bail!(
+            "change `{}` declares kind {:?} but carries {:?} state",
+            change.address,
+            change.kind,
+            kind,
+        );
+    }
+    validate_destination(destination)?;
+    if change.address != destination.display().to_string() {
+        bail!(
+            "change address `{}` does not match destination `{}`",
+            change.address,
+            destination.display(),
         );
     }
     Ok(())
 }
 
-/// Filesystem path that should receive the chown-back. We only
-/// chown the *leaf* — intermediate directories created by
-/// `mkdir -p` keep their pre-existing ownership (chowning `/etc`
-/// back to the user would be a disaster).
+fn validate_destination(path: &Path) -> Result<()> {
+    if !path.is_absolute() || path.file_name().is_none() {
+        bail!(
+            "elevated filesystem destination must be an absolute leaf path, got `{}`",
+            path.display()
+        );
+    }
+    if path.components().any(|component| {
+        matches!(
+            component,
+            std::path::Component::CurDir | std::path::Component::ParentDir
+        )
+    }) {
+        bail!(
+            "elevated filesystem destination must be normalized, got `{}`",
+            path.display()
+        );
+    }
+    Ok(())
+}
+
 /// Fast pre-check: refuse early when any ancestor is a symlink
 /// owned by a non-root user.
 ///
@@ -128,9 +214,8 @@ pub fn run(payload_path: &Path, expected: &PayloadExpectation) -> Result<()> {
 /// [`crate::elevated::safe_write::ParentDir::open`] (which is the
 /// authoritative TOCTOU-safe walker invoked by the Create path).
 /// We keep the pre-check here so:
-/// - Update actions, which go through the legacy `fs::*` paths,
-///   still get an upfront bail when the parent chain has been
-///   tampered with.
+/// - Update actions get an upfront bail before their fd-anchored
+///   replacement path runs.
 /// - The error message names the offending ancestor before any
 ///   filesystem mutation runs.
 ///
@@ -167,20 +252,6 @@ fn refuse_symlinked_ancestors(leaf: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Whether a successfully-applied leaf should be chowned back to the
-/// invoking user. Files under `/etc` — where `sudoers.d`, `cron.d`,
-/// `logrotate.d`, and friends live — must stay root-owned: those
-/// consumers ignore or reject a config file owned by a non-root uid, so
-/// chowning it back would silently deactivate the rules keron just
-/// deployed. It is also a privilege downgrade (a root-owned system
-/// config becoming user-writable). Everywhere else, the file keron
-/// placed becomes the user's to manage. `Path::starts_with` is
-/// component-wise (so `/etcfoo` is not treated as under `/etc`), and
-/// `/etc` never matches a Windows path, so this is a no-op there.
-fn should_chown_back(leaf: &Path) -> bool {
-    !leaf.starts_with("/etc")
-}
-
 fn leaf_path(change: &ResourceChange) -> Option<PathBuf> {
     let state = change.after.as_ref().or(change.before.as_ref())?;
     match state {
@@ -191,13 +262,6 @@ fn leaf_path(change: &ResourceChange) -> Option<PathBuf> {
         | ResourceState::Tap(_)
         | ResourceState::Shell { .. }
         | ResourceState::GpgKey { .. } => None,
-    }
-}
-
-fn describe_owner(owner: &OwnerId) -> String {
-    match owner {
-        OwnerId::Posix { uid, gid } => format!("-h {uid}:{gid}"),
-        OwnerId::Windows { sid } => format!("(SID {sid})"),
     }
 }
 
@@ -217,6 +281,101 @@ mod tests {
             requires_elevation: true,
             requires_force: false,
         }
+    }
+
+    #[cfg(unix)]
+    fn invalid_elevated_changes(root: &Path) -> Vec<ResourceChange> {
+        use crate::plan::{PackageManager, ShellKind, TapSpec};
+
+        vec![
+            ResourceChange {
+                address: "shell".into(),
+                kind: ResourceKind::Shell,
+                action: Action::Run,
+                before: None,
+                after: Some(ResourceState::Shell {
+                    kind: ShellKind::Sh,
+                    name: "shell".into(),
+                    cwd: root.to_path_buf(),
+                    script: "exit 0".into(),
+                    sensitive: false,
+                }),
+                requires_elevation: true,
+                requires_force: false,
+            },
+            ResourceChange {
+                address: "gpg".into(),
+                kind: ResourceKind::GpgKey,
+                action: Action::Create,
+                before: None,
+                after: Some(ResourceState::GpgKey {
+                    fingerprint: "DEADBEEF".into(),
+                    key: "secret".into(),
+                }),
+                requires_elevation: true,
+                requires_force: false,
+            },
+            ResourceChange {
+                address: "package".into(),
+                kind: ResourceKind::Package,
+                action: Action::Create,
+                before: None,
+                after: Some(ResourceState::Package {
+                    manager: PackageManager::Cargo,
+                    name: "ripgrep".into(),
+                    tap: None,
+                }),
+                requires_elevation: true,
+                requires_force: false,
+            },
+            ResourceChange {
+                address: "tap".into(),
+                kind: ResourceKind::Tap,
+                action: Action::Create,
+                before: None,
+                after: Some(ResourceState::Tap(TapSpec {
+                    user_tap: "example/tools".into(),
+                    url: None,
+                })),
+                requires_elevation: true,
+                requires_force: false,
+            },
+            ResourceChange {
+                address: root.join("noop").display().to_string(),
+                kind: ResourceKind::Template,
+                action: Action::NoOp,
+                before: None,
+                after: None,
+                requires_elevation: true,
+                requires_force: false,
+            },
+            ResourceChange {
+                address: root.join("wrong-kind").display().to_string(),
+                kind: ResourceKind::Package,
+                action: Action::Create,
+                before: None,
+                after: Some(ResourceState::Template {
+                    path: root.join("wrong-kind"),
+                    content: "x".into(),
+                    sensitive: false,
+                }),
+                requires_elevation: true,
+                requires_force: false,
+            },
+            ResourceChange {
+                address: root.join("unmarked").display().to_string(),
+                kind: ResourceKind::Template,
+                action: Action::Create,
+                before: None,
+                after: Some(ResourceState::Template {
+                    path: root.join("unmarked"),
+                    content: "x".into(),
+                    sensitive: false,
+                }),
+                requires_elevation: false,
+                requires_force: false,
+            },
+        ]
     }
 
     #[test]
@@ -239,17 +398,6 @@ mod tests {
     }
 
     #[test]
-    fn should_chown_back_skips_etc_but_allows_home_and_sibling_paths() {
-        assert!(!should_chown_back(Path::new("/etc/sudoers.d/99-keron")));
-        assert!(!should_chown_back(Path::new("/etc/cron.d/keron")));
-        assert!(!should_chown_back(Path::new("/etc")));
-        // Component-wise: `/etcfoo` is unrelated to `/etc`.
-        assert!(should_chown_back(Path::new("/etcfoo/bar")));
-        assert!(should_chown_back(Path::new("/usr/local/etc/foo")));
-        assert!(should_chown_back(Path::new("/home/alice/.config/foo")));
-    }
-
-    #[test]
     fn leaf_path_for_package_returns_none() {
         let c = change(ResourceState::Package {
             manager: crate::plan::PackageManager::Brew,
@@ -257,19 +405,6 @@ mod tests {
             tap: None,
         });
         assert_eq!(leaf_path(&c), None);
-    }
-
-    #[test]
-    fn describe_owner_renders_posix_and_windows() {
-        let p = describe_owner(&OwnerId::Posix {
-            uid: 1000,
-            gid: 1000,
-        });
-        assert!(p.contains("1000:1000"), "got: {p}");
-        let w = describe_owner(&OwnerId::Windows {
-            sid: "S-1-5-21-x".into(),
-        });
-        assert!(w.contains("S-1-5-21-x"), "got: {w}");
     }
 
     #[cfg(unix)]
@@ -367,48 +502,88 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn run_failure_after_first_change_reports_one_of_two_applied() {
-        // Build a payload with two changes: a NoOp (always succeeds)
-        // and an Update with no `before` (fails before any side effect).
-        // The error context must say "after 1 of 2" so the user knows
-        // which resources were already applied. Pins the `applied += 1`
-        // arithmetic — a `*= 1` mutation would leave `applied` at 0 and
-        // report "after 0 of 2".
-        use crate::elevated::payload::{OwnerId, write_payload};
+    fn invalid_payload_changes_are_rejected_before_any_mutation() {
+        use crate::elevated::payload::write_payload;
         use crate::plan::Plan;
-        let noop = ResourceChange {
-            address: "first".into(),
-            kind: ResourceKind::Symlink,
-            action: Action::NoOp,
-            before: None,
-            after: None,
-            requires_elevation: true,
-            requires_force: false,
-        };
-        let broken_update = ResourceChange {
-            address: "second".into(),
-            kind: ResourceKind::Symlink,
-            action: Action::Update,
-            before: None,
-            after: None,
-            requires_elevation: true,
-            requires_force: false,
-        };
-        let plan = Plan {
-            changes: vec![noop, broken_update],
-        };
+
+        let root = std::env::temp_dir().join(format!(
+            "keron-elevated-contract-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.subsec_nanos()),
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let invalid = invalid_elevated_changes(&root);
+
+        for (index, invalid_change) in invalid.into_iter().enumerate() {
+            let marker = root.join(format!("marker-{index}"));
+            let allowed_first = ResourceChange {
+                address: marker.display().to_string(),
+                kind: ResourceKind::Template,
+                action: Action::Create,
+                before: None,
+                after: Some(ResourceState::Template {
+                    path: marker.clone(),
+                    content: "must not be written".into(),
+                    sensitive: false,
+                }),
+                requires_elevation: true,
+                requires_force: false,
+            };
+            let plan = Plan {
+                changes: vec![allowed_first, invalid_change],
+            };
+            let payload = write_payload(&plan).unwrap();
+            let expected = payload.expected().clone();
+            run(payload.path(), &expected).expect_err("invalid payload must be rejected");
+            assert!(
+                !marker.exists(),
+                "validation must finish before applying change 1 (case {index})",
+            );
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn elevated_success_keeps_the_elevated_process_owner() {
+        use crate::elevated::payload::write_payload;
+        use crate::plan::Plan;
+        use std::os::unix::fs::MetadataExt;
+
+        let root = std::env::temp_dir().join(format!(
+            "keron-elevated-owner-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.subsec_nanos()),
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("managed.conf");
         #[allow(unsafe_code)]
-        let (uid, gid) = unsafe { (libc::geteuid(), libc::getegid()) };
-        let owner = OwnerId::Posix { uid, gid };
-        let payload = write_payload(&plan, &owner).unwrap();
+        let uid = unsafe { libc::geteuid() };
+        let plan = Plan {
+            changes: vec![ResourceChange {
+                address: path.display().to_string(),
+                kind: ResourceKind::Template,
+                action: Action::Create,
+                before: None,
+                after: Some(ResourceState::Template {
+                    path: path.clone(),
+                    content: "system-owned".into(),
+                    sensitive: false,
+                }),
+                requires_elevation: true,
+                requires_force: false,
+            }],
+        };
+        let payload = write_payload(&plan).unwrap();
         let expected = payload.expected().clone();
-        let err = run(payload.path(), &expected)
-            .expect_err("update with no prior state must fail the run");
-        let msg = format!("{err:#}");
-        assert!(
-            msg.contains("after 1 of 2"),
-            "must report 1 of 2 applied; got: {msg}",
-        );
+        run(payload.path(), &expected).expect("valid elevated template should apply");
+        let actual_uid = std::fs::metadata(&path).unwrap().uid();
+        assert_eq!(actual_uid, uid);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[cfg(unix)]

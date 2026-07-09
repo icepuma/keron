@@ -62,7 +62,7 @@ pub enum RunError {
     #[error("{0}")]
     Apply(#[source] anyhow::Error),
     /// The elevated re-exec failed: missing elevator, password
-    /// denied, child crashed, partial chown failures.
+    /// denied, child crashed, or privileged payload validation failed.
     #[error("{0}")]
     Elevation(#[source] anyhow::Error),
     /// stdin/stdout failure while rendering the diff or running a
@@ -283,6 +283,9 @@ where
     if plan.is_empty() {
         return Ok(Outcome::Applied);
     }
+
+    #[cfg(windows)]
+    elevated::preflight(&plan).map_err(RunError::Elevation)?;
 
     if !precheck.is_empty() {
         let approved = confirm::prompt_precheck_continue(stdin, stdout).map_err(RunError::Io)?;

@@ -457,7 +457,7 @@ const fn bump_summary(summary: &mut ExecuteSummary, action: Action, count: usize
 pub enum ApplyContext {
     /// Run by the user themselves.
     Unprivileged,
-    /// Run by the elevated child (sudo / `ShellExecuteExW`).
+    /// Run by the elevated child through a Unix elevator.
     Elevated,
 }
 

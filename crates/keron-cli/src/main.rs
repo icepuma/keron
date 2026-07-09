@@ -99,11 +99,9 @@ enum Command {
     /// by hand — without a client it just waits on stdin.
     Lsp,
 
-    /// Internal: invoked by the unprivileged keron process under
-    /// sudo / `ShellExecuteExW` to apply the subset of a plan that
-    /// requires elevated rights. Reads the work payload from the
-    /// path argument and chowns each created path back to the
-    /// calling user. Not part of the public CLI surface.
+    /// Internal: invoked by the unprivileged keron process through a
+    /// Unix elevator to apply the validated privileged subset of a
+    /// plan. Not part of the public CLI surface.
     #[command(name = "__apply-elevated", hide = true)]
     ApplyElevated {
         /// Path to the JSON payload written by the unprivileged

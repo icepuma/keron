@@ -563,10 +563,8 @@ fn kitchen_sink_exercises_imports_intrinsics_loops_and_resources() {
 
 #[cfg(unix)]
 #[test]
-fn elevated_symlink_into_protected_dir_is_owned_by_calling_user() {
-    // Skipped on Windows: the runas-via-ShellExecuteExW path pops a
-    // real UAC prompt that no test runner can answer.
-    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+fn elevated_symlink_into_protected_dir_runs_through_child() {
+    use std::os::unix::fs::PermissionsExt;
 
     let home = E2eHome::new("elevated");
     let fixture_root = home.path.join("fixture");
@@ -601,9 +599,6 @@ fn elevated_symlink_into_protected_dir_is_owned_by_calling_user() {
     perm.set_mode(0o755);
     fs::set_permissions(&spy, perm).unwrap();
 
-    let my_uid = fs::metadata(&fixture_root).unwrap().uid();
-    let my_group = fs::metadata(&fixture_root).unwrap().gid();
-
     let mut cmd = keron_apply(&fixture_root, &home.path);
     cmd.env("KERON_ALLOW_TEST_OVERRIDES", "1")
         .env("KERON_TEST_ELEVATOR", &spy)
@@ -622,11 +617,4 @@ fn elevated_symlink_into_protected_dir_is_owned_by_calling_user() {
         out.stdout, out.stderr,
     );
     assert!(elevated_link.is_symlink(), "missing elevated symlink");
-    let meta = fs::symlink_metadata(&elevated_link).unwrap();
-    assert_eq!(
-        meta.uid(),
-        my_uid,
-        "elevated symlink must be owned by the calling user, not root",
-    );
-    assert_eq!(meta.gid(), my_group);
 }

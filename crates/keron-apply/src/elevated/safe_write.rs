@@ -19,9 +19,9 @@
 //! needed in this file — the FFI surface is fully encapsulated by
 //! the wrapper crate.
 //!
-//! Cross-platform note: only Unix is supported here. `cfg(windows)`
-//! callers use the existing `fs::*` path; the Windows elevation
-//! flow has its own ACL-based safety story.
+//! Cross-platform note: only Unix is supported here. The elevated
+//! child fails closed on Windows filesystem payloads until an
+//! equivalent reparse-point-safe handle walk exists there.
 
 #![cfg(unix)]
 
@@ -234,16 +234,27 @@ fn open_or_create_subdir(parent: &OwnedFd, name: &OsStr) -> io::Result<OwnedFd> 
 
     let file_type = FileType::from_raw_mode(stat.st_mode);
     if file_type == FileType::Symlink {
-        // Symlink: follow only if the link itself is root-owned.
+        // Symlink: follow only if the link and its containing directory
+        // are both under root's exclusive control.
         // macOS ships `/var -> /private/var`, `/tmp -> /private/tmp`,
-        // `/etc -> /private/etc`; these are owned by uid 0 and a
-        // co-resident user cannot replace them. A user-owned
-        // symlink in the path IS the attack we're defending against.
+        // `/etc -> /private/etc`; their parent `/` satisfies this
+        // policy. Checking the parent fd closes the stat-then-open race:
+        // ownership of a link does not stop the owner of its directory
+        // from swapping that entry.
         if !is_root_owned_uid(stat.st_uid) {
             return Err(io::Error::other(format!(
                 "elevated apply refuses to walk through non-root symlink `{}` (uid {})",
                 name.to_string_lossy(),
                 stat.st_uid,
+            )));
+        }
+        let parent_stat = rustix::fs::fstat(parent).map_err(io::Error::from)?;
+        if !is_trusted_symlink_parent(parent_stat.st_uid, parent_stat.st_mode) {
+            return Err(io::Error::other(format!(
+                "elevated apply refuses to follow root-owned symlink `{}` from a replaceable parent (uid {}, mode {:o})",
+                name.to_string_lossy(),
+                parent_stat.st_uid,
+                parent_stat.st_mode & 0o777,
             )));
         }
         // Open following the symlink. After the open, verify the
@@ -275,9 +286,8 @@ fn open_or_create_subdir(parent: &OwnedFd, name: &OsStr) -> io::Result<OwnedFd> 
 fn mkdir_and_open(parent: &OwnedFd, name: &OsStr) -> io::Result<OwnedFd> {
     // Component doesn't exist yet — create it and re-open. The
     // mode is the conventional 0755 for directories; the
-    // elevated child will chown each created leaf back to the
-    // calling user afterwards, but intermediate dirs keep their
-    // existing ownership and mode (`mkdirat` honors umask).
+    // elevated child deliberately leaves the new hierarchy owned by
+    // the elevated principal (`mkdirat` still honors umask).
     //
     // Tolerate `EEXIST`: another process may have created the dir
     // between our stat and mkdir. The re-open below will see it.
@@ -298,6 +308,10 @@ fn os_str_lossy(s: &OsStr) -> String {
 /// mutations on those sites by pinning the truth table directly.
 const fn is_root_owned_uid(uid: u32) -> bool {
     uid == 0
+}
+
+const fn is_trusted_symlink_parent(uid: u32, mode: rustix::fs::RawMode) -> bool {
+    uid == 0 && mode & 0o022 == 0
 }
 
 #[cfg(test)]
@@ -457,6 +471,16 @@ mod tests {
         assert!(!is_root_owned_uid(1));
         assert!(!is_root_owned_uid(1000));
         assert!(!is_root_owned_uid(u32::MAX));
+    }
+
+    #[test]
+    fn trusted_symlink_parent_requires_root_and_no_peer_write_bits() {
+        assert!(is_trusted_symlink_parent(0, 0o755));
+        assert!(is_trusted_symlink_parent(0, 0o700));
+        assert!(!is_trusted_symlink_parent(501, 0o555));
+        assert!(!is_trusted_symlink_parent(0, 0o775));
+        assert!(!is_trusted_symlink_parent(0, 0o757));
+        assert!(!is_trusted_symlink_parent(0, 0o777));
     }
 
     #[test]

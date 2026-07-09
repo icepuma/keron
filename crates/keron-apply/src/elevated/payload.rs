@@ -1,38 +1,26 @@
 //! JSON-over-tempfile contract between the parent and the elevated
 //! child. The parent serialises the elevated subset of the [`Plan`]
-//! plus the calling user's identity, writes it to a 0600-mode file
-//! in the system temp dir, and passes the path to the child via
+//! to a 0600-mode file in the system temp dir, and passes the path to
+//! the child via
 //! `keron __apply-elevated <payload-path>`. The child reads it once,
-//! applies in order, and `chown`s each created path back.
+//! validates the privileged action set, and applies it in order.
 //!
 //! Order is contractual: `changes` is applied verbatim in `Vec`
 //! order. The parent's planner is the single source of truth for
 //! sequencing; the child never re-sorts or parallelises.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(unix)]
+use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::plan::{Plan, ResourceChange};
-
-/// Identity of the user that invoked the unprivileged keron process.
-/// The elevated child uses this to chown each created path back, so
-/// the final filesystem state matches what an unprivileged user
-/// would have produced if they had the rights.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum OwnerId {
-    /// POSIX numeric ids. Captured by stat-ing the entry path the
-    /// user passed to `keron apply <path>` (a file/dir we know they
-    /// own) — `std::os::unix::fs::MetadataExt::uid()` /  `gid()`.
-    Posix { uid: u32, gid: u32 },
-    /// Windows owner SID in the `ConvertSidToStringSidW` form
-    /// (`"S-1-5-21-..."`). Round-trips losslessly through
-    /// `ConvertStringSidToSidW` in the elevated child.
-    Windows { sid: String },
-}
+#[cfg(unix)]
+use crate::plan::Plan;
+use crate::plan::ResourceChange;
 
 /// The wire payload. `changes` is applied in iteration order — see
 /// the module doc for the ordering contract.
@@ -41,21 +29,22 @@ pub struct ElevatedPayload {
     /// Bumped when the wire format changes incompatibly. The child
     /// refuses to apply a payload with an unknown `version`.
     pub version: u32,
-    pub owner: OwnerId,
     pub changes: Vec<ResourceChange>,
 }
 
-pub const PAYLOAD_VERSION: u32 = 1;
+pub const PAYLOAD_VERSION: u32 = 2;
 
 /// Owns the lifecycle of the tempfile: removes it on `Drop`. The
 /// parent passes [`TempPayload::path`] to the elevated child and
 /// keeps the handle alive until the child exits, so a child crash
 /// can't leak the payload on disk.
+#[cfg(unix)]
 pub struct TempPayload {
     path: PathBuf,
     expected: PayloadExpectation,
 }
 
+#[cfg(unix)]
 impl TempPayload {
     pub fn path(&self) -> &Path {
         &self.path
@@ -66,6 +55,7 @@ impl TempPayload {
     }
 }
 
+#[cfg(unix)]
 impl std::fmt::Debug for TempPayload {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TempPayload")
@@ -75,21 +65,22 @@ impl std::fmt::Debug for TempPayload {
     }
 }
 
+#[cfg(unix)]
 impl Drop for TempPayload {
     fn drop(&mut self) {
         let _ = fs::remove_file(&self.path);
     }
 }
 
-/// Serialise `plan` + `owner` to a fresh tempfile under
-/// `std::env::temp_dir()`. The file is created mode 0600 on Unix so
-/// no other local user can read the manifest while the elevated
-/// child is starting up.
+/// Serialise `plan` to a fresh tempfile under `std::env::temp_dir()`.
+/// The file is created mode 0600 on Unix so no other local user can
+/// read the manifest while the elevated child is starting up.
 ///
 /// # Errors
 /// Errors when the tempfile can't be created or JSON serialisation
 /// fails.
-pub fn write_payload(plan: &Plan, owner: &OwnerId) -> Result<TempPayload> {
+#[cfg(unix)]
+pub fn write_payload(plan: &Plan) -> Result<TempPayload> {
     let dir = std::env::temp_dir();
     let path = dir.join(format!(
         "keron-elevated-{}-{}.json",
@@ -98,7 +89,6 @@ pub fn write_payload(plan: &Plan, owner: &OwnerId) -> Result<TempPayload> {
     ));
     let payload = ElevatedPayload {
         version: PAYLOAD_VERSION,
-        owner: owner.clone(),
         changes: plan.changes.clone(),
     };
     let json =
@@ -124,18 +114,7 @@ fn write_secure(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     Ok(())
 }
 
-#[cfg(windows)]
-fn write_secure(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    use std::io::Write;
-    let mut f = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)?;
-    f.write_all(bytes)?;
-    f.sync_all()?;
-    Ok(())
-}
-
+#[cfg(unix)]
 fn rand_suffix() -> u64 {
     // Time-based unique-enough suffix; collision means `create_new`
     // errs and the parent surfaces it. Avoids pulling in a RNG crate.
@@ -151,6 +130,7 @@ pub struct PayloadExpectation {
 }
 
 impl PayloadExpectation {
+    #[cfg(unix)]
     fn capture(path: &Path, bytes: &[u8]) -> Result<Self> {
         Ok(Self {
             digest_hex: digest_hex(bytes),
@@ -314,56 +294,7 @@ fn digest_hex(bytes: &[u8]) -> String {
     out
 }
 
-/// Capture the calling user's identity for embedding in the payload.
-/// On Unix we stat a known-good file (the `current_exe` is fine since
-/// it's readable; cargo-installed binaries land in a user-owned
-/// dir). On Windows we read the current process token's user SID.
-///
-/// # Errors
-/// Errors when the underlying syscalls fail.
-pub fn capture_owner() -> Result<OwnerId> {
-    #[cfg(unix)]
-    {
-        capture_owner_unix()
-    }
-    #[cfg(windows)]
-    {
-        capture_owner_windows()
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        anyhow::bail!("elevated rights flow is not supported on this platform")
-    }
-}
-
-#[cfg(unix)]
-// Symmetric shape with `capture_owner_windows` which is fallible;
-// keep the Result so `capture_owner` dispatches both arms uniformly.
-#[allow(clippy::unnecessary_wraps)]
-fn capture_owner_unix() -> Result<OwnerId> {
-    // Platform FFI for the elevated-rights flow: the calling user is
-    // the effective uid/gid of this (unprivileged) parent process.
-    // Don't infer ownership from CWD — `cd /etc; keron apply ...`
-    // would otherwise chown every created file to root. Don't read
-    // SUDO_UID/SUDO_GID either: an attacker who can plant env vars
-    // in the unprivileged parent (shell rc, wrapper script,
-    // `env SUDO_UID=0 keron apply`) would otherwise direct the
-    // root child to chown user files to arbitrary uids. The legit
-    // SUDO_UID use case (direct `sudo keron apply`) is already
-    // refused by `refuse_direct_elevation`.
-    #[allow(unsafe_code)]
-    let (uid, gid) = unsafe { (libc::geteuid(), libc::getegid()) };
-    Ok(OwnerId::Posix { uid, gid })
-}
-
-#[cfg(windows)]
-fn capture_owner_windows() -> Result<OwnerId> {
-    let sid = crate::elevated::chown::windows::current_user_sid_string()
-        .context("capturing current process SID")?;
-    Ok(OwnerId::Windows { sid })
-}
-
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use crate::plan::{Action, ResourceChange, ResourceKind, ResourceState};
@@ -390,21 +321,18 @@ mod tests {
         let plan = Plan {
             changes: vec![sample_change("/etc/a"), sample_change("/etc/b")],
         };
-        let owner = OwnerId::Posix {
-            uid: 1000,
-            gid: 1000,
-        };
-        let tempfile = write_payload(&plan, &owner).unwrap();
+        let tempfile = write_payload(&plan).unwrap();
         let bytes = fs::read(tempfile.path()).unwrap();
+        let wire: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(
+            wire.get("owner").is_none(),
+            "elevated payload must not carry an ownership-transfer identity"
+        );
         let decoded: ElevatedPayload = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(decoded.version, PAYLOAD_VERSION);
         assert_eq!(decoded.changes.len(), 2);
         assert_eq!(decoded.changes[0].address, "/etc/a");
         assert_eq!(decoded.changes[1].address, "/etc/b");
-        let OwnerId::Posix { uid, gid } = decoded.owner else {
-            panic!("expected Posix owner");
-        };
-        assert_eq!((uid, gid), (1000, 1000));
     }
 
     #[test]
@@ -412,12 +340,8 @@ mod tests {
         let plan = Plan {
             changes: vec![sample_change("/etc/x")],
         };
-        let owner = OwnerId::Posix {
-            uid: 1000,
-            gid: 1000,
-        };
         let path = {
-            let tempfile = write_payload(&plan, &owner).unwrap();
+            let tempfile = write_payload(&plan).unwrap();
             tempfile.path().to_path_buf()
         };
         assert!(!path.exists(), "payload must be removed on drop");
@@ -430,11 +354,7 @@ mod tests {
         let plan = Plan {
             changes: vec![sample_change("/etc/y")],
         };
-        let owner = OwnerId::Posix {
-            uid: 1000,
-            gid: 1000,
-        };
-        let tempfile = write_payload(&plan, &owner).unwrap();
+        let tempfile = write_payload(&plan).unwrap();
         let mode = fs::metadata(tempfile.path()).unwrap().mode();
         assert_eq!(
             mode & 0o777,
@@ -483,8 +403,7 @@ mod tests {
                 .map(|i| sample_change(&format!("/etc/r{i}-{seed}")))
                 .collect();
             let plan = Plan { changes: changes.clone() };
-            let owner = OwnerId::Posix { uid: 1000, gid: 1000 };
-            let tempfile = write_payload(&plan, &owner).unwrap();
+            let tempfile = write_payload(&plan).unwrap();
             let bytes = fs::read(tempfile.path()).unwrap();
             let decoded: ElevatedPayload = serde_json::from_slice(&bytes).unwrap();
             let decoded_addrs: Vec<_> = decoded.changes.iter().map(|c| c.address.clone()).collect();
