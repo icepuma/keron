@@ -20,7 +20,7 @@ The extension is not on the marketplace yet. Build and install a vsix:
 
 ```sh
 cd editors/vscode
-npm install
+npm ci
 npm run compile
 npx @vscode/vsce package
 code --install-extension keron-*.vsix
@@ -28,8 +28,11 @@ code --install-extension keron-*.vsix
 
 ## Settings
 
-- `keron.serverPath` — path to the `keron` binary (default: `keron`
-  from `PATH`). The extension runs `<serverPath> lsp`.
+- `keron.serverPath` — machine-scoped path to the `keron` binary
+  (default: `keron` from `PATH`). The extension runs
+  `<serverPath> lsp`. Workspace settings cannot override this
+  executable path, and the extension stays disabled in untrusted
+  workspaces.
 
 ## Publishing to the marketplace (maintainer)
 
@@ -39,7 +42,7 @@ DevOps PAT with the *Marketplace → Manage* scope:
 
 ```sh
 cd editors/vscode
-npm install && npm run compile
+npm ci && npm run compile
 npx @vscode/vsce login icepuma   # paste the PAT once
 npx @vscode/vsce publish         # publishes the version in package.json
 ```

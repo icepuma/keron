@@ -6,4 +6,3 @@ dist/
 *.log
 bindings/
 Cargo.lock
-package-lock.json

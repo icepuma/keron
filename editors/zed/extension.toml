@@ -7,12 +7,11 @@ authors = ["Stefan Ruzitschka <stefan@icepuma.dev>"]
 repository = "https://github.com/icepuma/keron"
 
 # The grammar lives in the `tree-sitter-keron` subdirectory of the main
-# repository (Zed's `path` field selects it). Pin `rev` to a commit SHA
-# once this lands on `main` — Zed resolves the rev at install time, so a
-# moving branch means unreproducible installs.
+# repository (Zed's `path` field selects it). Zed resolves the revision
+# at install time, so this stays pinned to an immutable commit.
 [grammars.keron]
 repository = "https://github.com/icepuma/keron"
-rev = "main"
+rev = "7b868c4423e5a369fd7bd939efe38c1e0607bef2"
 path = "tree-sitter-keron"
 
 [language_servers.keron-lsp]

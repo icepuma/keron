@@ -10,13 +10,18 @@
     "url": "https://github.com/icepuma/keron"
   },
   "engines": {
-    "vscode": "^1.90.0"
+    "vscode": "^1.91.0"
   },
   "categories": [
     "Programming Languages",
     "Linters",
     "Formatters"
   ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false
+    }
+  },
   "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
@@ -38,7 +43,8 @@
         "keron.serverPath": {
           "type": "string",
           "default": "keron",
-          "description": "Path to the `keron` binary. The extension runs `<serverPath> lsp`."
+          "scope": "machine",
+          "description": "Machine-local path to the `keron` binary. The extension runs `<serverPath> lsp`."
         }
       }
     }
@@ -50,11 +56,12 @@
     "package": "vsce package"
   },
   "dependencies": {
-    "vscode-languageclient": "^10.1.0"
+    "vscode-languageclient": "10.1.0"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "@types/vscode": "^1.90.0",
-    "typescript": "^5.5.0"
+    "@types/node": "20.19.43",
+    "@types/vscode": "1.91.0",
+    "@vscode/vsce": "3.9.2",
+    "typescript": "5.9.3"
   }
 }

@@ -27,5 +27,12 @@
       "injection-regex": "^keron$",
       "highlights": "queries/highlights.scm"
     }
-  ]
+  ],
+  "scripts": {
+    "generate": "tree-sitter generate",
+    "test": "tree-sitter test"
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "0.26.10"
+  }
 }

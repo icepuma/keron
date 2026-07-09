@@ -88,7 +88,7 @@ marketplace yet):
 
 ```sh
 cd editors/vscode
-npm install
+npm ci
 npm run compile
 npx @vscode/vsce package
 code --install-extension keron-*.vsix
