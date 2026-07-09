@@ -15,12 +15,20 @@ use lsp_types::{
 use crate::state::ServerState;
 
 pub fn handle(state: &ServerState, params: &CodeActionParams) -> Vec<CodeActionOrCommand> {
-    let _ = state;
+    if state.doc_by_uri(&params.text_document.uri).is_none() {
+        return Vec::new();
+    }
+    let Some(published) = state.published.get(params.text_document.uri.as_str()) else {
+        return Vec::new();
+    };
     params
         .context
         .diagnostics
         .iter()
         .filter_map(|diag| {
+            if diag.source.as_deref() != Some("keron") || !published.diagnostics.contains(diag) {
+                return None;
+            }
             let suggestion = extract_suggestion(&diag.message)?;
             let edit = TextEdit {
                 range: diag.range,

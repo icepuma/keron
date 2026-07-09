@@ -35,12 +35,12 @@ impl LineIndex {
     #[must_use]
     pub fn new(text: &str) -> Self {
         let mut line_starts = vec![0];
-        line_starts.extend(
-            text.bytes()
-                .enumerate()
-                .filter(|&(_, b)| b == b'\n')
-                .map(|(i, _)| i + 1),
-        );
+        let bytes = text.as_bytes();
+        for (index, byte) in bytes.iter().copied().enumerate() {
+            if byte == b'\n' || (byte == b'\r' && bytes.get(index + 1) != Some(&b'\n')) {
+                line_starts.push(index + 1);
+            }
+        }
         Self { line_starts }
     }
 
@@ -56,6 +56,7 @@ impl LineIndex {
             .partition_point(|&start| start <= offset)
             .saturating_sub(1);
         let line_start = self.line_starts[line];
+        let offset = offset.min(self.line_content_end(text, line));
         let character = match enc {
             PositionEncoding::Utf16 => text[line_start..offset]
                 .chars()
@@ -85,10 +86,7 @@ impl LineIndex {
     #[must_use]
     pub fn offset(&self, text: &str, position: Position, enc: PositionEncoding) -> Option<usize> {
         let line_start = *self.line_starts.get(position.line as usize)?;
-        let line_end = self
-            .line_starts
-            .get(position.line as usize + 1)
-            .map_or(text.len(), |&next| next - 1);
+        let line_end = self.line_content_end(text, position.line as usize);
         let line_text = &text[line_start..line_end];
         match enc {
             PositionEncoding::Utf16 => {
@@ -113,6 +111,18 @@ impl LineIndex {
     #[must_use]
     pub fn end_position(&self, text: &str, enc: PositionEncoding) -> Position {
         self.position(text, text.len(), enc)
+    }
+
+    fn line_content_end(&self, text: &str, line: usize) -> usize {
+        let Some(&next) = self.line_starts.get(line + 1) else {
+            return text.len();
+        };
+        let newline = next - 1;
+        if newline > 0 && text.as_bytes()[newline - 1] == b'\r' {
+            newline - 1
+        } else {
+            newline
+        }
     }
 }
 
@@ -180,13 +190,30 @@ mod tests {
     }
 
     #[test]
-    fn crlf_newline_is_part_of_previous_line() {
+    fn crlf_terminator_is_excluded_from_line_columns() {
         let text = "ab\r\ncd";
         let idx = LineIndex::new(text);
         for enc in [Utf16, Utf8] {
             assert_eq!(idx.position(text, 4, enc), pos(1, 0));
             assert_eq!(idx.position(text, 2, enc), pos(0, 2));
+            assert_eq!(idx.position(text, 3, enc), pos(0, 2));
+            assert_eq!(idx.offset(text, pos(0, 99), enc), Some(2));
             assert_eq!(idx.offset(text, pos(1, 0), enc), Some(4));
+        }
+    }
+
+    #[test]
+    fn carriage_return_terminator_starts_a_new_line() {
+        let text = "ab\rcd\r";
+        let idx = LineIndex::new(text);
+        for enc in [Utf16, Utf8] {
+            assert_eq!(idx.position(text, 2, enc), pos(0, 2));
+            assert_eq!(idx.position(text, 3, enc), pos(1, 0));
+            assert_eq!(idx.position(text, 5, enc), pos(1, 2));
+            assert_eq!(idx.position(text, 6, enc), pos(2, 0));
+            assert_eq!(idx.offset(text, pos(0, 99), enc), Some(2));
+            assert_eq!(idx.offset(text, pos(1, 0), enc), Some(3));
+            assert_eq!(idx.offset(text, pos(2, 0), enc), Some(6));
         }
     }
 

@@ -35,6 +35,16 @@ pub struct Parsed {
     pub line_index: LineIndex,
 }
 
+/// The last diagnostics payload sent for one URI. The document
+/// version is part of its identity: unchanged text ranges on a newer
+/// buffer still need a new publication so clients do not retain a
+/// payload tied to an obsolete snapshot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PublishedDiagnostics {
+    pub version: Option<i32>,
+    pub diagnostics: Vec<lsp_types::Diagnostic>,
+}
+
 /// Whole-server mutable state, owned by the single-threaded main loop.
 #[derive(Debug, Default)]
 pub struct ServerState {
@@ -50,7 +60,7 @@ pub struct ServerState {
     /// Diagnostics published in the previous round, keyed by URI
     /// string. Lets the next round skip unchanged sets and push empty
     /// arrays to URIs whose diagnostics disappeared.
-    pub published: HashMap<String, Vec<lsp_types::Diagnostic>>,
+    pub published: HashMap<String, PublishedDiagnostics>,
 }
 
 impl ServerState {

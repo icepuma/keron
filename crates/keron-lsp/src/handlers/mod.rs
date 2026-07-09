@@ -214,6 +214,9 @@ fn did_open(state: &mut ServerState, params: DidOpenTextDocumentParams) -> Vec<N
     let Some(key) = doc_key(&params.text_document.uri) else {
         return Vec::new();
     };
+    if state.docs.contains_key(&key) {
+        return Vec::new();
+    }
     let text = params.text_document.text;
     let mut doc = Document {
         uri: params.text_document.uri,
@@ -234,6 +237,12 @@ fn did_change(state: &mut ServerState, params: DidChangeTextDocumentParams) -> V
     let Some(doc) = state.docs.get_mut(&key) else {
         return Vec::new();
     };
+    if doc.uri != params.text_document.uri {
+        return Vec::new();
+    }
+    if params.text_document.version <= doc.version {
+        return Vec::new();
+    }
     // Full-text sync: the last change event carries the whole buffer.
     let Some(change) = params.content_changes.into_iter().next_back() else {
         return Vec::new();
@@ -249,6 +258,13 @@ fn did_close(state: &mut ServerState, params: &DidCloseTextDocumentParams) -> Ve
     let Some(key) = doc_key(&params.text_document.uri) else {
         return Vec::new();
     };
+    if state
+        .docs
+        .get(&key)
+        .is_none_or(|doc| doc.uri != params.text_document.uri)
+    {
+        return Vec::new();
+    }
     if state.docs.remove(&key).is_none() {
         return Vec::new();
     }

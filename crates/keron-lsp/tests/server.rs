@@ -225,6 +225,7 @@ fn diagnostics_lifecycle_open_broken_then_fix() {
     client.open(&uri, "val n: Int = \"not an int\"\n");
     let published = client.diagnostics();
     assert_eq!(published.uri, uri);
+    assert_eq!(published.version, Some(1));
     assert!(
         !published.diagnostics.is_empty(),
         "type error must produce a diagnostic"
@@ -240,10 +241,58 @@ fn diagnostics_lifecycle_open_broken_then_fix() {
     client.change(&uri, 2, "val n: Int = 1\n");
     let cleared = client.diagnostics();
     assert_eq!(cleared.uri, uri);
+    assert_eq!(cleared.version, Some(2));
     assert!(
         cleared.diagnostics.is_empty(),
         "fixed buffer must clear diagnostics"
     );
+    client.shutdown();
+}
+
+#[test]
+fn stale_document_change_cannot_roll_back_newer_text() {
+    let proj = TempProject::new("stale-change");
+    let path = proj.write("main.keron", "");
+    let uri = file_uri(&path);
+    let mut client = Client::start();
+    client.open(&uri, "val initial: Int = 1\n");
+    client.change(&uri, 3, "val current: Int = 2  ");
+    client.change(&uri, 2, "val stale: Int = \"broken\"\n");
+
+    let result = client.request(
+        Formatting::METHOD,
+        DocumentFormattingParams {
+            text_document: TextDocumentIdentifier { uri },
+            options: FormattingOptions::default(),
+            work_done_progress_params: WorkDoneProgressParams::default(),
+        },
+    );
+    let edits: Vec<lsp_types::TextEdit> = serde_json::from_value(result).expect("edits");
+    assert_eq!(edits[0].new_text, "val current: Int = 2\n");
+    client.shutdown();
+}
+
+#[test]
+fn aliased_uri_cannot_mutate_an_open_document() {
+    let proj = TempProject::new("aliased-change");
+    let path = proj.write("main.keron", "");
+    let uri = file_uri(&path);
+    let alias = Uri::from_str(&uri.as_str().replacen("file://", "file://localhost", 1))
+        .expect("localhost file URI");
+    let mut client = Client::start();
+    client.open(&uri, "val original: Int = 1  ");
+    client.change(&alias, 2, "val forged: Int = 2  ");
+
+    let result = client.request(
+        Formatting::METHOD,
+        DocumentFormattingParams {
+            text_document: TextDocumentIdentifier { uri },
+            options: FormattingOptions::default(),
+            work_done_progress_params: WorkDoneProgressParams::default(),
+        },
+    );
+    let edits: Vec<lsp_types::TextEdit> = serde_json::from_value(result).expect("edits");
+    assert_eq!(edits[0].new_text, "val original: Int = 1\n");
     client.shutdown();
 }
 
@@ -310,6 +359,35 @@ fn definition_jumps_across_files() {
     };
     assert_eq!(location.uri, lib_uri, "definition must land in lib.keron");
     assert_eq!(location.range.start, Position::new(0, 3));
+    client.shutdown();
+}
+
+#[test]
+fn definition_rejects_non_module_use_target() {
+    let proj = TempProject::new("defs-invalid-target");
+    proj.write("notes.txt", "not a keron module\n");
+    let main = proj.write("main.keron", "");
+    let main_uri = file_uri(&main);
+    let src = "from \"./notes.txt\" use anything\n";
+    let mut client = Client::start();
+    client.open(&main_uri, src);
+
+    let result = client.request(
+        GotoDefinition::METHOD,
+        GotoDefinitionParams {
+            text_document_position_params: Client::position_params(
+                &main_uri,
+                pos_of(src, "./notes.txt", 2),
+            ),
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: lsp_types::PartialResultParams::default(),
+        },
+    );
+
+    assert!(
+        result.is_null(),
+        "invalid imports must not expose arbitrary files"
+    );
     client.shutdown();
 }
 
@@ -595,6 +673,63 @@ fn code_action_offers_did_you_mean_quickfix() {
         .and_then(|e| e.changes.as_ref())
         .expect("edit");
     assert_eq!(edit[&uri][0].new_text, "name");
+
+    let forged = lsp_types::Diagnostic {
+        range: lsp_types::Range::new(Position::new(0, 0), Position::new(0, 3)),
+        severity: Some(lsp_types::DiagnosticSeverity::ERROR),
+        source: Some("keron".to_string()),
+        message: "help: did you mean `forged`?".to_string(),
+        ..Default::default()
+    };
+    let result = client.request(
+        "textDocument/codeAction",
+        serde_json::json!({
+            "textDocument": {"uri": uri.as_str()},
+            "range": forged.range,
+            "context": {"diagnostics": [forged]},
+        }),
+    );
+    let actions: Vec<lsp_types::CodeActionOrCommand> =
+        serde_json::from_value(result).expect("actions");
+    assert!(
+        actions.is_empty(),
+        "client-forged diagnostics must not produce edits"
+    );
+    client.shutdown();
+}
+
+#[test]
+fn diagnostics_and_quickfix_preserve_client_file_uri() {
+    let proj = TempProject::new("diagnostic-client-uri");
+    let path = proj.write("main.keron", "");
+    let canonical_uri = file_uri(&path);
+    let client_uri = Uri::from_str(&canonical_uri.as_str().replacen(
+        "file://",
+        "file://localhost",
+        1,
+    ))
+    .expect("localhost file URI");
+    let src = "val name: String = \"x\"\nval a: String = nane\n";
+    let mut client = Client::start();
+    client.open(&client_uri, src);
+    let published = client.diagnostics();
+    assert_eq!(published.uri, client_uri);
+    let diag = published
+        .diagnostics
+        .into_iter()
+        .find(|diagnostic| diagnostic.message.contains("did you mean"))
+        .expect("suggestion diagnostic");
+
+    let actions: Vec<lsp_types::CodeActionOrCommand> = serde_json::from_value(client.request(
+        "textDocument/codeAction",
+        serde_json::json!({
+            "textDocument": {"uri": client_uri.as_str()},
+            "range": diag.range,
+            "context": {"diagnostics": [diag]},
+        }),
+    ))
+    .expect("actions");
+    assert_eq!(actions.len(), 1);
     client.shutdown();
 }
 

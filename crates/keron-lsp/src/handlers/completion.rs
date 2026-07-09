@@ -6,7 +6,6 @@
 //! module-local declarations, imports).
 
 use std::collections::HashSet;
-use std::fs;
 
 use keron_lang::{Item, Type};
 use lsp_types::{
@@ -143,7 +142,7 @@ fn use_names_completion(snap: &Snapshot<'_>, offset: usize) -> Option<Vec<Comple
     })?;
     let resolution = snap.resolution?;
     let base = snap.path.parent()?;
-    let target = fs::canonicalize(base.join(&use_decl.source.node)).ok()?;
+    let target = keron_modules::resolve_import_path(&use_decl.source.node, base).ok()?;
     let module = resolution
         .graph
         .modules

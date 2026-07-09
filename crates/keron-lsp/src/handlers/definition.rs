@@ -1,8 +1,6 @@
 //! `textDocument/definition` — local declarations, cross-file imports,
 //! and `use`-path targets.
 
-use std::fs;
-
 use keron_modules::CheckedModule;
 use lsp_types::{GotoDefinitionParams, GotoDefinitionResponse, Location, Position, Range};
 
@@ -63,7 +61,7 @@ fn imported_def(snap: &Snapshot<'_>, name: &str) -> Option<Location> {
 /// of the target file.
 fn use_path_target(snap: &Snapshot<'_>, raw_path: &str) -> Option<Location> {
     let base = snap.path.parent()?;
-    let target = fs::canonicalize(base.join(raw_path)).ok()?;
+    let target = keron_modules::resolve_import_path(raw_path, base).ok()?;
     Some(Location {
         uri: path_to_uri(&target)?,
         range: Range::new(Position::new(0, 0), Position::new(0, 0)),
