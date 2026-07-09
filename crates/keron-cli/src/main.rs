@@ -6,6 +6,7 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::atomic::AtomicU64;
 
 use clap::{Parser, Subcommand};
 
@@ -376,7 +377,9 @@ where
         let mut sub = keron_apply::collect_keron_paths(path)?;
         files.append(&mut sub);
     }
-    let mut drifted: Vec<(PathBuf, String, String)> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    files.retain(|file| seen.insert(file.clone()));
+    let mut changed: Vec<(PathBuf, String, String)> = Vec::new();
     for file in files {
         let before = fs::read_to_string(&file)
             .map_err(|e| anyhow::anyhow!("reading `{}`: {e}", file.display()))?;
@@ -394,9 +397,21 @@ where
         if before == after {
             continue;
         }
-        if check {
-            drifted.push((file, before, after));
-        } else {
+        changed.push((file, before, after));
+    }
+    if check && !changed.is_empty() {
+        let color = color_enabled();
+        for (path, before, after) in &changed {
+            let label = path.display().to_string();
+            let diff = render_diff(&label, before, after, color);
+            stdout
+                .write_all(diff.as_bytes())
+                .map_err(|e| anyhow::anyhow!("writing diff: {e}"))?;
+        }
+        return Ok(ExitCode::from(2));
+    }
+    if !check {
+        for (file, _, after) in changed {
             write_atomically(&file, after.as_bytes())
                 .map_err(|e| anyhow::anyhow!("writing `{}`: {e}", file.display()))?;
             if !quiet {
@@ -406,19 +421,6 @@ where
                     .map_err(|e| anyhow::anyhow!("writing stdout: {e}"))?;
             }
         }
-    }
-    if check && !drifted.is_empty() {
-        let color = color_enabled();
-        for (path, before, after) in &drifted {
-            let label = path.display().to_string();
-            let diff = render_diff(&label, before, after, color);
-            stdout
-                .write_all(diff.as_bytes())
-                .map_err(|e| anyhow::anyhow!("writing diff: {e}"))?;
-        }
-        // Drift-reported, not a tool error: exit 2 so CI can
-        // distinguish "rerun format" from "tool broke".
-        return Ok(ExitCode::from(2));
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -518,7 +520,7 @@ const fn color_enabled_from(no_color_set: bool, stdout_is_tty: bool) -> bool {
 /// SIGINT or crash between fsync and rename leaves the original
 /// file untouched, instead of a half-written truncation. The
 /// tempfile name carries the pid and a per-call nanosecond suffix
-/// so two concurrent `keron format` runs on the same dir can't
+/// plus a process-local sequence so concurrent writes can't
 /// collide, and a [`TmpFileGuard`] drop-removes the tempfile on
 /// every error path.
 ///
@@ -533,10 +535,11 @@ const fn color_enabled_from(no_color_set: bool, stdout_is_tty: bool) -> bool {
 ///     silently widened to the umask default when it is reformatted.
 fn write_atomically(target: &std::path::Path, bytes: &[u8]) -> io::Result<()> {
     use std::io::Write;
-    // `format` always reads the file before writing, so it exists and
-    // canonicalizes; fall back to the literal path only defensively.
-    let target = fs::canonicalize(target).unwrap_or_else(|_| target.to_path_buf());
+    static TMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    let target = fs::canonicalize(target)?;
     let target = target.as_path();
+    let permissions = fs::metadata(target)?.permissions();
     let dir = target.parent().unwrap_or_else(|| std::path::Path::new("."));
     let file_name = target
         .file_name()
@@ -544,9 +547,10 @@ fn write_atomically(target: &std::path::Path, bytes: &[u8]) -> io::Result<()> {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.subsec_nanos());
+    let sequence = TMP_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let mut tmp_name = OsString::from(".");
     tmp_name.push(file_name);
-    tmp_name.push(format!(".tmp-{}-{nanos}", std::process::id()));
+    tmp_name.push(format!(".tmp-{}-{nanos}-{sequence}", std::process::id()));
     let tmp = dir.join(tmp_name);
     let guard = TmpFileGuard::new(tmp.clone());
     {
@@ -555,14 +559,8 @@ fn write_atomically(target: &std::path::Path, bytes: &[u8]) -> io::Result<()> {
             .create_new(true)
             .open(&tmp)?;
         f.write_all(bytes)?;
+        f.set_permissions(permissions)?;
         f.sync_all()?;
-    }
-    // Carry the original file's mode over to the replacement inode
-    // (rename swaps inodes, so the fresh tempfile's mode would win
-    // otherwise). Best-effort: a metadata/permission failure must not
-    // block the format write.
-    if let Ok(meta) = fs::metadata(target) {
-        let _ = fs::set_permissions(&tmp, meta.permissions());
     }
     fs::rename(&tmp, target)?;
     guard.disarm();
@@ -948,6 +946,31 @@ mod tests {
             "val y: Int = 2\n",
             "drifted file wasn't normalized",
         );
+    }
+
+    #[test]
+    fn run_cli_format_validates_every_file_before_writing_any() {
+        let dir = TempDir::new("format-preflight");
+        let valid = dir.path.join("a-valid.keron");
+        let invalid = dir.path.join("z-invalid.keron");
+        let original = "val x: Int = 1  ";
+        fs::write(&valid, original).unwrap();
+        fs::write(&invalid, "val broken: =\n").unwrap();
+        let mut stdin: &[u8] = &[];
+        let mut stdout = Vec::<u8>::new();
+
+        let error = run_format(
+            FormatTarget::Paths(vec![valid.clone(), invalid]),
+            false,
+            true,
+            &mut stdin,
+            &mut stdout,
+        )
+        .expect_err("invalid source must abort the batch");
+
+        assert!(error.to_string().contains("cannot format"));
+        assert_eq!(fs::read_to_string(valid).unwrap(), original);
+        assert!(stdout.is_empty());
     }
 
     /// Stdin mode (empty paths, default flags): reads source, writes
