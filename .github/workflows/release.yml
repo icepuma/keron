@@ -51,7 +51,7 @@ jobs:
           fi
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2
+        uses: taiki-e/install-action@2ca9b94c269419b7b0c711c09d0b21c4e1d51145 # v2
         with:
           tool: nextest@0.9.136
           fallback: none
@@ -105,7 +105,7 @@ jobs:
 
       - name: Install cargo-zigbuild
         if: matrix.build_tool == 'zigbuild'
-        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2
+        uses: taiki-e/install-action@2ca9b94c269419b7b0c711c09d0b21c4e1d51145 # v2
         with:
           tool: cargo-zigbuild@0.22.3
           fallback: none
