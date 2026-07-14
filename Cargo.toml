@@ -12,7 +12,7 @@ members = [
 exclude = ["editors/zed"]
 
 [workspace.package]
-version = "0.5.3"
+version = "0.6.0"
 edition = "2024"
 rust-version = "1.95.0"
 license = "MIT"
@@ -23,10 +23,10 @@ authors = ["Stefan Ruzitschka <stefan@icepuma.dev>"]
 shared-version = true
 
 [workspace.dependencies]
-keron-lang = { path = "crates/keron-lang", version = "=0.5.3" }
-keron-modules = { path = "crates/keron-modules", version = "=0.5.3" }
-keron-apply = { path = "crates/keron-apply", version = "=0.5.3" }
-keron-lsp = { path = "crates/keron-lsp", version = "=0.5.3" }
+keron-lang = { path = "crates/keron-lang", version = "=0.6.0" }
+keron-modules = { path = "crates/keron-modules", version = "=0.6.0" }
+keron-apply = { path = "crates/keron-apply", version = "=0.6.0" }
+keron-lsp = { path = "crates/keron-lsp", version = "=0.6.0" }
 
 chumsky = "=0.13.0"
 thiserror = "=2.0.18"
