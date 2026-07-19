@@ -89,7 +89,7 @@ similar = "=3.1.1"
 # architecture. lsp-types 0.97 backs `Uri` with `fluent-uri` (no
 # `url`/`idna` tree); file-path conversion lives in
 # `keron-lsp::uri`.
-lsp-server = "=0.8.0"
+lsp-server = "=0.10.0"
 lsp-types = "=0.97.0"
 # Stack-overflow defense for the user-fn call dispatch. Each
 # `eval_expr` → user-fn → `eval_block_value` recursion eats a Rust
