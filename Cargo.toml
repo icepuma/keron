@@ -29,7 +29,7 @@ keron-apply = { path = "crates/keron-apply", version = "=0.6.0" }
 keron-lsp = { path = "crates/keron-lsp", version = "=0.6.0" }
 
 chumsky = "=0.13.0"
-thiserror = "=2.0.18"
+thiserror = "=2.0.19"
 ariadne = "=0.6.0"
 unicode-ident = "=1.0.24"
 
