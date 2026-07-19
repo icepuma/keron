@@ -76,7 +76,7 @@ same-file = "=1.0.6"
 # the dotfile use case. `default-features = false` is kept so a
 # future non-empty default (e.g. `glob_fs`) can't sneak in.
 tera = { version = "=2.0.0", default-features = false }
-which = "=8.0.4"
+which = "=8.0.5"
 # Line-level diff engine. Used by `keron format --check` for unified-
 # diff drift output and by `keron apply` for the verbose-mode body
 # diffs (template `content` and shell `script`) under the
