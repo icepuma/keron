@@ -54,13 +54,13 @@ jobs:
           shared-key: gate-${{ matrix.os }}
 
       - name: Install just
-        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2
         with:
           tool: just@1.51.0
           fallback: none
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2
         with:
           tool: nextest@0.9.136
           fallback: none
@@ -103,7 +103,7 @@ jobs:
           shared-key: e2e-${{ matrix.os }}
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@fd2f5e3d644b484055ebf4268f474c565f148f25 # v2
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2
         with:
           tool: nextest@0.9.136
           fallback: none
