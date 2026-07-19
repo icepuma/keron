@@ -33,7 +33,7 @@ thiserror = "=2.0.18"
 ariadne = "=0.6.0"
 unicode-ident = "=1.0.24"
 
-anyhow = "=1.0.103"
+anyhow = "=1.0.104"
 clap = { version = "=4.6.1", features = ["derive"] }
 petgraph = "=0.8.3"
 os_info = { version = "=3.15.0", default-features = false }
