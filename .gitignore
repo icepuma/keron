@@ -1,3 +1,6 @@
 /target
 /mutants.out
 /mutants.out.old
+
+# macOS Finder metadata
+**/.DS_Store

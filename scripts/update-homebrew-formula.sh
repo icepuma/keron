@@ -77,7 +77,6 @@ require_checksum() {
   fi
 }
 
-version="${tag#v}"
 darwin_arm64_archive="keron-${tag}-aarch64-apple-darwin.tar.gz"
 darwin_amd64_archive="keron-${tag}-x86_64-apple-darwin.tar.gz"
 linux_arm64_archive="keron-${tag}-aarch64-unknown-linux-musl.tar.gz"
@@ -97,7 +96,6 @@ cat >"$formula_path" <<EOF
 class Keron < Formula
   desc "User-level dotfile and package manager"
   homepage "https://github.com/icepuma/keron"
-  version "${version}"
   license "MIT"
 
   on_macos do
