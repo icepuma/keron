@@ -86,16 +86,15 @@ Local check:
 - **`just qualitygate`** — compatibility alias for `default`. It does
   not run mutation testing locally.
 
-Full mutation testing runs in `.github/workflows/mutants.yml` via
-manual dispatch. For any large language
-addition or change — new syntax form, new parser pass, new typing
-rule, evaluator change, IR or AST refactor, error-path rework — use
-that workflow to expose test-suite gaps. A surviving mutant means the
-tests don't actually pin the behavior. Treat surviving mutants as
-merge blockers: add a test that kills each one before landing the
-change.
+There is currently no CI workflow for mutation testing; run it by hand.
+For any large language addition or change — new syntax form, new
+parser pass, new typing rule, evaluator change, IR or AST refactor,
+error-path rework — run `cargo mutants` to expose test-suite gaps.
+A surviving mutant means the tests don't actually pin the behavior.
+Treat surviving mutants as merge blockers: add a test that kills each
+one before landing the change.
 
-The workflow runs:
+Run:
 
 ```bash
 env -u CARGO_TARGET_DIR cargo mutants \
@@ -105,8 +104,6 @@ env -u CARGO_TARGET_DIR cargo mutants \
   --test-tool nextest \
   -j2
 ```
-
-Don't add local recipes for mutation testing; keep it in the workflow.
 
 ## Coding conventions
 
@@ -197,8 +194,8 @@ prose.
 
 ### Coverage discipline
 
-Every language addition lands with **enough tests that the Mutants
-workflow reports zero missed mutants on the new code**. In
+Every language addition lands with **enough tests that `cargo mutants`
+reports zero missed mutants on the new code**. In
 practice that means each new feature gets:
 
 - **Corpus fixtures** — at least one `.keron` per syntactic form, in
@@ -214,6 +211,6 @@ practice that means each new feature gets:
 - **Unit tests** — for edge cases that fixtures can't conveniently
   express (overflow, span correctness, internal helpers).
 
-If a mutant survives the Mutants workflow, the test suite isn't pinning
+If a mutant survives `cargo mutants`, the test suite isn't pinning
 the behavior — add a test that kills it before merging. Don't disable
 mutants or relax the gate.

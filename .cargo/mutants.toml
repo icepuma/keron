@@ -1,4 +1,4 @@
-# cargo-mutants config. Run via `just mutants` (requires
+# cargo-mutants config. Run via `cargo mutants` (requires
 # `cargo install cargo-mutants`). We mutate library source under
 # `crates/*/src/**` and rely on the unit tests + corpus + properties
 # + fuzz tests to kill mutants.
