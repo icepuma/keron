@@ -29,12 +29,12 @@ keron-apply = { path = "crates/keron-apply", version = "=0.6.0" }
 keron-lsp = { path = "crates/keron-lsp", version = "=0.6.0" }
 
 chumsky = "=0.13.0"
-thiserror = "=2.0.18"
+thiserror = "=2.0.21"
 ariadne = "=0.6.0"
-unicode-ident = "=1.0.24"
+unicode-ident = "=1.0.26"
 
-anyhow = "=1.0.103"
-clap = { version = "=4.6.1", features = ["derive"] }
+anyhow = "=1.0.104"
+clap = { version = "=4.6.7", features = ["derive"] }
 petgraph = "=0.8.3"
 os_info = { version = "=3.15.0", default-features = false }
 # Cross-platform standard directories. On Linux these follow the
@@ -43,16 +43,16 @@ os_info = { version = "=3.15.0", default-features = false }
 # Windows to the corresponding `Known Folder`. Used by the
 # `std:host` builtins (`config_dir`, `cache_dir`, etc.) so manifests
 # don't have to assemble these paths by hand.
-dirs = "=6.0.0"
-serde = { version = "=1.0.228", features = ["derive"] }
-serde_json = "=1.0.150"
+dirs = "=7.0.0"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
 sha2 = "=0.11.0"
-libc = "=0.2.186"
+libc = "=0.2.189"
 # Typed wrappers around the `openat`/`mkdirat`/`symlinkat`/`renameat`
 # family used by the Unix elevated filesystem walker. `rustix` returns
 # `OwnedFd` directly and accepts `&Path`, keeping the privileged path
 # fd-anchored without caller-side `unsafe`.
-rustix = { version = "=1.1.4", features = ["fs", "process"] }
+rustix = { version = "=1.1.5", features = ["fs", "process"] }
 # Cross-platform symlink creation. On Unix this forwards to
 # `std::os::unix::fs::symlink`; on Windows it probes the target type
 # and dispatches to `symlink_file` or `symlink_dir`. Replaces the
@@ -75,13 +75,13 @@ same-file = "=1.0.6"
 # `replace`, `default`, `trim`, `length` that are sufficient for
 # the dotfile use case. `default-features = false` is kept so a
 # future non-empty default (e.g. `glob_fs`) can't sneak in.
-tera = { version = "=2.0.0", default-features = false }
-which = "=8.0.4"
+tera = { version = "=2.4.0", default-features = false }
+which = "=8.0.6"
 # Line-level diff engine. Used by `keron format --check` for unified-
 # diff drift output and by `keron apply` for the verbose-mode body
 # diffs (template `content` and shell `script`) under the
 # `--verbose-will-reveal-sensitive-content` flag.
-similar = "=3.1.1"
+similar = "=3.2.0"
 # Synchronous LSP transport + protocol types (the rust-analyzer
 # stack). Chosen over `tower-lsp` to avoid pulling an async runtime
 # into a workspace that has none; keron modules are small enough
@@ -89,7 +89,7 @@ similar = "=3.1.1"
 # architecture. lsp-types 0.97 backs `Uri` with `fluent-uri` (no
 # `url`/`idna` tree); file-path conversion lives in
 # `keron-lsp::uri`.
-lsp-server = "=0.8.0"
+lsp-server = "=0.10.0"
 lsp-types = "=0.97.0"
 # Stack-overflow defense for the user-fn call dispatch. Each
 # `eval_expr` → user-fn → `eval_block_value` recursion eats a Rust
@@ -100,10 +100,10 @@ lsp-types = "=0.97.0"
 # `stacker::maybe_grow` allocates a fresh stack segment when the
 # remaining red-zone gets thin, decoupling the runtime guard from
 # the host thread stack size.
-stacker = "=0.1.24"
+stacker = "=0.1.25"
 insta = "=1.48.0"
 libtest-mimic = "=0.8.2"
-bolero = "=0.13.4"
+bolero = "=0.13.6"
 proptest = "=1.11.0"
 # `#[mutants::skip]` markers for cargo-mutants; the crate itself is
 # a no-op shim providing the attribute path so the compiler accepts

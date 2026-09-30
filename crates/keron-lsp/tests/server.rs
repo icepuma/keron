@@ -114,8 +114,7 @@ impl Client {
             match self.recv() {
                 Message::Response(resp) => {
                     assert_eq!(resp.id, id, "responses arrive in order");
-                    assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
-                    return resp.result.unwrap_or(serde_json::Value::Null);
+                    return resp.response_result.expect("unexpected error response");
                 }
                 Message::Notification(n) => self.pending.push_back(n),
                 Message::Request(r) => panic!("server sent unexpected request {}", r.method),
