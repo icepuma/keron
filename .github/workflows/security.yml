@@ -30,8 +30,6 @@ on:
       - "tree-sitter-keron/package-lock.json"
       - "tree-sitter-keron/package.json"
       - ".github/workflows/security.yml"
-  schedule:
-    - cron: "0 4 * * 1"
   workflow_dispatch:
 
 permissions:

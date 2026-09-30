@@ -87,7 +87,7 @@ Local check:
   not run mutation testing locally.
 
 Full mutation testing runs in `.github/workflows/mutants.yml` via
-manual dispatch and the weekly schedule. For any large language
+manual dispatch. For any large language
 addition or change — new syntax form, new parser pass, new typing
 rule, evaluator change, IR or AST refactor, error-path rework — use
 that workflow to expose test-suite gaps. A surviving mutant means the

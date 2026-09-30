@@ -2,9 +2,6 @@ name: Mutants
 
 on:
   workflow_dispatch:
-  schedule:
-    # 03:00 UTC Monday is Sunday night in US time zones.
-    - cron: "0 3 * * 1"
 
 permissions:
   contents: read
